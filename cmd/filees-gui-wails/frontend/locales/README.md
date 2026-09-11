@@ -1,5 +1,8 @@
 # GUI presentation catalogues
 
+> This is one half of a locale. The daemon's domain packs are the other; the
+> whole procedure is in `coding-infrastructure/HOWTO_LOCALE.md`.
+
 This is the Wails renderer's catalogue, not daemon/domain state. No IPC
 intent, permission or repository ID may be inferred from translated text.
 Catalogue values are plain text. Use `textContent`, or escape `t(...)` when

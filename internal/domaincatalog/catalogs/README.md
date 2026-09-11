@@ -1,5 +1,8 @@
 # Domain language packs
 
+> Pełna procedura dodania języka, razem z katalogiem interfejsu, bramkami
+> i pułapkami: `coding-infrastructure/HOWTO_LOCALE.md`.
+
 These are the daemon's domain catalogues: the sentence a person reads for a
 known FileES event. They are not the interface catalogue — the Wails renderer
 owns its own chrome under `cmd/filees-gui-wails/frontend/locales`, along with
@@ -76,11 +79,15 @@ in a language we do offer — every shipped pack is checked for completeness.
 English messages are written for a reader, not copied from `Spec.Diagnostic`.
 The diagnostic is the technical log sentence and stays in the log.
 
-## Migration status, 2026-09-10
+## Migration status, 2026-09-11
 
-`pl.json` was exported once from `Spec.Polish` as migration material. From now
-on the packs are the only source of translations: nothing regenerates them
-from Go, and `Spec.Polish` disappears together with the last call site that
-still reads it. Rendering, the IPC snapshot and the switch-over of
-`internal/gui/actions` are the next portion of work — this one is the
-foundation, not the acceptance of stage 2.
+`pl.json` was exported once from `Spec.Polish` as migration material. That
+field and `pkg/errcat/present.go` no longer exist: the packs are the only
+source of translations, nothing regenerates them from Go, and there is no
+second catalogue to fall back to. `pkg/errcat` now carries identity, severity,
+hint, typed parameters and the English log diagnostic — nothing a reader sees.
+
+The daemon serves these packs over `messages.catalog`; `pkg/messagerender`
+turns a key and its arguments into a sentence. Stage 2 is implemented end to
+end and partially accepted on Windows — the remaining gaps are listed in
+`todo-control/plan/UNFINISHED_WORK.md`, not here.

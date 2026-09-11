@@ -5,7 +5,9 @@ package journal
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,22 @@ import (
 const TrayLimit = 12
 
 const connectivityErrorCode = "NET-4007"
+
+// Message is a sentence carried as data rather than as finished text: the
+// interface catalogue key and the arguments it names.
+//
+// It exists because Go must not choose a plural form. The number of forms and
+// the rule for picking one belong to a language, and a Go switch on the
+// reader's language would be exactly the second source of wording that stage 2
+// removed. A renderer with CLDR rules — the WebView, through Intl.PluralRules
+// — selects the form from Args["count"].
+//
+// Entries carry a Message only where a count is inflected. Everywhere else the
+// sentence is already one catalogue string and Summary or Details is enough.
+type Message struct {
+	Key  string            `json:"key"`
+	Args map[string]string `json:"args,omitempty"`
+}
 
 type Entry struct {
 	ID        string
@@ -29,11 +47,17 @@ type Entry struct {
 	// name it is the only record of what happened, so the full journal shows
 	// it — but it is kept out of Details because the tray must not carry raw
 	// diagnostics, which is what internal/gui/app's model has always said.
-	Diagnostics  string
-	Severity     string
-	Emphasized   bool
-	RelativeTime string
-	ExactTime    string
+	Diagnostics string
+	// SummaryMessage and DetailsMessages repeat the sentence as data for a
+	// renderer that can inflect a count. Where they are set, Summary and
+	// Details hold the same sentence with the bare number instead — readable,
+	// and all Go can honestly produce. A renderer prefers the message.
+	SummaryMessage  *Message
+	DetailsMessages []Message
+	Severity        string
+	Emphasized      bool
+	RelativeTime    string
+	ExactTime       string
 
 	time time.Time
 }
@@ -67,6 +91,24 @@ type activityGroup struct {
 type Texts struct {
 	Chrome func(key, fallback string) string
 	Hint   func(hint string) string
+}
+
+// namedArgument matches the {name} placeholders the interface catalogue uses
+// for messages a renderer composes. Keys resolved straight through chrome keep
+// printf verbs, because Go formats those itself.
+var namedArgument = regexp.MustCompile(`\{([a-zA-Z][\w]*)\}`)
+
+// message builds the data form of a sentence and the plain text that stands in
+// for it. Both come from one Args map, so the two cannot drift apart: the
+// renderer inflects plainKey's counted noun, and Go never tries to.
+func (t Texts) message(key, plainKey, plainFallback string, args map[string]string) (*Message, string) {
+	plain := namedArgument.ReplaceAllStringFunc(t.chrome(plainKey, plainFallback), func(token string) string {
+		if value, ok := args[token[1:len(token)-1]]; ok {
+			return value
+		}
+		return token
+	})
+	return &Message{Key: key, Args: args}, plain
 }
 
 func (t Texts) chrome(key, fallback string) string {
@@ -178,7 +220,7 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 		return entries[i].ID < entries[j].ID
 	})
 	for i := range entries {
-		entries[i].RelativeTime = RelativeTimestamp(entries[i].Timestamp, now)
+		entries[i].RelativeTime = RelativeTimestamp(entries[i].Timestamp, now, texts)
 		entries[i].ExactTime = ExactTimestamp(entries[i].Timestamp)
 	}
 	return entries
@@ -203,35 +245,56 @@ func detachmentEntry(record app.DetachmentViewModel, texts Texts) Entry {
 		Severity:  "notice",
 		time:      when,
 	}
+	detailKey := "journal.detachedSelfDetail"
 	if record.SelfDetached() {
 		entry.Summary = fmt.Sprintf(texts.chrome("journal.detachedSelf", "Odłączono od serwera „%s”"), record.Name())
-		entry.Details = texts.chrome("journal.detachedSelfDetail", "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty.")
+		entry.Details = texts.chrome(detailKey, "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty.")
 	} else {
+		detailKey = "journal.detachedByServerDetail"
 		entry.Summary = fmt.Sprintf(texts.chrome("journal.detachedByServer", "Serwer „%s” odłączył tego klienta"), record.Name())
-		entry.Details = texts.chrome("journal.detachedByServerDetail", "Zauważone o tej godzinie; wymagana ponowna aktywacja klienta.")
+		entry.Details = texts.chrome(detailKey, "Zauważone o tej godzinie; wymagana ponowna aktywacja klienta.")
 	}
+	// The folders are the one number here, and it is a sentence of its own
+	// rather than a fragment glued to the one above: a language may need a
+	// different order, and joining two finished sentences leaves it free to.
 	if count := len(record.WorkingCopies); count > 0 {
-		entry.Details += fmt.Sprintf(" Pliki zostały na dysku — %d %s.",
-			count, plural(count, "folder", "foldery", "folderów"))
+		kept, plain := texts.message("journal.detachedFilesKept", "journal.detachedFilesKeptPlain",
+			"Pliki zostały na dysku — {count}.", map[string]string{"count": strconv.Itoa(count)})
+		entry.Details += " " + plain
+		entry.DetailsMessages = []Message{{Key: detailKey}, *kept}
 	}
 	return entry
 }
 
 func connectivityEntry(group *connectivityGroup, texts Texts) Entry {
 	summary := fmt.Sprintf(texts.chrome("journal.connectivity", "Łączność · %s — brak połączenia z serwerem"), group.repo)
+	// Repeated interruptions are one incident with a count, and the count sits
+	// inside the sentence rather than after it, so the whole sentence is one
+	// catalogue entry and a language may put the number where it belongs.
+	var counted *Message
 	if group.count > 1 {
-		summary += fmt.Sprintf(" · %d %s", group.count, plural(group.count, "zdarzenie", "zdarzenia", "zdarzeń"))
+		counted, summary = texts.message("journal.connectivityCounted", "journal.connectivityCountedPlain",
+			"Łączność · {repo} — brak połączenia z serwerem · {count}",
+			map[string]string{"repo": group.repo, "count": strconv.Itoa(group.count)})
 	}
 	return Entry{
 		ID: "connectivity:" + group.repoID, Timestamp: group.latest.Timestamp, Repo: group.repo,
-		Summary:  summary,
-		Details:  texts.chrome("journal.connectivityDetail", "FileES zachował zmiany lokalnie i automatycznie ponawiał połączenie. Surowe próby pozostają w logu diagnostycznym."),
-		Severity: group.latest.Severity, Emphasized: false, time: group.time,
+		Summary:        summary,
+		SummaryMessage: counted,
+		Details:        texts.chrome("journal.connectivityDetail", "FileES zachował zmiany lokalnie i automatycznie ponawiał połączenie. Surowe próby pozostają w logu diagnostycznym."),
+		Severity:       group.latest.Severity, Emphasized: false, time: group.time,
 	}
 }
 
 // RelativeTimestamp renders compact, calm time labels for journal previews.
-func RelativeTimestamp(value string, now time.Time) string {
+//
+// "N minutes ago" and "N days ago" are deliberately absent. Saying them needs
+// both a plural rule and a relative-time vocabulary per language, and the
+// renderer already has both: the WebView recomputes every journal timestamp
+// with Intl.RelativeTimeFormat and only falls back to this string for a
+// timestamp it cannot parse. So the counted phrases become the clock or the
+// date — no number that would have to agree with a noun.
+func RelativeTimestamp(value string, now time.Time, texts Texts) string {
 	parsed := parseTime(value)
 	if parsed.IsZero() {
 		return value
@@ -239,23 +302,15 @@ func RelativeTimestamp(value string, now time.Time) string {
 	localNow, localThen := now.Local(), parsed.Local()
 	delta := localNow.Sub(localThen)
 	if delta < time.Minute {
-		return "przed chwilą"
-	}
-	if delta < 10*time.Minute {
-		minutes := int(delta / time.Minute)
-		if minutes == 1 {
-			return "minutę temu"
-		}
-		return fmt.Sprintf("%d %s temu", minutes, plural(minutes, "minutę", "minuty", "minut"))
+		return texts.chrome("journal.time.justNow", "przed chwilą")
 	}
 	if sameDate(localThen, localNow) {
 		return localThen.Format("15:04")
 	}
-	days := calendarDaysBetween(localThen, localNow)
-	if days == 1 {
-		return "wczoraj"
+	if calendarDaysBetween(localThen, localNow) == 1 {
+		return texts.chrome("journal.time.yesterday", "wczoraj")
 	}
-	return fmt.Sprintf("%d %s temu", days, plural(days, "dzień", "dni", "dni"))
+	return localThen.Format("02:01 15:04")
 }
 
 // ExactTimestamp is used by the expanded journal. A four-digit year keeps
@@ -320,19 +375,25 @@ func activityEntry(id string, group *activityGroup, texts Texts) Entry {
 	count := len(group.items)
 	details := activityDetails(group.items)
 	summary := ""
+	var counted *Message
 	if count == 1 {
 		item := group.items[0]
 		summary = fmt.Sprintf("%s / %s — %s", group.repo, item.Path, singleActivityLabel(item, texts))
 	} else {
+		// A counted noun goes through message; a bare number does not need to.
+		args := map[string]string{"repo": group.repo, "count": strconv.Itoa(count), "revision": strconv.FormatInt(group.revision, 10)}
 		switch group.stage {
 		case "published":
-			summary = fmt.Sprintf("%s — publikacja: %d %s · r%d", group.repo, count, plural(count, "element", "elementy", "elementów"), group.revision)
+			counted, summary = texts.message("journal.queuePublished", "journal.queuePublishedPlain",
+				"{repo} — publikacja: {count} · r{revision}", args)
 		case "received":
-			summary = fmt.Sprintf("%s — pobrano zmiany: %d %s · r%d", group.repo, count, plural(count, "element", "elementy", "elementów"), group.revision)
+			counted, summary = texts.message("journal.queueReceived", "journal.queueReceivedPlain",
+				"{repo} — pobrano zmiany: {count} · r{revision}", args)
 		case "reconciled":
-			summary = fmt.Sprintf("%s — uzgodniono stan: %d %s (bez wysyłania)", group.repo, count, plural(count, "element", "elementy", "elementów"))
+			counted, summary = texts.message("journal.queueReconciled", "journal.queueReconciledPlain",
+				"{repo} — uzgodniono stan: {count} (bez wysyłania)", args)
 		case "detected":
-			summary = fmt.Sprintf("%s — wykryte zmiany: %d", group.repo, count)
+			summary = fmt.Sprintf(texts.chrome("journal.queueDetected", "%s — wykryte zmiany: %d"), group.repo, count)
 		case "pending":
 			summary = fmt.Sprintf(texts.chrome("journal.queuePending", "%s — oczekujące zmiany: %d"), group.repo, count)
 		case "publishing":
@@ -340,10 +401,11 @@ func activityEntry(id string, group *activityGroup, texts Texts) Entry {
 		case "failed":
 			summary = fmt.Sprintf(texts.chrome("journal.queueFailed", "%s · %s — nieudane zmiany: %d"), texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), group.repo, count)
 		default:
-			summary = fmt.Sprintf("%s — %d zmian", group.repo, count)
+			counted, summary = texts.message("journal.queueChanges", "journal.queueChangesPlain",
+				"{repo} — zmiany: {count}", args)
 		}
 	}
-	return Entry{ID: id, Timestamp: group.timestamp, Repo: group.repo, Summary: summary, Details: details, Emphasized: group.stage == "failed", time: group.time}
+	return Entry{ID: id, Timestamp: group.timestamp, Repo: group.repo, Summary: summary, SummaryMessage: counted, Details: details, Emphasized: group.stage == "failed", time: group.time}
 }
 
 func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityViewModel, texts Texts) Entry {
@@ -360,18 +422,6 @@ func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityV
 		Details: details, Diagnostics: strings.TrimSpace(record.Details),
 		Severity: record.Severity, Emphasized: true, time: parseTime(record.Timestamp),
 	}
-}
-
-func plural(count int, one, few, many string) string {
-	if count == 1 {
-		return one
-	}
-	lastTwo := count % 100
-	last := count % 10
-	if last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14) {
-		return few
-	}
-	return many
 }
 
 func activityDetails(items []app.ActivityViewModel) string {

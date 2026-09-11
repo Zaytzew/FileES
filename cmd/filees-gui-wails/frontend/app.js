@@ -921,6 +921,23 @@ function renderDetached(snapshot) {
   }).join(""));
 }
 
+// A sentence whose count has to agree with a noun arrives as a catalogue key
+// and its arguments, because the rule for choosing the form belongs to the
+// language and lives here, in Intl.PluralRules. Everything else arrives as one
+// finished sentence the host already resolved. The plain text stays the
+// fallback, so an entry from an older host still reads.
+function journalSummary(item) {
+  const message = item.summary_message;
+  return message ? t(message.key, message.args || {}) : (item.summary || "");
+}
+
+// Details may be several finished sentences. They are joined, never built from
+// fragments: each one is a whole catalogue entry a translator can reorder.
+function journalDetails(item) {
+  const messages = item.details_messages || [];
+  return messages.length ? messages.map(message => t(message.key, message.args || {})).join(" ") : (item.details || "");
+}
+
 function renderJournal(snapshot) {
   const entries = snapshot.journal || [];
   const root = $("#activity");
@@ -928,7 +945,7 @@ function renderJournal(snapshot) {
     replaceHTMLIfChanged(root, `<p class="muted">${escapeHTML(t("journal.empty"))}</p>`);
   } else {
     replaceHTMLIfChanged(root, entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
-      <span class="activity-dot"></span><div><strong title="${escapeHTML(item.summary)}">${escapeHTML(item.summary)}</strong>
+      <span class="activity-dot"></span><div><strong title="${escapeHTML(journalSummary(item))}">${escapeHTML(journalSummary(item))}</strong>
       <p>${escapeHTML(item.repository || "FileES")}</p><time datetime="${escapeHTML(item.timestamp || item.exact_time)}">${escapeHTML(journalTime(item))}</time></div>
     </article>`).join(""));
   }
@@ -937,7 +954,7 @@ function renderJournal(snapshot) {
   replaceHTMLIfChanged(full, entries.length ? entries.map((item) => `<article class="journal-row ${item.emphasized ? "is-error" : ""}">
     <time>${escapeHTML(item.exact_time)}</time>
     <span class="journal-repo">${escapeHTML(item.repository || "FileES")}</span>
-    <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}${item.diagnostics ? `<pre class="journal-diagnostics">${escapeHTML(item.diagnostics)}</pre>` : ""}</div>
+    <div class="journal-copy"><strong>${escapeHTML(journalSummary(item))}</strong>${journalDetails(item) ? `<p>${escapeHTML(journalDetails(item))}</p>` : ""}${item.diagnostics ? `<pre class="journal-diagnostics">${escapeHTML(item.diagnostics)}</pre>` : ""}</div>
   </article>`).join("") : `<p class="muted">${escapeHTML(t("journal.noEntries"))}</p>`);
 }
 

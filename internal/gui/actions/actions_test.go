@@ -386,7 +386,10 @@ func TestControllerOpensCombinedJournalWithEmphasizedErrors(t *testing.T) {
 	if !requests[0].Rows[0].Emphasized || !strings.Contains(requests[0].Rows[0].Summary, "⚠ BŁĄD") {
 		t.Fatalf("error row=%+v", requests[0].Rows[0])
 	}
-	if requests[0].Rows[1].Summary != "Dokumenty — publikacja: 2 elementy · r7" || requests[0].Rows[1].Timestamp == "2026-08-10T12:00:01Z" {
+	// A host dialog gets the bare number. Inflecting it needs the reader's
+	// plural rules, which live in the renderer, so the counted sentence
+	// travels beside this row as Entry.SummaryMessage instead.
+	if requests[0].Rows[1].Summary != "Dokumenty — publikacja: 2 · r7" || requests[0].Rows[1].Timestamp == "2026-08-10T12:00:01Z" {
 		t.Fatalf("activity row=%+v", requests[0].Rows[1])
 	}
 }

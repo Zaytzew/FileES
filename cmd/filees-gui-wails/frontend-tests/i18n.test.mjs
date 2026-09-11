@@ -761,7 +761,8 @@ test("repository translated controls retain opaque action IDs and escape user da
 // fails here.
 test("raw diagnostics reach the full journal and never the activity summary", () => {
   const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
-  const begin = source.indexOf("function renderJournal("), end = source.indexOf("\n}\n", begin) + 2;
+  const begin = source.indexOf("function journalSummary(");
+  const end = source.indexOf("\n}\n", source.indexOf("function renderJournal(")) + 2;
   const nodes = {};
   const context = {
     $: selector => (nodes[selector] ||= {selector, html: ""}),
@@ -782,4 +783,77 @@ test("raw diagnostics reach the full journal and never the activity summary", ()
   assert.doesNotMatch(nodes["#activity"].html, /DIAGNOSTIC-LAB-ONLY/);
   // The glance keeps the sentence, so nothing was lost by holding the raw text back.
   assert.match(nodes["#activity"].html, /lab\.unknown/);
+});
+
+// A count that has to agree with a noun is the one thing the host must not
+// decide. It sends the key and the arguments; the form is chosen here, where
+// the language's rules are, so one entry reads correctly in every language.
+test("counted journal entries take their plural form from the catalogue", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const begin = source.indexOf("function journalSummary(");
+  const end = source.indexOf("\n}\n", source.indexOf("function renderJournal(")) + 2;
+  const nodes = {};
+  let locale = "pl";
+  const render = runInNewContext(source.slice(begin, end) + "\nrenderJournal", {
+    $: selector => (nodes[selector] ||= {selector, html: ""}),
+    replaceHTMLIfChanged: (node, html) => { node.html = html; },
+    escapeHTML: value => String(value),
+    t: (key, args) => translate(catalogues, locale, key, args),
+    journalTime: () => "now",
+  });
+  const published = count => ({
+    id: "a1", repository: "Dokumenty", exact_time: "10:00",
+    summary: `Dokumenty — publikacja: ${count} · r7`,
+    summary_message: {key: "journal.queuePublished", args: {repo: "Dokumenty", count: String(count), revision: "7"}},
+  });
+  render({journal: [published(2)]});
+  assert.match(nodes["#journal"].html, /publikacja: 2 elementy · r7/);
+  render({journal: [published(5)]});
+  assert.match(nodes["#journal"].html, /publikacja: 5 elementów · r7/);
+  locale = "en"; render({journal: [published(1)]});
+  assert.match(nodes["#journal"].html, /published: 1 item · r7/);
+  locale = "de"; render({journal: [published(5)]});
+  assert.match(nodes["#journal"].html, /veröffentlicht: 5 Elemente · r7/);
+  locale = "fr"; render({journal: [published(2)]});
+  assert.match(nodes["#journal"].html, /publication : 2 éléments · r7/);
+
+  // Details are whole sentences joined, never fragments glued together: each
+  // one is a catalogue entry a translator can reorder inside.
+  locale = "pl";
+  render({journal: [{id: "d1", exact_time: "10:00", details: "ignored", details_messages: [
+    {key: "journal.detachedSelfDetail"},
+    {key: "journal.detachedFilesKept", args: {count: "3"}},
+  ]}]});
+  assert.match(nodes["#journal"].html, /profil został usunięty\. Pliki zostały na dysku — 3 foldery\./);
+
+  // A host that sends no message at all still reads: the plain sentence stands.
+  render({journal: [{id: "p1", exact_time: "10:00", summary: "Dokumenty — publikacja: 5 · r7"}]});
+  assert.match(nodes["#journal"].html, /Dokumenty — publikacja: 5 · r7/);
+});
+
+// The fallback gate above proves a keyed sentence matches the catalogue. It is
+// blind to a sentence that was never keyed, which is how Polish queue summaries
+// survived stage 1 and then reached French, German and Spanish readers intact
+// the day those languages shipped. Every Polish literal here must be a
+// catalogue value — anything else is a sentence nobody can translate.
+test("journal builds no Polish sentence outside the interface catalogue", () => {
+  const source = readFileSync(new URL("../../../internal/gui/journal/journal.go", import.meta.url), "utf8")
+    .split("\n").filter(line => !line.trimStart().startsWith("//")).join("\n");
+  const stray = [];
+  for (const match of source.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
+    // Go escapes JSON does not know (\x00 in a grouping key) are not sentences.
+    let literal = match[1];
+    try { literal = JSON.parse(`"${literal}"`); } catch { continue; }
+    // Prose is what has a space and a word in it. A stage name, an ID prefix
+    // or a catalogue key has no space; a bare format or a time layout has no
+    // word. Diacritics are not the test — "wykryte zmiany: %d" had none.
+    if (!/\s/.test(literal) || !/[A-Za-zÀ-ž]{3,}/.test(literal)) continue;
+    // Being present in the catalogue is not enough: the sentence has to be
+    // fetched from it. A hardcoded copy of a catalogue value reads correctly
+    // in Polish and stays Polish in every other language, which is the exact
+    // failure this gate exists for.
+    const before = source.slice(Math.max(0, match.index - 300), match.index);
+    if (!/(?:chrome|message)\([^()]*$/.test(before)) stray.push(literal);
+  }
+  assert.deepEqual(stray, [], `unkeyed Polish in journal.go: ${JSON.stringify(stray)}`);
 });

@@ -204,6 +204,45 @@ export default {
   "journal.queueFailed": "%s · %s : modifications en échec : %d",
   "journal.queuePending": "%s : en attente d’envoi : %d",
   "journal.queuePublishing": "%s : en cours d’envoi : %d",
+  "journal.connectivityCounted": {
+    "one": "Connexion · {repo} : aucune liaison avec le serveur · {count} événement",
+    "many": "Connexion · {repo} : aucune liaison avec le serveur · {count} événements",
+    "other": "Connexion · {repo} : aucune liaison avec le serveur · {count} événements"
+  },
+  "journal.connectivityCountedPlain": "Connexion · {repo} : aucune liaison avec le serveur · {count}",
+  "journal.detachedFilesKept": {
+    "one": "Les fichiers sont restés sur ce disque — {count} dossier.",
+    "many": "Les fichiers sont restés sur ce disque — {count} dossiers.",
+    "other": "Les fichiers sont restés sur ce disque — {count} dossiers."
+  },
+  "journal.detachedFilesKeptPlain": "Les fichiers sont restés sur ce disque — {count}.",
+  "journal.queueChanges": {
+    "one": "{repo} : {count} modification",
+    "many": "{repo} : {count} modifications",
+    "other": "{repo} : {count} modifications"
+  },
+  "journal.queueChangesPlain": "{repo} : modifications : {count}",
+  "journal.queueDetected": "%s : détecté en local : %d",
+  "journal.queuePublished": {
+    "one": "{repo} : publication : {count} élément · r{revision}",
+    "many": "{repo} : publication : {count} éléments · r{revision}",
+    "other": "{repo} : publication : {count} éléments · r{revision}"
+  },
+  "journal.queuePublishedPlain": "{repo} : publication : {count} · r{revision}",
+  "journal.queueReceived": {
+    "one": "{repo} : modifications reçues : {count} élément · r{revision}",
+    "many": "{repo} : modifications reçues : {count} éléments · r{revision}",
+    "other": "{repo} : modifications reçues : {count} éléments · r{revision}"
+  },
+  "journal.queueReceivedPlain": "{repo} : modifications reçues : {count} · r{revision}",
+  "journal.queueReconciled": {
+    "one": "{repo} : état concilié : {count} élément (aucun envoi)",
+    "many": "{repo} : état concilié : {count} éléments (aucun envoi)",
+    "other": "{repo} : état concilié : {count} éléments (aucun envoi)"
+  },
+  "journal.queueReconciledPlain": "{repo} : état concilié : {count} (aucun envoi)",
+  "journal.time.justNow": "à l’instant",
+  "journal.time.yesterday": "hier",
   "journal.stage.detected": "détecté en local",
   "journal.stage.failed": "%s · envoi impossible",
   "journal.stage.pending": "en attente d’envoi",

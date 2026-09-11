@@ -204,6 +204,45 @@ export default {
   "journal.queueFailed": "%s · %s: cambios fallidos: %d",
   "journal.queuePending": "%s: pendientes de envío: %d",
   "journal.queuePublishing": "%s: enviando: %d",
+  "journal.connectivityCounted": {
+    "one": "Conexión · {repo}: sin enlace con el servidor · {count} evento",
+    "many": "Conexión · {repo}: sin enlace con el servidor · {count} eventos",
+    "other": "Conexión · {repo}: sin enlace con el servidor · {count} eventos"
+  },
+  "journal.connectivityCountedPlain": "Conexión · {repo}: sin enlace con el servidor · {count}",
+  "journal.detachedFilesKept": {
+    "one": "Los archivos permanecieron en este disco — {count} carpeta.",
+    "many": "Los archivos permanecieron en este disco — {count} carpetas.",
+    "other": "Los archivos permanecieron en este disco — {count} carpetas."
+  },
+  "journal.detachedFilesKeptPlain": "Los archivos permanecieron en este disco — {count}.",
+  "journal.queueChanges": {
+    "one": "{repo}: {count} cambio",
+    "many": "{repo}: {count} cambios",
+    "other": "{repo}: {count} cambios"
+  },
+  "journal.queueChangesPlain": "{repo}: cambios: {count}",
+  "journal.queueDetected": "%s: detectado localmente: %d",
+  "journal.queuePublished": {
+    "one": "{repo}: publicación: {count} elemento · r{revision}",
+    "many": "{repo}: publicación: {count} elementos · r{revision}",
+    "other": "{repo}: publicación: {count} elementos · r{revision}"
+  },
+  "journal.queuePublishedPlain": "{repo}: publicación: {count} · r{revision}",
+  "journal.queueReceived": {
+    "one": "{repo}: cambios recibidos: {count} elemento · r{revision}",
+    "many": "{repo}: cambios recibidos: {count} elementos · r{revision}",
+    "other": "{repo}: cambios recibidos: {count} elementos · r{revision}"
+  },
+  "journal.queueReceivedPlain": "{repo}: cambios recibidos: {count} · r{revision}",
+  "journal.queueReconciled": {
+    "one": "{repo}: estado conciliado: {count} elemento (sin envíos)",
+    "many": "{repo}: estado conciliado: {count} elementos (sin envíos)",
+    "other": "{repo}: estado conciliado: {count} elementos (sin envíos)"
+  },
+  "journal.queueReconciledPlain": "{repo}: estado conciliado: {count} (sin envíos)",
+  "journal.time.justNow": "hace un momento",
+  "journal.time.yesterday": "ayer",
   "journal.stage.detected": "detectado localmente",
   "journal.stage.failed": "%s · no se pudo enviar",
   "journal.stage.pending": "pendiente de envío",

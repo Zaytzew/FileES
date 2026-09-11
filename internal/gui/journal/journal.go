@@ -61,8 +61,9 @@ type activityGroup struct {
 // that wrote hint text itself would be a second source for wording the daemon
 // already publishes.
 //
-// A zero Texts keeps the built-in fallbacks, which is what the legacy Fyne
-// renderer gets: it is out of scope for localisation by contract.
+// A zero Texts keeps the built-in fallbacks. They exist so a caller without a
+// catalogue — a test, or a renderer during start-up before the first snapshot
+// — still produces readable entries rather than blanks.
 type Texts struct {
 	Chrome func(key, fallback string) string
 	Hint   func(hint string) string
@@ -152,7 +153,7 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 		}
 	}
 	for _, group := range connectivity {
-		entries = append(entries, connectivityEntry(group))
+		entries = append(entries, connectivityEntry(group, texts))
 	}
 	for _, notice := range vm.Notices {
 		when := parseTime(notice.CreatedAt)
@@ -160,15 +161,15 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 			ID:         "notice:" + notice.ID,
 			Timestamp:  notice.CreatedAt,
 			Repo:       repoName(names, notice.RepoID),
-			Summary:    "Wydanie — " + notice.Title,
-			Details:    "Oznacz jako przeczytane w menu FileES",
+			Summary:    fmt.Sprintf(texts.chrome("journal.notice", "Wydanie — %s"), notice.Title),
+			Details:    texts.chrome("journal.noticeDetail", "Oznacz jako przeczytane w menu FileES"),
 			Severity:   "notice",
 			Emphasized: true,
 			time:       when,
 		})
 	}
 	for _, record := range vm.Detachments {
-		entries = append(entries, detachmentEntry(record))
+		entries = append(entries, detachmentEntry(record, texts))
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		if !entries[i].time.Equal(entries[j].time) {
@@ -194,7 +195,7 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 // self-detachment is finished business and says so. A revoked client has
 // something left to do, and the entry must not imply that the moment shown is
 // when the server decided - only when this client found out.
-func detachmentEntry(record app.DetachmentViewModel) Entry {
+func detachmentEntry(record app.DetachmentViewModel, texts Texts) Entry {
 	when := parseTime(record.At)
 	entry := Entry{
 		ID:        "detachment:" + record.ServerID,
@@ -203,11 +204,11 @@ func detachmentEntry(record app.DetachmentViewModel) Entry {
 		time:      when,
 	}
 	if record.SelfDetached() {
-		entry.Summary = fmt.Sprintf("Odłączono od serwera „%s”", record.Name())
-		entry.Details = "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty."
+		entry.Summary = fmt.Sprintf(texts.chrome("journal.detachedSelf", "Odłączono od serwera „%s”"), record.Name())
+		entry.Details = texts.chrome("journal.detachedSelfDetail", "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty.")
 	} else {
-		entry.Summary = fmt.Sprintf("Serwer „%s” odłączył tego klienta", record.Name())
-		entry.Details = "Zauważone o tej godzinie; wymagana ponowna aktywacja klienta."
+		entry.Summary = fmt.Sprintf(texts.chrome("journal.detachedByServer", "Serwer „%s” odłączył tego klienta"), record.Name())
+		entry.Details = texts.chrome("journal.detachedByServerDetail", "Zauważone o tej godzinie; wymagana ponowna aktywacja klienta.")
 	}
 	if count := len(record.WorkingCopies); count > 0 {
 		entry.Details += fmt.Sprintf(" Pliki zostały na dysku — %d %s.",
@@ -216,15 +217,15 @@ func detachmentEntry(record app.DetachmentViewModel) Entry {
 	return entry
 }
 
-func connectivityEntry(group *connectivityGroup) Entry {
-	summary := fmt.Sprintf("Łączność · %s — brak połączenia z serwerem", group.repo)
+func connectivityEntry(group *connectivityGroup, texts Texts) Entry {
+	summary := fmt.Sprintf(texts.chrome("journal.connectivity", "Łączność · %s — brak połączenia z serwerem"), group.repo)
 	if group.count > 1 {
 		summary += fmt.Sprintf(" · %d %s", group.count, plural(group.count, "zdarzenie", "zdarzenia", "zdarzeń"))
 	}
 	return Entry{
 		ID: "connectivity:" + group.repoID, Timestamp: group.latest.Timestamp, Repo: group.repo,
 		Summary:  summary,
-		Details:  "FileES zachował zmiany lokalnie i automatycznie ponawiał połączenie. Surowe próby pozostają w logu diagnostycznym.",
+		Details:  texts.chrome("journal.connectivityDetail", "FileES zachował zmiany lokalnie i automatycznie ponawiał połączenie. Surowe próby pozostają w logu diagnostycznym."),
 		Severity: group.latest.Severity, Emphasized: false, time: group.time,
 	}
 }
@@ -321,7 +322,7 @@ func activityEntry(id string, group *activityGroup, texts Texts) Entry {
 	summary := ""
 	if count == 1 {
 		item := group.items[0]
-		summary = fmt.Sprintf("%s / %s — %s", group.repo, item.Path, singleActivityLabel(item))
+		summary = fmt.Sprintf("%s / %s — %s", group.repo, item.Path, singleActivityLabel(item, texts))
 	} else {
 		switch group.stage {
 		case "published":
@@ -333,11 +334,11 @@ func activityEntry(id string, group *activityGroup, texts Texts) Entry {
 		case "detected":
 			summary = fmt.Sprintf("%s — wykryte zmiany: %d", group.repo, count)
 		case "pending":
-			summary = fmt.Sprintf("%s — oczekujące zmiany: %d", group.repo, count)
+			summary = fmt.Sprintf(texts.chrome("journal.queuePending", "%s — oczekujące zmiany: %d"), group.repo, count)
 		case "publishing":
-			summary = fmt.Sprintf("%s — publikowane zmiany: %d", group.repo, count)
+			summary = fmt.Sprintf(texts.chrome("journal.queuePublishing", "%s — publikowane zmiany: %d"), group.repo, count)
 		case "failed":
-			summary = fmt.Sprintf("%s · %s — nieudane zmiany: %d", texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), group.repo, count)
+			summary = fmt.Sprintf(texts.chrome("journal.queueFailed", "%s · %s — nieudane zmiany: %d"), texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), group.repo, count)
 		default:
 			summary = fmt.Sprintf("%s — %d zmian", group.repo, count)
 		}
@@ -393,39 +394,39 @@ func activityDetails(items []app.ActivityViewModel) string {
 	return strings.Join(paths, "\n")
 }
 
-func singleActivityLabel(record app.ActivityViewModel) string {
+func singleActivityLabel(record app.ActivityViewModel, texts Texts) string {
 	switch record.Stage {
 	case "detected":
-		return "wykryto lokalnie"
+		return texts.chrome("journal.stage.detected", "wykryto lokalnie")
 	case "pending":
-		return "oczekuje na wysłanie"
+		return texts.chrome("journal.stage.pending", "oczekuje na wysłanie")
 	case "publishing":
-		return "publikowanie"
+		return texts.chrome("journal.stage.publishing", "publikowanie")
 	case "published":
-		return fmt.Sprintf("%s · r%d", kindPastTense(record.Kind), record.Revision)
+		return fmt.Sprintf(texts.chrome("journal.stage.published", "%s · r%d"), kindPastTense(record.Kind, texts), record.Revision)
 	case "received":
-		return fmt.Sprintf("pobrano zmianę: %s · r%d", kindPastTense(record.Kind), record.Revision)
+		return fmt.Sprintf(texts.chrome("journal.stage.received", "pobrano zmianę: %s · r%d"), kindPastTense(record.Kind, texts), record.Revision)
 	case "reconciled":
-		return "uzgodniono stan (bez wysyłania)"
+		return texts.chrome("journal.stage.reconciled", "uzgodniono stan (bez wysyłania)")
 	case "failed":
-		return "⚠ BŁĄD · nie udało się opublikować"
+		return fmt.Sprintf(texts.chrome("journal.stage.failed", "%s · nie udało się opublikować"), texts.chrome("journal.errorPrefix", "⚠ BŁĄD"))
 	default:
-		return "stan nieznany"
+		return texts.chrome("journal.stage.unknown", "stan nieznany")
 	}
 }
 
-func kindPastTense(kind string) string {
+func kindPastTense(kind string, texts Texts) string {
 	switch kind {
 	case "added":
-		return "dodano"
+		return texts.chrome("journal.kind.added", "dodano")
 	case "modified":
-		return "zaktualizowano"
+		return texts.chrome("journal.kind.modified", "zaktualizowano")
 	case "deleted":
-		return "usunięto"
+		return texts.chrome("journal.kind.deleted", "usunięto")
 	case "renamed":
-		return "zmieniono nazwę"
+		return texts.chrome("journal.kind.renamed", "zmieniono nazwę")
 	default:
-		return "opublikowano"
+		return texts.chrome("journal.kind.published", "opublikowano")
 	}
 }
 

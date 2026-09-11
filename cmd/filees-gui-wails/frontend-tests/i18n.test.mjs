@@ -53,11 +53,11 @@ test("language popup supports selection, dismissal and focus without IPC", () =>
 const parameters = value => [...new Set([...value.matchAll(/\{([a-zA-Z][\w]*)\}/g)].map(match => match[1]))].sort();
 
 test("GUI native text keys preserve Polish fallback and printf argument contracts", () => {
-  const files = ["../../../internal/gui/actions/actions.go", "../../../internal/gui/actions/intent_resolution.go", "../action_bridge.go", "../service.go"];
+  const files = ["../../../internal/gui/actions/actions.go", "../../../internal/gui/actions/intent_resolution.go", "../action_bridge.go", "../service.go", "../../../internal/gui/journal/journal.go"];
   let count = 0;
   for (const file of files) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    for (const match of source.matchAll(/(?:uiText|text)\("([^"]+)", ("(?:[^"\\]|\\.)*")\)/g)) {
+    for (const match of source.matchAll(/(?:uiText|text|chrome)\("([^"]+)", ("(?:[^"\\]|\\.)*")\)/g)) {
       const [, key, quoted] = match, fallback = JSON.parse(quoted);
       assert.equal(catalogues.pl[key], fallback, key);
       const formats = text => [...text.matchAll(/%[sdwqvf]/g)].map(item => item[0]);
@@ -745,4 +745,34 @@ test("repository translated controls retain opaque action IDs and escape user da
   assert.match(html, /data-i18n="action.edit">Edit<\/span>/);
   assert.match(html, /Nazwa użytkownika &lt;DWG&gt;/);
   assert.doesNotMatch(html, /data-share-action="delete"/);
+});
+
+// Raw daemon diagnostics belong in the full journal and nowhere else. The
+// activity summary is a glance, not a place to paste machine text into, and
+// the tray shows even less. This runs the real renderer rather than reading
+// the template, so a future edit that adds item.diagnostics to the preview
+// fails here.
+test("raw diagnostics reach the full journal and never the activity summary", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const begin = source.indexOf("function renderJournal("), end = source.indexOf("\n}\n", begin) + 2;
+  const nodes = {};
+  const context = {
+    $: selector => (nodes[selector] ||= {selector, html: ""}),
+    replaceHTMLIfChanged: (node, html) => { node.html = html; },
+    escapeHTML: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
+    t: key => key,
+    journalTime: () => "now",
+  };
+  const render = runInNewContext(source.slice(begin, end) + "\nrenderJournal", context);
+  render({journal: [{
+    id: "e1", summary: "[LAB-9999 lab.unknown]", repository: "Dokumenty",
+    details: "your decision is needed", diagnostics: "DIAGNOSTIC-LAB-ONLY",
+    exact_time: "10:00", emphasized: true,
+  }]});
+
+  assert.match(nodes["#journal"].html, /DIAGNOSTIC-LAB-ONLY/);
+  assert.match(nodes["#journal"].html, /journal-diagnostics/);
+  assert.doesNotMatch(nodes["#activity"].html, /DIAGNOSTIC-LAB-ONLY/);
+  // The glance keeps the sentence, so nothing was lost by holding the raw text back.
+  assert.match(nodes["#activity"].html, /lab\.unknown/);
 });

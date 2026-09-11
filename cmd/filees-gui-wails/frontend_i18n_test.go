@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -11,10 +12,11 @@ import (
 func frontendI18NTestPrelude(t *testing.T) string {
 	t.Helper()
 	source := embeddedFrontendFile(t, "frontend/i18n.js")
-	for _, locale := range []string{"pl", "en"} {
-		catalogue := embeddedFrontendFile(t, "frontend/locales/"+locale+".js")
-		catalogue = strings.Replace(catalogue, "export default", "const "+locale+" =", 1)
-		source = strings.Replace(source, `import `+locale+` from "./locales/`+locale+`.js";`, catalogue, 1)
+	imports := regexp.MustCompile(`import (\w+) from "\./locales/([A-Za-z0-9-]+)\.js";`)
+	for _, match := range imports.FindAllStringSubmatch(source, -1) {
+		catalogue := embeddedFrontendFile(t, "frontend/locales/"+match[2]+".js")
+		catalogue = strings.Replace(catalogue, "export default", "const "+match[1]+" =", 1)
+		source = strings.Replace(source, match[0], catalogue, 1)
 	}
 	source = strings.ReplaceAll(source, "export function", "function")
 	source = strings.ReplaceAll(source, "export const", "const")

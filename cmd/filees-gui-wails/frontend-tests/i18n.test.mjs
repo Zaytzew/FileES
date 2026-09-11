@@ -61,7 +61,7 @@ test("GUI native text keys preserve Polish fallback and printf argument contract
       const [, key, quoted] = match, fallback = JSON.parse(quoted);
       assert.equal(catalogues.pl[key], fallback, key);
       const formats = text => [...text.matchAll(/%[sdwqvf]/g)].map(item => item[0]);
-      for (const locale of ["pl", "en"]) {
+      for (const locale of Object.keys(catalogues)) {
         assert.equal(typeof catalogues[locale][key], "string", key);
         assert.deepEqual(formats(catalogues[locale][key]), formats(fallback), key);
       }
@@ -511,7 +511,14 @@ test("pairing language refresh preserves server selection, PIN and pending state
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");
-  assert.equal(resolveLocale("system", ["de-DE", "pl-PL"]), "en");
+  assert.equal(resolveLocale("system", ["zz-ZZ", "pl-PL"]), "en");
+  for (const {code} of languages) {
+    assert.equal(resolveLocale("system", [code]), code);
+    assert.equal(resolveLocale(code, ["en-US"]), code);
+  }
+  assert.equal(resolveLocale("system", ["de-DE"]), "de");
+  assert.equal(resolveLocale("system", ["fr-FR"]), "fr");
+  assert.equal(resolveLocale("system", ["es-MX"]), "es");
   assert.equal(resolveLocale("system", []), "en");
   assert.equal(resolveLocale("pl", ["en-US"]), "pl");
   assert.equal(normalizePreference("../../private"), "system");
@@ -683,7 +690,7 @@ test("preference changes synchronize, survive denied storage and do not touch in
   assert.equal(label.textContent, "Cancel");
   channel.receive({ data: "pl" }); assert.equal(label.textContent, "Anuluj");
   setLanguagePreference("system");
-  navigator.languages = ["fr-FR"]; listeners.get("languagechange")();
+  navigator.languages = ["zz-ZZ"]; listeners.get("languagechange")();
   assert.equal(getLocale(), "en");
   assert.deepEqual(input, { value: "unsaved DWG name", selectionStart: 3, disabled: true });
   assert.equal(document.activeElement, input);

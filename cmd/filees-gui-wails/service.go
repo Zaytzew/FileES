@@ -276,6 +276,12 @@ type JournalProjection struct {
 	Repository   string `json:"repository"`
 	Summary      string `json:"summary"`
 	Details      string `json:"details,omitempty"`
+	// SummaryMessage and DetailsMessages carry the sentence as a catalogue key
+	// and its arguments, for the entries whose count has to agree with a noun.
+	// The renderer inflects them through Intl.PluralRules; Summary and Details
+	// hold the same sentence with the bare number, which is all Go can say.
+	SummaryMessage  *journal.Message  `json:"summary_message,omitempty"`
+	DetailsMessages []journal.Message `json:"details_messages,omitempty"`
 	// Diagnostics is the daemon's raw text for an entry the catalogue could
 	// not name. The full journal shows it as diagnostics; nothing folds it
 	// into a sentence, and the tray never receives it.
@@ -1060,6 +1066,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		result.Journal = append(result.Journal, JournalProjection{
 			ID: entry.ID, Timestamp: entry.Timestamp, RelativeTime: entry.RelativeTime, ExactTime: entry.ExactTime,
 			Repository: entry.Repo, Summary: entry.Summary, Details: entry.Details,
+			SummaryMessage: entry.SummaryMessage, DetailsMessages: entry.DetailsMessages,
 			Diagnostics: entry.Diagnostics,
 			Severity:    entry.Severity, Emphasized: entry.Emphasized,
 		})
@@ -1084,7 +1091,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		}
 		result.Detachments = append(result.Detachments, DetachmentProjection{
 			ServerID: item.ServerID, Name: item.Name(), Address: item.Address, Cause: item.Cause, Timestamp: item.At,
-			RelativeTime: journal.RelativeTimestamp(item.At, now), ExactTime: journal.ExactTimestamp(item.At),
+			RelativeTime: journal.RelativeTimestamp(item.At, now, texts), ExactTime: journal.ExactTimestamp(item.At),
 			Summary: summary, NeedsReactivation: !item.SelfDetached(), WorkingCopies: item.WorkingCopies,
 		})
 	}

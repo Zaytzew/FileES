@@ -199,6 +199,39 @@ export default {
   "journal.queueFailed": "%s · %s: fehlgeschlagene Änderungen: %d",
   "journal.queuePending": "%s: zum Senden vorgemerkt: %d",
   "journal.queuePublishing": "%s: werden gesendet: %d",
+  "journal.connectivityCounted": {
+    "one": "Verbindung · {repo}: keine Verbindung zum Server · {count} Ereignis",
+    "other": "Verbindung · {repo}: keine Verbindung zum Server · {count} Ereignisse"
+  },
+  "journal.connectivityCountedPlain": "Verbindung · {repo}: keine Verbindung zum Server · {count}",
+  "journal.detachedFilesKept": {
+    "one": "Die Dateien sind auf dieser Festplatte geblieben — {count} Ordner.",
+    "other": "Die Dateien sind auf dieser Festplatte geblieben — {count} Ordner."
+  },
+  "journal.detachedFilesKeptPlain": "Die Dateien sind auf dieser Festplatte geblieben — {count}.",
+  "journal.queueChanges": {
+    "one": "{repo}: {count} Änderung",
+    "other": "{repo}: {count} Änderungen"
+  },
+  "journal.queueChangesPlain": "{repo}: Änderungen: {count}",
+  "journal.queueDetected": "%s: lokal erkannt: %d",
+  "journal.queuePublished": {
+    "one": "{repo}: veröffentlicht: {count} Element · r{revision}",
+    "other": "{repo}: veröffentlicht: {count} Elemente · r{revision}"
+  },
+  "journal.queuePublishedPlain": "{repo}: veröffentlicht: {count} · r{revision}",
+  "journal.queueReceived": {
+    "one": "{repo}: empfangene Änderungen: {count} Element · r{revision}",
+    "other": "{repo}: empfangene Änderungen: {count} Elemente · r{revision}"
+  },
+  "journal.queueReceivedPlain": "{repo}: empfangene Änderungen: {count} · r{revision}",
+  "journal.queueReconciled": {
+    "one": "{repo}: Zustand abgeglichen: {count} Element (nichts gesendet)",
+    "other": "{repo}: Zustand abgeglichen: {count} Elemente (nichts gesendet)"
+  },
+  "journal.queueReconciledPlain": "{repo}: Zustand abgeglichen: {count} (nichts gesendet)",
+  "journal.time.justNow": "gerade eben",
+  "journal.time.yesterday": "gestern",
   "journal.stage.detected": "lokal erkannt",
   "journal.stage.failed": "%s · konnte nicht gesendet werden",
   "journal.stage.pending": "wartet auf Versand",

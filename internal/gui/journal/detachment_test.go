@@ -58,8 +58,18 @@ func TestADetachmentEntryCountsTheFoldersLeftBehind(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want 1", len(entries))
 	}
-	if !strings.Contains(entries[0].Details, "2 foldery") {
+	if !strings.Contains(entries[0].Details, "2") {
 		t.Errorf("details = %q; the files stayed on disk and the entry should say how many", entries[0].Details)
+	}
+	// "2 foldery" is a form only a Polish rule produces, so the host does not
+	// produce it: it sends the sentence and the number, and the renderer
+	// inflects. Both sentences travel whole, joined rather than glued.
+	messages := entries[0].DetailsMessages
+	if len(messages) != 2 || messages[0].Key != "journal.detachedSelfDetail" {
+		t.Fatalf("details messages = %#v", messages)
+	}
+	if messages[1].Key != "journal.detachedFilesKept" || messages[1].Args["count"] != "2" {
+		t.Fatalf("kept folders = %#v", messages[1])
 	}
 }
 

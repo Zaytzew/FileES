@@ -25,8 +25,17 @@ func TestBuildMergesErrorsAndAggregatesPublishedRevisionNewestFirst(t *testing.T
 	if !got[0].Emphasized || !strings.Contains(got[0].Summary, "⚠ BŁĄD") || !strings.Contains(got[0].Details, "bad.txt") {
 		t.Fatalf("merged error=%#v", got[0])
 	}
-	if got[1].Summary != "Dokumenty — publikacja: 2 elementy · r7" || got[1].Details != "a.txt\nb.txt" {
+	if got[1].Summary != "Dokumenty — publikacja: 2 · r7" || got[1].Details != "a.txt\nb.txt" {
 		t.Fatalf("aggregate=%#v", got[1])
+	}
+	// The host says the number. The sentence whose noun has to agree with it
+	// travels as data, because choosing the form is the renderer's business.
+	message := got[1].SummaryMessage
+	if message == nil || message.Key != "journal.queuePublished" {
+		t.Fatalf("counted summary=%#v", got[1])
+	}
+	if message.Args["count"] != "2" || message.Args["revision"] != "7" || message.Args["repo"] != "Dokumenty" {
+		t.Fatalf("counted arguments=%#v", message.Args)
 	}
 }
 
@@ -41,7 +50,7 @@ func TestJournalSeparatesReceivedFromPublishedAtSameRevision(t *testing.T) {
 	if len(entries) != 3 {
 		t.Fatalf("merged directions: %+v", entries)
 	}
-	want := map[string]bool{"repo — pobrano zmiany: 2 elementy · r117": false, "repo / outgoing — opublikowano · r117": false, "repo / clean — uzgodniono stan (bez wysyłania)": false}
+	want := map[string]bool{"repo — pobrano zmiany: 2 · r117": false, "repo / outgoing — opublikowano · r117": false, "repo / clean — uzgodniono stan (bez wysyłania)": false}
 	for _, entry := range entries {
 		if _, ok := want[entry.Summary]; !ok {
 			t.Fatalf("unexpected: %+v", entry)
@@ -75,8 +84,17 @@ func TestBuildCollapsesConnectivityNoiseWithoutTouchingOtherErrors(t *testing.T)
 			connection = entry
 		}
 	}
-	if connection.ID == "" || connection.Emphasized || !strings.Contains(connection.Summary, "2 zdarzenia") {
+	if connection.ID == "" || connection.Emphasized || !strings.Contains(connection.Summary, "2") {
 		t.Fatalf("connectivity entry=%#v", connection)
+	}
+	// Repeated interruptions are one incident with a count inside the
+	// sentence, so the whole sentence is one key and a language may put the
+	// number where it belongs rather than after a dot.
+	if connection.SummaryMessage == nil || connection.SummaryMessage.Key != "journal.connectivityCounted" {
+		t.Fatalf("counted connectivity=%#v", connection.SummaryMessage)
+	}
+	if connection.SummaryMessage.Args["count"] != "2" || connection.SummaryMessage.Args["repo"] != "Dokumenty" {
+		t.Fatalf("counted arguments=%#v", connection.SummaryMessage.Args)
 	}
 }
 
@@ -87,15 +105,20 @@ func TestJournalTimestampPresentation(t *testing.T) {
 		want  string
 	}{
 		{now.Add(-30 * time.Second).Format(time.RFC3339), "przed chwilą"},
-		{now.Add(-time.Minute).Format(time.RFC3339), "minutę temu"},
-		{now.Add(-4 * time.Minute).Format(time.RFC3339), "4 minuty temu"},
-		{now.Add(-9 * time.Minute).Format(time.RFC3339), "9 minut temu"},
+		// "4 minutes ago" and "3 days ago" are gone on purpose. Saying either
+		// needs a plural rule and a relative-time vocabulary per language, and
+		// the renderer already has both — it recomputes every journal
+		// timestamp with Intl and falls back to this string only for a
+		// timestamp it cannot parse. So the host says the clock or the date,
+		// never a number that would have to agree with a noun.
+		{now.Add(-time.Minute).Format(time.RFC3339), "13:59"},
+		{now.Add(-4 * time.Minute).Format(time.RFC3339), "13:56"},
 		{now.Add(-20 * time.Minute).Format(time.RFC3339), "13:40"},
 		{now.AddDate(0, 0, -1).Format(time.RFC3339), "wczoraj"},
-		{now.AddDate(0, 0, -3).Format(time.RFC3339), "3 dni temu"},
+		{now.AddDate(0, 0, -3).Format(time.RFC3339), now.AddDate(0, 0, -3).Format("02:01 15:04")},
 	}
 	for _, test := range tests {
-		if got := RelativeTimestamp(test.value, now); got != test.want {
+		if got := RelativeTimestamp(test.value, now, testTexts()); got != test.want {
 			t.Errorf("RelativeTimestamp(%q)=%q, want %q", test.value, got, test.want)
 		}
 	}

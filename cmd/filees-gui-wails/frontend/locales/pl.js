@@ -209,6 +209,51 @@ export default {
   "journal.queueFailed": "%s · %s — nieudane zmiany: %d",
   "journal.queuePending": "%s — oczekujące zmiany: %d",
   "journal.queuePublishing": "%s — publikowane zmiany: %d",
+  "journal.connectivityCounted": {
+    "one": "Łączność · {repo} — brak połączenia z serwerem · {count} zdarzenie",
+    "few": "Łączność · {repo} — brak połączenia z serwerem · {count} zdarzenia",
+    "many": "Łączność · {repo} — brak połączenia z serwerem · {count} zdarzeń",
+    "other": "Łączność · {repo} — brak połączenia z serwerem · {count} zdarzenia"
+  },
+  "journal.connectivityCountedPlain": "Łączność · {repo} — brak połączenia z serwerem · {count}",
+  "journal.detachedFilesKept": {
+    "one": "Pliki zostały na dysku — {count} folder.",
+    "few": "Pliki zostały na dysku — {count} foldery.",
+    "many": "Pliki zostały na dysku — {count} folderów.",
+    "other": "Pliki zostały na dysku — {count} folderu."
+  },
+  "journal.detachedFilesKeptPlain": "Pliki zostały na dysku — {count}.",
+  "journal.queueChanges": {
+    "one": "{repo} — {count} zmiana",
+    "few": "{repo} — {count} zmiany",
+    "many": "{repo} — {count} zmian",
+    "other": "{repo} — {count} zmiany"
+  },
+  "journal.queueChangesPlain": "{repo} — zmiany: {count}",
+  "journal.queueDetected": "%s — wykryte zmiany: %d",
+  "journal.queuePublished": {
+    "one": "{repo} — publikacja: {count} element · r{revision}",
+    "few": "{repo} — publikacja: {count} elementy · r{revision}",
+    "many": "{repo} — publikacja: {count} elementów · r{revision}",
+    "other": "{repo} — publikacja: {count} elementu · r{revision}"
+  },
+  "journal.queuePublishedPlain": "{repo} — publikacja: {count} · r{revision}",
+  "journal.queueReceived": {
+    "one": "{repo} — pobrano zmiany: {count} element · r{revision}",
+    "few": "{repo} — pobrano zmiany: {count} elementy · r{revision}",
+    "many": "{repo} — pobrano zmiany: {count} elementów · r{revision}",
+    "other": "{repo} — pobrano zmiany: {count} elementu · r{revision}"
+  },
+  "journal.queueReceivedPlain": "{repo} — pobrano zmiany: {count} · r{revision}",
+  "journal.queueReconciled": {
+    "one": "{repo} — uzgodniono stan: {count} element (bez wysyłania)",
+    "few": "{repo} — uzgodniono stan: {count} elementy (bez wysyłania)",
+    "many": "{repo} — uzgodniono stan: {count} elementów (bez wysyłania)",
+    "other": "{repo} — uzgodniono stan: {count} elementu (bez wysyłania)"
+  },
+  "journal.queueReconciledPlain": "{repo} — uzgodniono stan: {count} (bez wysyłania)",
+  "journal.time.justNow": "przed chwilą",
+  "journal.time.yesterday": "wczoraj",
   "journal.stage.detected": "wykryto lokalnie",
   "journal.stage.failed": "%s · nie udało się opublikować",
   "journal.stage.pending": "oczekuje na wysłanie",

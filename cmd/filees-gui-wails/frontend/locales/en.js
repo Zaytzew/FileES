@@ -199,6 +199,39 @@ export default {
   "journal.queueFailed": "%s · %s — failed changes: %d",
   "journal.queuePending": "%s — waiting to send: %d",
   "journal.queuePublishing": "%s — sending: %d",
+  "journal.connectivityCounted": {
+    "one": "Connection · {repo} — no link to the server · {count} event",
+    "other": "Connection · {repo} — no link to the server · {count} events"
+  },
+  "journal.connectivityCountedPlain": "Connection · {repo} — no link to the server · {count}",
+  "journal.detachedFilesKept": {
+    "one": "The files stayed on this disk — {count} folder.",
+    "other": "The files stayed on this disk — {count} folders."
+  },
+  "journal.detachedFilesKeptPlain": "The files stayed on this disk — {count}.",
+  "journal.queueChanges": {
+    "one": "{repo} — {count} change",
+    "other": "{repo} — {count} changes"
+  },
+  "journal.queueChangesPlain": "{repo} — changes: {count}",
+  "journal.queueDetected": "%s — found locally: %d",
+  "journal.queuePublished": {
+    "one": "{repo} — published: {count} item · r{revision}",
+    "other": "{repo} — published: {count} items · r{revision}"
+  },
+  "journal.queuePublishedPlain": "{repo} — published: {count} · r{revision}",
+  "journal.queueReceived": {
+    "one": "{repo} — changes received: {count} item · r{revision}",
+    "other": "{repo} — changes received: {count} items · r{revision}"
+  },
+  "journal.queueReceivedPlain": "{repo} — changes received: {count} · r{revision}",
+  "journal.queueReconciled": {
+    "one": "{repo} — state settled: {count} item (nothing sent)",
+    "other": "{repo} — state settled: {count} items (nothing sent)"
+  },
+  "journal.queueReconciledPlain": "{repo} — state settled: {count} (nothing sent)",
+  "journal.time.justNow": "just now",
+  "journal.time.yesterday": "yesterday",
   "journal.stage.detected": "found locally",
   "journal.stage.failed": "%s · could not be sent",
   "journal.stage.pending": "waiting to send",

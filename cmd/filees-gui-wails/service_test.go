@@ -352,7 +352,9 @@ func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testin
 		t.Fatalf("journal=%#v", got.Journal)
 	}
 	entry := got.Journal[0]
-	if entry.RelativeTime != "4 minuty temu" || entry.ExactTime == "" || entry.Repository != "Dokumenty" || !strings.Contains(entry.Summary, "plan.dwg") {
+	// The host gives the clock, not "4 minutes ago": the renderer recomputes
+	// every journal timestamp with Intl and owns relative time in its language.
+	if entry.RelativeTime != "13:56" || entry.ExactTime == "" || entry.Repository != "Dokumenty" || !strings.Contains(entry.Summary, "plan.dwg") {
 		t.Fatalf("journal entry=%#v", entry)
 	}
 }

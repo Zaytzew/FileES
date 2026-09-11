@@ -38,8 +38,11 @@ func TestClassifyMobileTreeAndStatus70(t *testing.T) {
 		if got.Key != c.key {
 			t.Fatalf("Classify(%q) = %s, want %s", c.raw, got.Key, c.key)
 		}
-		if errcat.Polish(string(got.Key)) == "" || errcat.Polish(string(got.Key)) == errcat.Polish("not.a.real.key") {
-			t.Fatalf("missing Polish for %s", c.key)
+		// The sentence a person reads comes from the language packs and is
+		// gated there. Here the requirement is a real dictionary entry with
+		// its own diagnostic, not the unknown fallback.
+		if !errcat.KnownKey(string(got.Key)) || errcat.Diagnostic(string(got.Key)) == errcat.Diagnostic("not.a.real.key") {
+			t.Fatalf("%s did not resolve to a distinct dictionary entry", c.key)
 		}
 	}
 }

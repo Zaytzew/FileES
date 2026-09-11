@@ -513,6 +513,10 @@ func (service *GUIService) Reconnect() {
 }
 
 func (service *GUIService) onChange(vm guiapp.ViewModel) {
+	// One place renders the daemon's messages, so the window, the tray and
+	// the journal cannot disagree about what an error says, and a language
+	// change reaches all three at once.
+	service.renderDomainErrors(&vm)
 	next := projectViewModel(vm)
 
 	service.mu.Lock()

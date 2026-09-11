@@ -1890,6 +1890,7 @@ type jsonErrLine struct {
 	TS       string `json:"ts"`
 	Scope    string `json:"scope"`
 	Code     string `json:"code"`
+	Key      string `json:"key"`
 	Severity string `json:"severity"`
 	Hint     string `json:"hint"`
 	Msg      string `json:"msg"`
@@ -1902,14 +1903,15 @@ func parseErrLine(raw, defaultRepoID string) *contract.ErrorRecord {
 		return nil
 	}
 	return &contract.ErrorRecord{
-		ID:       e.TS + ":" + e.Code, // deterministic, good enough for v1
-		TS:       e.TS,
-		RepoID:   defaultRepoID,
-		Code:     e.Code,
-		Severity: e.Severity,
-		Hint:     e.Hint,
-		Msg:      e.Msg,
-		Details:  e.Details,
+		ID:         e.TS + ":" + e.Code, // deterministic, good enough for v1
+		TS:         e.TS,
+		RepoID:     defaultRepoID,
+		Code:       e.Code,
+		Severity:   e.Severity,
+		Hint:       e.Hint,
+		MessageKey: e.Key,
+		Msg:        e.Msg,
+		Details:    e.Details,
 	}
 }
 

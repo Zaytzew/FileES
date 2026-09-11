@@ -30,8 +30,11 @@ func TestClassifyConnectionDroppedAndSessionEnded(t *testing.T) {
 		if got.Key != c.key {
 			t.Fatalf("Classify(%q) = %s, want %s", c.raw, got.Key, c.key)
 		}
-		if errcat.Polish(string(got.Key)) == "" {
-			t.Fatalf("missing Polish for %s", c.key)
+		// The reader's sentence lives in the language packs, which have their
+		// own completeness gate. What classification owes is a registered
+		// identity with a log sentence.
+		if !errcat.KnownKey(string(got.Key)) || errcat.Diagnostic(string(got.Key)) == "" {
+			t.Fatalf("%s is not a registered identity with a diagnostic", c.key)
 		}
 	}
 }

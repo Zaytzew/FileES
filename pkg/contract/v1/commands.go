@@ -1014,8 +1014,13 @@ type ErrorRecord struct {
 	Code     string `json:"code"`
 	Severity string `json:"severity"`
 	Hint     string `json:"hint"`
-	Msg      string `json:"msg"`
-	Details  string `json:"details,omitempty"`
+	// MessageKey is the dictionary key for this entry, so a reader sees the
+	// journal in their own language instead of the English log sentence.
+	// Lines written before the key was carried have none; Msg stays the
+	// fallback for them rather than making them unreadable.
+	MessageKey string `json:"message_key,omitempty"`
+	Msg        string `json:"msg"`
+	Details    string `json:"details,omitempty"`
 }
 
 // ErrorListResult is the result for CmdErrorList. Errors are ordered globally

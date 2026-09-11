@@ -100,11 +100,10 @@ type Spec struct {
 	// the kind of each value. Details keys that are not declared here are
 	// diagnostic only: they are not parameters and not part of the schema.
 	Fields []Field
-	// Diagnostic is the English log sentence. It is not a UI string.
+	// Diagnostic is the English log sentence. It is not a UI string: the log
+	// is written by this process in English whoever is reading the interface,
+	// and the reader's sentence comes from a language pack served per locale.
 	Diagnostic string
-	// Polish is the default user sentence. An empty Details map must
-	// still produce a complete sentence; fields fill a more specific one.
-	Polish string
 }
 
 func (s Spec) Zero() bool { return s.Key == "" && s.Code == "" }

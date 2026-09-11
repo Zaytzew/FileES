@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	guiapp "filees/internal/gui/app"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errcat"
 	"filees/pkg/messagerender"
@@ -190,4 +191,40 @@ func (service *GUIService) domainMessage(code, key string, details map[string]st
 
 func (service *GUIService) domainHint(hint string) string {
 	return service.domainCatalogue.Load().hint(hint)
+}
+
+// renderDomainErrors turns the keys the projection carries into sentences.
+//
+// internal/gui/app deliberately holds no catalogue: it projects state, and the
+// wording belongs to the daemon. The composition is where the catalogue lives,
+// and every surface reads the view model from here, so rendering once at this
+// seam keeps the window, the tray and the journal saying the same thing.
+//
+// An entry the catalogue cannot name keeps whatever the daemon sent — for
+// journal lines written before keys were carried that is the English log
+// sentence, which is old data rather than a regression.
+func (service *GUIService) renderDomainErrors(vm *guiapp.ViewModel) {
+	if vm == nil || len(vm.Errors) == 0 {
+		return
+	}
+	catalogues := service.domainCatalogue.Load()
+	if catalogues == nil {
+		return
+	}
+	for i := range vm.Errors {
+		entry := &vm.Errors[i]
+		if entry.MessageKey == "" {
+			continue
+		}
+		sentence := catalogues.render(entry.Code, entry.MessageKey, nil)
+		if sentence == "" {
+			continue
+		}
+		if entry.MessageDetail != "" {
+			// The instance is appended, never folded into the wording: the
+			// sentence names the class of failure and the path names this one.
+			sentence += " — " + entry.MessageDetail
+		}
+		entry.Message = sentence
+	}
 }

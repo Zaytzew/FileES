@@ -47,7 +47,7 @@ func (f Fault) PresentationDetails() map[string]string {
 func New(key Key, details map[string]string, cause error) Fault {
 	spec, ok := ByKey(key)
 	if !ok {
-		spec = Spec{Code: CodeUnknown, Key: key, Severity: SevError, Hint: HintRetryLocal, Diagnostic: "Unexpected error", Polish: "Nieoczekiwany błąd"}
+		spec = Spec{Code: CodeUnknown, Key: key, Severity: SevError, Hint: HintRetryLocal, Diagnostic: "Unexpected error"}
 	}
 	return Fault{Spec: spec, Details: cloneDetails(details), Cause: cause}
 }

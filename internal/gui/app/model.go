@@ -191,7 +191,18 @@ type ErrorViewModel struct {
 	Code      string
 	Severity  string
 	Hint      string
-	Message   string
+	// MessageKey is the dictionary key. The sentence belongs to the daemon's
+	// catalogue, which this layer deliberately does not hold: rendering
+	// happens where the catalogue is, so one language change reaches the
+	// window, the tray and the journal at once.
+	MessageKey string
+	// MessageDetail is an instance the sentence does not carry — today the
+	// path of a reservation issue. It is appended after rendering, never
+	// placed inside the wording.
+	MessageDetail string
+	// Message is what to show when no catalogue rendered this entry: the
+	// daemon's own text for entries written before keys were carried.
+	Message string
 }
 
 type ActivityViewModel struct {

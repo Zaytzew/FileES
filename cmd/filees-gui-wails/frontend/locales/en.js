@@ -183,6 +183,8 @@ export default {
   "view.archive": "Automatically archive after (days)",
   "view.save": "Save view",
   "view.help": "0 disables the automatic threshold. You can also mark a folder as archived manually, regardless of age. Synchronization stays enabled.",
+  "journal.errorPrefix": "⚠ ERROR",
+  "offline.title": "The daemon is out of reach",
   "journal.title": "Journal",
   "journal.history": "FileES history",
   "journal.close": "Close journal",

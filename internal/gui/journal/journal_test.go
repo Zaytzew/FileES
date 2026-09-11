@@ -18,7 +18,7 @@ func TestBuildMergesErrorsAndAggregatesPublishedRevisionNewestFirst(t *testing.T
 		},
 		Errors: []app.ErrorViewModel{{ID: "err-1", RepoID: "docs", Timestamp: "2026-08-10T12:01:00Z", Code: "SVN-1", Severity: "ERROR", Message: "odmowa"}},
 	}
-	got := Build(vm)
+	got := Build(vm, testTexts())
 	if len(got) != 2 {
 		t.Fatalf("entries=%#v", got)
 	}
@@ -37,7 +37,7 @@ func TestJournalSeparatesReceivedFromPublishedAtSameRevision(t *testing.T) {
 		{RepoID: "repo", Path: "outgoing", Stage: "published", Revision: 117},
 		{RepoID: "repo", Path: "clean", Stage: "reconciled"},
 	}}
-	entries := Build(vm)
+	entries := Build(vm, testTexts())
 	if len(entries) != 3 {
 		t.Fatalf("merged directions: %+v", entries)
 	}
@@ -65,7 +65,7 @@ func TestBuildCollapsesConnectivityNoiseWithoutTouchingOtherErrors(t *testing.T)
 			{ID: "svn", RepoID: "docs", Timestamp: "2026-08-23T12:00:00Z", Code: "SVN-1", Severity: "ERROR", Message: "odmowa"},
 		},
 	}
-	got := BuildAt(vm, now)
+	got := BuildAt(vm, now, testTexts())
 	if len(got) != 2 {
 		t.Fatalf("entries=%#v", got)
 	}
@@ -107,7 +107,7 @@ func TestJournalTimestampPresentation(t *testing.T) {
 func TestJournalDetailsIncludeKnownObjectSizes(t *testing.T) {
 	size := int64(1536)
 	vm := app.ViewModel{Activity: []app.ActivityViewModel{{RepoID: "repo", Path: "audio/test.wav", Kind: "added", Stage: "published", Revision: 8, UpdatedAt: "2026-08-26T07:44:56Z", Size: &size}}}
-	entries := Build(vm)
+	entries := Build(vm, testTexts())
 	if len(entries) != 1 || entries[0].Details != "audio/test.wav · 1.5 KiB" {
 		t.Fatalf("entries=%#v", entries)
 	}
@@ -118,7 +118,7 @@ func TestBuildAggregatesInFlightPerRepositoryAndStage(t *testing.T) {
 		{RepoID: "repo", Path: "a", Stage: "pending", UpdatedAt: "2026-08-10T12:00:00Z"},
 		{RepoID: "repo", Path: "b", Stage: "pending", UpdatedAt: "2026-08-10T12:00:01Z"},
 	}}
-	got := Build(vm)
+	got := Build(vm, testTexts())
 	if len(got) != 1 || got[0].Summary != "repo — oczekujące zmiany: 2" {
 		t.Fatalf("entries=%#v", got)
 	}

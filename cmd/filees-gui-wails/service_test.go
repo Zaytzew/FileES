@@ -9,6 +9,7 @@ import (
 	"time"
 
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 	"filees/internal/gui/tray"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
@@ -44,7 +45,7 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 		Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Revision: 8, Title: "Wydanie r8", CreatedAt: refreshed.Format(time.RFC3339)}},
 	}
 
-	got := projectViewModel(vm)
+	got := projectViewModel(vm, journal.Texts{})
 	if !got.Connected || got.IconState != "busy" || got.LastRefresh != "2026-08-23T10:00:00Z" {
 		t.Fatalf("unexpected top-level projection: %+v", got)
 	}
@@ -74,7 +75,7 @@ func TestProjectViewModelMarksInitialCommitAsLocalProvisioning(t *testing.T) {
 		}},
 	}
 
-	got := projectViewModel(vm)
+	got := projectViewModel(vm, journal.Texts{})
 	if len(got.Repositories) != 1 {
 		t.Fatalf("repositories = %#v", got.Repositories)
 	}
@@ -101,7 +102,7 @@ func TestProjectViewModelBuildsAggregatePublicShareCardAndClosedSetIntents(t *te
 		},
 	}
 
-	got := projectViewModel(vm)
+	got := projectViewModel(vm, journal.Texts{})
 	if !got.PublicSharesKnown || len(got.PublicShares) != 2 || got.PublicShares[0].ChannelID != "live" {
 		t.Fatalf("public share projection = %#v", got.PublicShares)
 	}
@@ -141,7 +142,7 @@ func TestProjectViewModelClassifiesOwnershipWithoutExposingRealmIDs(t *testing.T
 			{ID: "unknown", ServerID: "server"},
 		},
 	}
-	got := projectViewModel(vm)
+	got := projectViewModel(vm, journal.Texts{})
 	if got.Repositories[0].Ownership != "owned" || got.Repositories[1].Ownership != "guest" || got.Repositories[2].Ownership != "unclassified" {
 		t.Fatalf("ownership projection = %#v", got.Repositories)
 	}
@@ -167,7 +168,7 @@ func TestQuarantineProjectionAndDirectIntentRemainOwnerScoped(t *testing.T) {
 			{ID: "ordinary", ServerID: "spot", OwnerRealmID: "realm-own"},
 		},
 	}
-	projected := projectViewModel(vm)
+	projected := projectViewModel(vm, journal.Texts{})
 	if !projected.Repositories[0].CanReviewQuarantine || projected.Repositories[1].CanReviewQuarantine || projected.Repositories[2].CanReviewQuarantine {
 		t.Fatalf("quarantine action projection = %+v", projected.Repositories)
 	}
@@ -196,7 +197,7 @@ func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 			RetainUntil: "2026-09-22T12:00:00Z", RecoveryOperationID: "delete-op", RecoveryAvailable: true,
 		}},
 	}
-	projected := projectViewModel(vm)
+	projected := projectViewModel(vm, journal.Texts{})
 	if len(projected.Repositories) != 1 {
 		t.Fatalf("repositories=%#v", projected.Repositories)
 	}
@@ -219,7 +220,7 @@ func TestPreservedCopyDetachCapabilityAndStateGuards(t *testing.T) {
 		Repos: []guiapp.RepoViewModel{{ID: "copy", ServerID: "lab", ServerDeleted: true, LocalCopyPreserved: true}}}
 	check := func(want bool) {
 		t.Helper()
-		p := projectViewModel(vm)
+		p := projectViewModel(vm, journal.Texts{})
 		_, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDetachRepository), RepoID: "copy"})
 		if allowed != want || p.Repositories[0].CanDetachLocalCopy != want {
 			t.Fatalf("guard want=%v projection=%+v allowed=%v", want, p.Repositories[0], allowed)
@@ -271,13 +272,13 @@ func TestUnattachedStatePillTranslatesToDirectAttach(t *testing.T) {
 		}},
 	}
 	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"})
-	projected := projectViewModel(vm)
+	projected := projectViewModel(vm, journal.Texts{})
 	if !allowed || !projected.Repositories[0].CanAttach || intent.Kind != tray.IntentAttachRepository || intent.RepoID != "docs" || intent.ServerID != "spot" {
 		t.Fatalf("attach intent=%+v allowed=%v", intent, allowed)
 	}
 	vm.Repos[0].Attached = true
 	vm.Repos[0].LocalPath = "/wc/docs"
-	if projectViewModel(vm).Repositories[0].CanAttach {
+	if projectViewModel(vm, journal.Texts{}).Repositories[0].CanAttach {
 		t.Fatal("attached repository still projects attach action")
 	}
 	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"}); allowed {
@@ -293,7 +294,7 @@ func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
 			{ID: "spot", DisplayName: "Spot", ViewSyncFailures: 2, ViewSyncError: "timeout", ViewGeneratedAt: "2026-09-01T11:00:00Z", ReservationsKnown: true, ReservationProjection: string(contract.ReservationSourceUnknown)},
 		},
 	}
-	got := projectViewModel(vm)
+	got := projectViewModel(vm, journal.Texts{})
 	if got.Projection.State != "server_unverified" || got.Projection.ServerName != "Manual" || got.Projection.AdditionalServers != 1 {
 		t.Fatalf("freshness projection=%+v", got.Projection)
 	}
@@ -317,7 +318,7 @@ func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
 	vm.Repos = []guiapp.RepoViewModel{{ID: "manual-docs", ServerID: "manual"}}
 	vm.Errors = []guiapp.ErrorViewModel{{RepoID: "manual-docs", Code: "COMMIT-3102"}}
 	vm.Notices = []guiapp.NoticeViewModel{{ID: "old-notice", RepoID: "manual-docs", Acked: false}}
-	got = projectViewModel(vm)
+	got = projectViewModel(vm, journal.Texts{})
 	if got.Projection.State != "server_unavailable" || got.Projection.ServerName != "Spot" || got.Projection.Reason != "timeout" {
 		t.Fatalf("failed server projection=%+v", got.Projection)
 	}
@@ -326,7 +327,7 @@ func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
 	}
 
 	vm.Connected = false
-	got = projectViewModel(vm)
+	got = projectViewModel(vm, journal.Texts{})
 	if got.Projection.State != "daemon_offline" || got.ReservationStatus.State != "daemon_offline" {
 		t.Fatalf("offline projection=%+v reservations=%+v", got.Projection, got.ReservationStatus)
 	}
@@ -346,7 +347,7 @@ func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testin
 			Revision: 8, UpdatedAt: now.Add(-4 * time.Minute).Format(time.RFC3339),
 		}},
 	}
-	got := projectViewModelAt(vm, now)
+	got := projectViewModelAt(vm, now, journal.Texts{})
 	if len(got.Journal) != 1 {
 		t.Fatalf("journal=%#v", got.Journal)
 	}
@@ -368,7 +369,7 @@ func TestProjectViewModelCarriesDaemonCycleAndPendingAction(t *testing.T) {
 		},
 		PendingActions: []guiapp.PendingAction{{ID: "lock:1", Kind: "lock", RepoID: "docs", Label: "Zakładanie blokady", Phase: guiapp.ActionAwaitingProjection, StartedAt: started}},
 	}
-	got := projectViewModelAt(vm, started)
+	got := projectViewModelAt(vm, started, journal.Texts{})
 	if got.NextCycleAt != earlier || !got.CycleRunning || got.Repositories[0].Cycle.ID != 7 {
 		t.Fatalf("cycle projection = %#v", got)
 	}
@@ -423,13 +424,13 @@ func TestRealmBrandingIsProjectedByRealmAndRequestedOnlyOnce(t *testing.T) {
 			ID: "cloud", RealmID: "realm-atmprojekt", DisplayName: "cloud.atmprojekt.pl",
 		}},
 	}
-	first := projectViewModel(vm)
+	first := projectViewModel(vm, journal.Texts{})
 	requests := service.applyRealmBrandingLocked(vm, &first)
 	if len(requests) != 1 || requests[0].serverID != "cloud" || first.Servers[0].AccentColor != "" {
 		t.Fatalf("first branding projection=%+v requests=%+v", first.Servers, requests)
 	}
 	service.brandingByRealm[requests[0].key] = "#2D5A3D"
-	second := projectViewModel(vm)
+	second := projectViewModel(vm, journal.Texts{})
 	requests = service.applyRealmBrandingLocked(vm, &second)
 	if len(requests) != 0 || second.Servers[0].AccentColor != "#2D5A3D" {
 		t.Fatalf("cached branding projection=%+v requests=%+v", second.Servers, requests)
@@ -438,7 +439,7 @@ func TestRealmBrandingIsProjectedByRealmAndRequestedOnlyOnce(t *testing.T) {
 	// The same server ID joined to another realm must not inherit the previous
 	// realm's colour while the new authoritative value is being requested.
 	vm.Servers[0].RealmID = "realm-other"
-	third := projectViewModel(vm)
+	third := projectViewModel(vm, journal.Texts{})
 	requests = service.applyRealmBrandingLocked(vm, &third)
 	if len(requests) != 1 || third.Servers[0].AccentColor != "" {
 		t.Fatalf("changed realm inherited stale branding: %+v requests=%+v", third.Servers, requests)
@@ -579,7 +580,7 @@ func TestReservationProjectionNeverExposesFencingToken(t *testing.T) {
 			Token: "never-send-this-token", OwnerLabel: "acme", CanRelease: true,
 		}},
 	}
-	snapshot := projectViewModel(vm)
+	snapshot := projectViewModel(vm, journal.Texts{})
 	if len(snapshot.Reservations) != 1 || snapshot.Reservations[0].ID != "safe-row-id" || !snapshot.Reservations[0].CanRelease {
 		t.Fatalf("reservation projection = %+v", snapshot.Reservations)
 	}
@@ -605,7 +606,7 @@ func TestLockReleaseProjectionLinksForeignReservationWithoutExposingToken(t *tes
 			Role: "requester", CounterpartyRealmAlias: "studio", State: "pending",
 		}},
 	}
-	snapshot := projectViewModel(vm)
+	snapshot := projectViewModel(vm, journal.Texts{})
 	if len(snapshot.Reservations) != 1 || snapshot.Reservations[0].LockReleaseRequestID != "request-1" || snapshot.Reservations[0].LockReleaseState != "pending" || snapshot.Reservations[0].CanRequestRelease {
 		t.Fatalf("reservation request projection=%+v", snapshot.Reservations)
 	}

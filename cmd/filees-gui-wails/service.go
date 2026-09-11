@@ -276,8 +276,12 @@ type JournalProjection struct {
 	Repository   string `json:"repository"`
 	Summary      string `json:"summary"`
 	Details      string `json:"details,omitempty"`
-	Severity     string `json:"severity,omitempty"`
-	Emphasized   bool   `json:"emphasized"`
+	// Diagnostics is the daemon's raw text for an entry the catalogue could
+	// not name. The full journal shows it as diagnostics; nothing folds it
+	// into a sentence, and the tray never receives it.
+	Diagnostics string `json:"diagnostics,omitempty"`
+	Severity    string `json:"severity,omitempty"`
+	Emphasized  bool   `json:"emphasized"`
 }
 
 // DetachmentProjection is one ended relationship, ready to render.
@@ -517,7 +521,7 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	// the journal cannot disagree about what an error says, and a language
 	// change reaches all three at once.
 	service.renderDomainErrors(&vm)
-	next := projectViewModel(vm)
+	next := projectViewModel(vm, journal.Texts{Chrome: service.localizeText, Hint: service.domainHint})
 
 	service.mu.Lock()
 	requests := service.applyRealmBrandingLocked(vm, &next)
@@ -889,11 +893,11 @@ func serverAllowsLock(vm guiapp.ViewModel, serverID string) bool {
 	return true
 }
 
-func projectViewModel(vm guiapp.ViewModel) Snapshot {
-	return projectViewModelAt(vm, time.Now())
+func projectViewModel(vm guiapp.ViewModel, texts journal.Texts) Snapshot {
+	return projectViewModelAt(vm, time.Now(), texts)
 }
 
-func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
+func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts) Snapshot {
 	result := Snapshot{
 		trayCauses:          vm.IconCauses(),
 		Connected:           vm.Connected,
@@ -1052,11 +1056,12 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			Updated: item.UpdatedAt, Revision: item.Revision, ErrorID: item.ErrorID, Size: item.Size,
 		})
 	}
-	for _, entry := range journal.BuildAt(vm, now) {
+	for _, entry := range journal.BuildAt(vm, now, texts) {
 		result.Journal = append(result.Journal, JournalProjection{
 			ID: entry.ID, Timestamp: entry.Timestamp, RelativeTime: entry.RelativeTime, ExactTime: entry.ExactTime,
 			Repository: entry.Repo, Summary: entry.Summary, Details: entry.Details,
-			Severity: entry.Severity, Emphasized: entry.Emphasized,
+			Diagnostics: entry.Diagnostics,
+			Severity:    entry.Severity, Emphasized: entry.Emphasized,
 		})
 	}
 	for _, item := range vm.Notices {

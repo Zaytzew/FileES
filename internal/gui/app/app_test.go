@@ -857,7 +857,7 @@ func TestAppFullRefreshIncludesStructuredErrorsAndTimestamp(t *testing.T) {
 			return &contract.ErrorListResult{Errors: []contract.ErrorRecord{{
 				ID: "err-1", TS: "2026-07-13T20:30:00Z", RepoID: "repo",
 				Code: "NET-4007", Severity: "WARN", Hint: "retry", Msg: "offline",
-				Details: "must not cross the presentation boundary",
+				Details: "raw diagnostic for the full journal only",
 			}}}, nil
 		},
 	}
@@ -873,8 +873,12 @@ func TestAppFullRefreshIncludesStructuredErrorsAndTimestamp(t *testing.T) {
 	if !vm.LastRefresh.Equal(wantRefresh) {
 		t.Fatalf("last refresh = %v, want %v", vm.LastRefresh, wantRefresh)
 	}
+	// The raw diagnostic is carried, not dropped: the full journal is the one
+	// surface that must show it. Keeping it out of the tray is asserted where
+	// the tray model is built, which is the only place that can enforce it.
 	want := ErrorViewModel{ID: "err-1", RepoID: "repo", Timestamp: "2026-07-13T20:30:00Z",
-		Code: "NET-4007", Severity: "WARN", Hint: "retry", Message: "offline"}
+		Code: "NET-4007", Severity: "WARN", Hint: "retry", Message: "offline",
+		Details: "raw diagnostic for the full journal only"}
 	if vm.Errors[0] != want {
 		t.Fatalf("error view model = %#v, want %#v", vm.Errors[0], want)
 	}

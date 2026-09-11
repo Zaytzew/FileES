@@ -193,6 +193,8 @@ export default {
   "view.archive": "Automatycznie do archiwalnych po (dni)",
   "view.save": "Zapisz widok",
   "view.help": "0 wyłącza dany próg automatyczny. Folder możesz też oznaczyć jako archiwalny ręcznie, niezależnie od wieku. Synchronizacja pozostaje włączona.",
+  "journal.errorPrefix": "⚠ BŁĄD",
+  "offline.title": "Demon jest poza zasięgiem",
   "journal.title": "Dziennik",
   "journal.history": "Historia FileES",
   "journal.close": "Zamknij dziennik",

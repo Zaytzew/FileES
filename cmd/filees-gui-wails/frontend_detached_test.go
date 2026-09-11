@@ -6,12 +6,13 @@ import (
 	"time"
 
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 )
 
 func detachedSnapshot(t *testing.T, detachments []guiapp.DetachmentViewModel) Snapshot {
 	t.Helper()
 	vm := guiapp.ViewModel{Connected: true, Detachments: detachments}
-	return projectViewModelAt(vm, time.Date(2026, 9, 3, 20, 0, 0, 0, time.UTC))
+	return projectViewModelAt(vm, time.Date(2026, 9, 3, 20, 0, 0, 0, time.UTC), journal.Texts{})
 }
 
 func TestTheFrontendGetsEveryJudgementAlreadyMade(t *testing.T) {
@@ -71,7 +72,7 @@ func TestTheProjectionAppliesNoLifetimeOfItsOwn(t *testing.T) {
 	old := guiapp.ViewModel{Connected: true, Detachments: []guiapp.DetachmentViewModel{{
 		ServerID: "manual", DisplayName: "manual", Cause: "self", At: "2026-08-01T09:00:00Z",
 	}}}
-	snapshot := projectViewModelAt(old, time.Date(2026, 9, 3, 20, 0, 0, 0, time.UTC))
+	snapshot := projectViewModelAt(old, time.Date(2026, 9, 3, 20, 0, 0, 0, time.UTC), journal.Texts{})
 	if len(snapshot.Detachments) != 1 {
 		t.Fatalf("detachments = %d, want 1: expiry is the daemon's job, not this layer's", len(snapshot.Detachments))
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -340,4 +341,164 @@ func TestRefreshWithoutAChosenLocaleDoesNothing(t *testing.T) {
 	if len(client.calls) != 0 {
 		t.Fatalf("calls = %v", client.calls)
 	}
+}
+
+// sequencedClient answers each call from its own slot, so a test can hold the
+// first read open while a second one is issued.
+type sequencedClient struct {
+	mu      sync.Mutex
+	calls   []string
+	gates   []chan struct{}
+	results []*contract.MessagesCatalogResult
+}
+
+func (c *sequencedClient) MessagesCatalog(_ context.Context, locale string) (*contract.MessagesCatalogResult, error) {
+	c.mu.Lock()
+	index := len(c.calls)
+	c.calls = append(c.calls, locale)
+	var gate chan struct{}
+	if index < len(c.gates) {
+		gate = c.gates[index]
+	}
+	var result *contract.MessagesCatalogResult
+	if index < len(c.results) {
+		result = c.results[index]
+	}
+	c.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	if result == nil {
+		// Running past the script means the test allowed an interleaving it
+		// did not describe. Saying so beats returning nil and failing later
+		// somewhere that looks unrelated.
+		return nil, fmt.Errorf("unscripted catalogue read %d for %q", index, locale)
+	}
+	return result, nil
+}
+
+func (c *sequencedClient) callCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.calls)
+}
+
+// A reconnect while a read is still in flight must issue a new read, and the
+// answer from the connection that is gone must not be taken.
+//
+// The daemon on the other side of a new connection may be a different build,
+// so an answer prepared by the previous one describes a release that is no
+// longer running.
+func TestReconnectDuringAnInFlightReadStartsOverAndDropsTheOldAnswer(t *testing.T) {
+	stale := make(chan struct{})
+	client := &sequencedClient{
+		gates: []chan struct{}{stale},
+		results: []*contract.MessagesCatalogResult{
+			catalogueResultFrom("pl", "stare", "cat-build-1"),
+			catalogueResultFrom("pl", "nowe", "cat-build-2"),
+		},
+	}
+	catalogues := newDomainCatalogues(client)
+
+	catalogues.use("pl") // in flight, held open
+	for i := 0; i < 200 && client.callCount() < 1; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	catalogues.refresh() // the connection came back while that read was open
+
+	for i := 0; i < 200 && client.callCount() < 2; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := client.callCount(); got != 2 {
+		t.Fatalf("calls = %d; a reconnect must ask again even with a read in flight", got)
+	}
+	waitForCatalogue(t, catalogues, "pl")
+	if got := catalogues.current.Load().Messages["passport.replacement_uncertain"].Text; got != "nowe" {
+		t.Fatalf("message = %q, want the answer from the new connection", got)
+	}
+
+	close(stale) // the pre-reconnect answer finally arrives
+	time.Sleep(150 * time.Millisecond)
+
+	current := catalogues.current.Load()
+	if got := current.Messages["passport.replacement_uncertain"].Text; got != "nowe" {
+		t.Fatalf("message = %q; an answer from the previous connection was installed", got)
+	}
+	if current.CatalogID != "cat-build-2" {
+		t.Fatalf("catalog id = %q; the held catalogue is not the new generation", current.CatalogID)
+	}
+}
+
+// An answer from a connection that is gone must not reach the cache either.
+// Serving it later from cache would show a previous build's wording with no
+// sign that anything had changed.
+func TestAnswerFromAPreviousConnectionIsNotCached(t *testing.T) {
+	stale := make(chan struct{})
+	client := &sequencedClient{
+		gates: []chan struct{}{stale},
+		results: []*contract.MessagesCatalogResult{
+			catalogueResultFrom("en", "old build", "cat-build-1"),
+			catalogueResultFrom("en", "new build", "cat-build-2"),
+		},
+	}
+	catalogues := newDomainCatalogues(client)
+
+	catalogues.use("en") // in flight, held open
+	for i := 0; i < 200 && client.callCount() < 1; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	catalogues.refresh() // the connection came back while that read was open
+	waitForCatalogue(t, catalogues, "en")
+
+	close(stale) // the answer from the connection that is gone finally arrives
+	time.Sleep(150 * time.Millisecond)
+
+	catalogues.mu.Lock()
+	cached := catalogues.byLocale["en"]
+	catalogues.mu.Unlock()
+	if cached == nil {
+		t.Fatal("the answer from the live connection was not cached")
+	}
+	if got := cached.Messages["passport.replacement_uncertain"].Text; got != "new build" {
+		t.Fatalf("cached message = %q; an answer from the previous connection reached the cache", got)
+	}
+	if got := catalogues.current.Load().Messages["passport.replacement_uncertain"].Text; got != "new build" {
+		t.Fatalf("shown message = %q; an answer from the previous connection was installed", got)
+	}
+}
+
+// The pending flag of a read issued after the reconnect must survive the
+// completion of the one it replaced, or the next switch would ask twice.
+func TestStaleCompletionDoesNotClearTheNewPendingRead(t *testing.T) {
+	stale := make(chan struct{})
+	current := make(chan struct{})
+	client := &sequencedClient{
+		gates: []chan struct{}{stale, current},
+		results: []*contract.MessagesCatalogResult{
+			catalogueResultFrom("pl", "stare", "cat-build-1"),
+			catalogueResultFrom("pl", "nowe", "cat-build-2"),
+		},
+	}
+	catalogues := newDomainCatalogues(client)
+
+	catalogues.use("pl")
+	for i := 0; i < 200 && client.callCount() < 1; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	catalogues.refresh()
+	for i := 0; i < 200 && client.callCount() < 2; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	close(stale) // the replaced read completes while the new one is open
+	time.Sleep(100 * time.Millisecond)
+
+	catalogues.use("pl") // must be recognised as already under way
+	time.Sleep(100 * time.Millisecond)
+	if got := client.callCount(); got != 2 {
+		t.Fatalf("calls = %d; the in-flight read was forgotten", got)
+	}
+	close(current)
+	waitForCatalogue(t, catalogues, "pl")
 }

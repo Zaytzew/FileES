@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Wails dark: --theme-background / panel / text mixed toward orange. -->
+    <color name="filees_background">#07101D</color>
+    <color name="filees_panel">#101C2C</color>
+    <color name="filees_text">#EFE3DD</color>
+    <color name="filees_soft">#C4B8AE</color>
+    <color name="filees_muted">#A39B94</color>
+    <color name="filees_line">#2A3545</color>
+    <color name="filees_navy_container">#14294D</color>
+    <color name="filees_orange_container">#3D2410</color>
+    <color name="filees_destructive">#FF7B84</color>
+    <color name="filees_on_destructive">#07101D</color>
+    <color name="filees_scrim">#CC07101D</color>
+</resources>

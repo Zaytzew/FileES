@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Brand constants (Wails --filees-navy / --filees-orange). -->
     <color name="filees_navy">#0B1D3A</color>
     <color name="filees_orange">#FF6A00</color>
     <color name="filees_white">#FFFFFF</color>
-
-    <!-- Material3 container tones for filees_navy/filees_orange. Not a
-         literal Wails port, just softer surfaces for the "container" role
-         so the FAB/secondary cards read as a step down from full-strength
-         primary/secondary, not identical to them. Contrast is guaranteed
-         by construction, not tuned by eye: the navy container stays dark
-         enough for white text, the orange container stays light enough for
-         navy text. -->
     <color name="filees_navy_container">#14294D</color>
     <color name="filees_orange_container">#FFDCC2</color>
+
+    <!-- Surface roles from cmd/filees-gui-wails/frontend/theme.css light. -->
+    <color name="filees_background">#EDF2F6</color>
+    <color name="filees_panel">#FFFFFF</color>
+    <color name="filees_text">#0B1D3A</color>
+    <color name="filees_soft">#42536A</color>
+    <color name="filees_muted">#5F7085</color>
+    <color name="filees_line">#D8DEE6</color>
+    <color name="filees_accent">#FF6A00</color>
+    <color name="filees_on_accent">#FFFFFF</color>
+    <color name="filees_destructive">#C43D49</color>
+    <color name="filees_on_destructive">#FFFFFF</color>
+    <color name="filees_scrim">#CCEDF2F6</color>
 </resources>

@@ -1,51 +1,103 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- concepts/ANDROID_BRAND_ALIGNMENT_CONCEPT.md §1: the previous theme
-         only set colorPrimary/colorPrimaryContainer/colorOnPrimary. Every
-         Material3 component reads color roles in matched pairs
-         (containerX + onContainerX); leaving onPrimaryContainer at its
-         Material3 default while forcing colorPrimaryContainer to a dark
-         navy broke contrast wherever a component uses that pair (the FAB's
-         default style, notably). Fixing the one pair that's provably wrong
-         and hoping the rest are fine was rejected in favor of defining the
-         whole primary+secondary family explicitly, at once. -->
+    <!-- Surfaces follow Wails theme.css roles. Chrome (toolbar, status,
+         navigation) stays brand navy so the wordmark lockup remains on a
+         dark field in both day and night. Do not reuse colorPrimary as the
+         window fill — that made navy dominate every list row. -->
     <style name="Theme.Filees" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/filees_navy</item>
         <item name="android:navigationBarColor">@color/filees_navy</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/filees_background</item>
+        <item name="android:colorBackground">@color/filees_background</item>
+        <item name="colorOnBackground">@color/filees_text</item>
 
         <item name="colorPrimary">@color/filees_navy</item>
         <item name="colorOnPrimary">@color/filees_white</item>
         <item name="colorPrimaryContainer">@color/filees_navy_container</item>
         <item name="colorOnPrimaryContainer">@color/filees_white</item>
 
-        <item name="colorSecondary">@color/filees_orange</item>
-        <item name="colorOnSecondary">@color/filees_white</item>
+        <item name="colorSecondary">@color/filees_accent</item>
+        <item name="colorOnSecondary">@color/filees_on_accent</item>
         <item name="colorSecondaryContainer">@color/filees_orange_container</item>
         <item name="colorOnSecondaryContainer">@color/filees_navy</item>
 
+        <item name="colorSurface">@color/filees_panel</item>
+        <item name="colorOnSurface">@color/filees_text</item>
+        <item name="colorOnSurfaceVariant">@color/filees_muted</item>
+        <item name="colorOutline">@color/filees_line</item>
+        <item name="colorError">@color/filees_destructive</item>
+        <item name="colorOnError">@color/filees_on_destructive</item>
+
         <item name="actionMenuTextColor">@color/filees_white</item>
+        <item name="android:textColorPrimary">@color/filees_text</item>
+        <item name="android:textColorSecondary">@color/filees_muted</item>
+        <item name="materialButtonStyle">@style/Widget.Filees.Button.Filled</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.Filees.Button.OutlinedButton</item>
+        <item name="borderlessButtonStyle">@style/Widget.Filees.Button.TextButton</item>
     </style>
 
-    <!-- Widget.Material3.Button.{TextButton,OutlinedButton} default to
-         ?attr/colorPrimary for their text/stroke color. That's correct for
-         a light Material3 surface, but here colorPrimary IS the brand navy
-         that also colors this app's dark background/toolbar - so on any
-         TextButton/OutlinedButton the text renders navy-on-near-navy,
-         effectively invisible. Same bug class as the FAB fix above, this
-         time on the foreground role instead of a container pair. Fixed by
-         giving these two roles their own styles instead of widening
-         colorPrimary's job further. -->
+    <style name="TextAppearance.Filees.Heading" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textColor">@color/filees_text</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="TextAppearance.Filees.Name" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textColor">@color/filees_text</item>
+    </style>
+
+    <style name="TextAppearance.Filees.Meta" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">@color/filees_muted</item>
+    </style>
+
+    <style name="TextAppearance.Filees.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">@color/filees_soft</item>
+    </style>
+
+    <style name="TextAppearance.Filees.Button" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="Widget.Filees.Button.Filled" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/filees_touch_min</item>
+        <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
+        <item name="backgroundTint">@color/filees_navy</item>
+        <item name="android:textColor">@color/filees_white</item>
+        <item name="iconTint">@color/filees_white</item>
+        <item name="cornerRadius">@dimen/filees_radius</item>
+    </style>
+
+    <!-- Text/outline stay orange: colorPrimary is navy chrome, so Material3
+         defaults would paint these navy-on-navy again (concept §1b). -->
     <style name="Widget.Filees.Button.TextButton" parent="Widget.Material3.Button.TextButton">
-        <item name="android:textColor">@color/filees_orange</item>
-        <item name="rippleColor">@color/filees_orange</item>
-        <item name="iconTint">@color/filees_orange</item>
+        <item name="android:minHeight">@dimen/filees_touch_min</item>
+        <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
+        <item name="android:textColor">@color/filees_accent</item>
+        <item name="rippleColor">@color/filees_accent</item>
+        <item name="iconTint">@color/filees_accent</item>
     </style>
 
     <style name="Widget.Filees.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="android:textColor">@color/filees_orange</item>
-        <item name="strokeColor">@color/filees_orange</item>
-        <item name="rippleColor">@color/filees_orange</item>
-        <item name="iconTint">@color/filees_orange</item>
+        <item name="android:minHeight">@dimen/filees_touch_min</item>
+        <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
+        <item name="android:textColor">@color/filees_accent</item>
+        <item name="strokeColor">@color/filees_accent</item>
+        <item name="rippleColor">@color/filees_accent</item>
+        <item name="iconTint">@color/filees_accent</item>
+        <item name="cornerRadius">@dimen/filees_radius</item>
+    </style>
+
+    <style name="Widget.Filees.Button.TextButton.Destructive" parent="Widget.Filees.Button.TextButton">
+        <item name="android:textColor">@color/filees_destructive</item>
+        <item name="rippleColor">@color/filees_destructive</item>
+        <item name="iconTint">@color/filees_destructive</item>
+    </style>
+
+    <style name="Widget.Filees.Button.OutlinedButton.Destructive" parent="Widget.Filees.Button.OutlinedButton">
+        <item name="android:textColor">@color/filees_destructive</item>
+        <item name="strokeColor">@color/filees_destructive</item>
+        <item name="rippleColor">@color/filees_destructive</item>
+        <item name="iconTint">@color/filees_destructive</item>
     </style>
 </resources>

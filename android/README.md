@@ -1,5 +1,10 @@
 # FileES Android client — Etap 6
 
+Surfaces follow the Wails colour roles in `res/values/colors.xml` (and
+`values-night/`): canvas, panel, text, muted, line, orange accent, destructive.
+The toolbar stays navy for the wordmark. Do not treat Material3 defaults as
+the FileES palette.
+
 This is the Kotlin/Gradle side of the mobile client from
 `concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md`. The Go core (protocol,
 worker-side dispatcher, local store, upload queue, embedded SSH transport)

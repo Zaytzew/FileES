@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="filees_space">8dp</dimen>
+    <dimen name="filees_space_section">20dp</dimen>
+    <dimen name="filees_gutter">16dp</dimen>
+    <dimen name="filees_row_pad_v">10dp</dimen>
+    <dimen name="filees_row_min">56dp</dimen>
+    <dimen name="filees_touch_min">48dp</dimen>
+    <dimen name="filees_radius">10dp</dimen>
+    <dimen name="filees_hairline">1dp</dimen>
+    <dimen name="filees_icon">40dp</dimen>
+    <dimen name="filees_wordmark_height">24dp</dimen>
+</resources>

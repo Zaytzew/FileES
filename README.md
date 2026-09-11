@@ -39,10 +39,7 @@ Target UX: a tray automaton that invisibly keeps files synchronized with the ser
 - **[manual-filees.html](manual-filees.html)** — a redirect stub to `manual/`, kept so old links don't die.
 
 **Desktop GUI:** `cmd/filees-gui-wails` (Wails/WebView) is the current and
-only actively developed desktop client. The old `cmd/filees-gui`
-(Fyne+zenity/yad on Linux, WinForms/PowerShell on Windows) is
-**deprecated / abandoned** and retained only as deployment history pending
-mechanical removal. It is not a supported alternative or a parity target.
+only desktop client. The former Fyne/YAD/Zenity/WinForms renderer has been removed; its history remains in SVN.
 
 The current desktop client supports, on Windows, fully joining another
 installation to an existing realm, listing every realm repository in
@@ -498,7 +495,7 @@ System notifications are secondary to the state shown in the menu. The MVP shows
 
 ```text
 cmd/filees/              daemon, CLI and client composition root
-cmd/filees-gui/          composition root and lifecycle of the presentation layer
+cmd/filees-gui-wails/    composition root and lifecycle of the presentation layer
 cmd/filees-gui-wails/    target Wails/WebView client for the same IPC projection
 android/                 mobile Kotlin client, gomobile bridge through pkg/mobileclient
 internal/gui/            model, actions, tray, platform and notifications
@@ -534,10 +531,7 @@ internal/serverinstall/  core of the manifest-based server installer
 internal/release*/       envelopes, signatures and artifact publishing
 ```
 
-The historical tray renderer used `fyne.io/systray`, isolated as an adapter
-in `internal/gui/tray`. `cmd/filees-gui` and its Fyne+zenity/yad/WinForms
-surface are **deprecated / abandoned**. The code remains temporarily for
-migration and packaging cleanup; no new product behaviour belongs there.
+The former systray/Fyne renderer and native application dialogs have been removed. Shared intents, status artwork, models and action controllers remain.
 
 **The current GUI is `cmd/filees-gui-wails`**, pinned to Wails
 `v3.0.0-beta.6`. The decision was made 2026-08-26 (r603): what started as a
@@ -562,7 +556,7 @@ Wails does not introduce a second client model: it runs the same
 WebView renders the received projection and returns intents. It has its
 own EXE, a static frontend with no Node/Vite, and `Snapshot`, `Refresh` and
 `Reconnect`. The `Open`, `Lock` and `Release` actions go through the same
-`internal/gui/actions` as Fyne; JavaScript never calls IPC directly. The
+`internal/gui/actions` controller; JavaScript never calls IPC directly. The
 Windows window is frameless, and hiding the WebView scrollbar does not
 disable scrolling. Active locks are part of the projection; an inline
 release passes only an opaque ID, and the fencing token stays in Go. The
@@ -571,30 +565,9 @@ state plus repository and lock counts. The `FileES` submenu routes restart
 and shutdown of the whole daemon+GUI pair to a shared controller; there is
 no longer a local action that ends only the renderer.
 
-### Historical implementation staging of `cmd/filees-gui`
+### Operating-system boundary
 
-The following stages document how the abandoned renderer established the
-shared `internal/gui/app`, `internal/gui/actions` and platform boundaries.
-They are historical evidence, not the current desktop roadmap.
-
-1. **Tray-less core** — `internal/gui/app`, the `DaemonClient` interface, a single state loop, init, reconnect, resync, debounce, plus an architectural and a unit test with no GUI.
-2. **Tray adapter** — `internal/gui/tray` on `fyne.io/systray`, five icons, a menu rendered from a `ViewModel`, and user intents with no direct IPC access.
-3. **Platform integrations** — 3A: clean interfaces and a fake backend; 3B: Linux (opening directories, pickers, notifications, XDG autostart); 3C: Windows equivalents; 3D: the non-blocking `tray.Intent` controller that coordinates the platform and the `DaemonClient` boundary without importing an IPC implementation.
-4. **MVP integration and acceptance** — `cmd/filees-gui`, metadata and packaging of existing assets, app ↔ fake-IPC tests, manual tests on both platforms, and verification of daemon restart, a slow GUI, and multiple repositories.
-
-Stages 1 and 2 are complete. The `fyne.io/systray` adapter is decoupled from IPC and the contract by a `ViewModel`, has five embedded icons (PNG/ICO), a deterministic menu model, user intents, and renderer and import-boundary tests. The detailed scope of the following stages and the checklist live in `gui-assumptions.md`.
-
-Stage 3A is complete: `internal/gui/platform` defines clean system interfaces, classification of unavailability and operational errors, and a concurrency-safe fake backend. The package depends on neither the tray, the app, the IPC contract nor the engine; an architectural test guards the boundary.
-
-Stage 3B is complete: the Linux adapter provides `xdg-open`, file and directory selection via Zenity/KDialog, grouped and rate-limited `notify-send` notifications, and an atomic XDG autostart with `Hidden=true` support. Desktop calls are injected and tested without opening real windows.
-
-Stage 3C is complete implementation-wise: the Windows adapter covers Explorer, PowerShell/WinForms file and directory pickers, `ToastGeneric`, and HKCU autostart. Processes and the registry are injected; quoting follows Windows rules, and notifications require FileES's own AUMID, registered by the Stage 4 package. The picker, prompts and notifications run PowerShell with no visible console window and set per-monitor DPI awareness before creating a window. Native acceptance testing remains part of every Windows release checklist.
-
-Stage 3D is complete: `internal/gui/actions` handles tray intents non-blockingly, re-checks model and repository freshness after a picker interaction, validates paths before IPC, and serializes lock/unlock within a single repository. The controller owns the lifecycle of its own tasks and single-flight for directory opening. An architectural test protects the import boundary.
-
-Stage 4 is complete implementation-wise. `cmd/filees-gui` is the composition root for `ipcclient`, the `app` model, the `tray` renderer, the `notifications` policy, the `actions` controller, and the platform adapter. The lifecycle shares cancellation across system signals, a full FileES restart/shutdown, and tray shutdown; it waits on controller tasks and renderer listeners, and a manual reconnect goes through the `app` event loop. A per-user lock blocks a second instance before tray initialization. A vertical test with a real IPC transport covers multiple repositories plus daemon shutdown and restart; a server shutdown closes active streams, so reconnect does not depend on process death. The `packaging/build-gui.sh` script produces a pure-Go Linux/Windows bundle in fresh directories and passes the version from `VERSION` into the GUI and WiX. Linux gets a per-user install, and the WiX MSI source creates a Windows Start Menu shortcut with the AUMID. Acceptance in real sessions on both systems is described in `packaging/ACCEPTANCE.md` and remains a release gate.
-
-GUI-process autostart is managed without starting the tray, via `filees-gui --autostart status|enable|disable`. Status distinguishes a correct `enabled` entry from `enabled-stale`, which points at a different command. The entry keeps the executable's absolute path and the `--socket` parameter, so `enable` should only be run once the file is in its final install location. The operation is per-user: XDG on Linux and HKCU on Windows.
+`internal/gui/platform.Backend` supplies folder opening, notifications and autostart. Wails supplies file pickers and application dialogs. There is no fallback to YAD, Zenity, KDialog or WinForms. Historical implementation stages are available in SVN.
 
 ### First-release scope
 

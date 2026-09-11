@@ -9,8 +9,7 @@ import (
 )
 
 var (
-	// Wails v3 currently fails to turn the multi-resolution ICO files used by
-	// fyne/systray into HICON handles. PNG keeps the same FileES artwork and
+	// PNG keeps the same FileES artwork and
 	// status overlays while using Wails' reliable image decoder path.
 	//go:embed assets/linux/active.png
 	wailsWindowsActive []byte
@@ -26,8 +25,7 @@ var (
 	wailsWindowsDisconnected []byte
 )
 
-// WailsPlatformIcons returns renderer-specific tray images. Keep this separate
-// from PlatformIcons: the legacy systray backend correctly requires ICO files.
+// WailsPlatformIcons returns PNG tray images for the Wails decoder.
 func WailsPlatformIcons() IconSet {
 	return IconSet{
 		app.IconActive:       wailsWindowsActive,

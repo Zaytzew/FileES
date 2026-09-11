@@ -30,12 +30,8 @@ var forbiddenPkgs = []string{
 func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	root := moduleRoot(t)
 
-	// Collect the full transitive dependency set of all GUI packages. The
-	// composition root is included as soon as cmd/filees-gui exists.
+	// Shared presentation packages may not reach the daemon engine.
 	patterns := []string{"filees/internal/gui/..."}
-	if _, err := os.Stat(filepath.Join(root, "cmd", "filees-gui")); err == nil {
-		patterns = append(patterns, "filees/cmd/filees-gui")
-	}
 	args := append([]string{"list", "-buildvcs=false", "-f", `{{join .Deps "\n"}}`}, patterns...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root
@@ -92,7 +88,7 @@ func TestInternalGUIDoesNotImportIPCImplementation(t *testing.T) {
 	}
 	deps := "\n" + strings.TrimSpace(string(out)) + "\n"
 	if strings.Contains(deps, "\nfilees/pkg/ipcclient\n") {
-		t.Error("internal/gui imports IPC implementation; only cmd/filees-gui may compose it")
+		t.Error("internal/gui imports IPC implementation; only cmd/filees-gui-wails may compose it")
 	}
 }
 

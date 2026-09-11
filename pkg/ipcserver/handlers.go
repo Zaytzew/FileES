@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/activity"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errcat"
 	"filees/pkg/passport"
@@ -1153,10 +1154,7 @@ func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	entries := source.List()
-	if len(entries) > limit {
-		entries = entries[:limit]
-	}
+	entries := activity.LimitGroups(source.List(), limit)
 	result := make([]contract.ActivityRecord, len(entries))
 	for i, entry := range entries {
 		result[i] = contract.ActivityRecord{RepoID: entry.RepoID, Path: entry.Path, Kind: string(entry.Kind), Stage: string(entry.Stage), DetectedAt: entry.DetectedAt.Format(time.RFC3339Nano), UpdatedAt: entry.UpdatedAt.Format(time.RFC3339Nano), Revision: entry.Revision, ErrorID: entry.ErrorID, Size: entry.Size}

@@ -521,12 +521,19 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 
 	service.mu.Lock()
 	requests := service.applyRealmBrandingLocked(vm, &next)
+	reconnected := vm.Connected && !service.snapshot.Connected
 	next.Revision = service.snapshot.Revision + 1
 	service.snapshot = next
 	service.view = vm
 	emitter := service.emitter
 	observer := service.observer
 	service.mu.Unlock()
+	if reconnected {
+		// The daemon on the other end of a new connection may be a different
+		// build serving a different catalogue, so the held one is re-read
+		// rather than trusted across the gap.
+		go service.domainCatalogue.Load().refresh()
+	}
 	for _, request := range requests {
 		go service.loadRealmBranding(request)
 	}

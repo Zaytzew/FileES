@@ -31,10 +31,20 @@ type domainCatalogueClient interface {
 type domainCatalogues struct {
 	client  domainCatalogueClient
 	current atomic.Pointer[messagerender.Catalogue]
+	// changed is called after the held catalogue changes, so what is already
+	// on screen is rendered again instead of waiting for the next projection.
+	changed func()
 
-	mu       sync.Mutex
-	byLocale map[string]*messagerender.Catalogue
-	pending  map[string]bool
+	mu sync.Mutex
+	// wanted is the locale the interface last asked for. An answer for any
+	// other locale is stale by the time it arrives and must not be installed.
+	wanted string
+	// catalogID is the generation the cached entries came from. A daemon of a
+	// different build serves a different one, and entries from two
+	// generations must never be mixed.
+	catalogID string
+	byLocale  map[string]*messagerender.Catalogue
+	pending   map[string]bool
 }
 
 func newDomainCatalogues(client domainCatalogueClient) *domainCatalogues {
@@ -42,6 +52,25 @@ func newDomainCatalogues(client domainCatalogueClient) *domainCatalogues {
 		client:   client,
 		byLocale: map[string]*messagerender.Catalogue{},
 		pending:  map[string]bool{},
+	}
+}
+
+// onChanged installs the callback used to re-render what is already displayed.
+func (d *domainCatalogues) onChanged(callback func()) {
+	if d == nil {
+		return
+	}
+	d.changed = callback
+}
+
+// notify re-renders on its own goroutine, never on the caller's.
+//
+// The tray resolves a language change while holding its own mutex and calls
+// use() from inside it; the snapshot observer it installed takes that same
+// mutex. Calling back synchronously would deadlock the two against each other.
+func (d *domainCatalogues) notify() {
+	if d.changed != nil {
+		go d.changed()
 	}
 }
 
@@ -60,9 +89,13 @@ func (d *domainCatalogues) use(locale string) {
 		return
 	}
 	d.mu.Lock()
+	// Record the choice before anything else: a reply for a locale that is no
+	// longer wanted is discarded on arrival rather than overruling the user.
+	d.wanted = locale
 	if cached, ok := d.byLocale[locale]; ok {
 		d.mu.Unlock()
 		d.current.Store(cached)
+		d.notify()
 		return
 	}
 	if d.pending[locale] {
@@ -73,6 +106,27 @@ func (d *domainCatalogues) use(locale string) {
 	d.mu.Unlock()
 
 	go d.fetch(locale)
+}
+
+// refresh drops what is cached and asks again for the locale in use.
+//
+// It is called when the daemon connection is re-established, because the
+// daemon on the other end may be a different build with a different
+// catalogue. Keeping the old answer would show a previous release's wording
+// with no sign that anything had changed.
+func (d *domainCatalogues) refresh() {
+	if d == nil || d.client == nil {
+		return
+	}
+	d.mu.Lock()
+	locale := d.wanted
+	d.byLocale = map[string]*messagerender.Catalogue{}
+	d.catalogID = ""
+	d.mu.Unlock()
+	if locale == "" {
+		return
+	}
+	d.use(locale)
 }
 
 func (d *domainCatalogues) fetch(locale string) {
@@ -90,12 +144,26 @@ func (d *domainCatalogues) fetch(locale string) {
 		return
 	}
 	catalogue := catalogueFromResult(result)
+	// A different generation means these entries and the cached ones describe
+	// different builds. Drop the old ones rather than let a later switch serve
+	// a mixture of two catalogues.
+	if d.catalogID != "" && result.CatalogID != d.catalogID {
+		d.byLocale = map[string]*messagerender.Catalogue{}
+	}
+	d.catalogID = result.CatalogID
 	// Key the cache by what was served, not by what was asked for: an
 	// unsupported tag is answered in the base locale, and caching that under
 	// the requested tag would hide the substitution from a later reader.
 	d.byLocale[result.Locale] = catalogue
+	// The interface may have moved on while this was in flight. Caching the
+	// answer is still right; showing it is not.
+	stale := d.wanted != locale
 	d.mu.Unlock()
+	if stale {
+		return
+	}
 	d.current.Store(catalogue)
+	d.notify()
 }
 
 func catalogueFromResult(result *contract.MessagesCatalogResult) *messagerender.Catalogue {
@@ -176,7 +244,28 @@ func diagnosticMessage(code, key string) string {
 // exists. Presentation keeps working before that: render falls back to naming
 // the code and key, which is what an unknown message looks like anyway.
 func (service *GUIService) setDomainCatalogues(catalogues *domainCatalogues) {
+	// A catalogue that arrives after a screen was drawn has to reach that
+	// screen. Without this the wording waits for the next projection change,
+	// so the first error after start, and every message right after a language
+	// switch, would be shown with the previous catalogue or as a bare code.
+	catalogues.onChanged(service.republishRenderedView)
 	service.domainCatalogue.Store(catalogues)
+}
+
+// republishRenderedView renders the view already held and publishes it again.
+//
+// It goes through the ordinary projection path, so the window, the tray and
+// the journal receive the new wording exactly as they receive any other
+// change, with the revision advanced.
+func (service *GUIService) republishRenderedView() {
+	service.mu.RLock()
+	vm := service.view
+	ready := service.emitter != nil || service.observer != nil
+	service.mu.RUnlock()
+	if !ready {
+		return
+	}
+	service.onChange(vm)
 }
 
 // useDomainLocale switches the domain catalogue to the language the interface

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,8 @@ import (
 )
 
 const Schema = "filees.activity/v1"
+
+// DefaultLimit bounds activity groups, not paths inside a commit.
 const DefaultLimit = 20
 
 type Kind string
@@ -159,12 +162,46 @@ func (j *Journal) sorted() []Entry {
 
 func (j *Journal) trim() {
 	ordered := j.sorted()
-	if len(ordered) <= j.limit {
+	kept := LimitGroups(ordered, j.limit)
+	if len(kept) == len(ordered) {
 		return
 	}
-	for _, entry := range ordered[j.limit:] {
-		delete(j.entries, key(entry.RepoID, entry.Path))
+	j.entries = make(map[string]Entry, len(kept))
+	for _, entry := range kept {
+		j.entries[key(entry.RepoID, entry.Path)] = entry
 	}
+}
+
+// LimitGroups selects the first limit logical groups from newest-first entries,
+// retaining every member even when paths from different groups are interleaved.
+// It is shared by durable retention and IPC: neither may cut a commit in half.
+// The result can contain more paths than limit. This is a latest-path activity
+// feed, not immutable SVN history: a later stage for a path replaces its row.
+func LimitGroups(entries []Entry, limit int) []Entry {
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	type groupKey struct {
+		repo, stage, result string
+	}
+	selected := make(map[groupKey]bool)
+	result := make([]Entry, 0, len(entries))
+	for _, entry := range entries {
+		key := groupKey{repo: entry.RepoID, stage: string(entry.Stage)}
+		switch entry.Stage {
+		case Published, Received:
+			key.result = strconv.FormatInt(entry.Revision, 10)
+		case Failed:
+			key.result = entry.ErrorID
+		}
+		if !selected[key] && len(selected) < limit {
+			selected[key] = true
+		}
+		if selected[key] {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 func (j *Journal) persist() error {

@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestJournalIsGloballyBoundedAndNewestFirst(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 	j.now = func() time.Time { return now }
-	for _, item := range []struct{ repo, path string }{{"a", "one"}, {"b", "two"}, {"a", "three"}} {
+	for _, item := range []struct{ repo, path string }{{"a", "one"}, {"b", "two"}, {"c", "three"}} {
 		if err := j.Record(Entry{RepoID: item.repo, Path: item.path, Kind: Modified, Stage: Pending}); err != nil {
 			t.Fatal(err)
 		}
@@ -72,6 +73,58 @@ func TestJournalIsGloballyBoundedAndNewestFirst(t *testing.T) {
 	entries := j.List()
 	if len(entries) != 2 || entries[0].Path != "three" || entries[1].Path != "two" {
 		t.Fatalf("entries=%+v", entries)
+	}
+}
+
+func TestCommitGroupsSurviveRetentionAndRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity.json")
+	j, err := Open(path, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []int{2, 5, 22} {
+		for i := 0; i < n; i++ {
+			if err := j.Record(Entry{RepoID: "repo", Path: fmt.Sprintf("batch%d/file%d", n, i), Kind: Added, Stage: Published, Revision: int64(n)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	j, err = Open(path, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[int64]int{}
+	for _, e := range j.List() {
+		counts[e.Revision]++
+	}
+	for _, n := range []int64{2, 5, 22} {
+		if counts[n] != int(n) {
+			t.Fatalf("groups after restart: %v", counts)
+		}
+	}
+	if err := j.Record(Entry{RepoID: "other", Path: "next", Kind: Added, Stage: Published, Revision: 99}); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range j.List() {
+		if e.RepoID == "repo" && e.Revision == 2 {
+			t.Fatal("oldest group not evicted whole")
+		}
+	}
+	if len(j.List()) != 28 {
+		t.Fatalf("remaining paths: %d", len(j.List()))
+	}
+}
+
+func TestLimitGroupsKeepsInterleavedMembersAndSeparatesDirections(t *testing.T) {
+	entries := []Entry{
+		{RepoID: "a", Stage: Published, Revision: 7, Path: "one"},
+		{RepoID: "b", Stage: Published, Revision: 7, Path: "other"},
+		{RepoID: "a", Stage: Received, Revision: 7, Path: "incoming"},
+		{RepoID: "a", Stage: Published, Revision: 7, Path: "two"},
+	}
+	got := LimitGroups(entries, 1)
+	if len(got) != 2 || got[0].Path != "one" || got[1].Path != "two" {
+		t.Fatalf("cut or mixed groups: %+v", got)
 	}
 }
 

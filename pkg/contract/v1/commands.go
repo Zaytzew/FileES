@@ -896,6 +896,9 @@ type RepoLifecycleResult struct {
 }
 
 type RepoActivityPayload struct {
+	// Limit counts logical activity groups, not individual paths. A completed
+	// group is identified by repository, direction and revision. Default 20,
+	// maximum 100 groups; every retained group's known paths are returned.
 	Limit int `json:"limit,omitempty"`
 }
 

@@ -32,12 +32,6 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 	if backend == nil {
 		return nil
 	}
-	if folderPicker == nil {
-		folderPicker = backend
-	}
-	if filePicker == nil {
-		filePicker = backend
-	}
 	intents := make(chan tray.Intent, 32)
 	service.attachActions(intents)
 	return actions.New(actions.Config{

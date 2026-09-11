@@ -10,7 +10,6 @@ import (
 
 func TestPlatformIconsContainsEveryState(t *testing.T) {
 	for name, icons := range map[string]IconSet{
-		"native": PlatformIcons(),
 		"wails":  WailsPlatformIcons(),
 	} {
 		for _, state := range []app.IconState{

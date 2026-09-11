@@ -1,11 +1,7 @@
 # FileES GUI — archiwalna checklista starego renderera
 
-**Status: deprecated / abandoned. Nie używać do odbioru bieżącego
-wydania.** Dokument dotyczy wyłącznie historycznego `cmd/filees-gui`
-(Fyne+zenity/yad na Linuksie, WinForms/PowerShell na Windows). Bieżącym i
-jedynym rozwijanym GUI jest `cmd/filees-gui-wails`; jego odbiór oraz
-zastąpienie starego `packaging/build-gui.sh` są osobnym, otwartym zadaniem
-packagingowym opisanym w `concepts/WAILS_GUI_FORK.md` §5/§7.
+**Archiwum historyczne: renderer i build-gui.sh usunięte 2026-09-11.**
+Nie używać do odbioru bieżącego Wails ani jako otwartego zadania packagingu.
 
 Poniższe punkty zachowano wyłącznie jako zapis historycznych kryteriów.
 

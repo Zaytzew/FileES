@@ -7,21 +7,10 @@ import (
 	"strings"
 )
 
-// Backend is the complete set of operating-system services required by the
-// tray application. Consumers should depend on the smaller embedded interfaces
-// whenever they need only one capability.
+// Backend contains operating-system services, not dialog renderers.
+// Wails supplies file pickers and all application dialogs separately.
 type Backend interface {
 	FolderOpener
-	FolderPicker
-	FilePicker
-	Prompter
-	ConsentPrompter
-	ReservationBrowser
-	SettingsBrowser
-	JournalBrowser
-	RealmGrantBrowser
-	PublicShareBrowser
-	UploadChannelBrowser
 	Notifier
 	Autostart
 }

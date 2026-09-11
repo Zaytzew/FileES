@@ -389,33 +389,6 @@ func TestWindowsPackagingIdentityMatchesApplication(t *testing.T) {
 	}
 }
 
-func TestWindowsBuildUsesGUISubsystem(t *testing.T) {
-	data, err := os.ReadFile("build-gui.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `-H=windowsgui`) {
-		t.Fatal("Windows GUI build would open a console window")
-	}
-}
-
-func TestLinuxBuildContainsFullClientServiceAndChecksums(t *testing.T) {
-	raw, err := os.ReadFile("build-gui.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(raw)
-	for _, required := range []string{
-		"filees-client-linux-amd64", "./cmd/filees", "./cmd/filees-gui",
-		"filees.service", "config.example.json", "SHA256SUMS", "sha256sum",
-		"filees-release-bundle", `-output "$out.tar.gz"`,
-	} {
-		if !strings.Contains(text, required) {
-			t.Errorf("Linux client build missing %q", required)
-		}
-	}
-}
-
 func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	raw, err := os.ReadFile("build-server.sh")
 	if err != nil {

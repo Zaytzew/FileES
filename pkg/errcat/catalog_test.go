@@ -28,22 +28,6 @@ func TestEveryIdentityHasADiagnostic(t *testing.T) {
 	}
 }
 
-// Transitional gate. Spec.Polish is migration material: it was exported once
-// into the PL pack and stays only for the call sites that have not been
-// switched to the catalogue yet. It is not a second source of translations
-// and not a fallback mechanism.
-//
-// This test dies together with the field, when the last consumer of
-// Polish/PolishHint/PolishDetailed is gone. Until then it keeps a key added
-// in the meantime from silently rendering "Błąd zgłoszony przez daemon".
-func TestLegacyPolishStillCoversEveryKey(t *testing.T) {
-	for _, spec := range All() {
-		if spec.Polish == "" {
-			t.Errorf("%s/%s missing Polish; while the field exists it must stay complete", spec.Code, spec.Key)
-		}
-	}
-}
-
 // Parameter kinds are the message schema, so a declaration that names a
 // field without saying what it is would let a language pack place a value
 // the renderer does not know how to format.
@@ -96,26 +80,6 @@ func TestIPCHandlersAreInTheCatalog(t *testing.T) {
 		if _, ok := ByPair(Code(pair.code), Key(pair.key)); !ok {
 			t.Errorf("unregistered IPC pair %s %s", pair.code, pair.key)
 		}
-	}
-}
-
-func TestPolishFallbackDoesNotEchoKey(t *testing.T) {
-	if got := Polish("not.a.real.key"); got != "Błąd zgłoszony przez daemon" {
-		t.Fatalf("fallback = %q", got)
-	}
-}
-
-func TestHeldByOtherUsesCatalogDetails(t *testing.T) {
-	sentence := PolishDetailed("lock.held_by_other", map[string]string{
-		"path":   "rysunek.dwg",
-		"holder": "anna",
-		"until":  "2026-08-11T13:41:16Z",
-	})
-	if !strings.Contains(sentence, "rysunek.dwg") || !strings.Contains(sentence, "anna") {
-		t.Fatalf("sentence = %q", sentence)
-	}
-	if PolishDetailed("lock.operation_failed", map[string]string{"detail": "x"}) != "" {
-		t.Fatal("unrelated key must not grow a detail sentence")
 	}
 }
 

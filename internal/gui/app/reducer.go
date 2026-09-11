@@ -89,7 +89,8 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	for _, record := range records {
 		s.errors = append(s.errors, ErrorViewModel{
 			ID: record.ID, RepoID: record.RepoID, Timestamp: record.TS,
-			Code: record.Code, Severity: record.Severity, Hint: record.Hint, Message: record.Msg,
+			Code: record.Code, Severity: record.Severity, Hint: record.Hint,
+			MessageKey: record.MessageKey, Message: record.Msg,
 		})
 	}
 	s.activity = make([]ActivityViewModel, 0, len(activityRecords))
@@ -383,7 +384,12 @@ func (s appState) viewModel() ViewModel {
 	// hide it, and a successful recovery removes it on the next snapshot.
 	for _, repo := range repos {
 		for _, issue := range s.snapshots[repo.ID].PassportIssues {
-			vm.Errors = append(vm.Errors, ErrorViewModel{ID: issue.ID, RepoID: repo.ID, Timestamp: issue.Since, Code: issue.Code, Severity: "ERROR", Hint: "REQUIRE_ACTION", Message: passportIssueMessage(issue)})
+			key, message := passportIssuePresentation(issue)
+			vm.Errors = append(vm.Errors, ErrorViewModel{
+				ID: issue.ID, RepoID: repo.ID, Timestamp: issue.Since, Code: issue.Code,
+				Severity: "ERROR", Hint: "REQUIRE_ACTION",
+				MessageKey: key, MessageDetail: issue.Path, Message: message,
+			})
 		}
 	}
 	// Detachments pass through unfiltered. The daemon owns the lifetime and

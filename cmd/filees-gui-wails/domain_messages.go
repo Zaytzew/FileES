@@ -43,8 +43,13 @@ type domainCatalogues struct {
 	// different build serves a different one, and entries from two
 	// generations must never be mixed.
 	catalogID string
-	byLocale  map[string]*messagerender.Catalogue
-	pending   map[string]bool
+	// connection counts the daemon connections this provider has seen. Every
+	// read carries the number it was dispatched under, so an answer prepared
+	// by a connection that is gone can be recognised and dropped: the daemon
+	// on the other side of a new one may be a different build entirely.
+	connection uint64
+	byLocale   map[string]*messagerender.Catalogue
+	pending    map[string]bool
 }
 
 func newDomainCatalogues(client domainCatalogueClient) *domainCatalogues {
@@ -103,9 +108,10 @@ func (d *domainCatalogues) use(locale string) {
 		return
 	}
 	d.pending[locale] = true
+	connection := d.connection
 	d.mu.Unlock()
 
-	go d.fetch(locale)
+	go d.fetch(locale, connection)
 }
 
 // refresh drops what is cached and asks again for the locale in use.
@@ -120,8 +126,15 @@ func (d *domainCatalogues) refresh() {
 	}
 	d.mu.Lock()
 	locale := d.wanted
+	// A new connection invalidates everything the previous one told us and
+	// everything it is still in the middle of telling us. Clearing pending is
+	// what lets the read below actually go out: without it an answer still in
+	// flight would look like a read already under way, and nothing would ask
+	// the new daemon anything.
+	d.connection++
 	d.byLocale = map[string]*messagerender.Catalogue{}
 	d.catalogID = ""
+	d.pending = map[string]bool{}
 	d.mu.Unlock()
 	if locale == "" {
 		return
@@ -129,12 +142,19 @@ func (d *domainCatalogues) refresh() {
 	d.use(locale)
 }
 
-func (d *domainCatalogues) fetch(locale string) {
+func (d *domainCatalogues) fetch(locale string, connection uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), domainCatalogueTimeout)
 	defer cancel()
 	result, err := d.client.MessagesCatalog(ctx, locale)
 
 	d.mu.Lock()
+	if connection != d.connection {
+		// Prepared by a connection that is gone. It is not installed and not
+		// even cached: it may describe a different daemon build. Nor is the
+		// pending flag touched — it belongs to the read that replaced this one.
+		d.mu.Unlock()
+		return
+	}
 	delete(d.pending, locale)
 	if err != nil || result == nil {
 		d.mu.Unlock()

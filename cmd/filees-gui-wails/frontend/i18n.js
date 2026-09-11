@@ -1,11 +1,17 @@
 import pl from "./locales/pl.js";
 import en from "./locales/en.js";
+import fr from "./locales/fr.js";
+import de from "./locales/de.js";
+import es from "./locales/es.js";
 
 // Presentation only: no IPC calls, action IDs or daemon state in this module.
 // Add a reviewed catalogue and one registry entry to support another language.
 export const languages = Object.freeze([
   { code: "pl", label: "Polski", messages: pl },
   { code: "en", label: "English", messages: en },
+  { code: "fr", label: "Français", messages: fr },
+  { code: "de", label: "Deutsch", messages: de },
+  { code: "es", label: "Español", messages: es },
 ]);
 const storageKey = "filees.language-preference";
 let preference = "system";

@@ -516,7 +516,7 @@ func (c *Controller) startJournal(ctx context.Context) {
 	if c.cfg.JournalBrowser == nil || (!vm.CanListActivity() && !vm.CanListErrors()) || !c.beginOperation("journal") {
 		return
 	}
-	entries := journal.Build(vm)
+	entries := journal.Build(vm, journal.Texts{Chrome: c.uiText, Hint: c.hintLabel})
 	rows := make([]platform.JournalDialogRow, 0, len(entries))
 	for _, entry := range entries {
 		rows = append(rows, platform.JournalDialogRow{

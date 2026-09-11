@@ -937,7 +937,7 @@ function renderJournal(snapshot) {
   replaceHTMLIfChanged(full, entries.length ? entries.map((item) => `<article class="journal-row ${item.emphasized ? "is-error" : ""}">
     <time>${escapeHTML(item.exact_time)}</time>
     <span class="journal-repo">${escapeHTML(item.repository || "FileES")}</span>
-    <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}</div>
+    <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}${item.diagnostics ? `<pre class="journal-diagnostics">${escapeHTML(item.diagnostics)}</pre>` : ""}</div>
   </article>`).join("") : `<p class="muted">${escapeHTML(t("journal.noEntries"))}</p>`);
 }
 

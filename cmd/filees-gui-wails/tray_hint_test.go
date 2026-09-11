@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 )
 
 func TestTrayHintExplainsPreservedCopiesInsteadOfHistoricalLogs(t *testing.T) {
@@ -14,7 +15,7 @@ func TestTrayHintExplainsPreservedCopiesInsteadOfHistoricalLogs(t *testing.T) {
 		{ID: "a", DisplayName: "AKTUALNE", ServerID: "cloud", LocalCopyPreserved: true, LocalCopyStatus: "clean", LocalCleanupPending: true},
 		{ID: "b", DisplayName: "EKOPROJEKT", ServerID: "spot", LocalCopyPreserved: true, LocalCopyStatus: "changed"},
 	}}
-	snapshot := projectViewModel(vm)
+	snapshot := projectViewModel(vm, journal.Texts{})
 	snapshot.Errors = []ErrorProjection{{Message: "RAW OLD LOG", Code: "NET-4007"}}
 	got := projectWailsTray(snapshot)
 	for _, want := range []string{"AKTUALNE: sprzątanie metadanych czeka", "EKOPROJEKT: repo usunięte"} {
@@ -35,7 +36,7 @@ func TestTrayHintLimitsAndSanitizesNames(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		vm.Repos = append(vm.Repos, guiapp.RepoViewModel{ID: string(rune('a' + i)), DisplayName: strings.Repeat("ż", 80) + "\nFAKE", LocalCopyPreserved: true, LocalCopyStatus: "changed"})
 	}
-	got := projectWailsTray(projectViewModel(vm)).Tooltip
+	got := projectWailsTray(projectViewModel(vm, journal.Texts{})).Tooltip
 	if strings.Contains(got, "\nFAKE") || (runtime.GOOS != "windows" && !strings.Contains(got, "2 kolejnych")) {
 		t.Fatalf("bad bounded hint: %q", got)
 	}

@@ -182,8 +182,13 @@ func (server ServerViewModel) NeedsRealmAliasClaim() bool {
 	return server.RealmID != "" && server.RealmAlias == ""
 }
 
-// ErrorViewModel is a presentation-safe structured daemon error. Details are
-// intentionally excluded from the tray model.
+// ErrorViewModel is a presentation-safe structured daemon error.
+//
+// It carries the daemon's raw Details because the full journal has to show
+// them: for a fault the catalogue cannot name they are the only record of what
+// happened. The rule they used to be excluded by has not gone away, it has
+// moved to where it can be enforced — the tray never receives them, which
+// internal/gui/tray asserts.
 type ErrorViewModel struct {
 	ID        string
 	RepoID    string
@@ -203,6 +208,11 @@ type ErrorViewModel struct {
 	// Message is what to show when no catalogue rendered this entry: the
 	// daemon's own text for entries written before keys were carried.
 	Message string
+	// Details is the daemon's raw diagnostic text. For a fault the catalogue
+	// cannot name it is the only record of what actually happened, so it is
+	// carried to the surfaces that can show it as diagnostics. It is never
+	// part of a sentence: untranslated, unbounded and frequently English.
+	Details string
 }
 
 type ActivityViewModel struct {

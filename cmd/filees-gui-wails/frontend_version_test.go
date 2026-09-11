@@ -8,13 +8,14 @@ import (
 
 	rootversion "filees"
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 )
 
 func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 	if got := clientVersion(); got != rootversion.Version() {
 		t.Fatalf("client version = %q, embedded = %q", got, rootversion.Version())
 	}
-	snapshot := projectViewModel(guiapp.ViewModel{})
+	snapshot := projectViewModel(guiapp.ViewModel{}, journal.Texts{})
 	if snapshot.ClientVersion != clientVersion() {
 		t.Fatalf("projected client version = %q, want %q", snapshot.ClientVersion, clientVersion())
 	}
@@ -26,7 +27,7 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 	if !strings.Contains(string(payload), wantVersionJSON) {
 		t.Fatalf("snapshot JSON does not expose client version: %s", payload)
 	}
-	updateSnapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "current", Channel: "alpha", CurrentVersion: "r688"}})
+	updateSnapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "current", Channel: "alpha", CurrentVersion: "r688"}}, journal.Texts{})
 	if updateSnapshot.Update == nil || updateSnapshot.Update.Channel != "alpha" {
 		t.Fatalf("projected update channel = %+v", updateSnapshot.Update)
 	}
@@ -82,7 +83,7 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 }
 
 func TestRestartRequiredProjectsToPersistentCardAndVersionDialog(t *testing.T) {
-	snapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "restart_required", CurrentVersion: "967", AvailableVersion: "970", RestartRequired: true}})
+	snapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "restart_required", CurrentVersion: "967", AvailableVersion: "970", RestartRequired: true}}, journal.Texts{})
 	if snapshot.Update == nil || snapshot.Update.State != "restart_required" || !snapshot.Update.RestartRequired {
 		t.Fatalf("update=%+v", snapshot.Update)
 	}

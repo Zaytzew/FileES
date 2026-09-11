@@ -11,7 +11,7 @@ import (
 func detachmentEntries(t *testing.T, vm app.ViewModel, now time.Time) []Entry {
 	t.Helper()
 	var found []Entry
-	for _, entry := range BuildAt(vm, now) {
+	for _, entry := range BuildAt(vm, now, testTexts()) {
 		if strings.HasPrefix(entry.ID, "detachment:") {
 			found = append(found, entry)
 		}
@@ -74,7 +74,7 @@ func TestADetachmentSortsIntoTheChronologyByItsMoment(t *testing.T) {
 			{ID: "n2", Title: "później", CreatedAt: "2026-09-03T19:00:00Z"},
 		},
 	}
-	entries := BuildAt(vm, now)
+	entries := BuildAt(vm, now, testTexts())
 	if len(entries) != 3 {
 		t.Fatalf("entries = %d, want 3", len(entries))
 	}

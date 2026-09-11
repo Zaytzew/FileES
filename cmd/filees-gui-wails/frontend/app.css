@@ -449,3 +449,17 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
+
+/* Raw daemon diagnostics in the full journal. Monospace and wrapped because
+   it is machine text a person copies into a report, not prose to read. */
+.journal-diagnostics {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.12);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  opacity: 0.85;
+}

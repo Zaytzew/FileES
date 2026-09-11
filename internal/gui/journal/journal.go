@@ -18,11 +18,18 @@ const TrayLimit = 12
 const connectivityErrorCode = "NET-4007"
 
 type Entry struct {
-	ID           string
-	Timestamp    string
-	Repo         string
-	Summary      string
-	Details      string
+	ID        string
+	Timestamp string
+	Repo      string
+	Summary   string
+	// Details is guidance a person can act on: the hint and the paths
+	// involved. It is safe to show anywhere, including a tray tooltip.
+	Details string
+	// Diagnostics is the daemon's raw text. For a fault the catalogue cannot
+	// name it is the only record of what happened, so the full journal shows
+	// it — but it is kept out of Details because the tray must not carry raw
+	// diagnostics, which is what internal/gui/app's model has always said.
+	Diagnostics  string
 	Severity     string
 	Emphasized   bool
 	RelativeTime string
@@ -46,17 +53,49 @@ type activityGroup struct {
 	items                        []app.ActivityViewModel
 }
 
+// Texts resolves the wording the journal composes.
+//
+// The two resolvers are deliberately separate because the two catalogues are:
+// Chrome is the renderer's own interface wording, Hint belongs to the daemon,
+// which owns what a hint means and serves its sentence per language. A journal
+// that wrote hint text itself would be a second source for wording the daemon
+// already publishes.
+//
+// A zero Texts keeps the built-in fallbacks, which is what the legacy Fyne
+// renderer gets: it is out of scope for localisation by contract.
+type Texts struct {
+	Chrome func(key, fallback string) string
+	Hint   func(hint string) string
+}
+
+func (t Texts) chrome(key, fallback string) string {
+	if t.Chrome == nil {
+		return fallback
+	}
+	if value := t.Chrome(key, fallback); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func (t Texts) hintText(hint string) string {
+	if t.Hint == nil {
+		return ""
+	}
+	return t.Hint(hint)
+}
+
 // Build returns newest-first entries. Published paths from one repository
 // revision form one entry. In-flight paths share a repo/stage entry. Failed
 // activity carrying an ErrorID is folded into that structured error.
-func Build(vm app.ViewModel) []Entry {
-	return BuildAt(vm, time.Now())
+func Build(vm app.ViewModel, texts Texts) []Entry {
+	return BuildAt(vm, time.Now(), texts)
 }
 
 // BuildAt is the deterministic form used by renderers and tests. Repeated
 // connectivity warnings are one incident in the user journal; the raw
 // errors.jsonl remains untouched for technical diagnostics.
-func BuildAt(vm app.ViewModel, now time.Time) []Entry {
+func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 	names := repositoryNames(vm)
 	errorsByID := make(map[string]app.ErrorViewModel, len(vm.Errors))
 	connectivity := make(map[string]*connectivityGroup)
@@ -97,19 +136,19 @@ func BuildAt(vm app.ViewModel, now time.Time) []Entry {
 	for key, group := range groups {
 		if group.stage == "failed" && group.errorID != "" {
 			if record, ok := errorsByID[group.errorID]; ok {
-				entries = append(entries, errorEntry(record, group.repo, group.items))
+				entries = append(entries, errorEntry(record, group.repo, group.items, texts))
 				mergedErrors[group.errorID] = true
 				continue
 			}
 		}
-		entries = append(entries, activityEntry("activity:"+key, group))
+		entries = append(entries, activityEntry("activity:"+key, group, texts))
 	}
 	for _, record := range vm.Errors {
 		if record.Code == connectivityErrorCode {
 			continue
 		}
 		if !mergedErrors[record.ID] {
-			entries = append(entries, errorEntry(record, repoName(names, record.RepoID), nil))
+			entries = append(entries, errorEntry(record, repoName(names, record.RepoID), nil, texts))
 		}
 	}
 	for _, group := range connectivity {
@@ -276,7 +315,7 @@ func activityKey(record app.ActivityViewModel) string {
 	return record.RepoID + "\x00" + record.Stage
 }
 
-func activityEntry(id string, group *activityGroup) Entry {
+func activityEntry(id string, group *activityGroup, texts Texts) Entry {
 	count := len(group.items)
 	details := activityDetails(group.items)
 	summary := ""
@@ -298,7 +337,7 @@ func activityEntry(id string, group *activityGroup) Entry {
 		case "publishing":
 			summary = fmt.Sprintf("%s — publikowane zmiany: %d", group.repo, count)
 		case "failed":
-			summary = fmt.Sprintf("⚠ BŁĄD · %s — nieudane zmiany: %d", group.repo, count)
+			summary = fmt.Sprintf("%s · %s — nieudane zmiany: %d", texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), group.repo, count)
 		default:
 			summary = fmt.Sprintf("%s — %d zmian", group.repo, count)
 		}
@@ -306,8 +345,8 @@ func activityEntry(id string, group *activityGroup) Entry {
 	return Entry{ID: id, Timestamp: group.timestamp, Repo: group.repo, Summary: summary, Details: details, Emphasized: group.stage == "failed", time: group.time}
 }
 
-func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityViewModel) Entry {
-	details := errorHint(record.Hint)
+func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityViewModel, texts Texts) Entry {
+	details := texts.hintText(record.Hint)
 	if paths := activityDetails(activity); paths != "" {
 		if details != "" {
 			details += "\n"
@@ -316,23 +355,9 @@ func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityV
 	}
 	return Entry{
 		ID: "error:" + record.ID, Timestamp: record.Timestamp, Repo: repo,
-		Summary: fmt.Sprintf("⚠ BŁĄD · %s — [%s] %s", repo, record.Code, record.Message),
-		Details: details, Severity: record.Severity, Emphasized: true, time: parseTime(record.Timestamp),
-	}
-}
-
-func errorHint(hint string) string {
-	switch strings.TrimSpace(hint) {
-	case "RETRY_LOCAL":
-		return "Spróbuj ponownie"
-	case "RETRY_BACKOFF":
-		return "Ponowienie nastąpi później"
-	case "REQUIRE_ACTION":
-		return "Wymagane działanie użytkownika"
-	case "ADMIN_ONLY":
-		return "Skontaktuj się z administratorem"
-	default:
-		return strings.TrimSpace(hint)
+		Summary: fmt.Sprintf("%s · %s — [%s] %s", texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), repo, record.Code, record.Message),
+		Details: details, Diagnostics: strings.TrimSpace(record.Details),
+		Severity: record.Severity, Emphasized: true, time: parseTime(record.Timestamp),
 	}
 }
 

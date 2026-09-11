@@ -90,7 +90,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 		s.errors = append(s.errors, ErrorViewModel{
 			ID: record.ID, RepoID: record.RepoID, Timestamp: record.TS,
 			Code: record.Code, Severity: record.Severity, Hint: record.Hint,
-			MessageKey: record.MessageKey, Message: record.Msg,
+			MessageKey: record.MessageKey, Message: record.Msg, Details: record.Details,
 		})
 	}
 	s.activity = make([]ActivityViewModel, 0, len(activityRecords))

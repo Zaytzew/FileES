@@ -48,7 +48,9 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 }
 
 func journalMenu(vm app.ViewModel) MenuItemModel {
-	entries := journal.Build(vm)
+	// The Fyne renderer is a closed branch: the i18n contract gives it no
+	// catalogue, so its Polish lives here rather than in the shared journal.
+	entries := journal.Build(vm, journal.Texts{Hint: legacyHint})
 	visible := entries
 	if len(visible) > journal.TrayLimit {
 		visible = visible[:journal.TrayLimit]
@@ -318,5 +320,26 @@ func repoStateLabel(repo app.RepoViewModel) string {
 		return "Dostęp cofnięty"
 	default:
 		return "Stan nieznany"
+	}
+}
+
+// legacyHint keeps the Fyne tray's Polish hint wording.
+//
+// It is deliberately here and not in internal/gui/journal: the shared package
+// serves the supported renderer, which takes its hints from the daemon's
+// catalogue. Putting them back in the shared package would be a second source
+// for wording the daemon already publishes.
+func legacyHint(hint string) string {
+	switch strings.TrimSpace(hint) {
+	case "RETRY_LOCAL", "RETRY":
+		return "Spróbuj ponownie"
+	case "RETRY_BACKOFF":
+		return "Ponowienie nastąpi później"
+	case "REQUIRE_ACTION":
+		return "Wymagane działanie użytkownika"
+	case "ADMIN_ONLY":
+		return "Skontaktuj się z administratorem"
+	default:
+		return strings.TrimSpace(hint)
 	}
 }

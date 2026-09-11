@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,10 +25,19 @@ func (s *stubCatalogueClient) MessagesCatalog(_ context.Context, locale string) 
 	return s.results[locale], nil
 }
 
+// One daemon build serves one catalogue identity for every language: the
+// digest covers all packs at once. Tests that need a second generation pass
+// their own id.
+const oneBuildCatalogID = "cat-build-1"
+
 func catalogueResult(locale, sentence string) *contract.MessagesCatalogResult {
+	return catalogueResultFrom(locale, sentence, oneBuildCatalogID)
+}
+
+func catalogueResultFrom(locale, sentence, catalogID string) *contract.MessagesCatalogResult {
 	return &contract.MessagesCatalogResult{
 		Schema:         "filees.domain-catalog/v1",
-		CatalogID:      "cat-" + locale,
+		CatalogID:      catalogID,
 		Locale:         locale,
 		FallbackLocale: "en",
 		Languages:      []contract.CatalogLanguage{{Code: locale, Name: locale}},
@@ -167,5 +177,167 @@ func TestRenderNamesTheIdentityBeforeAnyCatalogueArrives(t *testing.T) {
 	}
 	if hint := catalogues.hint("REQUIRE_ACTION"); hint != "" {
 		t.Errorf("a missing catalogue invented a hint: %q", hint)
+	}
+}
+
+// blockingCatalogueClient lets a test hold one locale's answer back, so a late
+// reply lands after the user has already chosen again.
+type blockingCatalogueClient struct {
+	mu      sync.Mutex
+	release map[string]chan struct{}
+	results map[string]*contract.MessagesCatalogResult
+	calls   []string
+}
+
+func (c *blockingCatalogueClient) MessagesCatalog(_ context.Context, locale string) (*contract.MessagesCatalogResult, error) {
+	c.mu.Lock()
+	c.calls = append(c.calls, locale)
+	gate := c.release[locale]
+	c.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	return c.results[locale], nil
+}
+
+// A language switch is the user's decision. An answer that arrives after they
+// have chosen again must not overrule them: PL → EN → PL used to end up in
+// English because the late English reply was installed unconditionally.
+func TestLateAnswerDoesNotOverruleTheLatestChoice(t *testing.T) {
+	englishGate := make(chan struct{})
+	client := &blockingCatalogueClient{
+		release: map[string]chan struct{}{"en": englishGate},
+		results: map[string]*contract.MessagesCatalogResult{
+			"pl": catalogueResult("pl", "polski"),
+			"en": catalogueResult("en", "english"),
+		},
+	}
+	catalogues := newDomainCatalogues(client)
+
+	catalogues.use("pl")
+	waitForCatalogue(t, catalogues, "pl")
+
+	catalogues.use("en") // still in flight
+	catalogues.use("pl") // the user changed their mind; this one is cached
+
+	close(englishGate) // the English answer finally arrives
+	time.Sleep(150 * time.Millisecond)
+
+	if current := catalogues.current.Load(); current == nil || current.Locale != "pl" {
+		t.Fatalf("a late answer overruled the user: current = %+v", current)
+	}
+}
+
+// A catalogue arriving after the screen was drawn has to reach that screen,
+// otherwise the wording waits for the next unrelated projection change.
+func TestArrivingCatalogueTriggersRerender(t *testing.T) {
+	gate := make(chan struct{})
+	client := &blockingCatalogueClient{
+		release: map[string]chan struct{}{"pl": gate},
+		results: map[string]*contract.MessagesCatalogResult{"pl": catalogueResult("pl", "polski")},
+	}
+	catalogues := newDomainCatalogues(client)
+	notified := make(chan struct{}, 4)
+	catalogues.onChanged(func() { notified <- struct{}{} })
+
+	catalogues.use("pl")
+	close(gate)
+
+	select {
+	case <-notified:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the arriving catalogue never asked for a re-render")
+	}
+}
+
+// Switching to a language already held must also re-render: the wording on
+// screen is from the previous one.
+func TestSwitchingToACachedLocaleAlsoRerenders(t *testing.T) {
+	client := &blockingCatalogueClient{results: map[string]*contract.MessagesCatalogResult{
+		"pl": catalogueResult("pl", "polski"),
+		"en": catalogueResult("en", "english"),
+	}}
+	catalogues := newDomainCatalogues(client)
+	catalogues.use("pl")
+	waitForCatalogue(t, catalogues, "pl")
+	catalogues.use("en")
+	waitForCatalogue(t, catalogues, "en")
+
+	notified := make(chan struct{}, 4)
+	catalogues.onChanged(func() { notified <- struct{}{} })
+	catalogues.use("pl") // served from cache
+
+	select {
+	case <-notified:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a cached switch did not ask for a re-render")
+	}
+}
+
+// A daemon of a different build serves a different catalogue identity. Entries
+// cached from the previous one describe a different release and must go, or a
+// later switch would serve a mixture of two generations.
+func TestNewGenerationInvalidatesTheCache(t *testing.T) {
+	client := &blockingCatalogueClient{results: map[string]*contract.MessagesCatalogResult{
+		"pl": catalogueResultFrom("pl", "stare", "cat-build-1"),
+		"en": catalogueResultFrom("en", "new build", "cat-build-2"),
+	}}
+	catalogues := newDomainCatalogues(client)
+	catalogues.use("pl")
+	waitForCatalogue(t, catalogues, "pl")
+
+	// The daemon is replaced; the next answer carries a new identity.
+	catalogues.use("en")
+	waitForCatalogue(t, catalogues, "en")
+
+	client.mu.Lock()
+	client.results["pl"] = catalogueResultFrom("pl", "nowe", "cat-build-2")
+	client.mu.Unlock()
+
+	catalogues.use("pl")
+	waitForCatalogue(t, catalogues, "pl")
+	current := catalogues.current.Load()
+	if got := current.Messages["passport.replacement_uncertain"].Text; got != "nowe" {
+		t.Fatalf("message = %q; the entry from the previous generation survived", got)
+	}
+}
+
+// Reconnecting may mean a different daemon build, so the held catalogue is
+// re-read rather than trusted across the gap.
+func TestRefreshReReadsAfterReconnect(t *testing.T) {
+	client := &blockingCatalogueClient{results: map[string]*contract.MessagesCatalogResult{
+		"pl": catalogueResult("pl", "polski"),
+	}}
+	catalogues := newDomainCatalogues(client)
+	catalogues.use("pl")
+	waitForCatalogue(t, catalogues, "pl")
+
+	// current still holds the previous answer, so waiting on it would prove
+	// nothing: what has to happen is a second question to the daemon.
+	catalogues.refresh()
+	for i := 0; i < 200; i++ {
+		client.mu.Lock()
+		calls := len(client.calls)
+		client.mu.Unlock()
+		if calls == 2 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	t.Fatalf("calls = %v; a reconnect must ask the daemon again", client.calls)
+}
+
+// Refresh before any language was chosen has nothing to re-read and must not
+// invent a request.
+func TestRefreshWithoutAChosenLocaleDoesNothing(t *testing.T) {
+	client := &blockingCatalogueClient{}
+	catalogues := newDomainCatalogues(client)
+	catalogues.refresh()
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.calls) != 0 {
+		t.Fatalf("calls = %v", client.calls)
 	}
 }

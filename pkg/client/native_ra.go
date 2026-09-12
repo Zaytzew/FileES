@@ -169,6 +169,20 @@ func (c *execClient) nativeCheckout(ctx context.Context, url, wc string) (string
 	return nativeUpdateReceipt(r)
 }
 
+func (c *execClient) nativeCheckoutDepthEmpty(ctx context.Context, url, wc string) (string, error) {
+	if e := c.nativeRequireFeature(ctx, "sparse_checkout_v1"); e != nil {
+		return "", e
+	}
+	if !filepath.IsAbs(wc) {
+		return "", errors.New("native sparse checkout requires absolute destination")
+	}
+	r, e := c.nativeRemote(ctx, "", "checkout", "--url", url, "--wc", wc, "--force", "--depth", "empty")
+	if e != nil {
+		return "", e
+	}
+	return nativeUpdateReceipt(r)
+}
+
 // UpdateChanges returns only successful plain A/U/D notifications, never
 // merged/conflicted local work. Shared by the incoming activity journal.
 func UpdateChanges(out string) (map[string]string, bool) {

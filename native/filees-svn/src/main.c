@@ -34,7 +34,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -229,20 +229,28 @@ static svn_error_t *run_checkout(int argc, const char **argv, apr_pool_t *pool)
     const char *url = NULL, *wc = NULL;
     svn_revnum_t revision = SVN_INVALID_REVNUM;
     svn_boolean_t force = FALSE;
+    svn_depth_t depth = svn_depth_infinity;
     int i;
 
     for (i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
         if (!strcmp(argv[i], "--wc") && i + 1 < argc) { wc = argv[++i]; continue; }
         if (!strcmp(argv[i], "--force")) { force = TRUE; continue; }
+        if (!strcmp(argv[i], "--depth") && i + 1 < argc) {
+            const char *value = argv[++i];
+            if (!strcmp(value, "empty")) depth = svn_depth_empty;
+            else if (!strcmp(value, "infinity")) depth = svn_depth_infinity;
+            else return filees_refuse("checkout --depth must be empty or infinity");
+            continue;
+        }
         if (!strcmp(argv[i], "--revision")) {
             SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
             continue;
         }
-        return filees_refuse("usage: filees-svn checkout --url URL --wc PATH [--revision N] [--force]");
+        return filees_refuse("usage: filees-svn checkout --url URL --wc PATH [--revision N] [--force] [--depth empty|infinity]");
     }
     if (!url || !wc) return filees_refuse("checkout requires --url and --wc");
-    return filees_ra_checkout(url, wc, revision, force, pool);
+    return filees_ra_checkout(url, wc, revision, force, depth, pool);
 }
 
 static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)

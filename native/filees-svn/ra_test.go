@@ -212,6 +212,21 @@ func TestRACheckoutCreatesAWorkingCopy(t *testing.T) {
 	}
 }
 
+func TestRASparseCheckoutFetchesOnlySelectedPath(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	wc := f.second(t, "sparse", "--depth", "empty")
+	if _, err := os.Stat(filepath.Join(wc, "occupied.txt")); !os.IsNotExist(err) {
+		t.Fatalf("sparse checkout materialized repository content: %v", err)
+	}
+	f.jsonCall(t, true, "update", "--disposable-wc", wc, "--depth", "empty", "--", "occupied.txt")
+	if _, err := os.Stat(filepath.Join(wc, "occupied.txt")); err != nil {
+		t.Fatalf("selected file not fetched: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wc, "old.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unselected file was fetched: %v", err)
+	}
+}
+
 // A checkout over an existing working copy is a different operation with a
 // different failure mode. The caller chooses between them rather than
 // discovering which one it got.

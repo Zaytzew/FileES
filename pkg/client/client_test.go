@@ -303,6 +303,86 @@ func TestCheckoutPreservesExistingDirectoryWithForce(t *testing.T) {
 	}
 }
 
+func TestCheckoutDepthEmptyNeverUsesFullCheckoutOnResume(t *testing.T) {
+	dir := t.TempDir()
+	svnPath := fakeSVN(t, "args")
+	target := filepath.Join(dir, "shelf")
+	cli := New(Options{SvnPath: svnPath})
+	out, err := cli.(interface {
+		CheckoutDepthEmpty(context.Context, string, string) (string, error)
+	}).CheckoutDepthEmpty(t.Context(), "file:///repository", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "checkout\n--force\n--depth\nempty\nfile:///repository") {
+		t.Fatalf("sparse checkout args = %q", out)
+	}
+	if err := os.Mkdir(filepath.Join(target, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.(interface {
+		CheckoutDepthEmpty(context.Context, string, string) (string, error)
+	}).CheckoutDepthEmpty(t.Context(), "file:///repository", target); err == nil {
+		t.Fatal("existing WC must not fall through to full-depth checkout/update")
+	}
+}
+
+func TestSparseCheckoutFetchesOnlySelectedSVNPath(t *testing.T) {
+	svnadmin, err := exec.LookPath("svnadmin")
+	if err != nil {
+		t.Skip("svnadmin is not installed")
+	}
+	svn, err := exec.LookPath("svn")
+	if err != nil {
+		t.Skip("svn is not installed")
+	}
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
+		t.Fatalf("svnadmin create: %v\n%s", err, out)
+	}
+	url := svnurl.File(repository)
+	seed := filepath.Join(root, "seed")
+	if out, err := exec.Command(svn, "checkout", "-q", url, seed).CombinedOutput(); err != nil {
+		t.Fatalf("svn checkout seed: %v\n%s", err, out)
+	}
+	for _, name := range []string{"wanted.txt", "other.txt"} {
+		if err := os.WriteFile(filepath.Join(seed, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := exec.Command(svn, "add", "--", "wanted.txt", "other.txt")
+	add.Dir = seed
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("svn add: %v\n%s", err, out)
+	}
+	commit := exec.Command(svn, "commit", "-m", "seed")
+	commit.Dir = seed
+	if out, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("svn commit: %v\n%s", err, out)
+	}
+	cli := New(Options{SvnPath: svn})
+	shelf := filepath.Join(root, "shelf")
+	sparse := cli.(interface {
+		CheckoutDepthEmpty(context.Context, string, string) (string, error)
+	})
+	if out, err := sparse.CheckoutDepthEmpty(t.Context(), url, shelf); err != nil {
+		t.Fatalf("sparse checkout: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(shelf, "wanted.txt")); !os.IsNotExist(err) {
+		t.Fatalf("sparse checkout materialized file: %v", err)
+	}
+	if out, err := cli.UpdateDepthEmpty(t.Context(), shelf, []string{filepath.Join(shelf, "wanted.txt")}); err != nil {
+		t.Fatalf("selected update: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(shelf, "wanted.txt")); err != nil {
+		t.Fatalf("selected file not downloaded: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(shelf, "other.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unselected file downloaded: %v", err)
+	}
+}
+
 func TestParseStatusXMLReadsNormalItemFromVerboseStatus(t *testing.T) {
 	const output = `<status><target path="ready.txt"><entry path="ready.txt"><wc-status item="normal" revision="15" props="none"/></entry></target></status>`
 	got, err := parseStatusXML(output, "/tmp/wc")

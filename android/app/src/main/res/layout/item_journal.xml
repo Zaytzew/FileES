@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/filees_space"
+    android:paddingBottom="@dimen/filees_space">
+
+    <TextView
+        android:id="@+id/textJournalEntry"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Filees.Name"
+        tools:text="Ogłoszenie r21" />
+
+    <TextView
+        android:id="@+id/textJournalScope"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Filees.Meta"
+        tools:text="KIWERSKA" />
+
+    <TextView
+        android:id="@+id/textJournalTime"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Filees.Meta"
+        tools:text="przed chwilą" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/filees_hairline"
+        android:layout_marginTop="@dimen/filees_space"
+        android:background="@color/filees_line" />
+</LinearLayout>

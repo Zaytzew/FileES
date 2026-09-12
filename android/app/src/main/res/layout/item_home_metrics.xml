@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingTop="@dimen/filees_space"
+    android:paddingBottom="@dimen/filees_space_section">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_filees_metric"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_servers"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+        <TextView
+            android:id="@+id/textMetricServers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Filees.Heading"
+            android:textSize="20sp"
+            tools:text="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_servers_note"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="3dp"
+        android:layout_marginEnd="3dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_filees_metric"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_repos"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+        <TextView
+            android:id="@+id/textMetricRepos"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Filees.Heading"
+            android:textSize="20sp"
+            tools:text="3" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_repos_note"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_filees_metric"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_pending"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+        <TextView
+            android:id="@+id/textMetricPending"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Filees.Heading"
+            android:textSize="20sp"
+            tools:text="0" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/home_metric_pending_note"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+    </LinearLayout>
+</LinearLayout>

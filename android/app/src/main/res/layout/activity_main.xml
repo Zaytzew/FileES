@@ -130,6 +130,29 @@
             android:orientation="vertical"
             android:padding="@dimen/filees_gutter">
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/home_eyebrow"
+                android:textAllCaps="true"
+                android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="@dimen/filees_space"
+                android:text="@string/home_title"
+                android:textAppearance="@style/TextAppearance.Filees.Heading"
+                android:textSize="22sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/filees_gutter"
+                android:text="@string/home_copy_idle"
+                android:textAppearance="@style/TextAppearance.Filees.Body" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonScanQr"
                 style="@style/Widget.Filees.Button.Filled"

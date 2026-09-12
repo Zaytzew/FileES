@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private var browseRevision: Long = 0
     private var browseGeneration: Long = 0
     private var legacyFullTree: Boolean = false
+    private var pendingDecisions: List<PendingUpload> = emptyList()
     private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
     private val pendingAdapter = PendingUploadsAdapter(
         onDiscard = { discardPending(it) },
@@ -288,7 +289,7 @@ class MainActivity : AppCompatActivity() {
         if (selectedRepoId == null) {
             selectedShareName = ""
             browsePrefix = ""
-            browseAdapter.submit(shareRows(selectableShares))
+            browseAdapter.submit(homeRows())
             binding.toolbar.title = null
             binding.toolbar.subtitle = null
             binding.brandLockup.visibility = View.VISIBLE
@@ -300,8 +301,125 @@ class MainActivity : AppCompatActivity() {
         binding.buttonAdd.visibility = if (canCaptureSelected()) View.VISIBLE else View.GONE
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.title = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
-        val rows = ManifestBrowse.children(manifestEntries, browsePrefix)
+        val rows = mutableListOf<BrowseRow>()
+        rows.add(factsRow())
+        rows.addAll(ManifestBrowse.children(manifestEntries, browsePrefix))
         browseAdapter.submit(rows)
+    }
+
+    private fun homeRows(): List<BrowseRow> {
+        val current = FileesSession.current(prefs)
+        val servers = FileesSession.servers(prefs)
+        val copy = current?.label()?.ifBlank { getString(R.string.home_copy_idle) }
+            ?: getString(R.string.home_copy_idle)
+        val rows = mutableListOf<BrowseRow>()
+        rows.add(
+            BrowseRow(
+                "", "", directory = false, size = 0,
+                kind = BrowseRow.Kind.HERO,
+                heroCopy = copy,
+                pulseValue = selectableShares.size.toString(),
+            ),
+        )
+        rows.add(
+            BrowseRow(
+                "", "", directory = false, size = 0,
+                kind = BrowseRow.Kind.METRICS,
+                metricServers = servers.size.toString(),
+                metricRepos = selectableShares.size.toString(),
+                metricPending = pendingDecisions.size.toString(),
+            ),
+        )
+        for (server in servers) {
+            val active = server.id == current?.id
+            rows.add(
+                BrowseRow(
+                    name = server.label(),
+                    path = "",
+                    directory = false,
+                    size = 0,
+                    kind = BrowseRow.Kind.SERVER,
+                    serverMeta = if (active) {
+                        resources.getQuantityString(
+                            R.plurals.home_folder_count,
+                            selectableShares.size,
+                            selectableShares.size,
+                        )
+                    } else {
+                        getString(R.string.home_server_switch)
+                    },
+                    switchServerId = if (active) "" else server.id,
+                ),
+            )
+            if (active) rows.addAll(shareRows(selectableShares))
+        }
+        rows.add(
+            BrowseRow(
+                "", "", directory = false, size = 0,
+                kind = BrowseRow.Kind.JOURNAL_HEAD,
+                sectionHeader = getString(R.string.home_journal_title),
+            ),
+        )
+        val journal = journalRows()
+        if (journal.isEmpty()) {
+            rows.add(
+                BrowseRow(
+                    "", "", directory = false, size = 0,
+                    kind = BrowseRow.Kind.JOURNAL,
+                    journalEntry = getString(R.string.home_journal_empty),
+                    journalScope = getString(R.string.home_journal_intro),
+                ),
+            )
+        } else {
+            rows.addAll(journal)
+        }
+        return rows
+    }
+
+    private fun journalRows(): List<BrowseRow> {
+        val rows = mutableListOf<BrowseRow>()
+        val scope = prefs.getString(FileesSession.PREF_UPLOAD_REPO_NAME, null)
+            ?.ifBlank { null }
+            ?: selectedShareName
+        for (item in pendingDecisions) {
+            rows.add(
+                BrowseRow(
+                    "", "", directory = false, size = 0,
+                    kind = BrowseRow.Kind.JOURNAL,
+                    journalEntry = getString(R.string.home_journal_pending, item.filename),
+                    journalScope = scope,
+                ),
+            )
+        }
+        for (entry in FileesSession.journal(prefs)) {
+            rows.add(
+                BrowseRow(
+                    "", "", directory = false, size = entry.at,
+                    kind = BrowseRow.Kind.JOURNAL,
+                    journalEntry = entry.entry,
+                    journalScope = entry.scope,
+                ),
+            )
+        }
+        return rows
+    }
+
+    private fun factsRow(): BrowseRow {
+        val share = selectedShare()
+        val access = when (share?.access) {
+            "rw" -> getString(R.string.home_access_rw)
+            "r" -> getString(R.string.home_access_r)
+            else -> share?.access.orEmpty().ifBlank { getString(R.string.home_fact_revision_unknown) }
+        }
+        val folder = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
+        return BrowseRow(
+            "", "", directory = false, size = 0,
+            kind = BrowseRow.Kind.FACTS,
+            factServer = FileesSession.current(prefs)?.label().orEmpty(),
+            factRevision = if (browseRevision > 0) "r$browseRevision" else getString(R.string.home_fact_revision_unknown),
+            factAccess = access,
+            factFolder = folder.ifBlank { getString(R.string.home_fact_revision_unknown) },
+        )
     }
 
     // Groups the top-level share list by purpose (ordinary repositories,
@@ -319,7 +437,13 @@ class MainActivity : AppCompatActivity() {
         val rows = mutableListOf<BrowseRow>()
         for (purpose in order + (groups.keys - order.toSet())) {
             val members = groups[purpose] ?: continue
-            rows.add(BrowseRow("", "", directory = false, size = 0, sectionHeader = sectionLabel(purpose)))
+            rows.add(
+                BrowseRow(
+                    "", "", directory = false, size = 0,
+                    sectionHeader = sectionLabel(purpose),
+                    kind = BrowseRow.Kind.HEADER,
+                ),
+            )
             members.forEach { rows.add(shareRow(it)) }
         }
         return rows
@@ -336,6 +460,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: BrowseRow) {
+        if (row.kind == BrowseRow.Kind.SERVER && row.switchServerId.isNotEmpty()) {
+            FileesSession.servers(prefs).firstOrNull { it.id == row.switchServerId }?.let { switchTo(it) }
+            return
+        }
         if (row.share) {
             selectedRepoId = row.repoId
             selectedShareName = row.name
@@ -704,6 +832,14 @@ class MainActivity : AppCompatActivity() {
         val fresh = shouts.filter {
             !FileesSession.isShoutAcked(prefs, FileesSession.shoutId(repoId, it.first))
         }
+        val scope = selectedShareName.ifBlank { repoId }
+        for (item in fresh) {
+            FileesSession.pushJournal(
+                prefs,
+                scope,
+                getString(R.string.home_journal_shout, item.first.toString()) + "\n" + item.second,
+            )
+        }
         if (fresh.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle(R.string.shouts_title)
@@ -780,10 +916,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindDecisions(items: List<PendingUpload>) {
+        pendingDecisions = items
         binding.panelDecisions.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
         pendingAdapter.submit(items)
         if (items.isNotEmpty()) {
             binding.textDecisionsHeader.text = getString(R.string.status_waiting_decision, items.size)
+        }
+        if (selectedRepoId == null && client != null) {
+            browseAdapter.submit(homeRows())
         }
     }
 

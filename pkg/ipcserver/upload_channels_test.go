@@ -32,6 +32,13 @@ func (s *uploadChannelStub) DeleteUploadChannel(_ context.Context, serverID, cha
 	s.action, s.serverID, s.channelID = "delete", serverID, channelID
 	return contract.UploadChannelResult{ChannelID: channelID, State: "deleted"}, nil
 }
+func (s *uploadChannelStub) ListShelf(_ context.Context, serverID, channelID string) (contract.ShelfListResult, error) {
+	s.action, s.serverID, s.channelID = "shelf_list", serverID, channelID
+	return contract.ShelfListResult{ChannelID: channelID, Items: []contract.ShelfItem{{
+		UploadID: "3f1d6a4e-0000-4000-8000-00000000beef", RepoPath: "rzut.dwg", OriginalName: "rzut.dwg",
+		Size: 12, Revision: 42, AcceptedAt: "2026-09-12T10:00:00Z",
+	}}}, nil
+}
 func (s *uploadChannelStub) ListQuarantine(context.Context, string) (contract.QuarantineListResult, error) {
 	return contract.QuarantineListResult{}, nil
 }

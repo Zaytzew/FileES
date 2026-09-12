@@ -117,6 +117,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleUploadChannel(req, "revoke")
 	case contract.CmdRepoUploadChannelDelete:
 		return s.handleUploadChannel(req, "delete")
+	case contract.CmdRepoShelfList:
+		return s.handleShelfList(req)
 	case contract.CmdRepoQuarantineList:
 		return s.handleQuarantine(req, "list")
 	case contract.CmdRepoQuarantineHide:
@@ -877,6 +879,35 @@ func (s *Server) handleUploadChannel(req contract.Request, action string) contra
 	if err != nil {
 		talk.With("upload-channels:"+serverID).Warnf("channel %s failed: %v", action, err)
 		return contract.ErrResponse(req.RequestID, "UPLOAD-1002", "ERROR", "REQUIRE_ACTION", "upload_channel.rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+// handleShelfList answers what is waiting on one shelf. The channel travels in
+// the payload because an owner may hold several; the daemon does not pick one.
+func (s *Server) handleShelfList(req contract.Request) contract.Response {
+	service := s.uploadChannelService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-0001", "ERROR", "RETRY", "upload_channel.unavailable", nil)
+	}
+	var payload contract.ShelfListPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.ChannelID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories || activation.RealmID == "" {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-2001", "ERROR", "NONE", "upload_channel.forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	result, err := service.ListShelf(ctx, payload.ServerID, payload.ChannelID)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-1001", "ERROR", "RETRY", "upload_channel.list_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

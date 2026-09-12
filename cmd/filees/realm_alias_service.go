@@ -364,6 +364,32 @@ func (s *realmAliasService) HideQuarantine(ctx context.Context, serverID, upload
 	return contract.QuarantineHideResult{UploadID: remote.UploadID}, nil
 }
 
+// ListShelf asks one server what is waiting on one of its shelves. The channel
+// is named by the caller: an owner may hold several and the daemon does not
+// choose for them.
+func (s *realmAliasService) ListShelf(ctx context.Context, serverID, channelID string) (contract.ShelfListResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.ShelfListResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketListShelf, control.ListShelfPayload{ChannelID: channelID})
+	if err != nil {
+		return contract.ShelfListResult{}, err
+	}
+	var remote control.ListShelfResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.ShelfListResult{}, err
+	}
+	out := contract.ShelfListResult{ChannelID: remote.ChannelID, Items: make([]contract.ShelfItem, 0, len(remote.Items))}
+	for _, item := range remote.Items {
+		out.Items = append(out.Items, contract.ShelfItem{
+			UploadID: item.UploadID, RepoPath: item.RepoPath, OriginalName: item.OriginalName,
+			Size: item.Size, SHA256: item.SHA256, Revision: item.Revision, AcceptedAt: item.AcceptedAt,
+		})
+	}
+	return out, nil
+}
+
 func (s *realmAliasService) FetchQuarantine(ctx context.Context, serverID, uploadID string) (contract.QuarantineFetchResult, error) {
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {

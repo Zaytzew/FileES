@@ -54,6 +54,12 @@ func RunUploadReap(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		return ExitSoftware
 	}
 	fmt.Fprintf(stdout, "accepted=%d rejected=%d failed=%d\n", summary.Accepted, summary.Rejected, summary.Failed)
+	if summary.Unindexed > 0 {
+		// The files are committed and safe; what is missing is the shelf entry
+		// a browser reads. Stderr, so the cron mail carries it — stdout is
+		// redirected to /dev/null exactly so an idle minute stays quiet.
+		fmt.Fprintf(stderr, "upload-reap: %d accepted upload(s) reached the repository but could not be recorded on the shelf index\n", summary.Unindexed)
+	}
 	return ExitOK
 }
 

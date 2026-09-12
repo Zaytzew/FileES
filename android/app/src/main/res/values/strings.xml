@@ -148,6 +148,7 @@
     <string name="home_eyebrow">FileES · Twoje pliki</string>
     <string name="home_title">Twoje pliki.\nNa właściwej ścieżce.</string>
     <string name="home_copy_idle">Zeskanuj kod QR z pulpitu FileES, żeby zobaczyć foldery tej strefy.</string>
+    <string name="home_copy_paired">Foldery, które ten telefon widzi w strefie.</string>
     <string name="home_pulse_repos">repo</string>
     <string name="home_metric_servers">Serwery</string>
     <string name="home_metric_servers_note">sparowane</string>

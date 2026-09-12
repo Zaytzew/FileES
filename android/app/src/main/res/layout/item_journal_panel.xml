@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/filees_space_section"
+    android:layout_marginBottom="@dimen/filees_space"
+    android:background="@drawable/bg_filees_panel"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/home_journal_title"
+        android:textAllCaps="true"
+        android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="@string/home_journal_intro"
+        android:textAppearance="@style/TextAppearance.Filees.Body" />
+
+    <LinearLayout
+        android:id="@+id/listJournal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/filees_space"
+        android:orientation="vertical" />
+
+    <TextView
+        android:id="@+id/textJournalEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/filees_space"
+        android:text="@string/home_journal_empty"
+        android:textAppearance="@style/TextAppearance.Filees.Name"
+        android:visibility="gone"
+        tools:visibility="visible" />
+</LinearLayout>

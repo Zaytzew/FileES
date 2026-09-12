@@ -39,8 +39,8 @@ class BrowseAdapter(
             VIEW_METRICS -> MetricsHolder(inflater.inflate(R.layout.item_home_metrics, parent, false))
             VIEW_SERVER -> ServerHolder(inflater.inflate(R.layout.item_home_server, parent, false))
             VIEW_FACTS -> FactsHolder(inflater.inflate(R.layout.item_home_facts, parent, false))
-            VIEW_JOURNAL_HEAD -> HeaderHolder(inflater.inflate(R.layout.item_browse_header, parent, false))
-            VIEW_JOURNAL -> JournalHolder(inflater.inflate(R.layout.item_journal, parent, false))
+            VIEW_JOURNAL_HEAD, VIEW_JOURNAL ->
+                JournalPanelHolder(inflater.inflate(R.layout.item_journal_panel, parent, false))
             VIEW_HEADER -> HeaderHolder(inflater.inflate(R.layout.item_browse_header, parent, false))
             else -> Holder(inflater.inflate(R.layout.item_browse, parent, false))
         }
@@ -51,9 +51,9 @@ class BrowseAdapter(
         when (holder) {
             is HeroHolder -> holder.bind(row)
             is MetricsHolder -> holder.bind(row)
-            is ServerHolder -> holder.bind(row, onOpen)
+            is ServerHolder -> holder.bind(row, onOpen, onDownload)
             is FactsHolder -> holder.bind(row)
-            is JournalHolder -> holder.bind(row)
+            is JournalPanelHolder -> holder.bind(row)
             is HeaderHolder -> holder.bind(row)
             is Holder -> holder.bind(row, onOpen, onDownload)
         }
@@ -84,13 +84,28 @@ class BrowseAdapter(
     class ServerHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val name: TextView = itemView.findViewById(R.id.textServerPanelName)
         private val meta: TextView = itemView.findViewById(R.id.textServerPanelMeta)
-        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
+        private val chevron: View = itemView.findViewById(R.id.textServerChevron)
+        private val folders: ViewGroup = itemView.findViewById(R.id.listServerFolders)
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit, onDownload: (BrowseRow) -> Unit) {
             name.text = row.name
             meta.text = row.serverMeta
-            itemView.setOnClickListener {
-                if (row.switchServerId.isNotEmpty()) onOpen(row)
+            val switch = row.switchServerId.isNotEmpty()
+            chevron.visibility = if (switch) View.VISIBLE else View.GONE
+            itemView.setOnClickListener(if (switch) View.OnClickListener { onOpen(row) } else null)
+            itemView.isClickable = switch
+            folders.removeAllViews()
+            val inflater = LayoutInflater.from(itemView.context)
+            for (child in row.nested) {
+                if (child.kind == BrowseRow.Kind.HEADER) {
+                    val view = inflater.inflate(R.layout.item_browse_header, folders, false)
+                    view.findViewById<TextView>(R.id.textSectionHeader).text = child.sectionHeader
+                    folders.addView(view)
+                } else {
+                    val view = inflater.inflate(R.layout.item_browse, folders, false)
+                    Holder(view).bind(child, onOpen, onDownload)
+                    folders.addView(view)
+                }
             }
-            itemView.isClickable = row.switchServerId.isNotEmpty()
         }
     }
 
@@ -107,17 +122,29 @@ class BrowseAdapter(
         }
     }
 
-    class JournalHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val entry: TextView = itemView.findViewById(R.id.textJournalEntry)
-        private val scope: TextView = itemView.findViewById(R.id.textJournalScope)
-        private val time: TextView = itemView.findViewById(R.id.textJournalTime)
+    class JournalPanelHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val list: ViewGroup = itemView.findViewById(R.id.listJournal)
+        private val empty: View = itemView.findViewById(R.id.textJournalEmpty)
         fun bind(row: BrowseRow) {
-            entry.text = row.journalEntry
-            scope.text = row.journalScope
-            time.text = if (row.size > 0) {
-                DateUtils.getRelativeTimeSpanString(row.size, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-            } else {
-                row.journalTime
+            list.removeAllViews()
+            val entries = row.nested
+            empty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+            val inflater = LayoutInflater.from(itemView.context)
+            for (child in entries) {
+                val view = inflater.inflate(R.layout.item_journal, list, false)
+                view.findViewById<TextView>(R.id.textJournalEntry).text = child.journalEntry
+                view.findViewById<TextView>(R.id.textJournalScope).text = child.journalScope
+                val time = view.findViewById<TextView>(R.id.textJournalTime)
+                time.text = if (child.size > 0) {
+                    DateUtils.getRelativeTimeSpanString(
+                        child.size,
+                        System.currentTimeMillis(),
+                        DateUtils.MINUTE_IN_MILLIS,
+                    )
+                } else {
+                    child.journalTime
+                }
+                list.addView(view)
             }
         }
     }

@@ -94,6 +94,7 @@ data class BrowseRow(
     val pulseValue: String = "",
     val serverMeta: String = "",
     val switchServerId: String = "",
+    val nested: List<BrowseRow> = emptyList(),
 ) {
     enum class Kind {
         ITEM, HEADER, HERO, METRICS, SERVER, FACTS, JOURNAL_HEAD, JOURNAL

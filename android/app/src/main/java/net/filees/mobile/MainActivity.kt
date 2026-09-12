@@ -310,8 +310,11 @@ class MainActivity : AppCompatActivity() {
     private fun homeRows(): List<BrowseRow> {
         val current = FileesSession.current(prefs)
         val servers = FileesSession.servers(prefs)
-        val copy = current?.label()?.ifBlank { getString(R.string.home_copy_idle) }
-            ?: getString(R.string.home_copy_idle)
+        val copy = if (current == null) {
+            getString(R.string.home_copy_idle)
+        } else {
+            getString(R.string.home_copy_paired)
+        }
         val rows = mutableListOf<BrowseRow>()
         rows.add(
             BrowseRow(
@@ -334,7 +337,7 @@ class MainActivity : AppCompatActivity() {
             val active = server.id == current?.id
             rows.add(
                 BrowseRow(
-                    name = server.label(),
+                    name = server.displayName.ifBlank { server.address },
                     path = "",
                     directory = false,
                     size = 0,
@@ -349,30 +352,17 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.home_server_switch)
                     },
                     switchServerId = if (active) "" else server.id,
+                    nested = if (active) shareRows(selectableShares) else emptyList(),
                 ),
             )
-            if (active) rows.addAll(shareRows(selectableShares))
         }
         rows.add(
             BrowseRow(
                 "", "", directory = false, size = 0,
-                kind = BrowseRow.Kind.JOURNAL_HEAD,
-                sectionHeader = getString(R.string.home_journal_title),
+                kind = BrowseRow.Kind.JOURNAL,
+                nested = journalRows(),
             ),
         )
-        val journal = journalRows()
-        if (journal.isEmpty()) {
-            rows.add(
-                BrowseRow(
-                    "", "", directory = false, size = 0,
-                    kind = BrowseRow.Kind.JOURNAL,
-                    journalEntry = getString(R.string.home_journal_empty),
-                    journalScope = getString(R.string.home_journal_intro),
-                ),
-            )
-        } else {
-            rows.addAll(journal)
-        }
         return rows
     }
 

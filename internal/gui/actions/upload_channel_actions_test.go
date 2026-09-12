@@ -54,6 +54,8 @@ func uploadChannelCaps() []string {
 func TestControllerCreateUploadShelfCollectsSlugAndRecipientsWithoutOTP(t *testing.T) {
 	manager := &recordingUploadChannels{}
 	dialogs := 0
+	closed := make(chan struct{})
+	pickerCalls := make(chan struct{}, 1)
 	platformFake := &platformtest.Fake{
 		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 			return platform.SettingsDialogResult{Action: platform.SettingsDialogUploadChannels, ServerID: "office", RepoID: "repo-1"}, nil
@@ -63,7 +65,12 @@ func TestControllerCreateUploadShelfCollectsSlugAndRecipientsWithoutOTP(t *testi
 			if dialogs == 1 {
 				return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogCreate}, nil
 			}
+			close(closed)
 			return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
+		},
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			pickerCalls <- struct{}{}
+			return platform.PickFolderResult{Cancelled: true}, nil
 		},
 		PromptTextFunc: func(_ context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
 			switch request.Title {
@@ -80,7 +87,7 @@ func TestControllerCreateUploadShelfCollectsSlugAndRecipientsWithoutOTP(t *testi
 	view := lifecycleView(uploadChannelCaps()...)
 	intents, cancel := setup(actions.Config{
 		ViewModel: viewCopy(view), SettingsBrowser: platformFake, UploadChannelBrowser: platformFake,
-		Prompter: platformFake, UploadChannels: manager, Notifier: platformFake,
+		Prompter: platformFake, UploadChannels: manager, Notifier: platformFake, FolderPicker: platformFake,
 	})
 	defer cancel()
 
@@ -92,6 +99,16 @@ func TestControllerCreateUploadShelfCollectsSlugAndRecipientsWithoutOTP(t *testi
 	created := manager.created()
 	if len(created) != 1 || created[0].AuthorityRepoID != "repo-1" || created[0].Slug != "oferta-a" || strings.Join(created[0].Recipients, ",") != "a@example.com,B@example.com" {
 		t.Fatalf("created=%+v", created)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("channel dialog did not close")
+	}
+	select {
+	case <-pickerCalls:
+		t.Fatal("creating a shelf asked for a local folder before its first fetch")
+	default:
 	}
 	for _, prompt := range platformFake.Snapshot().PromptRequests {
 		if strings.Contains(strings.ToLower(prompt.Title), "otp") || strings.Contains(strings.ToLower(prompt.Text), "otp") {

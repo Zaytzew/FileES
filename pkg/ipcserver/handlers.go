@@ -1381,6 +1381,11 @@ func (s *Server) handleRepoAttachApprove(req contract.Request) contract.Response
 	if summary.Attached {
 		return contract.ErrResponse(req.RequestID, "REPO-2003", "ERROR", "NONE", "repo.already_attached", nil)
 	}
+	// The ordinary attach path starts a full checkout. A shelf must remain
+	// unmounted until a depth-empty, read-only recipient path is available.
+	if summary.Purpose == contract.RepoPurposeUploadShelf {
+		return contract.ErrResponse(req.RequestID, "REPO-2004", "ERROR", "NONE", "repo.not_attachable", nil)
+	}
 	if rs.ProjectedState() != contract.StateActive || (summary.Access != "r" && summary.Access != "rw") {
 		return contract.ErrResponse(req.RequestID, "REPO-2004", "ERROR", "RETRY", "repo.not_attachable", nil)
 	}
@@ -1453,6 +1458,9 @@ func (s *Server) handleRepoAttachIntent(req contract.Request) contract.Response 
 	snapshot := rs.Snapshot()
 	if snapshot.Attached {
 		return contract.ErrResponse(req.RequestID, "REPO-2003", "ERROR", "NONE", "repo.already_attached", nil)
+	}
+	if snapshot.Purpose == contract.RepoPurposeUploadShelf {
+		return contract.ErrResponse(req.RequestID, "REPO-2004", "ERROR", "NONE", "repo.not_attachable", nil)
 	}
 	result, err := service.BeginAttach(payload.ServerID, payload.RepoID, payload.LocalPath, snapshot.AttachmentPolicy == "required")
 	if err != nil {

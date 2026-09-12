@@ -243,6 +243,26 @@ func TestAttachApprovalUsesCurrentProjectedAuthority(t *testing.T) {
 	}
 }
 
+func TestUploadShelfCannotEnterOrdinaryFullCheckout(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	repo := server.RegisterProjectedRepoPolicy("shelf-1", "Inbox", "svn://example/shelf", "primary", "rw", "active", "owner", "optional", false)
+	repo.SetPurpose(contract.RepoPurposeUploadShelf)
+	for _, req := range []contract.Request{
+		lifecycleRequest(contract.CmdRepoAttachIntent, contract.RepoAttachIntentPayload{ServerID: "primary", RepoID: "shelf-1", LocalPath: "/data/shelf"}),
+		lifecycleRequest(contract.CmdRepoAttachApprove, contract.RepoAttachApprovePayload{OperationID: "op", ServerID: "primary", RepoID: "shelf-1"}),
+	} {
+		response := server.dispatch(req)
+		if response.Status == contract.StatusOK {
+			t.Fatalf("ordinary attach accepted upload shelf: %s", req.Command)
+		}
+	}
+	if stub.attachCalls != 0 || stub.approveCalls != 0 {
+		t.Fatalf("shelf reached full-checkout lifecycle: intent=%d approve=%d", stub.attachCalls, stub.approveCalls)
+	}
+}
+
 func TestLifecycleStatusReturnsCurrentStateAndError(t *testing.T) {
 	server := New("unused")
 	stub := &lifecycleStub{statusResult: contract.RepoLifecycleResult{

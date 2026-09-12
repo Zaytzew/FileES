@@ -47,6 +47,10 @@ type Backend interface {
 	Delete(context.Context, string, string, string) (time.Time, error)  // operation, realm, repo ID
 }
 
+type GenericDeletionAuthorizer interface {
+	AuthorizeGenericDelete(context.Context, string, string) error // repo ID, authenticated realm ID
+}
+
 type ResultStore interface {
 	Load(operationID string, typ control.TicketType) (control.Result, bool, error)
 	Save(control.Result) error
@@ -145,6 +149,7 @@ type Worker struct {
 	EditingPolicies      RepositoryEditingPolicyAuthority
 	PublicShares         PublicShareService
 	UploadChannels       UploadChannelService
+	GenericDelete        GenericDeletionAuthorizer
 	LockReleases         LockReleaseStore
 	LockAuthority        LockReleaseAuthority
 	LockProjector        LockReleaseProjector
@@ -553,6 +558,17 @@ func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket c
 	}
 	if w.Backend == nil {
 		return control.Result{}, errors.New("repository backend is required")
+	}
+	if w.GenericDelete != nil {
+		if err := w.GenericDelete.AuthorizeGenericDelete(ctx, payload.RepoID, session.RealmID); err != nil {
+			if errors.Is(err, ErrSpecialPurposeDeletion) {
+				return w.failure(ticket, "DELETE_REPOSITORY_SPECIAL_PURPOSE", err.Error())
+			}
+			if errors.Is(err, ErrRepositoryHasUploadChannels) {
+				return w.failure(ticket, "DELETE_REPOSITORY_HAS_UPLOAD_CHANNELS", err.Error())
+			}
+			return w.retryable(ticket, "DELETE_REPOSITORY_RETRY", err.Error())
+		}
 	}
 	retainUntil, err := w.Backend.Delete(ctx, ticket.OperationID, session.RealmID, payload.RepoID)
 	if err != nil {

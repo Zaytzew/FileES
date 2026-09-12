@@ -386,6 +386,34 @@ func TestWorkerDeleteUsesAuthenticatedRealmAndIsIdempotent(t *testing.T) {
 	}
 }
 
+type genericDeleteDeny struct{ repoID, realmID string }
+
+func (d *genericDeleteDeny) AuthorizeGenericDelete(_ context.Context, repoID, realmID string) error {
+	d.repoID, d.realmID = repoID, realmID
+	return ErrSpecialPurposeDeletion
+}
+
+func TestWorkerDeleteTicketCannotRemoveUploadShelf(t *testing.T) {
+	backend := &fakeBackend{}
+	guard := &genericDeleteDeny{}
+	store, _ := NewFileStore(t.TempDir())
+	worker := &Worker{Backend: backend, GenericDelete: guard, Store: store}
+	realm, repoID := uuid.NewString(), uuid.NewString()
+	session := Session{ClientID: "client-a", RealmID: realm, CanCreateRepositories: true}
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketDeleteRepository,
+		session.ClientID, control.DeleteRepositoryPayload{RepoID: repoID}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || result.Status != control.ResultError || result.Error == nil || result.Error.Code != "DELETE_REPOSITORY_SPECIAL_PURPOSE" {
+		t.Fatalf("delete result=%+v err=%v", result, err)
+	}
+	if backend.deleteCalls != 0 || guard.repoID != repoID || guard.realmID != realm {
+		t.Fatalf("backend calls=%d guard=%+v", backend.deleteCalls, guard)
+	}
+}
+
 func TestWorkerDeleteRequiresRepositoryAdministrationCapability(t *testing.T) {
 	backend := &fakeBackend{}
 	store, _ := NewFileStore(t.TempDir())

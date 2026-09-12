@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/clientview"
 	whale "filees/pkg/whale/v1"
+	"filees/public-shares/channel"
 	"github.com/google/uuid"
 )
 
@@ -65,6 +66,7 @@ type PublishRunner interface {
 
 type ServicePublisher struct {
 	ServiceWC, DataAuthzFile string
+	PublicShareStateRoot     string
 	RepositoryHead           func(context.Context, string) (RepositoryRevision, error)
 	Runner                   PublishRunner
 	Now                      func() time.Time
@@ -439,6 +441,58 @@ func (p ServicePublisher) AuthorizeDelete(_ context.Context, repoID, realmID str
 	_, _, err := p.authorizeDelete(repoID, realmID)
 	return err
 }
+
+// AuthorizeGenericDelete fences the user-facing DELETE_REPOSITORY ticket.
+// Realm removal deliberately uses the lower-level backend deletion path and
+// must still be able to dismantle special-purpose repositories.
+func (p ServicePublisher) AuthorizeGenericDelete(_ context.Context, repoID, realmID string) error {
+	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
+		return errors.New("authority publisher is incomplete")
+	}
+	if p.PublicShareStateRoot != "" && !filepath.IsAbs(p.PublicShareStateRoot) {
+		return errors.New("upload channel state root is invalid")
+	}
+	_, record, err := p.authorizeDelete(repoID, realmID)
+	if err != nil {
+		return err
+	}
+	if record.Purpose != "" {
+		return ErrSpecialPurposeDeletion
+	}
+	// Until parent deletion can enumerate and retire its channels atomically,
+	// refuse a ticket that would strand their delivery repositories and live
+	// invitations. A backend retry after authority withdrawal must continue.
+	if record.State == "deleted" || p.PublicShareStateRoot == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(p.PublicShareStateRoot, "upload-channels"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(p.PublicShareStateRoot, "upload-channels", entry.Name()))
+		if err != nil {
+			return err
+		}
+		var upload channel.UploadRecord
+		if err := json.Unmarshal(raw, &upload); err != nil || upload.Schema != channel.UploadRecordSchema {
+			return errors.New("upload channel record is invalid during repository deletion")
+		}
+		if upload.OwnerRealm == realmID && upload.Manifest != nil && upload.Manifest.AuthorityRepoID == repoID && upload.State != channel.StateDeleted {
+			return ErrRepositoryHasUploadChannels
+		}
+	}
+	return nil
+}
+
+var ErrSpecialPurposeDeletion = errors.New("special-purpose repository requires its own deletion operation")
+var ErrRepositoryHasUploadChannels = errors.New("repository has upload channels; delete their policies before deleting the repository")
 
 func (p ServicePublisher) authorizeDelete(repoID, realmID string) (string, repositoryRecord, error) {
 	if _, err := uuid.Parse(realmID); err != nil {

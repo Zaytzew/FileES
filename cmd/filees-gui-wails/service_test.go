@@ -64,6 +64,31 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestUploadShelfDoesNotOfferOrdinaryMutatingActions(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoAttachIntent: true, contract.CapRepoLock: true,
+			contract.CapRepoUnlock: true, contract.CapRepoPublish: true,
+		},
+		Repos: []guiapp.RepoViewModel{{
+			ID: "shelf", ServerID: "spot", Purpose: clientview.PurposeUploadShelf,
+			LocalPath: `E:\shelf`, Attached: true, Access: contract.AccessReadWrite,
+			State: contract.StateActive, Connectivity: contract.ConnOnline,
+			ReservationCount: 1,
+		}},
+	}
+	projected := projectViewModel(vm, journal.Texts{})
+	if len(projected.Repositories) != 1 || projected.Repositories[0].CanAttach || projected.Repositories[0].CanLock || projected.Repositories[0].CanUnlock || projected.Repositories[0].CanPublish {
+		t.Fatalf("shelf gained ordinary actions: %+v", projected.Repositories)
+	}
+	for _, action := range []string{string(tray.IntentLock), string(tray.IntentUnlock), string(tray.IntentPublish)} {
+		if _, allowed := translateAction(vm, ActionRequest{Kind: action, RepoID: "shelf", ServerID: "spot"}); allowed {
+			t.Fatalf("shelf action %s passed the host gate", action)
+		}
+	}
+}
+
 func TestProjectViewModelMarksInitialCommitAsLocalProvisioning(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected: true,

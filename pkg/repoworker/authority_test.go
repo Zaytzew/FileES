@@ -15,6 +15,72 @@ import (
 type publishRunner struct{ calls int }
 
 func (r *publishRunner) Publish(context.Context, []string, string) error { r.calls++; return nil }
+
+func TestServicePublisherRejectsGenericDeletionOfUploadRepositories(t *testing.T) {
+	root := t.TempDir()
+	realm := uuid.NewString()
+	publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: filepath.Join(root, "data.authz"), Runner: &publishRunner{}}
+	for _, purpose := range []string{clientview.PurposeUploadShelf, clientview.PurposeUploadTrash} {
+		repoID := uuid.NewString()
+		path, err := repositoryRecordPath(root, repoID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := atomicJSON(path, repositoryRecord{Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realm, Purpose: purpose}); err != nil {
+			t.Fatal(err)
+		}
+		if err := publisher.AuthorizeGenericDelete(context.Background(), repoID, realm); err == nil {
+			t.Fatalf("generic delete accepted %s", purpose)
+		}
+		if err := publisher.AuthorizeDelete(context.Background(), repoID, realm); err != nil {
+			t.Fatalf("realm teardown blocked for %s: %v", purpose, err)
+		}
+	}
+	ordinaryID := uuid.NewString()
+	path, err := repositoryRecordPath(root, ordinaryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(path, repositoryRecord{Schema: RepositorySchema, RepoID: ordinaryID, OwnerRealmID: realm}); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.AuthorizeGenericDelete(context.Background(), ordinaryID, realm); err != nil {
+		t.Fatalf("ordinary repository deletion refused: %v", err)
+	}
+}
+
+func TestServicePublisherRefusesParentDeletionWhileUploadChannelExists(t *testing.T) {
+	root, channelRoot := t.TempDir(), t.TempDir()
+	realm, parentID, channelID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	path, err := repositoryRecordPath(root, parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(path, repositoryRecord{Schema: RepositorySchema, RepoID: parentID, OwnerRealmID: realm, State: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: filepath.Join(root, "data.authz"), PublicShareStateRoot: channelRoot, Runner: &publishRunner{}}
+	channelPath := filepath.Join(channelRoot, "upload-channels", channelID+".json")
+	upload := map[string]any{
+		"schema": "filees.upload-channel/v1", "channel_id": channelID,
+		"owner_realm": realm, "state": "active",
+		"manifest": map[string]any{"authority_repo_id": parentID},
+	}
+	if err := atomicJSON(channelPath, upload); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.AuthorizeGenericDelete(context.Background(), parentID, realm); err != ErrRepositoryHasUploadChannels {
+		t.Fatalf("parent delete with active shelf: %v", err)
+	}
+	upload["state"] = "deleted"
+	if err := atomicJSON(channelPath, upload); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.AuthorizeGenericDelete(context.Background(), parentID, realm); err != nil {
+		t.Fatalf("parent delete after channel deletion: %v", err)
+	}
+}
+
 func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	root := t.TempDir()
 	realm, other := uuid.NewString(), uuid.NewString()

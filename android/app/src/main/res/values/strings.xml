@@ -144,4 +144,36 @@
     <string name="error_folder_too_big">Folder jest za duży, żeby ściągnąć go w całości na telefon (%1$s).</string>
     <string name="shouts_title">Ogłoszenie</string>
     <string name="shouts_ack">OK</string>
+
+    <string name="home_eyebrow">FileES · Twoje pliki</string>
+    <string name="home_title">Twoje pliki.\nNa właściwej ścieżce.</string>
+    <string name="home_copy_idle">Zeskanuj kod QR z pulpitu FileES, żeby zobaczyć foldery tej strefy.</string>
+    <string name="home_pulse_repos">repo</string>
+    <string name="home_metric_servers">Serwery</string>
+    <string name="home_metric_servers_note">sparowane</string>
+    <string name="home_metric_repos">Foldery</string>
+    <string name="home_metric_repos_note">w strefie</string>
+    <string name="home_metric_pending">Do decyzji</string>
+    <string name="home_metric_pending_note">lokalna kolejka</string>
+    <string name="home_files_eyebrow">Twoje pliki</string>
+    <string name="home_server_switch">Dotknij, żeby przełączyć</string>
+    <string name="home_chevron">⌄</string>
+    <plurals name="home_folder_count">
+        <item quantity="one">%d folder</item>
+        <item quantity="few">%d foldery</item>
+        <item quantity="many">%d folderów</item>
+        <item quantity="other">%d folderu</item>
+    </plurals>
+    <string name="home_journal_title">Dziennik telefonu</string>
+    <string name="home_journal_intro">Ogłoszenia i decyzje wrzutki z tego urządzenia. To nie jest dziennik daemona.</string>
+    <string name="home_journal_empty">Brak wpisów.</string>
+    <string name="home_journal_pending">Do decyzji: %1$s</string>
+    <string name="home_journal_shout">Ogłoszenie r%1$s</string>
+    <string name="home_fact_server">Serwer</string>
+    <string name="home_fact_revision">Rewizja</string>
+    <string name="home_fact_access">Dostęp</string>
+    <string name="home_fact_folder">Folder</string>
+    <string name="home_fact_revision_unknown">—</string>
+    <string name="home_access_rw">zapis</string>
+    <string name="home_access_r">odczyt</string>
 </resources>

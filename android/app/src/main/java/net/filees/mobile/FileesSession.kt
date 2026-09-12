@@ -71,6 +71,8 @@ object FileesSession {
     const val PREF_REALM_ALIAS = "realm_alias"
     const val PREF_VIEW_GENERATED_AT = "view_generated_at"
     const val PREF_ACKED_SHOUTS = "acked_shouts"
+    private const val PREF_JOURNAL = "phone_journal_json"
+    private const val JOURNAL_CAP = 12
     const val MOBILE_USER = "_filees-mobile"
 
     private const val PREF_SERVERS = "servers_json"
@@ -206,6 +208,40 @@ object FileesSession {
         val next = JSONArray()
         have.forEach { next.put(it) }
         prefs.edit().putString(PREF_ACKED_SHOUTS, next.toString()).apply()
+    }
+
+    data class PhoneJournalEntry(
+        val at: Long,
+        val scope: String,
+        val entry: String,
+    )
+
+    fun pushJournal(prefs: SharedPreferences, scope: String, entry: String) {
+        val next = JSONArray()
+        next.put(
+            JSONObject()
+                .put("at", System.currentTimeMillis())
+                .put("scope", scope)
+                .put("entry", entry),
+        )
+        val prev = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
+        for (i in 0 until prev.length()) {
+            if (next.length() >= JOURNAL_CAP) break
+            next.put(prev.getJSONObject(i))
+        }
+        prefs.edit().putString(PREF_JOURNAL, next.toString()).apply()
+    }
+
+    fun journal(prefs: SharedPreferences): List<PhoneJournalEntry> {
+        val array = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
+        return (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            PhoneJournalEntry(
+                at = o.optLong("at"),
+                scope = o.optString("scope"),
+                entry = o.optString("entry"),
+            )
+        }
     }
 
     private fun replace(prefs: SharedPreferences, server: PairedServer) {

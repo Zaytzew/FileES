@@ -78,11 +78,27 @@ data class BrowseRow(
     val size: Long,
     val repoId: String = "",
     val share: Boolean = false,
-    // Non-null marks this row as a section separator (e.g. "Półki
-    // przyjęcia") instead of a browsable entry - BrowseAdapter renders it
-    // with a distinct header layout and skips onOpen/onDownload wiring.
     val sectionHeader: String? = null,
-)
+    val kind: Kind = Kind.ITEM,
+    val metricServers: String = "",
+    val metricRepos: String = "",
+    val metricPending: String = "",
+    val factServer: String = "",
+    val factRevision: String = "",
+    val factAccess: String = "",
+    val factFolder: String = "",
+    val journalScope: String = "",
+    val journalTime: String = "",
+    val journalEntry: String = "",
+    val heroCopy: String = "",
+    val pulseValue: String = "",
+    val serverMeta: String = "",
+    val switchServerId: String = "",
+) {
+    enum class Kind {
+        ITEM, HEADER, HERO, METRICS, SERVER, FACTS, JOURNAL_HEAD, JOURNAL
+    }
+}
 
 object ManifestBrowse {
     fun entriesFrom(manifestJson: String): List<ManifestEntry> {

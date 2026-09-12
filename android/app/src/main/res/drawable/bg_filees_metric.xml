@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/filees_panel" />
+    <corners android:radius="@dimen/filees_radius" />
+    <stroke
+        android:width="@dimen/filees_hairline"
+        android:color="@color/filees_line" />
+</shape>

@@ -221,6 +221,24 @@ type QuarantineFetch struct {
 	RemainingHours         int
 }
 
+// ShelfLister reads what is waiting on one shelf. Listing only: content moves
+// by svn checkout when the owner asks, never through this seam.
+type ShelfLister interface {
+	ListShelf(context.Context, string, string) (ShelfList, error)
+}
+
+type ShelfList struct {
+	ChannelID string
+	Items     []ShelfItem
+}
+
+type ShelfItem struct {
+	UploadID, RepoPath, OriginalName string
+	Size                             int64
+	Revision                         int64
+	AcceptedAt                       string
+}
+
 type QuarantineManager interface {
 	ListQuarantine(context.Context, string) (QuarantineList, error)
 	HideQuarantine(context.Context, string, string) error
@@ -351,6 +369,8 @@ type Config struct {
 	PublicShares         PublicShareManager
 	UploadChannels       UploadChannelManager
 	Quarantine           QuarantineManager
+	Shelf                ShelfLister
+	ShelfBrowser         platform.ShelfBrowser
 	Shouts               ShoutPublisher
 	Notices              NoticeAcker
 	UnportableRenamer    UnportableRenamer
@@ -1919,6 +1939,12 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				current = &channel
 			}
 			switch choice.Action {
+			case platform.UploadChannelDialogBrowse:
+				// The shelf opens over the channel list rather than replacing
+				// it: the owner looks at what arrived and comes back to the
+				// same place, the way the quarantine review does.
+				c.showShelf(ctx, serverID, repoID, *current)
+				continue
 			case platform.UploadChannelDialogCreate, platform.UploadChannelDialogEdit:
 				if current != nil && current.State != "active" {
 					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.inactiveShelf", Title: "Półka nie jest aktywna", Text: "Cofniętej półki nie można edytować. Wystaw nową pod nowym adresem."})
@@ -2000,6 +2026,44 @@ func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, autho
 		}
 	}
 	_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
+}
+
+// showShelf lists one shelf and hands it to the browser.
+//
+// Modelled on startReviewQuarantine, minus what a shelf does not have: no
+// purge announcement, because nothing on a shelf expires, and no loop over
+// actions, because looking is the only one for now. It is called inline from
+// the channel list, so it does not take an operation of its own — the channel
+// dialog already holds one.
+func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, shelf UploadChannelSummary) {
+	if c.cfg.Shelf == nil || c.cfg.ShelfBrowser == nil {
+		return
+	}
+	key := "shelf." + serverID + "." + shelf.ChannelID
+	listed, err := c.cfg.Shelf.ListShelf(ctx, serverID, shelf.ChannelID)
+	if err != nil {
+		c.reportActionError(ctx, key, c.uiText("feedback.n132", "Nie udało się odczytać półki"), err.Error())
+		return
+	}
+	name := strings.TrimSpace(shelf.Slug)
+	if name == "" {
+		name = shelf.ChannelID
+	}
+	request := platform.ShelfDialogRequest{
+		TextKey:  "view.shelf",
+		Title:    c.uiText("shelf.title", "Zawartość półki"),
+		Text:     c.uiText("shelf.intro", "Pliki wniesione przez zaproszonych. Leżą na serwerze, dopóki ich stąd nie zabierzesz."),
+		ServerID: serverID, RepoID: repoID, ChannelID: shelf.ChannelID, ShelfName: name,
+	}
+	for _, item := range listed.Items {
+		request.Items = append(request.Items, platform.ShelfItem{
+			UploadID: item.UploadID, RepoPath: item.RepoPath, OriginalName: item.OriginalName,
+			Size: item.Size, Revision: item.Revision, AcceptedAt: item.AcceptedAt,
+		})
+	}
+	if _, err := c.cfg.ShelfBrowser.ShowShelf(ctx, request); err != nil {
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n133", "Nie udało się otworzyć półki"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+	}
 }
 
 func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID string, direct bool) {

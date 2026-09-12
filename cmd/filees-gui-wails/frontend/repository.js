@@ -1,7 +1,7 @@
 import { Events, Window } from "/wails/runtime.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
-import { initializeLanguage, t, labelHTML } from "./i18n.js";
+import { initializeLanguage, t, labelHTML, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, canArchive, setArchived } from "./repo-view.js";
 
 initializeTheme();
@@ -21,8 +21,8 @@ let currentSnapshot = null;
 function refreshRepositoryLabels() {
   if (!currentSnapshot) return;
   const mode = currentSnapshot.mode;
-  const scope = { shares: "sharesScope", grants: "grantsScope", uploads: "uploadScope", quarantine: "quarantineScope" };
-  const back = { shares: "repository.back", grants: "repository.closeGrants", uploads: "repository.closeUploads", quarantine: "repository.closeQuarantine" };
+  const scope = { shares: "sharesScope", grants: "grantsScope", uploads: "uploadScope", quarantine: "quarantineScope", shelf: "uploadScope" };
+  const back = { shares: "repository.back", grants: "repository.closeGrants", uploads: "repository.closeUploads", quarantine: "repository.closeQuarantine", shelf: "shelf.close" };
   $("#scope-label").textContent = t(`repository.${scope[mode] || "defaultScope"}`);
   $("#repository-copy").textContent = currentSnapshot.text_key ? (currentSnapshot.text_prefix ? currentSnapshot.text_prefix + " " : "") + t(currentSnapshot.text_key) : currentSnapshot.text || t("repository.copy");
   $("#back-to-actions").textContent = t(back[mode] || "action.close");
@@ -89,6 +89,7 @@ function grantCard(grant) {
 
 function uploadCard(channel) {
 	const controls = [
+		`<button type="button" data-upload-action="browse" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.browseShelf")}</button>`,
 		channel.can_edit ? `<button type="button" data-upload-action="edit" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.edit")}</button>` : "",
 		channel.can_revoke ? `<button type="button" data-upload-action="revoke" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
 		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.delete")}</button>` : "",
@@ -113,6 +114,28 @@ function quarantineCard(item) {
 	</article>`;
 }
 
+// A shelf row names the file twice on purpose. The contributor's own name is
+// what the owner recognises; the repository path is what a fetch will ask for,
+// and the naming policy may have changed it. Showing only one would either
+// hide the recognition or hide the handle.
+function shelfCard(item) {
+	return `<article class="share-row">
+		<div class="share-main"><span class="share-dot active" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${labelHTML("shelf.path")}: ${escapeHTML(item.repo_path || "")}</small></div></div>
+		<div class="share-fact"><small>${labelHTML("field.size")}</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
+		<div class="share-fact"><small>${labelHTML("shelf.delivered")}</small><span data-shelf-time="${escapeHTML(item.accepted_at || "")}">${escapeHTML(shelfTime(item.accepted_at))}</span></div>
+		<div class="share-fact"><small>${labelHTML("shelf.revision")}</small><span>${item.revision ? "r" + escapeHTML(String(item.revision)) : labelHTML("field.unknown")}</span></div>
+	</article>`;
+}
+
+// The host sends the instant; this side decides how it reads, the same way the
+// journal does. An unparseable value is shown as it came rather than guessed at.
+function shelfTime(value) {
+	if (!value) return "";
+	const when = new Date(value);
+	if (!Number.isFinite(when.getTime())) return value;
+	return when.toLocaleString(getLocale(), {dateStyle: "short", timeStyle: "short"});
+}
+
 function render(snapshot) {
   if (!snapshot?.revision || !snapshot.context?.repo_id) return;
   const contextChanged = currentSnapshot?.revision !== snapshot.revision;
@@ -122,10 +145,11 @@ function render(snapshot) {
 	const grantsMode = snapshot.mode === "grants";
 	const uploadsMode = snapshot.mode === "uploads";
 	const quarantineMode = snapshot.mode === "quarantine";
-	const detailMode = sharesMode || grantsMode || uploadsMode || quarantineMode;
+	const shelfMode = snapshot.mode === "shelf";
+	const detailMode = sharesMode || grantsMode || uploadsMode || quarantineMode || shelfMode;
 
   $("#window-context").textContent = context.name || context.repo_id;
-	$("#scope-label").textContent = sharesMode ? t("repository.sharesScope") : grantsMode ? t("repository.grantsScope") : uploadsMode ? t("repository.uploadScope") : quarantineMode ? t("repository.quarantineScope") : t("repository.defaultScope");
+	$("#scope-label").textContent = sharesMode ? t("repository.sharesScope") : grantsMode ? t("repository.grantsScope") : uploadsMode ? t("repository.uploadScope") : quarantineMode ? t("repository.quarantineScope") : shelfMode ? t("repository.uploadScope") : t("repository.defaultScope");
   $("#repository-name").textContent = context.name || context.repo_id;
   $("#repository-copy").textContent = snapshot.text_key ? (snapshot.text_prefix ? snapshot.text_prefix + " " : "") + t(snapshot.text_key) : snapshot.text || t("repository.copy");
   $("#repository-server").textContent = context.server_name || context.server_id;
@@ -138,8 +162,9 @@ function render(snapshot) {
 	$("#grants-view").hidden = !grantsMode;
 	$("#uploads-view").hidden = !uploadsMode;
 	$("#quarantine-view").hidden = !quarantineMode;
+	$("#shelf-view").hidden = !shelfMode;
 	$("#back-to-actions").hidden = !detailMode;
-	$("#back-to-actions").textContent = sharesMode ? t("repository.back") : grantsMode ? t("repository.closeGrants") : uploadsMode ? t("repository.closeUploads") : quarantineMode ? t("repository.closeQuarantine") : t("action.close");
+	$("#back-to-actions").textContent = sharesMode ? t("repository.back") : grantsMode ? t("repository.closeGrants") : uploadsMode ? t("repository.closeUploads") : quarantineMode ? t("repository.closeQuarantine") : shelfMode ? t("shelf.close") : t("action.close");
 
   if (!sharesMode) {
     const actions = snapshot.actions || [];
@@ -171,6 +196,14 @@ function render(snapshot) {
 			? channels.map(uploadCard).join("")
 			: `<p class="empty">${labelHTML("repository.noUploads")}</p>`;
 		$("#create-upload").disabled = Boolean(snapshot.busy);
+	}
+	if (shelfMode) {
+		const items = snapshot.shelf || [];
+		// The shelf name is server data, never a translated label.
+		$("#shelf-heading").textContent = snapshot.shelf_name ? `${t("shelf.title")} — ${snapshot.shelf_name}` : t("shelf.title");
+		$("#shelf-items").innerHTML = items.length
+			? items.map(shelfCard).join("")
+			: `<p class="muted">${escapeHTML(t("shelf.empty"))}</p>`;
 	}
 	if (quarantineMode) {
 		const items = snapshot.quarantine || [];

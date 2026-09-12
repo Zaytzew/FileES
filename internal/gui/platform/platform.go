@@ -163,11 +163,69 @@ const (
 	UploadChannelDialogEdit   UploadChannelDialogAction = "edit"
 	UploadChannelDialogRevoke UploadChannelDialogAction = "revoke"
 	UploadChannelDialogDelete UploadChannelDialogAction = "delete"
+	// Browse opens one shelf's contents. It is the only entry: a shelf is
+	// reached through the channel that owns it, never guessed from a
+	// repository row, because the channel is what names it.
+	UploadChannelDialogBrowse UploadChannelDialogAction = "browse"
 )
 
 type UploadChannelDialogResult struct {
 	Action    UploadChannelDialogAction
 	ChannelID string
+}
+
+// ShelfBrowser renders one upload shelf: what contributors have delivered and
+// the owner has not dealt with yet.
+//
+// Modelled on QuarantineBrowser, and the differences are the shelf's own. The
+// waiting room holds rejected payloads on the server's disk and hands them over
+// as bytes; a shelf holds accepted files inside the delivery repository, so
+// nothing here carries content. A row names what is there and where it sits in
+// that repository, and the file itself travels by svn checkout when the owner
+// asks for it — the single direction the concept allows (§10a.0).
+//
+// There is no hide. A reject expires by itself, so hiding one is housekeeping;
+// a shelf entry stands until the owner takes it, which is the point of a shelf.
+type ShelfBrowser interface {
+	ShowShelf(context.Context, ShelfDialogRequest) (ShelfDialogResult, error)
+}
+
+type ShelfDialogRequest struct {
+	TextKey                       string // GUI-authored description; empty preserves Text verbatim.
+	TextPrefix                    string // Literal server message preceding GUI copy.
+	Title, Text, ServerID, RepoID string
+	RepositoryName                string
+	// ChannelID names the shelf. An owner may hold several on one repository,
+	// so the dialog is never opened for "the" shelf.
+	ChannelID   string
+	ShelfName   string
+	Items       []ShelfItem
+	DirectEntry bool
+}
+
+// ShelfItem is one delivered file. RepoPath is what a fetch will ask the
+// delivery repository for, so it travels rather than being rebuilt from the
+// original name, which the naming policy may have changed.
+//
+// No contributor is named. Which invitation was exercised lives in the
+// encrypted event record on the server and is resolvable only with a key kept
+// apart from it; a browser row is not where that is handed out.
+type ShelfItem struct {
+	UploadID, RepoPath, OriginalName string
+	Size                             int64
+	Revision                         int64
+	AcceptedAt                       string
+}
+
+type ShelfDialogAction string
+
+const (
+	ShelfDialogClose ShelfDialogAction = "close"
+)
+
+type ShelfDialogResult struct {
+	Action   ShelfDialogAction
+	UploadID string
 }
 
 // QuarantineBrowser renders the owner's AV-reject waiting room as a daemon

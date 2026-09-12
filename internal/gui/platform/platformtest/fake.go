@@ -23,6 +23,7 @@ type Fake struct {
 	PublicSharesFunc    func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error)
 	UploadChannelsFunc  func(context.Context, platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error)
 	QuarantineFunc      func(context.Context, platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error)
+	ShelfFunc           func(context.Context, platform.ShelfDialogRequest) (platform.ShelfDialogResult, error)
 	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
@@ -43,6 +44,7 @@ type Fake struct {
 	PublicShareRequests     []platform.PublicShareDialogRequest
 	UploadChannelRequests   []platform.UploadChannelDialogRequest
 	QuarantineRequests      []platform.QuarantineDialogRequest
+	ShelfRequests           []platform.ShelfDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec
@@ -113,6 +115,17 @@ func (f *Fake) ShowUploadChannels(ctx context.Context, request platform.UploadCh
 		return fn(ctx, request)
 	}
 	return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
+}
+
+func (f *Fake) ShowShelf(ctx context.Context, request platform.ShelfDialogRequest) (platform.ShelfDialogResult, error) {
+	f.mu.Lock()
+	f.ShelfRequests = append(f.ShelfRequests, request)
+	fn := f.ShelfFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.ShelfDialogResult{Action: platform.ShelfDialogClose}, nil
 }
 
 func (f *Fake) ShowQuarantine(ctx context.Context, request platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
@@ -270,6 +283,7 @@ func (f *Fake) Snapshot() Snapshot {
 		PublicShareRequests:     append([]platform.PublicShareDialogRequest(nil), f.PublicShareRequests...),
 		UploadChannelRequests:   append([]platform.UploadChannelDialogRequest(nil), f.UploadChannelRequests...),
 		QuarantineRequests:      append([]platform.QuarantineDialogRequest(nil), f.QuarantineRequests...),
+		ShelfRequests:           append([]platform.ShelfDialogRequest(nil), f.ShelfRequests...),
 		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
 		Notifications:           append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests:          append([]platform.AutostartSpec(nil), f.StatusRequests...),
@@ -292,6 +306,7 @@ type Snapshot struct {
 	PublicShareRequests     []platform.PublicShareDialogRequest
 	UploadChannelRequests   []platform.UploadChannelDialogRequest
 	QuarantineRequests      []platform.QuarantineDialogRequest
+	ShelfRequests           []platform.ShelfDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec

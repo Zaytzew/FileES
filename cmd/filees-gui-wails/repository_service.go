@@ -25,12 +25,14 @@ type RepositoryService struct {
 	grants     *repositoryGrantsSession
 	uploads    *repositoryUploadsSession
 	quarantine *repositoryQuarantineSession
+	shelf      *repositoryShelfSession
 	// pendingShares binds a controller continuation to the exact repository
 	// action that requested it. A newer gear click clears the continuation.
 	pendingShares     string
 	pendingGrants     string
 	pendingUploads    string
 	pendingQuarantine string
+	pendingShelf      string
 	revision          uint64
 }
 
@@ -59,6 +61,11 @@ type repositoryQuarantineSession struct {
 	resolved bool
 }
 
+type repositoryShelfSession struct {
+	result   chan platform.ShelfDialogResult
+	resolved bool
+}
+
 type repositorySettingsBrowserAdapter struct{ service *RepositoryService }
 type repositoryPublicShareBrowserAdapter struct{ service *RepositoryService }
 type repositoryRealmGrantBrowserAdapter struct {
@@ -67,6 +74,7 @@ type repositoryRealmGrantBrowserAdapter struct {
 }
 type repositoryUploadChannelBrowserAdapter struct{ service *RepositoryService }
 type repositoryQuarantineBrowserAdapter struct{ service *RepositoryService }
+type repositoryShelfBrowserAdapter struct{ service *RepositoryService }
 
 type settingsBrowserRouter struct {
 	server     settingsBrowserAdapter
@@ -87,6 +95,8 @@ type RepositorySnapshot struct {
 	Grants         []RealmGrantProjection       `json:"grants"`
 	Uploads        []UploadChannelProjection    `json:"uploads"`
 	Quarantine     []QuarantineItemProjection   `json:"quarantine"`
+	Shelf          []ShelfItemProjection        `json:"shelf"`
+	ShelfName      string                       `json:"shelf_name,omitempty"`
 	FocusChannelID string                       `json:"focus_channel_id,omitempty"`
 }
 
@@ -149,6 +159,19 @@ type UploadChannelProjection struct {
 	CanEdit    bool   `json:"can_edit"`
 	CanRevoke  bool   `json:"can_revoke"`
 	CanDelete  bool   `json:"can_delete"`
+}
+
+// ShelfItemProjection is one delivered file as the panel renders it. There is
+// no size label shortcut here as quarantine has: a shelf shows the repository
+// path too, so the renderer formats both and the host keeps the raw numbers.
+type ShelfItemProjection struct {
+	UploadID     string `json:"upload_id"`
+	RepoPath     string `json:"repo_path"`
+	OriginalName string `json:"original_name"`
+	Size         int64  `json:"size"`
+	SizeLabel    string `json:"size_label"`
+	Revision     int64  `json:"revision,omitempty"`
+	AcceptedAt   string `json:"accepted_at,omitempty"`
 }
 
 type QuarantineItemProjection struct {
@@ -401,12 +424,14 @@ func (service *RepositoryService) Cancel() {
 	grants := service.grants
 	uploads := service.uploads
 	quarantine := service.quarantine
+	shelf := service.shelf
 	hide := service.hide
 	resolveSettings := settings != nil && !settings.resolved
 	resolveShares := shares != nil && !shares.resolved
 	resolveGrants := grants != nil && !grants.resolved
 	resolveUploads := uploads != nil && !uploads.resolved
 	resolveQuarantine := quarantine != nil && !quarantine.resolved
+	resolveShelf := shelf != nil && !shelf.resolved
 	if resolveSettings {
 		settings.resolved = true
 	}
@@ -421,6 +446,9 @@ func (service *RepositoryService) Cancel() {
 	}
 	if resolveQuarantine {
 		quarantine.resolved = true
+	}
+	if resolveShelf {
+		shelf.resolved = true
 	}
 	service.pendingShares = ""
 	service.pendingGrants = ""
@@ -441,6 +469,9 @@ func (service *RepositoryService) Cancel() {
 	}
 	if resolveQuarantine {
 		quarantine.result <- platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}
+	}
+	if resolveShelf {
+		shelf.result <- platform.ShelfDialogResult{Action: platform.ShelfDialogClose}
 	}
 	if hide != nil {
 		hide()
@@ -767,6 +798,66 @@ func (service *RepositoryService) finishUploads(session *repositoryUploadsSessio
 	}
 }
 
+// showShelf renders one shelf over the channel list. Unlike the other browsers
+// it does not take over the pending-context dance: the shelf is opened from
+// inside the channel dialog, so the context that got the owner there is
+// already the right one and stealing it would lose the way back.
+func (service *RepositoryService) showShelf(ctx context.Context, request platform.ShelfDialogRequest) (platform.ShelfDialogResult, error) {
+	service.mu.Lock()
+	contextProjection := service.snapshot.Context
+	if request.ServerID != "" && request.RepoID != "" {
+		contextProjection.ServerID, contextProjection.RepoID = request.ServerID, request.RepoID
+		if request.RepositoryName != "" {
+			contextProjection.Name = request.RepositoryName
+		}
+	}
+	projection, ok := projectShelf(request, contextProjection)
+	if !ok {
+		service.mu.Unlock()
+		return platform.ShelfDialogResult{Action: platform.ShelfDialogClose}, nil
+	}
+	session := &repositoryShelfSession{result: make(chan platform.ShelfDialogResult, 1)}
+	previousShelf := service.shelf
+	service.revision++
+	projection.Revision = service.revision
+	service.snapshot = projection
+	service.shelf = session
+	service.pendingShelf = ""
+	emitter, show := service.emitter, service.show
+	service.mu.Unlock()
+	if previousShelf != nil && !previousShelf.resolved {
+		previousShelf.resolved = true
+		previousShelf.result <- platform.ShelfDialogResult{Action: platform.ShelfDialogClose}
+	}
+	emitRepositorySnapshot(emitter, projection)
+	if show != nil {
+		show()
+	}
+
+	select {
+	case result := <-session.result:
+		service.finishShelf(session)
+		return result, nil
+	case <-ctx.Done():
+		service.finishShelf(session)
+		return platform.ShelfDialogResult{Action: platform.ShelfDialogClose}, ctx.Err()
+	}
+}
+
+func (service *RepositoryService) finishShelf(session *repositoryShelfSession) {
+	service.mu.Lock()
+	if service.shelf != session {
+		service.mu.Unlock()
+		return
+	}
+	service.shelf = nil
+	service.mu.Unlock()
+}
+
+func (adapter repositoryShelfBrowserAdapter) ShowShelf(ctx context.Context, request platform.ShelfDialogRequest) (platform.ShelfDialogResult, error) {
+	return adapter.service.showShelf(ctx, request)
+}
+
 func (service *RepositoryService) finishQuarantine(session *repositoryQuarantineSession) {
 	service.mu.Lock()
 	if service.quarantine != session {
@@ -917,6 +1008,44 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 	return snapshot, true
 }
 
+func projectShelf(request platform.ShelfDialogRequest, contextProjection RepositoryContextProjection) (RepositorySnapshot, bool) {
+	if strings.TrimSpace(contextProjection.ServerID) == "" || strings.TrimSpace(contextProjection.RepoID) == "" {
+		return RepositorySnapshot{}, false
+	}
+	if strings.TrimSpace(request.ChannelID) == "" {
+		return RepositorySnapshot{}, false
+	}
+	snapshot := RepositorySnapshot{
+		Mode: "shelf", Title: request.Title, Text: request.Text, TextKey: request.TextKey, TextPrefix: request.TextPrefix,
+		Context: contextProjection, ShelfName: request.ShelfName, FocusChannelID: request.ChannelID,
+		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{},
+		Uploads: []UploadChannelProjection{}, Quarantine: []QuarantineItemProjection{},
+		Shelf: make([]ShelfItemProjection, 0, len(request.Items)),
+	}
+	for _, item := range request.Items {
+		uploadID := strings.TrimSpace(item.UploadID)
+		if uploadID == "" {
+			continue
+		}
+		// The contributor's own name is what the owner recognises, so it is
+		// shown; the repository path is what a fetch will ask for, so it is
+		// carried too. Neither substitutes for the other.
+		name := strings.TrimSpace(item.OriginalName)
+		if name == "" {
+			name = strings.TrimSpace(item.RepoPath)
+		}
+		if name == "" {
+			name = uploadID
+		}
+		snapshot.Shelf = append(snapshot.Shelf, ShelfItemProjection{
+			UploadID: uploadID, RepoPath: item.RepoPath, OriginalName: name,
+			Size: item.Size, SizeLabel: quarantineSizeLabel(item.Size),
+			Revision: item.Revision, AcceptedAt: item.AcceptedAt,
+		})
+	}
+	return snapshot, true
+}
+
 func projectQuarantine(request platform.QuarantineDialogRequest, contextProjection RepositoryContextProjection) (RepositorySnapshot, bool) {
 	if strings.TrimSpace(contextProjection.ServerID) == "" || strings.TrimSpace(contextProjection.RepoID) == "" {
 		return RepositorySnapshot{}, false
@@ -1031,6 +1160,8 @@ func uploadChoiceAllowed(channels []UploadChannelProjection, action platform.Upl
 			continue
 		}
 		switch action {
+		case platform.UploadChannelDialogBrowse:
+			return true
 		case platform.UploadChannelDialogEdit:
 			return channel.CanEdit
 		case platform.UploadChannelDialogRevoke:

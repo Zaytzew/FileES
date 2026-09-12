@@ -56,6 +56,7 @@ svn_error_t *filees_ra_cat(const char *url, const char *out_path,
                            svn_revnum_t revision, apr_pool_t *pool);
 svn_error_t *filees_ra_checkout(const char *url, const char *wc,
                                 svn_revnum_t revision, svn_boolean_t force,
+                                svn_depth_t depth,
                                 apr_pool_t *pool);
 svn_error_t *filees_ra_update(const char *wc, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,

@@ -20,7 +20,7 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1"]}`)
 		return
 	}
 	if p := os.Getenv("FILEES_TEST_RA_TRACE"); p != "" {
@@ -57,8 +57,27 @@ func TestNativeRAOldHelperRefusedBeforeUpdate(t *testing.T) {
 	if _, e := c.nativeCheckout(t.Context(), "file:///repo", filepath.Join(t.TempDir(), "wc")); e == nil {
 		t.Fatal("old helper accepted for checkout")
 	}
+	if _, e := c.nativeCheckoutDepthEmpty(t.Context(), "file:///repo", filepath.Join(t.TempDir(), "shelf")); e == nil {
+		t.Fatal("old helper accepted for sparse checkout")
+	}
 	if _, e := os.Stat(trace); !os.IsNotExist(e) {
 		t.Fatal("mutation attempted before capability check", e)
+	}
+}
+
+func TestNativeSparseCheckoutUsesExplicitDepth(t *testing.T) {
+	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"revision":1,"conflicts":[],"changes":[]}`)
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("FILEES_TEST_RA_TRACE", trace)
+	if _, err := c.nativeCheckoutDepthEmpty(t.Context(), "file:///repo", filepath.Join(t.TempDir(), "shelf")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"checkout","--url","file:///repo"`) || !strings.Contains(string(data), `"--depth","empty"`) {
+		t.Fatalf("native sparse checkout argv = %s", data)
 	}
 }
 

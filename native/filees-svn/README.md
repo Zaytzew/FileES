@@ -22,6 +22,10 @@ path batches remain 512; this does not remove every possible argv limit.
 Native Windows and OpenBSD acceptance: reports/NATIVE_SVN_TARGETS_2026-09-09.md.
 
 Update/checkout advertise and require `features: ["update_changes"]`.
+Sparse checkout additionally requires `sparse_checkout_v1` and passes
+`checkout --depth empty` through the native helper. It creates only the WC
+root; selected children are fetched later. This transport ability does not
+by itself attach an upload shelf or disable repository supervision.
 Their receipt carries `changes: [{path, action}]` (plain A/U/D) alongside
 `conflicts`; merged/conflicted work is not reported as a clean incoming edit.
 Go passes these notifications to the existing received journal and conflict

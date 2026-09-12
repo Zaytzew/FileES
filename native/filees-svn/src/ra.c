@@ -433,6 +433,7 @@ static void print_update_receipt(svn_revnum_t revision,
  * adopted on first import. Subversion still refuses versioned ones. */
 svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
                                 svn_revnum_t revision, svn_boolean_t force,
+                                svn_depth_t depth,
                                 apr_pool_t *pool)
 {
     const char *url, *wc;
@@ -467,7 +468,9 @@ svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
     ctx->notify_func2 = collect_notify;
     ctx->notify_baton2 = &notify;
 
-    SVN_ERR(svn_client_checkout3(&result, url, wc, &peg, &rev, svn_depth_infinity,
+    if (depth != svn_depth_empty && depth != svn_depth_infinity)
+        return filees_refuse("checkout depth must be empty or infinity");
+    SVN_ERR(svn_client_checkout3(&result, url, wc, &peg, &rev, depth,
                                  TRUE /* ignore_externals */, force, ctx, pool));
     print_update_receipt(result, notify.conflicts, notify.changes);
     return SVN_NO_ERROR;

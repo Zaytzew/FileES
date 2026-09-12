@@ -232,6 +232,24 @@ func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (s
 	return c.run(ctx, "", []string{"checkout", "--force", repoURL, localPath})
 }
 
+// CheckoutDepthEmpty creates a sparse WC root without materializing any
+// repository children. This is deliberately separate from Checkout: its
+// resume path must never call the ordinary full-depth Update.
+func (c *execClient) CheckoutDepthEmpty(ctx context.Context, repoURL, localPath string) (string, error) {
+	if _, err := os.Lstat(filepath.Join(localPath, ".svn")); err == nil {
+		return "", errors.New("sparse checkout refuses an existing working copy")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := os.MkdirAll(localPath, 0o755); err != nil {
+		return "", err
+	}
+	if nativeWCOps(c) {
+		return c.nativeCheckoutDepthEmpty(ctx, repoURL, localPath)
+	}
+	return c.run(ctx, "", []string{"checkout", "--force", "--depth", "empty", repoURL, localPath})
+}
+
 func (c *execClient) Cleanup(ctx context.Context, localPath string) (string, error) {
 	if nativeWCOps(c) {
 		return c.nativeCleanup(ctx, localPath)

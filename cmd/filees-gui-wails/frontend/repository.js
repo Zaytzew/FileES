@@ -124,6 +124,7 @@ function shelfCard(item) {
 		<div class="share-fact"><small>${labelHTML("field.size")}</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
 		<div class="share-fact"><small>${labelHTML("shelf.delivered")}</small><span data-shelf-time="${escapeHTML(item.accepted_at || "")}">${escapeHTML(shelfTime(item.accepted_at))}</span></div>
 		<div class="share-fact"><small>${labelHTML("shelf.revision")}</small><span>${item.revision ? "r" + escapeHTML(String(item.revision)) : labelHTML("field.unknown")}</span></div>
+		<div class="share-actions"><button type="button" data-shelf-fetch="${escapeHTML(item.upload_id)}">${labelHTML("action.fetch")}</button></div>
 	</article>`;
 }
 
@@ -338,6 +339,18 @@ $("#create-upload").addEventListener("click", (event) => chooseUpload("create", 
 $("#quarantine-items").addEventListener("click", (event) => {
 	const button = event.target.closest("[data-quarantine-action]");
 	if (button) chooseQuarantine(button.dataset.quarantineAction, button.dataset.uploadId || "", button);
+});
+$("#shelf-items").addEventListener("click", async (event) => {
+	const button = event.target.closest("[data-shelf-fetch]");
+	if (!button) return;
+	button.disabled = true;
+	try {
+		const choice = contextChoice("fetch", currentSnapshot.focus_channel_id);
+		choice.upload_id = button.dataset.shelfFetch;
+		const result = await RepositoryService.ChooseShelf(choice);
+		if (!result.accepted) showToast(t("ui.unavailable"), result.code);
+	} catch (error) { showToast(t("ui.sendFailed"), error?.message || String(error)); }
+	finally { button.disabled = false; }
 });
 $("#repository-close").addEventListener("click", closeRepository);
 $("#repository-done").addEventListener("click", closeRepository);

@@ -74,6 +74,17 @@ export function ChooseShare(choice) {
 }
 
 /**
+ * ChooseShelf accepts only a displayed selection from this presentation session.
+ * @param {$models.RepositoryChoice} choice
+ * @returns {$CancellablePromise<$models.RepositoryAcceptance>}
+ */
+export function ChooseShelf(choice) {
+    return $Call.ByID(439832308, choice).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * ChooseUpload returns an action only for a shelf present in the current
  * authoritative channel list. Create is the sole channel-less operation.
  * @param {$models.RepositoryChoice} choice

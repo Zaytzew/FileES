@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.download.running": "Pobieranie z półki trwa",
+  "shelf.download.complete": "Pobrano plik z półki",
   "prompt.submitFailed": "Nie udało się przekazać decyzji · {reason}",
   "settings.copy": "Ustawienia tego serwera.",
   "settings.noRealm": "strefa nieustawiona",

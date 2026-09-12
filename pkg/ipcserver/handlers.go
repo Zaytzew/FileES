@@ -119,6 +119,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleUploadChannel(req, "delete")
 	case contract.CmdRepoShelfList:
 		return s.handleShelfList(req)
+	case contract.CmdRepoShelfFetch:
+		return s.handleShelfFetch(req)
 	case contract.CmdRepoQuarantineList:
 		return s.handleQuarantine(req, "list")
 	case contract.CmdRepoQuarantineHide:

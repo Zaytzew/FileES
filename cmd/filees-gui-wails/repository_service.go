@@ -343,6 +343,37 @@ func (service *RepositoryService) ChooseQuarantine(choice RepositoryChoice) Repo
 	return RepositoryAcceptance{Accepted: true}
 }
 
+// ChooseShelf accepts only a displayed selection from this presentation session.
+func (service *RepositoryService) ChooseShelf(choice RepositoryChoice) RepositoryAcceptance {
+	choice = trimRepositoryChoice(choice)
+	service.mu.Lock()
+	session := service.shelf
+	snapshot := service.snapshot
+	if session == nil || session.resolved || !sameRepositoryContext(snapshot, choice) || choice.Action != "fetch" || choice.ChannelID != snapshot.FocusChannelID {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "shelf_action_unavailable"}
+	}
+	found := false
+	for _, item := range snapshot.Shelf {
+		if item.UploadID == choice.UploadID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "shelf_item_unavailable"}
+	}
+	session.resolved = true
+	hide := service.hide
+	service.mu.Unlock()
+	session.result <- platform.ShelfDialogResult{Action: platform.ShelfDialogFetch, UploadID: choice.UploadID}
+	if hide != nil {
+		hide()
+	}
+	return RepositoryAcceptance{Accepted: true}
+}
+
 // ChooseGrant returns an action only for a recipient projected by the current
 // grant directory. Realm identifiers stay opaque and are never accepted from
 // an older or foreign repository session.

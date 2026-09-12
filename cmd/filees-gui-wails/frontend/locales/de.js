@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.download.running": "Datei wird aus dem Eingang heruntergeladen",
+  "shelf.download.complete": "Datei aus dem Eingang heruntergeladen",
   "prompt.submitFailed": "Ihre Entscheidung konnte nicht übermittelt werden · {reason}",
   "settings.copy": "Einstellungen für diesen Server.",
   "settings.noRealm": "Bereich nicht festgelegt",

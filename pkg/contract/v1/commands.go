@@ -824,6 +824,19 @@ type ShelfListPayload struct {
 	ChannelID string `json:"channel_id"`
 }
 
+const CmdRepoShelfFetch = "repo.shelf_fetch"
+const CapRepoShelfFetch = "repo.shelf_fetch"
+
+// Selection identifiers only; the daemon resolves the current server receipt.
+type ShelfFetchPayload struct {
+	InspectOnly bool   `json:"inspect_only,omitempty"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
+	ChannelID   string `json:"channel_id"`
+	UploadID    string `json:"upload_id"`
+	LocalPath   string `json:"local_path,omitempty"`
+}
+
 // ShelfItem is one accepted file on a shelf. RepoPath is what a selective
 // fetch asks the delivery repository for, so it travels rather than being
 // recomputed from the original name on this side of the seam.
@@ -911,6 +924,10 @@ type RepoRecoveryDismissResult struct {
 }
 
 type RepoLifecycleResult struct {
+	FetchID               string `json:"fetch_id,omitempty"`
+	FetchUploadID         string `json:"fetch_upload_id,omitempty"`
+	FetchState            string `json:"fetch_state,omitempty"`
+	FetchError            string `json:"fetch_error,omitempty"`
 	OperationID           string `json:"operation_id"`
 	ServerID              string `json:"server_id"`
 	RepoID                string `json:"repo_id,omitempty"`

@@ -297,7 +297,7 @@ func (c *execClient) FetchSparsePath(ctx context.Context, rootDirectory, path st
 	if nativeWCOps(c) {
 		return c.nativeFetchSparsePath(ctx, rootDirectory, rels[0])
 	}
-	args := append([]string{"update", "--depth", "empty", "--parents"}, c.pathArgs(rootDirectory, []string{path})...)
+	args := append([]string{"update", "--depth", "empty", "--parents", "--ignore-externals"}, c.pathArgs(rootDirectory, []string{path})...)
 	return c.run(ctx, rootDirectory, args)
 }
 

@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.download.running": "Downloading from the shelf",
+  "shelf.download.complete": "Shelf file downloaded",
   "prompt.submitFailed": "Could not submit your decision · {reason}",
   "settings.copy": "Settings for this server.",
   "settings.noRealm": "realm not set",

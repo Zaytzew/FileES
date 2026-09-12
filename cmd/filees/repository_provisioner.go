@@ -179,6 +179,10 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		}
 	}
 	for _, record := range p.local.List() {
+		if record.Purpose == clientview.PurposeUploadShelf && (record.ShelfFetch.State == "queued" || record.ShelfFetch.State == "running") {
+			p.Enqueue(record.OperationID)
+			continue
+		}
 		if _, published := provisionedActive[record.OperationID]; published {
 			continue
 		}
@@ -265,6 +269,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	}
 	if !ok {
 		cause := errors.New("activated client profile is unavailable")
+		if record.Purpose == clientview.PurposeUploadShelf && record.ShelfFetch.ID != "" {
+			_, _ = p.local.SetShelfFetchState(operationID, record.ShelfFetch.ID, "failed", cause)
+			return
+		}
 		switch record.State {
 		case localrepo.StateRelocating:
 			_, _ = p.local.FailRelocation(operationID, cause)
@@ -277,6 +285,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	}
 	if record.State == localrepo.StateRelocating {
 		p.runRelocate(ctx, record, profile)
+		return
+	}
+	if record.Purpose == clientview.PurposeUploadShelf && (record.ShelfFetch.State == "queued" || record.ShelfFetch.State == "running") {
+		p.runShelfFetch(ctx, record, profile)
 		return
 	}
 	if record.State == localrepo.StateReconciling {

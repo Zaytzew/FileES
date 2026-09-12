@@ -55,11 +55,12 @@ const (
 )
 
 type Record struct {
-	OperationID string `json:"operation_id"`
-	ServerID    string `json:"server_id"`
-	RepoID      string `json:"repo_id,omitempty"`
-	RepoURL     string `json:"repo_url,omitempty"`
-	Access      string `json:"access,omitempty"`
+	ShelfFetch  ShelfFetch `json:"shelf_fetch,omitempty"`
+	OperationID string     `json:"operation_id"`
+	ServerID    string     `json:"server_id"`
+	RepoID      string     `json:"repo_id,omitempty"`
+	RepoURL     string     `json:"repo_url,omitempty"`
+	Access      string     `json:"access,omitempty"`
 	// Purpose survives restart so an upload shelf can never be promoted into
 	// the ordinary synchronizing/committing repository pipeline.
 	Purpose          string `json:"purpose,omitempty"`

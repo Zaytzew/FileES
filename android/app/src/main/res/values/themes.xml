@@ -50,6 +50,13 @@
         <item name="android:textColor">@color/filees_muted</item>
     </style>
 
+    <style name="TextAppearance.Filees.Eyebrow" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textColor">@color/filees_eyebrow</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.14</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
     <style name="TextAppearance.Filees.Body" parent="TextAppearance.Material3.BodyMedium">
         <item name="android:textColor">@color/filees_soft</item>
     </style>

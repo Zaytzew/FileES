@@ -15,6 +15,7 @@
     <color name="filees_muted">#5F7085</color>
     <color name="filees_line">#D8DEE6</color>
     <color name="filees_accent">#FF6A00</color>
+    <color name="filees_eyebrow">#FF8E3D</color>
     <color name="filees_on_accent">#FFFFFF</color>
     <color name="filees_destructive">#C43D49</color>
     <color name="filees_on_destructive">#FFFFFF</color>

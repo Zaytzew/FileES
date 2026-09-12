@@ -30,7 +30,7 @@ func unprojectedLocalKeys(serverID string, view clientview.View, attachments map
 	}
 	var extra []reposupervisor.Key
 	for key := range attachments {
-		if key.ServerID == serverID && !known[key.RepoID] {
+		if key.ServerID == serverID && !known[key.RepoID] && attachments[key].config.Purpose != clientview.PurposeUploadShelf {
 			extra = append(extra, key)
 		}
 	}
@@ -43,6 +43,9 @@ func unprojectedLocalKeys(serverID string, view clientview.View, attachments map
 func attachedProjection(serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) []reposupervisor.Desired {
 	desired := make([]reposupervisor.Desired, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
+		if repo.Purpose == clientview.PurposeUploadShelf {
+			continue
+		}
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		if _, attached := attachments[key]; !attached {
 			continue
@@ -89,12 +92,29 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	ipc.SetLockReleaseProjection(serverID, projectLockReleaseRequests(serverID, view.LockReleaseRequests))
 	pendingCreates := pendingRepositoryCreations(serverID, lifecycle)
 	repairs := repairableRepositoryLifecycle(serverID, lifecycle)
+	attachedShelves := make(map[string]localrepo.Record)
+	if lifecycle != nil {
+		for _, record := range lifecycle.List() {
+			if record.ServerID == serverID && record.Purpose == clientview.PurposeUploadShelf && record.State == localrepo.StateAttached {
+				attachedShelves[record.RepoID] = record
+			}
+		}
+	}
 	projected := make([]ipcserver.ProjectedRepo, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
-		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
-		_, attached := attachments[key]
 		if lifecycle.RemoteDeleted(serverID, repo.RepoID) {
 			continue
+		}
+		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
+		_, attached := attachments[key]
+		if repo.Purpose == clientview.PurposeUploadShelf {
+			attached = false
+		}
+		if shelf, ok := attachedShelves[repo.RepoID]; ok && repo.Purpose == clientview.PurposeUploadShelf && repo.Access == "r" && shelf.RepoURL == repo.URL {
+			attached = true
+			if current := ipc.RepoState(serverID, repo.RepoID); current == nil || current.Summary().LocalPath != shelf.LocalPath {
+				ipc.RegisterRepoAccess(repo.RepoID, repo.URL, shelf.LocalPath, serverID, "r")
+			}
 		}
 		state := repo.State
 		pendingPath := ""

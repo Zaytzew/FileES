@@ -292,6 +292,7 @@ func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories
 		if record.LocalPath != "" {
 			repository.LocalPath = record.LocalPath
 		}
+		repository.Purpose = record.Purpose
 		active = append(active, repository)
 	}
 	return active, nil

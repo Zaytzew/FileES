@@ -38,10 +38,12 @@ type Repo struct {
 	ServerDisplayName string        `json:"-"`
 	ClientRole        string        `json:"-"`
 	Access            string        `json:"access"`
-	RealmID           string        `json:"-"` // z clientview.View.RealmID (własna tożsamość klienta)
-	OwnerRealmID      string        `json:"-"` // z clientview.View.Repository.OwnerRealmID (właściciel tego repo)
-	WatchInterval     time.Duration `json:"-"` // z pola JSON "watch_interval"
-	CommitInterval    time.Duration `json:"-"` // z pola JSON "commit_interval"
+	// Purpose is daemon-local routing metadata, never user configuration.
+	Purpose        string        `json:"-"`
+	RealmID        string        `json:"-"` // z clientview.View.RealmID (własna tożsamość klienta)
+	OwnerRealmID   string        `json:"-"` // z clientview.View.Repository.OwnerRealmID (właściciel tego repo)
+	WatchInterval  time.Duration `json:"-"` // z pola JSON "watch_interval"
+	CommitInterval time.Duration `json:"-"` // z pola JSON "commit_interval"
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
 	GlobalSlots           int           `json:"global_slots,omitempty"`

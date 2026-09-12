@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"filees/internal/durable"
+	"filees/pkg/clientview"
 
 	"github.com/google/uuid"
 )
@@ -54,11 +55,14 @@ const (
 )
 
 type Record struct {
-	OperationID      string `json:"operation_id"`
-	ServerID         string `json:"server_id"`
-	RepoID           string `json:"repo_id,omitempty"`
-	RepoURL          string `json:"repo_url,omitempty"`
-	Access           string `json:"access,omitempty"`
+	OperationID string `json:"operation_id"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id,omitempty"`
+	RepoURL     string `json:"repo_url,omitempty"`
+	Access      string `json:"access,omitempty"`
+	// Purpose survives restart so an upload shelf can never be promoted into
+	// the ordinary synchronizing/committing repository pipeline.
+	Purpose          string `json:"purpose,omitempty"`
 	DisplayName      string `json:"display_name,omitempty"`
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
@@ -197,6 +201,17 @@ func (s *Store) BeginAttach(serverID, repoID, localPath string, required bool) (
 	return s.begin(Record{
 		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
 		DisplayName: folderName(localPath), State: state,
+	})
+}
+
+// BeginShelfAttach reserves a local sparse working copy for a projected
+// upload shelf. The server URL and read-only access must already have been
+// checked against the authoritative client view by the caller.
+func (s *Store) BeginShelfAttach(serverID, repoID, repoURL, localPath string) (Record, error) {
+	return s.begin(Record{
+		ServerID: serverID, RepoID: repoID, RepoURL: repoURL, Access: "r",
+		Purpose: clientview.PurposeUploadShelf, LocalPath: localPath,
+		DisplayName: folderName(localPath), State: StateAttaching,
 	})
 }
 
@@ -423,6 +438,9 @@ func (s *Store) RepairCreatedRepositoryInput(operationID, displayName, localPath
 
 func (s *Store) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (Record, error) {
 	return s.update(operationID, func(record *Record) error {
+		if record.Purpose == clientview.PurposeUploadShelf {
+			return errors.New("upload shelf cannot use ordinary attachment approval")
+		}
 		if record.ServerID != serverID || record.RepoID != repoID {
 			return errors.New("attachment approval does not match the persisted intent")
 		}
@@ -884,6 +902,12 @@ func (s *Store) Get(operationID string) (Record, bool) {
 }
 
 func validate(r Record) error {
+	if r.Purpose != "" && r.Purpose != clientview.PurposeUploadShelf {
+		return errors.New("local repository purpose is invalid")
+	}
+	if r.Purpose == clientview.PurposeUploadShelf && (r.Access != "r" || r.RepoID == "" || r.RepoURL == "") {
+		return errors.New("upload shelf must have read-only repository authority")
+	}
 	if r.PreservedAlternatePath != "" && (!r.RemoteDeletionObserved || !filepath.IsAbs(r.PreservedAlternatePath)) {
 		return errors.New("preserved relocation path exists outside remote deletion")
 	}

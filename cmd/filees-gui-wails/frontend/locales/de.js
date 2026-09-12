@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.import.action": "Im übergeordneten Ordner ablegen",
+  "shelf.import.destination": "Ziel innerhalb der übergeordneten Arbeitskopie wählen",
+  "shelf.import.complete": "Datei im übergeordneten Ordner abgelegt",
+  "shelf.import.running": "Datei wird heruntergeladen und abgelegt",
+  "shelf.import.failed": "Datei konnte nicht abgelegt werden",
   "shelf.download.running": "Datei wird aus dem Eingang heruntergeladen",
   "shelf.download.complete": "Datei aus dem Eingang heruntergeladen",
   "prompt.submitFailed": "Ihre Entscheidung konnte nicht übermittelt werden · {reason}",

@@ -52,6 +52,7 @@ type RepoViewModel struct {
 	AttachmentPolicy     string
 	EditingPolicy        string
 	Purpose              string
+	ParentRepoID         string
 	URL                  string
 	LocalPath            string
 	State                string

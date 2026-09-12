@@ -757,6 +757,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 		state.SetLifecycleRepairMetadata(repo.LifecycleOperationID, repo.LifecycleError, repo.CanRetryLifecycle, repo.CanAbandonLifecycle)
 		state.SetEditingPolicy(repo.EditingPolicy)
 		state.SetPurpose(repo.Purpose)
+		state.SetParentRepoID(repo.ParentRepoID)
 	}
 	s.mu.Lock()
 	removed := false
@@ -804,6 +805,7 @@ type ProjectedRepo struct {
 	OwnerRealmID, AttachmentPolicy         string
 	EditingPolicy                          string
 	Purpose                                string
+	ParentRepoID                           string
 	Attached                               bool
 	PendingLocalPath                       string
 	ServerDeleted, LocalCleanupPending     bool

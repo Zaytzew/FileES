@@ -4,6 +4,7 @@ import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
 import { initializeLanguageMenu } from "./language-menu.js";
+import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
 
 initializeTheme();
 initializeLanguage();
@@ -504,7 +505,10 @@ function renderRepoGroup(label, repos, className = "", nested = false) {
   }
   return `<section class="realm-group ${escapeHTML(className)}">
     <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
-    <div class="repo-list">${repos.map(renderRepo).join("")}</div>
+    <div class="repo-list">${repos.map(repo => {
+      const shelves = shelvesFor(repo, currentSnapshot?.repositories || []);
+      return renderRepo(repo) + (shelves.length ? `<div class="parent-shelves">${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf", true)}</div>` : "");
+    }).join("")}</div>
   </section>`;
 }
 
@@ -543,7 +547,7 @@ function renderRepositories(snapshot) {
     const isTrash = (repo) => repo.purpose === "upload_trash";
     const deleted = serverRepos.filter((repo) => repo.server_deleted);
     const live = serverRepos.filter((repo) => !repo.server_deleted);
-    const shelves = live.filter(isShelf);
+    const shelves = unparentedShelves(live);
     const trash = live.filter(isTrash);
     const rest = live.filter((repo) => !isShelf(repo) && !isTrash(repo));
     // Initial repository creation owns a local source folder before it can

@@ -85,7 +85,8 @@ type RepoStatus struct {
 	Recovery         RecoveryStats    `json:"recovery"`
 	// Purpose is empty for a normal share. upload_shelf is the Upload Channel
 	// delivery repository; upload_trash is the realm-wide reject quarantine.
-	Purpose string `json:"purpose,omitempty"`
+	Purpose      string `json:"purpose,omitempty"`
+	ParentRepoID string `json:"parent_repo_id,omitempty"`
 }
 
 // UnportableName is one refused object. Kind is a stable token

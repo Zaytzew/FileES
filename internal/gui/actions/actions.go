@@ -234,6 +234,8 @@ type ShelfDownloader interface {
 
 type ShelfDownload struct {
 	OperationID, FetchID, UploadID, LocalPath, State, Error string
+	Destination, ParentPath                                 string
+	CanImport                                               bool
 }
 
 type ShelfList struct {
@@ -2026,6 +2028,12 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 		status, err := downloader.ShelfFetch(ctx, serverID, repoID, shelf.ChannelID, "", "", true)
 		if err == nil && status.State != "" {
 			request.TextPrefix = c.shelfStatusText(status.State) + " · " + status.LocalPath
+			if status.Destination != "" && status.State == "complete" {
+				request.TextPrefix = c.uiText("shelf.import.complete", "Plik osadzony w folderze macierzystym") + " · " + status.Destination
+			}
+		}
+		if err == nil {
+			request.CanImport = status.CanImport
 		}
 	}
 	for _, item := range listed.Items {
@@ -2041,6 +2049,9 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 	}
 	if choice.Action == platform.ShelfDialogFetch {
 		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID)
+	}
+	if choice.Action == platform.ShelfDialogImport {
+		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID, true)
 	}
 }
 

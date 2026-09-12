@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.import.action": "Colocar en la carpeta principal",
+  "shelf.import.destination": "Elige un destino dentro de la copia de trabajo principal",
+  "shelf.import.complete": "Archivo colocado en la carpeta principal",
+  "shelf.import.running": "Descargando y colocando el archivo",
+  "shelf.import.failed": "No se pudo colocar el archivo",
   "shelf.download.running": "Descargando desde la bandeja",
   "shelf.download.complete": "Archivo de la bandeja descargado",
   "prompt.submitFailed": "No se pudo enviar su decisión · {reason}",

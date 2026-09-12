@@ -17,7 +17,8 @@ func TestShelfFetchSurvivesRestartAndFencesConcurrentSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err = s.QueueShelfFetch(r.OperationID, "upload", "incoming/deep/file.txt", strings.Repeat("ab", 32), 12)
+	placement := ShelfPlacement{ParentRepoID: uuid.NewString(), ParentRoot: t.TempDir(), ParentURL: "svn+ssh://client@example/parent", RelativePath: "selected.txt"}
+	r, err = s.QueueShelfFetch(r.OperationID, "upload", "incoming/deep/file.txt", strings.Repeat("ab", 32), 12, placement)
 	if err != nil {
 		t.Fatal(err)
 	}

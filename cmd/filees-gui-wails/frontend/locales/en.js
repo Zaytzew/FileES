@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.import.action": "Place in parent folder",
+  "shelf.import.destination": "Choose a destination inside the parent working copy",
+  "shelf.import.complete": "File placed in parent folder",
+  "shelf.import.running": "Downloading and placing file",
+  "shelf.import.failed": "Could not place file",
   "shelf.download.running": "Downloading from the shelf",
   "shelf.download.complete": "Shelf file downloaded",
   "prompt.submitFailed": "Could not submit your decision · {reason}",

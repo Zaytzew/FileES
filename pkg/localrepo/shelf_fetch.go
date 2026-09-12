@@ -12,13 +12,22 @@ import (
 // ShelfFetch is one durable selected-file receipt, independent of WC state.
 // A new selection cannot replace a running selection; completion survives restart.
 type ShelfFetch struct {
-	ID       string `json:"id,omitempty"`
-	UploadID string `json:"upload_id,omitempty"`
-	RepoPath string `json:"repo_path,omitempty"`
-	SHA256   string `json:"sha256,omitempty"`
-	Size     int64  `json:"size,omitempty"`
-	State    string `json:"state,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Placement ShelfPlacement `json:"placement,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	UploadID  string         `json:"upload_id,omitempty"`
+	RepoPath  string         `json:"repo_path,omitempty"`
+	SHA256    string         `json:"sha256,omitempty"`
+	Size      int64          `json:"size,omitempty"`
+	State     string         `json:"state,omitempty"`
+	Error     string         `json:"error,omitempty"`
+}
+
+// ShelfPlacement is a local copy intent, never a server-side cross-repo move.
+type ShelfPlacement struct {
+	ParentRepoID string `json:"parent_repo_id,omitempty"`
+	ParentRoot   string `json:"parent_root,omitempty"`
+	ParentURL    string `json:"parent_url,omitempty"`
+	RelativePath string `json:"relative_path,omitempty"`
 }
 
 func ValidShelfPath(path string) bool {
@@ -33,7 +42,17 @@ func ValidShelfPath(path string) bool {
 	return true
 }
 
-func (s *Store) QueueShelfFetch(operationID, uploadID, path, hash string, size int64) (Record, error) {
+func (s *Store) QueueShelfFetch(operationID, uploadID, path, hash string, size int64, placement ...ShelfPlacement) (Record, error) {
+	var target ShelfPlacement
+	if len(placement) > 1 {
+		return Record{}, errors.New("invalid placement")
+	}
+	if len(placement) == 1 {
+		target = placement[0]
+		if target.ParentRepoID == "" || target.ParentRoot == "" || target.ParentURL == "" || !ValidShelfPath(target.RelativePath) {
+			return Record{}, errors.New("invalid shelf placement")
+		}
+	}
 	decoded, err := hex.DecodeString(hash)
 	if uploadID == "" || !ValidShelfPath(path) || err != nil || len(decoded) != 32 || size < 0 {
 		return Record{}, errors.New("invalid shelf selection")
@@ -46,6 +65,7 @@ func (s *Store) QueueShelfFetch(operationID, uploadID, path, hash string, size i
 			return errors.New("shelf download is already pending")
 		}
 		r.ShelfFetch = ShelfFetch{ID: uuid.NewString(), UploadID: uploadID, RepoPath: path, SHA256: strings.ToLower(hash), Size: size, State: "queued"}
+		r.ShelfFetch.Placement = target
 		return nil
 	})
 }

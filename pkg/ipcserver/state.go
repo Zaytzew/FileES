@@ -33,6 +33,7 @@ type RepoState struct {
 	attachmentPolicy     string
 	editingPolicy        string
 	purpose              string
+	parentRepoID         string
 	projectedState       string
 	serverDeleted        bool
 	localCopyPreserved   bool
@@ -101,6 +102,12 @@ func (rs *RepoState) SetEditingPolicy(policy string) {
 func (rs *RepoState) SetPurpose(purpose string) {
 	rs.mu.Lock()
 	rs.purpose = purpose
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) SetParentRepoID(id string) {
+	rs.mu.Lock()
+	rs.parentRepoID = id
 	rs.mu.Unlock()
 }
 
@@ -545,6 +552,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	attachmentPolicy := rs.attachmentPolicy
 	editingPolicy := rs.editingPolicy
 	purpose := rs.purpose
+	parentRepoID := rs.parentRepoID
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	unportable := append([]contract.UnportableName(nil), rs.unportable...)
@@ -602,6 +610,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		Cycle:                cycle,
 		Recovery:             recovery,
 		Purpose:              purpose,
+		ParentRepoID:         parentRepoID,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)
@@ -641,6 +650,7 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		RetainUntil:        rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
 		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
 		Purpose:              rs.purpose,
+		ParentRepoID:         rs.parentRepoID,
 		LifecycleOperationID: rs.lifecycleOperationID, LifecycleError: rs.lifecycleError,
 		CanRetryLifecycle: rs.canRetryLifecycle, CanAbandonLifecycle: rs.canAbandonLifecycle,
 	}

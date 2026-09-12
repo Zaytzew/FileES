@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.import.action": "Osadź w folderze macierzystym",
+  "shelf.import.destination": "Wybierz folder docelowy wewnątrz WC macierzystej",
+  "shelf.import.complete": "Plik osadzony w folderze macierzystym",
+  "shelf.import.running": "Pobieranie i osadzanie pliku",
+  "shelf.import.failed": "Nie udało się osadzić pliku",
   "shelf.download.running": "Pobieranie z półki trwa",
   "shelf.download.complete": "Pobrano plik z półki",
   "prompt.submitFailed": "Nie udało się przekazać decyzji · {reason}",

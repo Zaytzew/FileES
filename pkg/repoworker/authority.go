@@ -58,6 +58,9 @@ type repositoryRecord struct {
 	// clientview.Repository.EditingPolicy for why that rule is load-bearing.
 	EditingPolicy string `json:"editing_policy,omitempty"`
 	Purpose       string `json:"purpose,omitempty"`
+	// A persisted projection of the manifest relation, refreshed by the upload
+	// worker. Readers without access to private channel records retain it.
+	ParentRepoID string `json:"parent_repo_id,omitempty"`
 }
 
 type PublishRunner interface {
@@ -217,6 +220,10 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 					return errors.New("repository projection conflicts")
 				}
 				changedProjection := false
+				if r.ParentRepoID != record.ParentRepoID {
+					r.ParentRepoID = record.ParentRepoID
+					changedProjection = true
+				}
 				if r.Access != ownerAccess {
 					r.Access = ownerAccess
 					changedProjection = true
@@ -250,7 +257,7 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		// record is either the freshly minted one or the re-read existing one,
 		// so a republish of a repository that already carries a policy keeps
 		// it instead of silently projecting the default.
-		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: ownerAccess, State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
+		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: ownerAccess, State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose, ParentRepoID: record.ParentRepoID})
 		sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 			return err
@@ -332,12 +339,13 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 				projected.State = "active"
 				updated = true
 			}
-			if projected.DisplayName != record.DisplayName || projected.URL != record.URL || projected.OwnerRealmID != record.OwnerRealmID || projected.EditingPolicy != record.EditingPolicy || projected.Purpose != record.Purpose {
+			if projected.DisplayName != record.DisplayName || projected.URL != record.URL || projected.OwnerRealmID != record.OwnerRealmID || projected.EditingPolicy != record.EditingPolicy || projected.Purpose != record.Purpose || projected.ParentRepoID != record.ParentRepoID {
 				projected.DisplayName = record.DisplayName
 				projected.URL = record.URL
 				projected.OwnerRealmID = record.OwnerRealmID
 				projected.EditingPolicy = record.EditingPolicy
 				projected.Purpose = record.Purpose
+				projected.ParentRepoID = record.ParentRepoID
 				updated = true
 			}
 			if record.Purpose == clientview.PurposeUploadShelf && projected.Access != "r" {
@@ -674,7 +682,7 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 				}
 			}
 			if !found {
-				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: access, State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: access, State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose, ParentRepoID: record.ParentRepoID})
 				sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 			}
 		default:

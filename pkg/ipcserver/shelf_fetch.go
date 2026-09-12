@@ -62,7 +62,16 @@ func (s *Server) handleShelfFetch(req contract.Request) contract.Response {
 		return forbidden()
 	}
 	if p.InspectOnly {
-		return contract.OKResponse(req.RequestID, local.InspectShelf(p.ServerID, shelfID))
+		result := local.InspectShelf(p.ServerID, shelfID)
+		_, importer := local.(interface {
+			BeginShelfImport(string, string, string, string, contract.ShelfItem, contract.RepoSummary, string) (contract.RepoLifecycleResult, error)
+		})
+		parentView := parent.Snapshot()
+		result.ShelfCanImport = importer && parentView.Attached && parentView.Access == "rw" && parentView.Purpose == "" && parent.ProjectedState() == contract.StateActive
+		if result.ShelfCanImport {
+			result.ShelfParentPath = parent.Summary().LocalPath
+		}
+		return contract.OKResponse(req.RequestID, result)
 	}
 	listing, err := remote.ListShelf(ctx, p.ServerID, p.ChannelID)
 	if err != nil || listing.ChannelID != p.ChannelID {
@@ -72,7 +81,20 @@ func (s *Server) handleShelfFetch(req contract.Request) contract.Response {
 		if item.UploadID != p.UploadID {
 			continue
 		}
-		result, err := local.BeginShelfFetch(p.ServerID, shelfID, repo.Summary().URL, p.LocalPath, item)
+		var result contract.RepoLifecycleResult
+		var err error
+		if p.DestinationFolder != "" {
+			importer, ok := local.(interface {
+				BeginShelfImport(string, string, string, string, contract.ShelfItem, contract.RepoSummary, string) (contract.RepoLifecycleResult, error)
+			})
+			parentView := parent.Snapshot()
+			if !ok || !parentView.Attached || parentView.Access != "rw" || parentView.Purpose != "" || parent.ProjectedState() != contract.StateActive {
+				return forbidden()
+			}
+			result, err = importer.BeginShelfImport(p.ServerID, shelfID, repo.Summary().URL, p.LocalPath, item, parent.Summary(), p.DestinationFolder)
+		} else {
+			result, err = local.BeginShelfFetch(p.ServerID, shelfID, repo.Summary().URL, p.LocalPath, item)
+		}
 		if err != nil {
 			s.lg.Warnf("shelf download rejected: %v", err)
 			return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)

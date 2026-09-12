@@ -783,6 +783,19 @@ func (adapter shelfAdapter) ShelfFetchStatus(ctx context.Context, operationID st
 	return shelfDownloadResult(result, err)
 }
 
+func (adapter shelfAdapter) ShelfImport(ctx context.Context, serverID, repoID, channelID, uploadID, localPath, destination string) (actions.ShelfDownload, error) {
+	client, ok := adapter.client.(interface {
+		ShelfFetch(context.Context, contract.ShelfFetchPayload) (*contract.RepoLifecycleResult, error)
+	})
+	if !ok {
+		return actions.ShelfDownload{}, errors.New("shelf import IPC is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 70*time.Second)
+	defer cancel()
+	result, err := client.ShelfFetch(ctx, contract.ShelfFetchPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID, UploadID: uploadID, LocalPath: localPath, DestinationFolder: destination})
+	return shelfDownloadResult(result, err)
+}
+
 func shelfDownloadResult(result *contract.RepoLifecycleResult, err error) (actions.ShelfDownload, error) {
 	if err != nil {
 		return actions.ShelfDownload{}, err
@@ -790,7 +803,7 @@ func shelfDownloadResult(result *contract.RepoLifecycleResult, err error) (actio
 	if result == nil {
 		return actions.ShelfDownload{}, errors.New("missing shelf download result")
 	}
-	return actions.ShelfDownload{OperationID: result.OperationID, FetchID: result.FetchID, UploadID: result.FetchUploadID, LocalPath: result.LocalPath, State: result.FetchState, Error: result.FetchError}, nil
+	return actions.ShelfDownload{CanImport: result.ShelfCanImport, ParentPath: result.ShelfParentPath, Destination: result.FetchDestination, OperationID: result.OperationID, FetchID: result.FetchID, UploadID: result.FetchUploadID, LocalPath: result.LocalPath, State: result.FetchState, Error: result.FetchError}, nil
 }
 
 // ListShelf asks the daemon what is waiting on one shelf. The result is a

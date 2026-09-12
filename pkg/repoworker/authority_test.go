@@ -140,6 +140,64 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestServicePublisherShelfOwnerHasSVNReadOnlyAccess(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new", true: "legacy-rw"}[legacy], func(t *testing.T) {
+			root := t.TempDir()
+			realm, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			url := "svn+ssh://_filees-client@example/repos/" + repoID
+			viewPath := filepath.Join(root, "clients", clientID, "view.json")
+			view := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Lab", ClientID: clientID, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+			if legacy {
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: "Shelf", URL: url, Access: "rw", State: "initializing", OwnerRealmID: realm, AttachmentPolicy: "optional"})
+			}
+			if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+				t.Fatal(err)
+			}
+			if err := atomicJSON(filepath.Join(root, "admin", "clients", clientID+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": clientID, "realm_id": realm, "state": "active"}); err != nil {
+				t.Fatal(err)
+			}
+			if legacy {
+				path, err := repositoryRecordPath(root, repoID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := atomicJSON(path, repositoryRecord{Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realm, DisplayName: "Shelf", URL: url, State: "initializing", CreatedAt: time.Now()}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			authz := filepath.Join(t.TempDir(), "data.authz")
+			publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: &publishRunner{}}
+			if err := publisher.Publish(t.Context(), repoID, realm, "Shelf", url, clientview.PurposeUploadShelf); err != nil {
+				t.Fatal(err)
+			}
+			got, err := clientview.Load(viewPath)
+			if err != nil || len(got.Repositories) != 1 || got.Repositories[0].Access != "r" || got.Repositories[0].Purpose != clientview.PurposeUploadShelf {
+				t.Fatalf("shelf projection=%+v err=%v", got.Repositories, err)
+			}
+			raw, err := os.ReadFile(authz)
+			if err != nil || !strings.Contains(string(raw), "owner-"+repoID+" = "+clientID) || !strings.Contains(string(raw), "@owner-"+repoID+" = r") {
+				t.Fatalf("shelf authz=%s err=%v", raw, err)
+			}
+			// Activation must not let a stale projection restore rw after
+			// Publish repaired it.
+			got.Repositories[0].Access = "rw"
+			got.Generation++
+			got.GeneratedAt = time.Now().Add(time.Second)
+			if _, err := clientview.StoreIfNewer(viewPath, got); err != nil {
+				t.Fatal(err)
+			}
+			if err := publisher.Activate(t.Context(), repoID, realm); err != nil {
+				t.Fatal(err)
+			}
+			activated, err := clientview.Load(viewPath)
+			if err != nil || activated.Repositories[0].Access != "r" {
+				t.Fatalf("activation restored shelf write access: %+v %v", activated.Repositories, err)
+			}
+		})
+	}
+}
+
 func TestServicePublisherRepairsLegacyRepositoryPurpose(t *testing.T) {
 	root := t.TempDir()
 	realmID, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()

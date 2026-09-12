@@ -229,8 +229,8 @@ func TestProjectedRepositoriesCopiesPurposeAndOmitsItFromMobile(t *testing.T) {
 	for _, repo := range desktop {
 		if repo.RepoID == shelfID {
 			found = true
-			if repo.Purpose != clientview.PurposeUploadShelf {
-				t.Fatalf("purpose=%q", repo.Purpose)
+			if repo.Purpose != clientview.PurposeUploadShelf || repo.Access != "r" {
+				t.Fatalf("shelf purpose/access=%q/%q", repo.Purpose, repo.Access)
 			}
 		}
 	}
@@ -240,6 +240,21 @@ func TestProjectedRepositoriesCopiesPurposeAndOmitsItFromMobile(t *testing.T) {
 	previous := []clientview.Repository{
 		{RepoID: docsID, DisplayName: "Docs", URL: records[docsID].URL, Access: "rw", State: "active", OwnerRealmID: realmID, AttachmentPolicy: "optional"},
 		{RepoID: shelfID, DisplayName: "Półka oferta-a", URL: records[shelfID].URL, Access: "rw", State: "active", OwnerRealmID: realmID, AttachmentPolicy: "optional", Purpose: clientview.PurposeUploadShelf},
+	}
+	derived := projectedRepositories(records, nil, realmID, "normal", "desktop", previous)
+	effective := map[string]map[string]string{"owner-client": {}}
+	for _, repo := range derived {
+		effective["owner-client"][repo.RepoID] = repo.Access
+	}
+	if effective["owner-client"][shelfID] != "r" {
+		t.Fatalf("canonical projection did not clamp shelf access: %+v", effective)
+	}
+	// Authz generation also clamps stale effective input independently of
+	// the view rebuild, so an old rw projection cannot restore write access.
+	effective["owner-client"][shelfID] = "rw"
+	authz := string(renderCanonicalGrantAuthz(records, map[string]canonicalGrantClient{"owner-client": {RealmID: realmID}}, effective))
+	if !strings.Contains(authz, "reader-"+shelfID+" = owner-client") || strings.Contains(authz, "owner-"+shelfID+" = owner-client") || strings.Contains(authz, "writer-"+shelfID+" = owner-client") {
+		t.Fatalf("canonical shelf authz grants write: %s", authz)
 	}
 	mobile := projectedRepositories(records, nil, realmID, "normal", "mobile", previous)
 	if len(mobile) != 1 || mobile[0].RepoID != docsID {

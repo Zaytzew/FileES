@@ -191,6 +191,10 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 	}
 	changed := []string{repoPath}
 	grantees := []string{}
+	ownerAccess := "rw"
+	if record.Purpose == clientview.PurposeUploadShelf {
+		ownerAccess = "r"
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -208,8 +212,14 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		for index := range view.Repositories {
 			r := &view.Repositories[index]
 			if r.RepoID == repoID {
-				if r.URL != url || r.OwnerRealmID != realmID || r.Access != "rw" {
+				if r.URL != url || r.OwnerRealmID != realmID ||
+					(r.Access != ownerAccess && !(ownerAccess == "r" && r.Access == "rw")) {
 					return errors.New("repository projection conflicts")
+				}
+				changedProjection := false
+				if r.Access != ownerAccess {
+					r.Access = ownerAccess
+					changedProjection = true
 				}
 				if record.Purpose != "" {
 					if r.Purpose != "" && r.Purpose != record.Purpose {
@@ -217,13 +227,16 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 					}
 					if r.Purpose == "" {
 						r.Purpose = record.Purpose
-						view.Generation++
-						view.GeneratedAt = now
-						if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
-							return err
-						}
-						changed = append(changed, viewPath)
+						changedProjection = true
 					}
+				}
+				if changedProjection {
+					view.Generation++
+					view.GeneratedAt = now
+					if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+						return err
+					}
+					changed = append(changed, viewPath)
 				}
 				found = true
 				break
@@ -237,7 +250,7 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		// record is either the freshly minted one or the re-read existing one,
 		// so a republish of a repository that already carries a policy keeps
 		// it instead of silently projecting the default.
-		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: "rw", State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
+		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: ownerAccess, State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
 		sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 			return err
@@ -325,6 +338,10 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 				projected.OwnerRealmID = record.OwnerRealmID
 				projected.EditingPolicy = record.EditingPolicy
 				projected.Purpose = record.Purpose
+				updated = true
+			}
+			if record.Purpose == clientview.PurposeUploadShelf && projected.Access != "r" {
+				projected.Access = "r"
 				updated = true
 			}
 		}
@@ -643,17 +660,21 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 			}
 			view.Repositories = kept
 		case newRealmID:
+			access := "rw"
+			if record.Purpose == clientview.PurposeUploadShelf {
+				access = "r"
+			}
 			found := false
 			for i := range view.Repositories {
 				if view.Repositories[i].RepoID == repoID {
 					view.Repositories[i].OwnerRealmID = newRealmID
-					view.Repositories[i].Access = "rw"
+					view.Repositories[i].Access = access
 					found = true
 					break
 				}
 			}
 			if !found {
-				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: access, State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
 				sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 			}
 		default:
@@ -719,7 +740,7 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 				continue
 			}
 			for _, vr := range v.Repositories {
-				if vr.RepoID == r.RepoID && vr.Access == "rw" {
+				if vr.RepoID == r.RepoID && (vr.Access == "rw" || (r.Purpose == clientview.PurposeUploadShelf && vr.Access == "r")) {
 					groups[r.RepoID] = append(groups[r.RepoID], v.ClientID)
 				}
 			}
@@ -728,7 +749,11 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 		fmt.Fprintf(&out, "owner-%s = %s\n", r.RepoID, strings.Join(groups[r.RepoID], ","))
 	}
 	for _, r := range records {
-		fmt.Fprintf(&out, "\n[%s:/]\n@owner-%s = rw\n* =\n", r.RepoID, r.RepoID)
+		access := "rw"
+		if r.Purpose == clientview.PurposeUploadShelf {
+			access = "r"
+		}
+		fmt.Fprintf(&out, "\n[%s:/]\n@owner-%s = %s\n* =\n", r.RepoID, r.RepoID, access)
 		fmt.Fprintf(&out, "\n[%s:/%s]\n* =\n", r.RepoID, whale.ReservedNamespace)
 	}
 	return []byte(out.String()), nil

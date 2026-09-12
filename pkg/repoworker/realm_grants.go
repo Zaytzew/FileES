@@ -607,6 +607,11 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 		if role == "ro" {
 			access = "r"
 		}
+		// Upload shelves accept writes only through the server-side HTTP
+		// intake worker. Even their owner receives SVN read access.
+		if repo.Purpose == clientview.PurposeUploadShelf {
+			access = "r"
+		}
 		// EditingPolicy is read from the canonical record on every rebuild and
 		// never carried over from currentByRepo like the two above. Those are
 		// per-client grants that the record cannot reconstruct; this one is a
@@ -635,7 +640,7 @@ func renderCanonicalGrantAuthz(repositories map[string]repositoryRecord, clients
 			if access == "" {
 				continue
 			}
-			if access == "r" {
+			if access == "r" || repo.Purpose == clientview.PurposeUploadShelf {
 				readers = append(readers, clientID)
 			} else if clients[clientID].RealmID == repo.OwnerRealmID {
 				owners = append(owners, clientID)

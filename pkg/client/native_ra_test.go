@@ -20,7 +20,7 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1"]}`)
 		return
 	}
 	if p := os.Getenv("FILEES_TEST_RA_TRACE"); p != "" {
@@ -78,6 +78,31 @@ func TestNativeSparseCheckoutUsesExplicitDepth(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"checkout","--url","file:///repo"`) || !strings.Contains(string(data), `"--depth","empty"`) {
 		t.Fatalf("native sparse checkout argv = %s", data)
+	}
+}
+
+func TestNativeSparseFetchRequiresParentsFeatureAndTargetsOnePath(t *testing.T) {
+	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"revision":1,"conflicts":[],"changes":[]}`)
+	wc := t.TempDir()
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("FILEES_TEST_RA_TRACE", trace)
+	t.Setenv("FILEES_TEST_RA_OLD_HELPER", "1")
+	if _, err := c.nativeFetchSparsePath(t.Context(), wc, "incoming/deep.txt"); err == nil {
+		t.Fatal("old helper accepted sparse parent creation")
+	}
+	if _, err := os.Stat(trace); !os.IsNotExist(err) {
+		t.Fatal("mutation attempted before sparse capability check", err)
+	}
+	t.Setenv("FILEES_TEST_RA_OLD_HELPER", "0")
+	if _, err := c.nativeFetchSparsePath(t.Context(), wc, "incoming/deep.txt"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"update","--wc"`) || !strings.Contains(string(data), `"--depth","empty","--parents","--","incoming/deep.txt"`) {
+		t.Fatalf("native sparse fetch argv = %s", data)
 	}
 }
 

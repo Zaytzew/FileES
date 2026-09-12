@@ -60,7 +60,8 @@ svn_error_t *filees_ra_checkout(const char *url, const char *wc,
                                 apr_pool_t *pool);
 svn_error_t *filees_ra_update(const char *wc, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              svn_revnum_t revision, apr_pool_t *pool);
+                              svn_revnum_t revision, svn_boolean_t make_parents,
+                              apr_pool_t *pool);
 svn_error_t *filees_ra_commit(const char *wc, svn_boolean_t live,
                               const char **rels, int n, const char *message,
                               svn_boolean_t keep_locks, const char **revprops,

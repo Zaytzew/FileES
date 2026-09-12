@@ -267,6 +267,37 @@ func TestControllerPermanentDeleteRequiresTwoSeparateConfirmations(t *testing.T)
 	}
 }
 
+func TestUploadShelfCannotUseGenericRepositoryDeletion(t *testing.T) {
+	view := lifecycleView(contract.CapRepoDelete)
+	view.Repos[0].Purpose = "upload_shelf"
+	view.Servers[0].Repos[0].Purpose = "upload_shelf"
+	platformFake := &platformtest.Fake{}
+	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+	intents, cancel := setup(actions.Config{
+		ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake,
+		RepositoryDetacher: detacher,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office", RepoID: "repo-1"})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().SettingsRequests
+	if len(requests) != 1 || len(requests[0].Servers) != 1 || len(requests[0].Servers[0].Folders) != 1 || requests[0].Servers[0].Folders[0].CanDelete {
+		t.Fatalf("shelf offered generic deletion: %+v", requests)
+	}
+	send(t, intents, tray.Intent{Kind: tray.IntentDeleteRepository, ServerID: "office", RepoID: "repo-1"})
+	select {
+	case call := <-detacher.calls:
+		t.Fatalf("shelf reached generic deletion: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if confirmations := platformFake.Snapshot().ConfirmRequests; len(confirmations) != 0 {
+		t.Fatalf("shelf requested generic deletion confirmation: %+v", confirmations)
+	}
+}
+
 func TestControllerDeletesOwnedRemoteRepositoryWithoutLocalAttachment(t *testing.T) {
 	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
 	platformFake := &platformtest.Fake{

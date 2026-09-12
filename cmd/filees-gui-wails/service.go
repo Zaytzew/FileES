@@ -773,16 +773,16 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentOpenFolder):
 		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 	case string(tray.IntentAttachRepository):
-		allowed := !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		allowed := repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
 		return tray.Intent{Kind: tray.IntentAttachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, allowed
 	case string(tray.IntentLock):
-		allowed := vm.CanMutateLock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && serverAllowsLock(vm, repo.ServerID)
+		allowed := repo.Purpose == "" && vm.CanMutateLock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && serverAllowsLock(vm, repo.ServerID)
 		return tray.Intent{Kind: tray.IntentLock, RepoID: repo.ID}, allowed
 	case string(tray.IntentUnlock):
-		allowed := vm.CanMutateUnlock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && repo.ReservationCount > 0
+		allowed := repo.Purpose == "" && vm.CanMutateUnlock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && repo.ReservationCount > 0
 		return tray.Intent{Kind: tray.IntentUnlock, RepoID: repo.ID}, allowed
 	case string(tray.IntentPublish):
-		allowed := vm.Connected && !vm.Stale && vm.CanPublish() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != ""
+		allowed := repo.Purpose == "" && vm.Connected && !vm.Stale && vm.CanPublish() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != ""
 		return tray.Intent{Kind: tray.IntentPublish, RepoID: repo.ID}, allowed
 	case string(tray.IntentReviewQuarantine):
 		allowed := vm.CanReviewQuarantine() && repo.Purpose == clientview.PurposeUploadTrash && serverOwnsRepo(vm, repo)
@@ -975,10 +975,11 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			operation = *repo.CurrentOp
 		}
 		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
-		canAttach := !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
-		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
-		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
-		canPublish := vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
+		ordinary := repo.Purpose == ""
+		canAttach := ordinary && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		canLock := ordinary && vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
+		canUnlock := ordinary && vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
+		canPublish := ordinary && vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
 		canReviewQuarantine := false
 		ownership := "unclassified"
 		if server, ok := serversByID[repo.ServerID]; ok && server.RealmID != "" && repo.OwnerRealmID != "" {

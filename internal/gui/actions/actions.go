@@ -943,18 +943,18 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			// Ownership alone, not ownedAndCreatable: whether a realm may
 			// create new repositories says nothing about its right to set
 			// the working rules of one it already owns.
-			CanSetEditingPolicy:     !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
-			CanManageGrants:         !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
-			CanManagePublicShares:   !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
-			CanManageUploadChannels: !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
+			CanSetEditingPolicy:     repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanManageGrants:         repo.Purpose == "" && !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
+			CanManagePublicShares:   repo.Purpose == "" && !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
+			CanManageUploadChannels: repo.Purpose == "" && !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
 			CanReviewQuarantine:     quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
-			CanConnect:              !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+			CanConnect:              repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-			CanDelete:               !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-			CanLoadDump:             !locallyProvisioning && repo.Attached && ownedAndCreatable,
+			CanDelete:               repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanLoadDump:             repo.Purpose == "" && !locallyProvisioning && repo.Attached && ownedAndCreatable,
 			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
-			CanResolveIntents:       vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
+			CanResolveIntents:       repo.Purpose == "" && vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
 			LastCommitAt:            repo.LastCommitAt,
 			CanFoldInactive:         vm.CanFoldInactive(repo),
 			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
@@ -1306,7 +1306,7 @@ func attachableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoVi
 			continue
 		}
 		for _, repo := range server.Repos {
-			if repo.ID == repoID && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached {
+			if repo.ID == repoID && repo.Purpose == "" && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached {
 				return repo, true
 			}
 		}
@@ -1466,7 +1466,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 				return
 			}
 		} else {
-			if repo.AttachmentPolicy == "required" || !vm.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(vm, repo) {
+			if repo.Purpose != "" || repo.AttachmentPolicy == "required" || !vm.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(vm, repo) {
 				return
 			}
 			location := "Repozytorium zostanie usunięte z serwera. Nie ma przypiętego lokalnego folderu. Historia serwerowa przestanie być dostępna."
@@ -1502,7 +1502,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			return
 		}
 		if deleteRepository {
-			if current.AttachmentPolicy == "required" || !latest.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(latest, current) {
+			if current.Purpose != "" || current.AttachmentPolicy == "required" || !latest.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(latest, current) {
 				return
 			}
 		} else if !latest.CanDetachRepository() || current.AttachmentPolicy == "required" {
@@ -1956,9 +1956,6 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				}
 				if current == nil {
 					err = c.cfg.UploadChannels.CreateUploadChannel(ctx, serverID, declaration)
-					if err == nil {
-						c.offerUploadShelfFolder(ctx, serverID, repo.ID, declaration.Slug)
-					}
 				} else {
 					err = c.cfg.UploadChannels.UpdateUploadChannel(ctx, serverID, current.ChannelID, declaration)
 				}
@@ -1987,45 +1984,6 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n045", "Półka została zaktualizowana"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
 		}
 	}()
-}
-
-func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, authorityRepoID, slug string) {
-	if c.cfg.FolderPicker == nil || c.cfg.RepositoryAttacher == nil || c.cfg.UploadChannels == nil {
-		return
-	}
-	listed, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, authorityRepoID)
-	if err != nil {
-		return
-	}
-	var uploadRepoID string
-	for _, channel := range listed.Channels {
-		if channel.Slug == slug && channel.UploadRepoID != "" && channel.State == "active" {
-			uploadRepoID = channel.UploadRepoID
-			break
-		}
-	}
-	if uploadRepoID == "" {
-		return
-	}
-	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.shelf", "Wybierz folder na przyjęte pliki półki „%s”"), slug)})
-	if err != nil || picked.Cancelled || strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
-		return
-	}
-	if c.cfg.Refresh != nil {
-		c.cfg.Refresh()
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, uploadRepoID); ok {
-			_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-		if c.cfg.Refresh != nil {
-			c.cfg.Refresh()
-		}
-	}
-	_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
 }
 
 // showShelf lists one shelf and hands it to the browser.

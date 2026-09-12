@@ -42,7 +42,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	}
 	runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
 	pathOwners := repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy}
-	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, Runner: runner, RepositoryHead: pathOwners.Head}
+	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, PublicShareStateRoot: config.PublicShares.EffectiveStateRoot(r.ResultsRoot), Runner: runner, RepositoryHead: pathOwners.Head}
 	effects := repoworker.ServerEffects{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root, DataAuthzFile: r.DataAuthzFile, DeletionArchiveRoot: archiveRoot, DeletionRetentionDays: r.EffectiveDeletionRetentionDays(), Authority: publisher}
 	effects.LockGuardExecutable = repositoryWorkerPath
 	backend := &repoworker.DurableBackend{Root: filepath.Join(r.ResultsRoot, "backend"), URLPrefix: r.URLPrefix, Effects: effects}
@@ -114,7 +114,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	if publicShareChannels != nil {
 		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}, TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot)}
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, LockProjector: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
+	worker := &repoworker.Worker{Backend: backend, GenericDelete: publisher, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, LockProjector: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	worker.PassportPreparations = &repoworker.PassportPreparations{
 		Root: filepath.Join(r.ResultsRoot, "passport-preparations"),
 		Authority: repoworker.PassportReplacementAuthority{

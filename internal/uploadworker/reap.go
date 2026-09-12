@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ var (
 	ErrCollision  = errors.New("upload name already exists")
 	ErrRejected   = errors.New("upload rejected by antivirus")
 	ErrNotFound   = errors.New("quarantine item not found")
+
+	// errUnindexed marks an accept whose arrival record could not be written.
+	// It is internal: the file is committed and the acceptance is real, so it
+	// must not reach a caller as a failure. Reap counts it as accepted and
+	// separately as unindexed.
+	errUnindexed = errors.New("upload accepted but not indexed")
 )
 
 type Publisher struct {
@@ -46,6 +53,12 @@ type Result struct {
 	Accepted int
 	Rejected int
 	Failed   int
+	// Unindexed counts files that were committed but whose arrival record
+	// could not be written. The file is safe and the acceptance is real, so
+	// it is not a failure; what is missing is the shelf entry a browser reads.
+	// Counted apart because calling it either "accepted" alone or "failed"
+	// would be a lie in one direction or the other.
+	Unindexed int
 }
 
 func (r Reaper) Reap(ctx context.Context) (Result, error) {
@@ -75,6 +88,9 @@ func (r Reaper) Reap(ctx context.Context) (Result, error) {
 			return summary, err
 		case errors.Is(err, ErrRejected):
 			summary.Rejected++
+		case errors.Is(err, errUnindexed):
+			summary.Accepted++
+			summary.Unindexed++
 		default:
 			summary.Failed++
 		}
@@ -119,12 +135,29 @@ func (r Reaper) process(ctx context.Context, job intake.Record) error {
 	if exists {
 		return r.fail(job.UploadID, ErrCollision)
 	}
-	if err := r.putFile(ctx, repo, payload, name, "filees: accept upload "+job.UploadID, map[string]string{
+	revision, err := r.putFile(ctx, repo, payload, name, "filees: accept upload "+job.UploadID, map[string]string{
 		"filees:upload-id": job.UploadID, "filees:upload-sha256": job.SHA256, "filees:upload-channel": job.ChannelID,
-	}); err != nil {
+	})
+	if err != nil {
 		return r.fail(job.UploadID, err)
 	}
-	return r.Intake.Remove(job.UploadID)
+	// The commit is the point of no return: the file is in the delivery
+	// repository, so the job leaves intake whatever happens next. Retrying
+	// would only meet the collision check and fail every minute from now on.
+	// A missing arrival record costs the browser an entry, never the file.
+	recordErr := r.Channels.RecordAccepted(channel.Accepted{
+		ChannelID: job.ChannelID, UploadID: job.UploadID,
+		RepoPath: name, OriginalName: job.OriginalName,
+		Size: job.Size, SHA256: job.SHA256,
+		Revision: revision, AcceptedAt: r.now(),
+	})
+	if err := r.Intake.Remove(job.UploadID); err != nil {
+		return err
+	}
+	if recordErr != nil {
+		return errUnindexed
+	}
+	return nil
 }
 
 func (r Reaper) fail(uploadID string, err error) error {
@@ -169,14 +202,38 @@ func (r Reaper) exists(ctx context.Context, repository, name string) (bool, erro
 	return false, nil
 }
 
-func (r Reaper) putFile(ctx context.Context, repository, payload, repoPath, message string, revprops map[string]string) error {
+func (r Reaper) putFile(ctx context.Context, repository, payload, repoPath, message string, revprops map[string]string) (int64, error) {
 	args := []string{"--non-interactive", "-m", message}
 	for key, value := range revprops {
 		args = append(args, "--with-revprop", key+"="+value)
 	}
 	args = append(args, "put", payload, appendURL(fileURL(repository), repoPath))
-	_, err := r.Publisher.run(ctx, r.Publisher.SVNMucc, args...)
-	return err
+	out, err := r.Publisher.run(ctx, r.Publisher.SVNMucc, args...)
+	if err != nil {
+		return 0, err
+	}
+	return committedRevision(out), nil
+}
+
+// committedRevision reads the revision out of svnmucc's own confirmation line,
+// which reads "rNNN committed by ...". An unreadable line yields zero rather
+// than an error: the commit already succeeded, and the number is a convenience
+// for the browser, not part of the guarantee.
+func committedRevision(out []byte) int64 {
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "r") {
+			continue
+		}
+		digits := line[1:]
+		if cut := strings.IndexByte(digits, ' '); cut >= 0 {
+			digits = digits[:cut]
+		}
+		if revision, err := strconv.ParseInt(digits, 10, 64); err == nil && revision > 0 {
+			return revision
+		}
+	}
+	return 0
 }
 
 func (r Reaper) putTree(ctx context.Context, repository, payload, repoPath, message string) error {

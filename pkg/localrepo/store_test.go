@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/clientview"
+
 	"github.com/google/uuid"
 )
 
@@ -300,6 +302,34 @@ func TestStoreRequiresMatchingApprovalBeforeAttachment(t *testing.T) {
 	}
 	if _, err := store.ApproveAttach(record.OperationID, "primary", "repo-1", url, "r"); err != nil {
 		t.Fatalf("idempotent approval failed: %v", err)
+	}
+}
+
+func TestShelfAttachPurposeAndReadonlySurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc := filepath.Join(t.TempDir(), "shelf")
+	url := "svn+ssh://_filees-client@example/shelf"
+	record, err := store.BeginShelfAttach("office", "shelf-1", url, wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ApproveAttach(record.OperationID, "office", "shelf-1", url, "rw"); err == nil {
+		t.Fatal("ordinary approval changed sparse shelf authority")
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := reopened.Get(record.OperationID)
+	if !ok || got.Purpose != clientview.PurposeUploadShelf || got.Access != "r" || got.State != StateAttaching {
+		t.Fatalf("persisted shelf=%+v found=%v", got, ok)
+	}
+	if _, err := reopened.BeginAttach("office", "shelf-1", filepath.Join(t.TempDir(), "ordinary"), false); err == nil {
+		t.Fatal("ordinary attach bypassed existing shelf record")
 	}
 }
 

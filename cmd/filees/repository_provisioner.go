@@ -16,6 +16,7 @@ import (
 	"filees/internal/durable"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/clientview"
 	"filees/pkg/config"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
@@ -70,6 +71,10 @@ type attachmentSVN interface {
 	Checkout(context.Context, string, string) (string, error)
 	GetInfo(context.Context, string) (string, error)
 	Status(context.Context, string, []string) ([]client.StatusEntry, error)
+}
+
+type sparseAttachmentSVN interface {
+	CheckoutDepthEmpty(context.Context, string, string) (string, error)
 }
 
 type provisionedAttachment struct {
@@ -1077,7 +1082,24 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 			return
 		}
 	}
-	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
+	checkout := func() error {
+		if record.Purpose != clientview.PurposeUploadShelf {
+			_, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath)
+			return err
+		}
+		if hadSVN {
+			// The existing WC was identity-checked above. Never turn a sparse
+			// resume into a full checkout or update.
+			return nil
+		}
+		sparse, ok := svn.(sparseAttachmentSVN)
+		if !ok {
+			return errors.New("SVN adapter does not support sparse checkout")
+		}
+		_, err := sparse.CheckoutDepthEmpty(ctx, record.RepoURL, check.CanonicalPath)
+		return err
+	}
+	if err := checkout(); err != nil {
 		// A failed first checkout of an existing realm share leaves an
 		// incomplete .svn admin area in an otherwise empty folder. Resume,
 		// create, relocate and mobile pairing never take this path.
@@ -1181,7 +1203,7 @@ func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record local
 	if p.attachments == nil {
 		return
 	}
-	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
+	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access, Purpose: record.Purpose}
 	select {
 	case p.attachments <- provisionedAttachment{Repo: repo}:
 	case <-ctx.Done():

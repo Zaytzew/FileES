@@ -315,6 +315,11 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		timeouts[profile.ServerID] = profile.SVNTimeout()
 	}
 	for _, repo := range repos {
+		if repo.Purpose == clientview.PurposeUploadShelf {
+			// Sparse shelves are local storage for explicit fetches, not
+			// supervised repositories. Never start an update/commit loop.
+			continue
+		}
 		key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
 		if repo.SessionTimeout <= 0 {
 			repo.SessionTimeout = timeouts[repo.ServerID]
@@ -619,6 +624,12 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
 			if lifecycle.RemoteDeleted(key.ServerID, key.RepoID) && !attachment.Quiesce {
 				// A late provisioning completion cannot defeat a newer receipt.
+				continue
+			}
+			if repo.Purpose == clientview.PurposeUploadShelf && !attachment.Quiesce {
+				if view, ok := currentViews[repo.ServerID]; ok {
+					syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
+				}
 				continue
 			}
 			if attachment.Quiesce {

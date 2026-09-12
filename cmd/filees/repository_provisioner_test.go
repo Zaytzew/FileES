@@ -15,6 +15,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -23,7 +24,39 @@ import (
 type attachmentSVNStub struct {
 	url      string
 	checkout int
+	sparse   int
 	status   []client.StatusEntry
+}
+
+func (stub *attachmentSVNStub) CheckoutDepthEmpty(_ context.Context, url, path string) (string, error) {
+	stub.sparse++
+	stub.url = url
+	return "", os.MkdirAll(filepath.Join(path, ".svn"), 0o700)
+}
+
+func TestShelfAttachUsesOnlySparseCheckoutAndPreservesPurpose(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := local.BeginShelfAttach("office", uuid.NewString(), "svn+ssh://_filees-client@example/shelf", filepath.Join(t.TempDir(), "shelf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &attachmentSVNStub{}
+	p := newDaemonProvisioner(local, nil, nil)
+	events := make(chan provisionedAttachment, 1)
+	p.attachments = events
+	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	p.runAttach(t.Context(), record, clientprofile.Profile{ServerID: "office"})
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.Purpose != clientview.PurposeUploadShelf || stub.sparse != 1 || stub.checkout != 0 {
+		t.Fatalf("shelf=%+v sparse=%d full=%d", got, stub.sparse, stub.checkout)
+	}
+	event := <-events
+	if event.Repo.Purpose != clientview.PurposeUploadShelf || event.Repo.Access != "r" {
+		t.Fatalf("published event=%+v", event)
+	}
 }
 
 func (stub *attachmentSVNStub) Checkout(_ context.Context, url, path string) (string, error) {

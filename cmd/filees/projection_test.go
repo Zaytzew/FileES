@@ -34,6 +34,34 @@ func shortDaemonSocket(t *testing.T) string {
 	return filepath.Join(dir, "daemon.sock")
 }
 
+func TestShelfProjectionNeverEntersSupervisor(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "11111111-1111-4111-8111-111111111111"
+	url := "svn+ssh://_filees-client@example/shelf"
+	record, err := local.BeginShelfAttach("office", id, url, filepath.Join(t.TempDir(), "shelf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkAttached(record.OperationID, id); err != nil {
+		t.Fatal(err)
+	}
+	view := clientview.View{Repositories: []clientview.Repository{{RepoID: id, URL: url, Access: "r", State: "active", Purpose: clientview.PurposeUploadShelf}}}
+	key := reposupervisor.Key{ServerID: "office", RepoID: id}
+	runtimes := map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: id, Purpose: clientview.PurposeUploadShelf}}}
+	if desired := attachedProjection("office", view, runtimes); len(desired) != 0 {
+		t.Fatalf("shelf started supervised runtime: %+v", desired)
+	}
+	server := ipcserver.New(shortDaemonSocket(t))
+	syncProjectionKnowledge(server, "office", view, nil, local)
+	state := server.RepoState("office", id)
+	if state == nil || !state.Summary().Attached || state.Summary().LocalPath != record.LocalPath {
+		t.Fatalf("sparse shelf not visible as attached: %+v", state)
+	}
+}
+
 func TestProjectLockReleaseRequestsPreservesPrivateRoleAndFencingToken(t *testing.T) {
 	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
 	projected := projectLockReleaseRequests("office", []clientview.LockReleaseRequest{{

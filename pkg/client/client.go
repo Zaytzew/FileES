@@ -282,6 +282,25 @@ func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string,
 	return c.run(ctx, rootDirectory, args)
 }
 
+// FetchSparsePath materializes exactly one selected path from a depth-empty
+// working copy, including only the missing parent directories at depth empty.
+// It is intentionally separate from UpdateDepthEmpty, whose ordinary callers
+// must not acquire --parents semantics as an accidental side effect.
+func (c *execClient) FetchSparsePath(ctx context.Context, rootDirectory, path string) (string, error) {
+	if !filepath.IsAbs(rootDirectory) || !filepath.IsAbs(path) {
+		return "", errors.New("sparse fetch requires absolute working-copy and target paths")
+	}
+	rels, err := nativeRelatives(rootDirectory, []string{path})
+	if err != nil || len(rels) != 1 {
+		return "", errors.New("sparse fetch requires one path inside the working copy")
+	}
+	if nativeWCOps(c) {
+		return c.nativeFetchSparsePath(ctx, rootDirectory, rels[0])
+	}
+	args := append([]string{"update", "--depth", "empty", "--parents"}, c.pathArgs(rootDirectory, []string{path})...)
+	return c.run(ctx, rootDirectory, args)
+}
+
 func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string) ([]StatusEntry, error) {
 	if nativeWCOps(c) {
 		return c.nativeStatus(ctx, rootDirectory, paths)

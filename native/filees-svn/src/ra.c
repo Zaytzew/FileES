@@ -486,7 +486,8 @@ svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
  * what the working copy is. */
 svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              svn_revnum_t revision, apr_pool_t *pool)
+                              svn_revnum_t revision, svn_boolean_t make_parents,
+                              apr_pool_t *pool)
 {
     const char *wc;
     svn_client_ctx_t *ctx;
@@ -526,7 +527,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
                                TRUE /* ignore_externals */,
                                FALSE /* allow_unver_obstructions */,
                                TRUE /* adds_as_modification */,
-                               FALSE /* make_parents */,
+                               make_parents,
                                ctx, pool));
     for (i = 0; result_revs && i < result_revs->nelts; ++i) {
         svn_revnum_t one = APR_ARRAY_IDX(result_revs, i, svn_revnum_t);

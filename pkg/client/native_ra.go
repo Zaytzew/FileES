@@ -136,6 +136,20 @@ func (c *execClient) nativeUpdate(ctx context.Context, wc string, paths []string
 	}
 	return nativeUpdateReceipt(r)
 }
+
+func (c *execClient) nativeFetchSparsePath(ctx context.Context, wc, relativePath string) (string, error) {
+	if err := c.nativeRequireFeature(ctx, "sparse_update_parents_v1"); err != nil {
+		return "", err
+	}
+	if !validMovePath(relativePath) {
+		return "", errors.New("native sparse fetch requires a relative path inside the working copy")
+	}
+	r, err := c.nativeRemote(ctx, wc, "update", "--wc", wc, "--depth", "empty", "--parents", "--", relativePath)
+	if err != nil {
+		return "", err
+	}
+	return nativeUpdateReceipt(r)
+}
 func nativeUpdateReceipt(r map[string]any) (string, error) {
 	if _, e := nativeRevisionValue(r, "revision", false); e != nil {
 		return "", e

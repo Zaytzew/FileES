@@ -346,12 +346,15 @@ func TestSparseCheckoutFetchesOnlySelectedSVNPath(t *testing.T) {
 	if out, err := exec.Command(svn, "checkout", "-q", url, seed).CombinedOutput(); err != nil {
 		t.Fatalf("svn checkout seed: %v\n%s", err, out)
 	}
-	for _, name := range []string{"wanted.txt", "other.txt"} {
+	if err := os.MkdirAll(filepath.Join(seed, "incoming", "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"wanted.txt", "other.txt", filepath.Join("incoming", "nested", "deep.txt"), filepath.Join("incoming", "nested", "untouched.txt")} {
 		if err := os.WriteFile(filepath.Join(seed, name), []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	add := exec.Command(svn, "add", "--", "wanted.txt", "other.txt")
+	add := exec.Command(svn, "add", "--", "wanted.txt", "other.txt", "incoming")
 	add.Dir = seed
 	if out, err := add.CombinedOutput(); err != nil {
 		t.Fatalf("svn add: %v\n%s", err, out)
@@ -380,6 +383,22 @@ func TestSparseCheckoutFetchesOnlySelectedSVNPath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(shelf, "other.txt")); !os.IsNotExist(err) {
 		t.Fatalf("unselected file downloaded: %v", err)
+	}
+	if out, err := cli.(interface {
+		FetchSparsePath(context.Context, string, string) (string, error)
+	}).FetchSparsePath(t.Context(), shelf, filepath.Join(shelf, "incoming", "nested", "deep.txt")); err != nil {
+		t.Fatalf("nested selected update: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(shelf, "incoming", "nested", "deep.txt")); err != nil {
+		t.Fatalf("nested selected file not downloaded: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(shelf, "incoming", "nested", "untouched.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unselected nested file downloaded: %v", err)
+	}
+	if _, err := cli.(interface {
+		FetchSparsePath(context.Context, string, string) (string, error)
+	}).FetchSparsePath(t.Context(), shelf, filepath.Join(root, "outside.txt")); err == nil {
+		t.Fatal("sparse fetch accepted a path outside the working copy")
 	}
 }
 

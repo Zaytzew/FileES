@@ -234,6 +234,11 @@ func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerReal
 	if err != nil {
 		return control.UploadChannelResult{}, classifyUploadError(err)
 	}
+	if publisher, ok := s.Backend.(interface{ RefreshUploadProjection(context.Context) error }); ok {
+		if err := publisher.RefreshUploadProjection(ctx); err != nil {
+			return control.UploadChannelResult{}, err
+		}
+	}
 	if len(deliveries) > 0 {
 		if s.Deliverer == nil {
 			return control.UploadChannelResult{}, errors.New("upload channel token delivery is unavailable")

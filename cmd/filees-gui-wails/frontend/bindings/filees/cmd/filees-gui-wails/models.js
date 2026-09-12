@@ -1153,6 +1153,8 @@ export class RepoProjection {
      * @param {Partial<RepoProjection>} [$$source = {}] - The source object to create the RepoProjection.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["parent_repo_id"] = undefined;
         if (!("id" in $$source)) {
             /**
              * @member
@@ -1730,6 +1732,8 @@ export class RepositorySnapshot {
      * @param {Partial<RepositorySnapshot>} [$$source = {}] - The source object to create the RepositorySnapshot.
      */
     constructor($$source = {}) {
+        /** @type {boolean} */
+        this["shelf_can_import"] = false;
         /** @type {string | undefined} */
         this["text_key"] = undefined;
         /** @type {string | undefined} */

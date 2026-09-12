@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.import.action": "Placer dans le dossier parent",
+  "shelf.import.destination": "Choisissez une destination dans la copie de travail parente",
+  "shelf.import.complete": "Fichier placé dans le dossier parent",
+  "shelf.import.running": "Téléchargement et placement du fichier",
+  "shelf.import.failed": "Impossible de placer le fichier",
   "shelf.download.running": "Téléchargement depuis le dépôt en cours",
   "shelf.download.complete": "Fichier du dépôt téléchargé",
   "prompt.submitFailed": "Impossible de transmettre votre décision · {reason}",

@@ -82,6 +82,7 @@ type settingsBrowserRouter struct {
 }
 
 type RepositorySnapshot struct {
+	ShelfCanImport bool                         `json:"shelf_can_import"`
 	TextKey        string                       `json:"text_key,omitempty"`
 	TextPrefix     string                       `json:"text_prefix,omitempty"`
 	Revision       uint64                       `json:"revision"`
@@ -349,7 +350,7 @@ func (service *RepositoryService) ChooseShelf(choice RepositoryChoice) Repositor
 	service.mu.Lock()
 	session := service.shelf
 	snapshot := service.snapshot
-	if session == nil || session.resolved || !sameRepositoryContext(snapshot, choice) || choice.Action != "fetch" || choice.ChannelID != snapshot.FocusChannelID {
+	if session == nil || session.resolved || !sameRepositoryContext(snapshot, choice) || (choice.Action != "fetch" && choice.Action != "import") || (choice.Action == "import" && !snapshot.ShelfCanImport) || choice.ChannelID != snapshot.FocusChannelID {
 		service.mu.Unlock()
 		return RepositoryAcceptance{Code: "shelf_action_unavailable"}
 	}
@@ -367,7 +368,7 @@ func (service *RepositoryService) ChooseShelf(choice RepositoryChoice) Repositor
 	session.resolved = true
 	hide := service.hide
 	service.mu.Unlock()
-	session.result <- platform.ShelfDialogResult{Action: platform.ShelfDialogFetch, UploadID: choice.UploadID}
+	session.result <- platform.ShelfDialogResult{Action: platform.ShelfDialogAction(choice.Action), UploadID: choice.UploadID}
 	if hide != nil {
 		hide()
 	}
@@ -1048,7 +1049,7 @@ func projectShelf(request platform.ShelfDialogRequest, contextProjection Reposit
 	}
 	snapshot := RepositorySnapshot{
 		Mode: "shelf", Title: request.Title, Text: request.Text, TextKey: request.TextKey, TextPrefix: request.TextPrefix,
-		Context: contextProjection, ShelfName: request.ShelfName, FocusChannelID: request.ChannelID,
+		Context: contextProjection, ShelfName: request.ShelfName, FocusChannelID: request.ChannelID, ShelfCanImport: request.CanImport,
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{},
 		Uploads: []UploadChannelProjection{}, Quarantine: []QuarantineItemProjection{},
 		Shelf: make([]ShelfItemProjection, 0, len(request.Items)),

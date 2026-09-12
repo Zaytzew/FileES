@@ -126,7 +126,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				state = contract.StateInitializing
 			}
 		}
-		projectedRepo := ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, Attached: attached, PendingLocalPath: pendingPath}
+		projectedRepo := ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, ParentRepoID: repo.ParentRepoID, Attached: attached, PendingLocalPath: pendingPath}
 		if repair, ok := repairs[repo.RepoID]; ok {
 			projectedRepo.LifecycleOperationID = repair.record.OperationID
 			projectedRepo.LifecycleError = repair.record.LastError

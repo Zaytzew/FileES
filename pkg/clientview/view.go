@@ -108,7 +108,8 @@ type Repository struct {
 	// Purpose is empty for an ordinary project repository. Upload Channel
 	// stamps upload_shelf on the delivery repo and upload_trash on the
 	// realm-wide reject quarantine. Absence keeps old projections readable.
-	Purpose string `json:"purpose,omitempty"`
+	Purpose      string `json:"purpose,omitempty"`
+	ParentRepoID string `json:"parent_repo_id,omitempty"`
 }
 
 type LockReleaseRequest struct {
@@ -245,6 +246,11 @@ func (v View) Validate() error {
 		}
 		if !ValidPurpose(repo.Purpose) {
 			return fmt.Errorf("repositories[%d].purpose is invalid", i)
+		}
+		if repo.ParentRepoID != "" {
+			if _, err := uuid.Parse(repo.ParentRepoID); err != nil || repo.Purpose != PurposeUploadShelf || repo.ParentRepoID == repo.RepoID {
+				return fmt.Errorf("repositories[%d].parent_repo_id is invalid", i)
+			}
 		}
 	}
 	requestIDs := make(map[string]struct{}, len(v.LockReleaseRequests))

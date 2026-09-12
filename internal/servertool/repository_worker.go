@@ -138,6 +138,12 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 			if err := backend.RepairLegacyUploadTrashPurposes(ctx); err != nil {
 				return err
 			}
+			// Upgrade existing shelf relations under the same authority/WC locks.
+			if config.PublicShares.Enabled {
+				if err := backend.RefreshUploadProjection(ctx); err != nil {
+					return err
+				}
+			}
 			if err := backend.ReapUncommittedDeletes(ctx); err != nil {
 				return err
 			}

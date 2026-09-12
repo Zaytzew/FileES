@@ -361,8 +361,28 @@ func (p ServicePublisher) rebuildGrantAuthority() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	previousParents := map[string]string{}
+	for id, repo := range repositories {
+		previousParents[id] = repo.ParentRepoID
+	}
+	if err := p.projectShelfParents(repositories); err != nil {
+		return nil, err
+	}
 	now := p.now()
 	changed := []string{}
+	for id, repo := range repositories {
+		if repo.ParentRepoID == previousParents[id] {
+			continue
+		}
+		path, err := repositoryRecordPath(p.ServiceWC, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := atomicJSON(path, repo); err != nil {
+			return nil, err
+		}
+		changed = append(changed, path)
+	}
 	effective := map[string]map[string]string{}
 	clientIDs := make([]string, 0, len(clients))
 	for id := range clients {
@@ -618,7 +638,7 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 		// property of the repository, so the record is the only truth and a
 		// stale projection must not be able to keep a repository on an old
 		// policy.
-		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose})
+		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, ParentRepoID: repo.ParentRepoID})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].RepoID < result[j].RepoID })
 	return result

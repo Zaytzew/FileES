@@ -191,6 +191,7 @@ type ShelfBrowser interface {
 }
 
 type ShelfDialogRequest struct {
+	CanImport                     bool
 	TextKey                       string // GUI-authored description; empty preserves Text verbatim.
 	TextPrefix                    string // Literal server message preceding GUI copy.
 	Title, Text, ServerID, RepoID string
@@ -220,8 +221,9 @@ type ShelfItem struct {
 type ShelfDialogAction string
 
 const (
-	ShelfDialogClose ShelfDialogAction = "close"
-	ShelfDialogFetch ShelfDialogAction = "fetch"
+	ShelfDialogClose  ShelfDialogAction = "close"
+	ShelfDialogFetch  ShelfDialogAction = "fetch"
+	ShelfDialogImport ShelfDialogAction = "import"
 )
 
 type ShelfDialogResult struct {

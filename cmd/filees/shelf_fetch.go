@@ -20,6 +20,27 @@ import (
 )
 
 func (service repositoryLifecycleService) BeginShelfFetch(serverID, repoID, repoURL, localPath string, item contract.ShelfItem) (contract.RepoLifecycleResult, error) {
+	return service.beginShelfFetch(serverID, repoID, repoURL, localPath, item)
+}
+
+func (service repositoryLifecycleService) BeginShelfImport(serverID, repoID, repoURL, localPath string, item contract.ShelfItem, parent contract.RepoSummary, destination string) (contract.RepoLifecycleResult, error) {
+	if !filepath.IsAbs(destination) || !filepath.IsAbs(parent.LocalPath) || !localrepo.ValidShelfPath(item.OriginalName) || strings.Contains(item.OriginalName, "/") {
+		return contract.RepoLifecycleResult{}, errors.New("invalid placement path")
+	}
+	rel, err := filepath.Rel(parent.LocalPath, filepath.Join(destination, item.OriginalName))
+	if err != nil || !localrepo.ValidShelfPath(filepath.ToSlash(rel)) {
+		return contract.RepoLifecycleResult{}, errors.New("destination must be inside parent working copy")
+	}
+	if err := validateShelfDestination(parent.LocalPath, filepath.ToSlash(rel)); err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if _, err := os.Lstat(filepath.Join(parent.LocalPath, rel)); !errors.Is(err, os.ErrNotExist) {
+		return contract.RepoLifecycleResult{}, errors.New("destination already exists or cannot be inspected")
+	}
+	return service.beginShelfFetch(serverID, repoID, repoURL, localPath, item, localrepo.ShelfPlacement{ParentRepoID: parent.ID, ParentRoot: parent.LocalPath, ParentURL: parent.URL, RelativePath: filepath.ToSlash(rel)})
+}
+
+func (service repositoryLifecycleService) beginShelfFetch(serverID, repoID, repoURL, localPath string, item contract.ShelfItem, placement ...localrepo.ShelfPlacement) (contract.RepoLifecycleResult, error) {
 	if service.onCreate == nil || !localrepo.ValidShelfPath(item.RepoPath) || len(item.SHA256) != 64 || item.Size < 0 || item.UploadID == "" {
 		return contract.RepoLifecycleResult{}, errors.New("invalid shelf selection or unavailable executor")
 	}
@@ -43,7 +64,7 @@ func (service repositoryLifecycleService) BeginShelfFetch(serverID, repoID, repo
 	} else if record.RepoURL != repoURL || (localPath != "" && filepath.Clean(localPath) != record.LocalPath) {
 		return contract.RepoLifecycleResult{}, errors.New("shelf attachment identity changed")
 	}
-	record, err := service.store.QueueShelfFetch(record.OperationID, item.UploadID, item.RepoPath, item.SHA256, item.Size)
+	record, err := service.store.QueueShelfFetch(record.OperationID, item.UploadID, item.RepoPath, item.SHA256, item.Size, placement...)
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
@@ -70,6 +91,29 @@ func (p *daemonProvisioner) runShelfFetch(ctx context.Context, record localrepo.
 	fail := func(err error) {
 		_, _ = p.local.SetShelfFetchState(record.OperationID, fetch.ID, "failed", err)
 		talk.With("shelf:"+record.OperationID).Warnf("selected download failed: %v", err)
+		cleanupShelfStage(fetch)
+	}
+	complete := func() {
+		if _, err := p.local.SetShelfFetchState(record.OperationID, fetch.ID, "complete", nil); err == nil {
+			cleanupShelfStage(fetch)
+		}
+	}
+	// Reconcile a crash after local publication before fetching again. The
+	// remote shelf may have changed meanwhile; our own linked receipt suffices.
+	if fetch.Placement.ParentRepoID != "" {
+		parent := fetch.Placement
+		svn := p.newAttachmentSVN(profile, record.OperationID)
+		if err := prepareLifecycleWC(ctx, svn, parent.ParentRoot, expectedWorkingCopyIdentity(record.ServerID, parent.ParentRepoID, parent.ParentURL)); err != nil {
+			fail(err)
+			return
+		}
+		if published, err := shelfPlacementPublished(fetch); err != nil {
+			fail(err)
+			return
+		} else if published {
+			complete()
+			return
+		}
 	}
 	if record.State == localrepo.StateAttaching {
 		p.runAttach(ctx, record, profile)
@@ -142,7 +186,18 @@ func (p *daemonProvisioner) runShelfFetch(ctx context.Context, record localrepo.
 		fail(err)
 		return
 	}
-	_, _ = p.local.SetShelfFetchState(record.OperationID, fetch.ID, "complete", nil)
+	if fetch.Placement.ParentRepoID != "" {
+		parent := fetch.Placement
+		if err := prepareLifecycleWC(ctx, svn, parent.ParentRoot, expectedWorkingCopyIdentity(record.ServerID, parent.ParentRepoID, parent.ParentURL)); err != nil {
+			fail(err)
+			return
+		}
+		if err := placeShelfFile(target, fetch); err != nil {
+			fail(err)
+			return
+		}
+	}
+	complete()
 }
 
 func shelfSafeTarget(root, relative string) error {

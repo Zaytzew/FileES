@@ -266,6 +266,7 @@ func (s appState) viewModel() ViewModel {
 			AttachmentPolicy:     snap.AttachmentPolicy,
 			EditingPolicy:        snap.EditingPolicy,
 			Purpose:              firstNonEmpty(snap.Purpose, sum.Purpose),
+			ParentRepoID:         firstNonEmpty(snap.ParentRepoID, sum.ParentRepoID),
 			URL:                  sum.URL,
 			LocalPath:            sum.LocalPath,
 			State:                snap.State,

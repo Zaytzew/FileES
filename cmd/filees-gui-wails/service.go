@@ -164,6 +164,7 @@ type RepoProjection struct {
 	RecoveryPending          bool                       `json:"recovery_pending,omitempty"`
 	CleanupError             string                     `json:"cleanup_error,omitempty"`
 	Purpose                  string                     `json:"purpose,omitempty"`
+	ParentRepoID             string                     `json:"parent_repo_id,omitempty"`
 }
 
 // UnportableNameProjection is one object FileES declines to take under
@@ -1012,7 +1013,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			LocalCopyStatus:    repo.LocalCopyStatus,
 			RetainUntil:        repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
 			RecoveryAvailable: repo.RecoveryAvailable, CanDismissRecovery: vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != "", RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
-			Purpose: repo.Purpose,
+			Purpose:      repo.Purpose,
+			ParentRepoID: repo.ParentRepoID,
 		})
 		if repo.Cycle.Phase == contract.CycleRunning {
 			result.CycleRunning = true

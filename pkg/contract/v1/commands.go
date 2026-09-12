@@ -829,12 +829,13 @@ const CapRepoShelfFetch = "repo.shelf_fetch"
 
 // Selection identifiers only; the daemon resolves the current server receipt.
 type ShelfFetchPayload struct {
-	InspectOnly bool   `json:"inspect_only,omitempty"`
-	ServerID    string `json:"server_id"`
-	RepoID      string `json:"repo_id"`
-	ChannelID   string `json:"channel_id"`
-	UploadID    string `json:"upload_id"`
-	LocalPath   string `json:"local_path,omitempty"`
+	DestinationFolder string `json:"destination_folder,omitempty"` // explicit copy into the authoritative parent's local WC
+	InspectOnly       bool   `json:"inspect_only,omitempty"`
+	ServerID          string `json:"server_id"`
+	RepoID            string `json:"repo_id"`
+	ChannelID         string `json:"channel_id"`
+	UploadID          string `json:"upload_id"`
+	LocalPath         string `json:"local_path,omitempty"`
 }
 
 // ShelfItem is one accepted file on a shelf. RepoPath is what a selective
@@ -928,6 +929,9 @@ type RepoLifecycleResult struct {
 	FetchUploadID         string `json:"fetch_upload_id,omitempty"`
 	FetchState            string `json:"fetch_state,omitempty"`
 	FetchError            string `json:"fetch_error,omitempty"`
+	FetchDestination      string `json:"fetch_destination,omitempty"`
+	ShelfCanImport        bool   `json:"shelf_can_import,omitempty"`
+	ShelfParentPath       string `json:"shelf_parent_path,omitempty"`
 	OperationID           string `json:"operation_id"`
 	ServerID              string `json:"server_id"`
 	RepoID                string `json:"repo_id,omitempty"`
@@ -992,6 +996,7 @@ type RepoSummary struct {
 	RecoveryPending      bool   `json:"recovery_pending,omitempty"`
 	CleanupError         string `json:"cleanup_error,omitempty"`
 	Purpose              string `json:"purpose,omitempty"`
+	ParentRepoID         string `json:"parent_repo_id,omitempty"`
 	LifecycleOperationID string `json:"lifecycle_operation_id,omitempty"`
 	LifecycleError       string `json:"lifecycle_error,omitempty"`
 	CanRetryLifecycle    bool   `json:"can_retry_lifecycle,omitempty"`

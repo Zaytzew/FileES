@@ -463,3 +463,9 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   overflow-wrap: anywhere;
   opacity: 0.85;
 }
+.parent-shelves {
+  margin: 0 0 16px 24px;
+  padding-left: 12px;
+  border-left: 2px solid var(--realm-accent, #ff6a00);
+  min-width: 0;
+}

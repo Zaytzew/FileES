@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Wails dark: --theme-background / panel / text mixed toward orange. -->
+    <!-- Wails dark: theme-background / panel / text mixed toward orange. -->
     <color name="filees_background">#07101D</color>
     <color name="filees_panel">#101C2C</color>
     <color name="filees_text">#EFE3DD</color>

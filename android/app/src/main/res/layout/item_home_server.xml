@@ -29,8 +29,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/home_files_eyebrow"
-                android:textAllCaps="true"
-                android:textAppearance="@style/TextAppearance.Filees.Meta" />
+                android:textAppearance="@style/TextAppearance.Filees.Eyebrow" />
 
             <TextView
                 android:id="@+id/textServerPanelName"

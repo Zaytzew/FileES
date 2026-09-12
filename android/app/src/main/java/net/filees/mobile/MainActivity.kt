@@ -168,7 +168,7 @@ class MainActivity : AppCompatActivity() {
     // (§0), so it never changes color or stops for anything other than the
     // activity going to background.
     private fun startPulse() {
-        pulseAnimator = ObjectAnimator.ofFloat(binding.pulseDot, View.ALPHA, 1f, 0.35f).apply {
+        pulseAnimator = ObjectAnimator.ofFloat(binding.pulseDot, View.ALPHA, 1f, 0.55f).apply {
             duration = 1350
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
@@ -188,9 +188,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPaired(paired: Boolean) {
-        val hasServers = FileesSession.servers(prefs).isNotEmpty()
         binding.panelUnpaired.visibility = if (paired) View.GONE else View.VISIBLE
-        binding.barServerAddress.visibility = if (paired || hasServers) View.VISIBLE else View.GONE
+        binding.barServerAddress.visibility =
+            if (paired && selectedRepoId != null) View.VISIBLE else View.GONE
         binding.recyclerBrowse.visibility = if (paired) View.VISIBLE else View.GONE
         binding.buttonAdd.visibility = if (paired && canCaptureSelected()) View.VISIBLE else View.GONE
         if (!paired) bindDecisions(emptyList())
@@ -294,9 +294,11 @@ class MainActivity : AppCompatActivity() {
             binding.toolbar.subtitle = null
             binding.brandLockup.visibility = View.VISIBLE
             binding.buttonAdd.visibility = View.GONE
+            binding.barServerAddress.visibility = View.GONE
             supportActionBar?.setDisplayHomeAsUpEnabled(false)
             return
         }
+        binding.barServerAddress.visibility = View.VISIBLE
         binding.brandLockup.visibility = View.GONE
         binding.buttonAdd.visibility = if (canCaptureSelected()) View.VISIBLE else View.GONE
         supportActionBar?.setDisplayHomeAsUpEnabled(true)

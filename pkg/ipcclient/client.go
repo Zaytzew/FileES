@@ -354,6 +354,15 @@ func (c *Client) RepoLifecycleStatus(ctx context.Context, operationID string) (*
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) ShelfFetch(ctx context.Context, payload contract.ShelfFetchPayload) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoShelfFetch, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoLifecycleRepair(ctx context.Context, payload contract.RepoLifecycleRepairPayload) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoLifecycleRepair, payload.RepoID, payload)
 	if err != nil {

@@ -227,6 +227,15 @@ type ShelfLister interface {
 	ListShelf(context.Context, string, string) (ShelfList, error)
 }
 
+type ShelfDownloader interface {
+	ShelfFetch(context.Context, string, string, string, string, string, bool) (ShelfDownload, error)
+	ShelfFetchStatus(context.Context, string) (ShelfDownload, error)
+}
+
+type ShelfDownload struct {
+	OperationID, FetchID, UploadID, LocalPath, State, Error string
+}
+
 type ShelfList struct {
 	ChannelID string
 	Items     []ShelfItem
@@ -2013,14 +2022,25 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 		Text:     c.uiText("shelf.intro", "Pliki wniesione przez zaproszonych. Leżą na serwerze, dopóki ich stąd nie zabierzesz."),
 		ServerID: serverID, RepoID: repoID, ChannelID: shelf.ChannelID, ShelfName: name,
 	}
+	if downloader, ok := c.cfg.Shelf.(ShelfDownloader); ok {
+		status, err := downloader.ShelfFetch(ctx, serverID, repoID, shelf.ChannelID, "", "", true)
+		if err == nil && status.State != "" {
+			request.TextPrefix = c.shelfStatusText(status.State) + " · " + status.LocalPath
+		}
+	}
 	for _, item := range listed.Items {
 		request.Items = append(request.Items, platform.ShelfItem{
 			UploadID: item.UploadID, RepoPath: item.RepoPath, OriginalName: item.OriginalName,
 			Size: item.Size, Revision: item.Revision, AcceptedAt: item.AcceptedAt,
 		})
 	}
-	if _, err := c.cfg.ShelfBrowser.ShowShelf(ctx, request); err != nil {
+	choice, err := c.cfg.ShelfBrowser.ShowShelf(ctx, request)
+	if err != nil {
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n133", "Nie udało się otworzyć półki"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+		return
+	}
+	if choice.Action == platform.ShelfDialogFetch {
+		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID)
 	}
 }
 

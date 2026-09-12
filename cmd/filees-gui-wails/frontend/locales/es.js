@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.download.running": "Descargando desde la bandeja",
+  "shelf.download.complete": "Archivo de la bandeja descargado",
   "prompt.submitFailed": "No se pudo enviar su decisión · {reason}",
   "settings.copy": "Configuración de este servidor.",
   "settings.noRealm": "espacio sin definir",

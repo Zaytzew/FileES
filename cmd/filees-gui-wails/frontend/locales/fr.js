@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.download.running": "Téléchargement depuis le dépôt en cours",
+  "shelf.download.complete": "Fichier du dépôt téléchargé",
   "prompt.submitFailed": "Impossible de transmettre votre décision · {reason}",
   "settings.copy": "Paramètres de ce serveur.",
   "settings.noRealm": "espace non défini",

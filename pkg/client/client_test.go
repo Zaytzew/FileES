@@ -364,13 +364,19 @@ func TestSparseCheckoutFetchesOnlySelectedSVNPath(t *testing.T) {
 	if out, err := commit.CombinedOutput(); err != nil {
 		t.Fatalf("svn commit: %v\n%s", err, out)
 	}
-	cli := New(Options{SvnPath: svn})
+	cli := New(Options{SvnPath: svn, NativeSVNPath: os.Getenv("FILEES_TEST_NATIVE_SPARSE")})
 	shelf := filepath.Join(root, "shelf")
 	sparse := cli.(interface {
 		CheckoutDepthEmpty(context.Context, string, string) (string, error)
 	})
 	if out, err := sparse.CheckoutDepthEmpty(t.Context(), url, shelf); err != nil {
 		t.Fatalf("sparse checkout: %v\n%s", err, out)
+	}
+	if os.Getenv("FILEES_TEST_NATIVE_SPARSE") != "" {
+		// Synthetic WC owned by this test, equivalent to lifecycle adoption.
+		if err := os.Mkdir(filepath.Join(shelf, ".filees"), 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(shelf, "wanted.txt")); !os.IsNotExist(err) {
 		t.Fatalf("sparse checkout materialized file: %v", err)

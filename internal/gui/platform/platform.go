@@ -221,6 +221,7 @@ type ShelfDialogAction string
 
 const (
 	ShelfDialogClose ShelfDialogAction = "close"
+	ShelfDialogFetch ShelfDialogAction = "fetch"
 )
 
 type ShelfDialogResult struct {

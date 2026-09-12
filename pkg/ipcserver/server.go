@@ -300,6 +300,9 @@ func (s *Server) capabilities() []string {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
 	}
 	if s.uploadChannelService() != nil {
+		if _, ok := s.repositoryLifecycleService().(ShelfFetchService); ok {
+			caps = append(caps, contract.CapRepoShelfFetch)
+		}
 		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoShelfList, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch)
 	}
 	if s.lockReleaseService() != nil {

@@ -759,6 +759,40 @@ type shelfClient interface {
 
 type shelfAdapter struct{ client shelfClient }
 
+func (adapter shelfAdapter) ShelfFetch(ctx context.Context, serverID, repoID, channelID, uploadID, localPath string, inspect bool) (actions.ShelfDownload, error) {
+	client, ok := adapter.client.(interface {
+		ShelfFetch(context.Context, contract.ShelfFetchPayload) (*contract.RepoLifecycleResult, error)
+	})
+	if !ok {
+		return actions.ShelfDownload{}, errors.New("shelf download IPC is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 70*time.Second)
+	defer cancel()
+	result, err := client.ShelfFetch(ctx, contract.ShelfFetchPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID, UploadID: uploadID, LocalPath: localPath, InspectOnly: inspect})
+	return shelfDownloadResult(result, err)
+}
+
+func (adapter shelfAdapter) ShelfFetchStatus(ctx context.Context, operationID string) (actions.ShelfDownload, error) {
+	client, ok := adapter.client.(interface {
+		RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+	})
+	if !ok {
+		return actions.ShelfDownload{}, errors.New("shelf download status is unavailable")
+	}
+	result, err := client.RepoLifecycleStatus(ctx, operationID)
+	return shelfDownloadResult(result, err)
+}
+
+func shelfDownloadResult(result *contract.RepoLifecycleResult, err error) (actions.ShelfDownload, error) {
+	if err != nil {
+		return actions.ShelfDownload{}, err
+	}
+	if result == nil {
+		return actions.ShelfDownload{}, errors.New("missing shelf download result")
+	}
+	return actions.ShelfDownload{OperationID: result.OperationID, FetchID: result.FetchID, UploadID: result.FetchUploadID, LocalPath: result.LocalPath, State: result.FetchState, Error: result.FetchError}, nil
+}
+
 // ListShelf asks the daemon what is waiting on one shelf. The result is a
 // listing and only a listing: no bytes cross here, because a shelf's content
 // travels by svn checkout when the owner asks for it.

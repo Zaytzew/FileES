@@ -74,6 +74,7 @@ const (
 	CmdRepoUploadChannelUpdate = "repo.upload_channel_update"   // update recipients of one owned active shelf
 	CmdRepoUploadChannelRevoke = "repo.upload_channel_revoke"   // revoke intake while retaining the channel record
 	CmdRepoUploadChannelDelete = "repo.upload_channel_delete"   // delete policy while retaining the address tombstone
+	CmdRepoShelfList           = "repo.shelf_list"              // owner listing of what is waiting on one upload shelf
 	CmdRepoQuarantineList      = "repo.quarantine_list"         // owner listing of AV rejects
 	CmdRepoQuarantineHide      = "repo.quarantine_hide"         // hide one reject in the manifest
 	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"        // copy payload from the waiting room
@@ -167,6 +168,7 @@ const (
 	CapRepoUploadChannelDelete = "repo.upload_channel_delete"
 	CapRepoQuarantineList      = "repo.quarantine_list"
 	CapRepoQuarantineHide      = "repo.quarantine_hide"
+	CapRepoShelfList           = "repo.shelf_list"
 	CapRepoQuarantineFetch     = "repo.quarantine_fetch"
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
@@ -815,6 +817,34 @@ type UploadChannelResult struct {
 type QuarantineListPayload struct {
 	ServerID string `json:"server_id"`
 }
+
+// ShelfListPayload asks one server what is waiting on one shelf.
+type ShelfListPayload struct {
+	ServerID  string `json:"server_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+// ShelfItem is one accepted file on a shelf. RepoPath is what a selective
+// fetch asks the delivery repository for, so it travels rather than being
+// recomputed from the original name on this side of the seam.
+//
+// No contributor identity: who exercised which invitation stays in the
+// encrypted event record on the server and never rides a listing.
+type ShelfItem struct {
+	UploadID     string `json:"upload_id"`
+	RepoPath     string `json:"repo_path"`
+	OriginalName string `json:"original_name"`
+	Size         int64  `json:"size,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	Revision     int64  `json:"revision,omitempty"`
+	AcceptedAt   string `json:"accepted_at"`
+}
+
+type ShelfListResult struct {
+	ChannelID string      `json:"channel_id"`
+	Items     []ShelfItem `json:"items"`
+}
+
 type QuarantineItemPayload struct {
 	ServerID string `json:"server_id"`
 	UploadID string `json:"upload_id"`

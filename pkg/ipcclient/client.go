@@ -569,6 +569,16 @@ func (c *Client) QuarantineHide(ctx context.Context, serverID, uploadID string) 
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+// ShelfList reads what is waiting on one upload shelf.
+func (c *Client) ShelfList(ctx context.Context, serverID, channelID string) (*contract.ShelfListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoShelfList, "", contract.ShelfListPayload{ServerID: serverID, ChannelID: channelID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ShelfListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) QuarantineFetch(ctx context.Context, serverID, uploadID string) (*contract.QuarantineFetchResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoQuarantineFetch, "", contract.QuarantineItemPayload{ServerID: serverID, UploadID: uploadID})
 	if err != nil {

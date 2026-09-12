@@ -108,6 +108,7 @@ type UploadChannelService interface {
 	UpdateUploadChannel(context.Context, string, string, contract.UploadChannelDeclaration) (contract.UploadChannelResult, error)
 	RevokeUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
 	DeleteUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
+	ListShelf(context.Context, string, string) (contract.ShelfListResult, error)
 	ListQuarantine(context.Context, string) (contract.QuarantineListResult, error)
 	HideQuarantine(context.Context, string, string) (contract.QuarantineHideResult, error)
 	FetchQuarantine(context.Context, string, string) (contract.QuarantineFetchResult, error)
@@ -299,7 +300,7 @@ func (s *Server) capabilities() []string {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
 	}
 	if s.uploadChannelService() != nil {
-		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch)
+		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoShelfList, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch)
 	}
 	if s.lockReleaseService() != nil {
 		caps = append(caps, contract.CapLockReleaseRequest, contract.CapLockReleaseDismiss, contract.CapLockReleaseAccept)

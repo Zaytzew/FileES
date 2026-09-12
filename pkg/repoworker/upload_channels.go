@@ -68,6 +68,7 @@ func (o UploadChannelOutbox) DeliverUploadTokens(_ context.Context, record chann
 
 type UploadChannelService interface {
 	List(context.Context, string, string) (control.ListUploadChannelsResult, error)
+	ListShelf(context.Context, string, string) (control.ListShelfResult, error)
 	ListQuarantine(context.Context, string) (control.ListQuarantineResult, error)
 	HideQuarantine(context.Context, string, string) (control.HideQuarantineResult, error)
 	FetchQuarantine(context.Context, string, string) (control.FetchQuarantineResult, error)
@@ -109,6 +110,38 @@ func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoI
 
 func (s ChannelUploadService) waiting() uploadworker.Reaper {
 	return uploadworker.Reaper{TrashRoot: s.TrashRoot}
+}
+
+// ListShelf answers what is waiting on one shelf.
+//
+// Ownership is checked against the channel record rather than taken from the
+// request: a shelf receives from outside the system, and its listing says what
+// strangers have sent to one owner. Serving it to any other realm would make
+// the gate leak backwards.
+func (s ChannelUploadService) ListShelf(_ context.Context, ownerRealm, channelID string) (control.ListShelfResult, error) {
+	if s.Channels == nil {
+		return control.ListShelfResult{}, errors.New("upload channel service is incomplete")
+	}
+	record, err := s.Channels.GetUpload(channelID)
+	if err != nil {
+		return control.ListShelfResult{}, classifyUploadError(err)
+	}
+	if record.OwnerRealm == "" || record.OwnerRealm != ownerRealm {
+		return control.ListShelfResult{}, classifyUploadError(channel.ErrForbidden)
+	}
+	entries, err := s.Channels.ListAccepted(channelID)
+	if err != nil {
+		return control.ListShelfResult{}, err
+	}
+	out := control.ListShelfResult{ChannelID: channelID, Items: make([]control.ShelfItem, 0, len(entries))}
+	for _, entry := range entries {
+		out.Items = append(out.Items, control.ShelfItem{
+			UploadID: entry.UploadID, RepoPath: entry.RepoPath, OriginalName: entry.OriginalName,
+			Size: entry.Size, SHA256: entry.SHA256, Revision: entry.Revision,
+			AcceptedAt: entry.AcceptedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return out, nil
 }
 
 func (s ChannelUploadService) ListQuarantine(_ context.Context, ownerRealm string) (control.ListQuarantineResult, error) {
@@ -370,6 +403,12 @@ func (w *Worker) uploadChannel(ctx context.Context, session Session, ticket cont
 			return control.Result{}, err
 		}
 		response, err = w.UploadChannels.Delete(ctx, session.RealmID, payload.ChannelID)
+	case control.TicketListShelf:
+		var payload control.ListShelfPayload
+		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+			return control.Result{}, err
+		}
+		response, err = w.UploadChannels.ListShelf(ctx, session.RealmID, payload.ChannelID)
 	case control.TicketListQuarantine:
 		response, err = w.UploadChannels.ListQuarantine(ctx, session.RealmID)
 	case control.TicketHideQuarantine:

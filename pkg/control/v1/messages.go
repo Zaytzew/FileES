@@ -81,6 +81,7 @@ const (
 	TicketListQuarantine         TicketType = "LIST_QUARANTINE"
 	TicketHideQuarantine         TicketType = "HIDE_QUARANTINE"
 	TicketFetchQuarantine        TicketType = "FETCH_QUARANTINE"
+	TicketListShelf              TicketType = "LIST_SHELF"
 	// Lock release requests are ephemeral domain records tied to one SVN lock
 	// token. The authenticated session supplies the actor; payloads never name
 	// a requester or holder.
@@ -397,6 +398,35 @@ type QuarantineItem struct {
 	ReceivedAt     string `json:"received_at"`
 	RemainingHours int    `json:"remaining_hours"`
 }
+
+// ListShelfPayload asks what is waiting on one shelf. The channel is named
+// rather than inferred: an owner may hold several, and a listing that silently
+// picked one would answer a different question than the one asked.
+type ListShelfPayload struct {
+	ChannelID string `json:"channel_id"`
+}
+
+// ShelfItem is one accepted file, as the owner's browser sees it.
+//
+// It carries no contributor identity. Who exercised which invitation lives in
+// the encrypted event record and is resolvable only with the private key kept
+// apart from the accepting machine (UPLOAD_CHANNEL_CONCEPT.md 10a); a listing
+// is not the place to hand that out.
+type ShelfItem struct {
+	UploadID     string `json:"upload_id"`
+	RepoPath     string `json:"repo_path"`
+	OriginalName string `json:"original_name"`
+	Size         int64  `json:"size,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	Revision     int64  `json:"revision,omitempty"`
+	AcceptedAt   string `json:"accepted_at"`
+}
+
+type ListShelfResult struct {
+	ChannelID string      `json:"channel_id"`
+	Items     []ShelfItem `json:"items"`
+}
+
 type QuarantinePurged struct {
 	UploadID     string `json:"upload_id"`
 	OriginalName string `json:"original_name"`
@@ -847,6 +877,14 @@ func (t Ticket) Validate() error {
 		if err := validateUUID("FETCH_QUARANTINE payload.upload_id", p.UploadID); err != nil {
 			return err
 		}
+	case TicketListShelf:
+		var p ListShelfPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LIST_SHELF payload: %w", err)
+		}
+		if err := validateUUID("LIST_SHELF payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
 	case TicketClientDeactivate:
 		var p ClientDeactivatePayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -901,7 +939,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketArmPassportAcquisition && r.Type != TicketSettlePassportAcquisition && r.Type != TicketExpirePassportPath && r.Type != TicketCancelPassportPreparation && r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
+	if r.Type != TicketArmPassportAcquisition && r.Type != TicketSettlePassportAcquisition && r.Type != TicketExpirePassportPath && r.Type != TicketCancelPassportPreparation && r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketListShelf && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -1267,6 +1305,22 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.OriginalName == "" || len(result.Payload) > 64<<20 || result.RemainingHours < 0 {
 			return errors.New("FETCH_QUARANTINE result is invalid")
+		}
+	case TicketListShelf:
+		var result ListShelfResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LIST_SHELF result: %w", err)
+		}
+		if err := validateUUID("LIST_SHELF result.channel_id", result.ChannelID); err != nil {
+			return err
+		}
+		for _, item := range result.Items {
+			if err := validateUUID("LIST_SHELF result.items[].upload_id", item.UploadID); err != nil {
+				return err
+			}
+			if item.RepoPath == "" || item.Size < 0 || item.Revision < 0 {
+				return errors.New("LIST_SHELF item is invalid")
+			}
 		}
 	case TicketCreatePublicShare, TicketUpdatePublicShare, TicketRevokePublicShare, TicketDeletePublicShare:
 		var result PublicShareResult

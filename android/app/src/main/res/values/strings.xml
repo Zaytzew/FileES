@@ -172,8 +172,10 @@
     <string name="home_fact_server">Serwer</string>
     <string name="home_fact_revision">Rewizja</string>
     <string name="home_fact_access">Dostęp</string>
-    <string name="home_fact_folder">Folder</string>
+    <string name="home_fact_state">Stan</string>
     <string name="home_fact_revision_unknown">—</string>
+    <string name="home_state_active">aktywny</string>
+    <string name="home_state_initializing">uruchamianie</string>
     <string name="home_access_rw">zapis</string>
     <string name="home_access_r">odczyt</string>
 </resources>

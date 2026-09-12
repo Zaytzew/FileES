@@ -34,7 +34,9 @@
                 android:id="@+id/textBrowseName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:breakStrategy="simple"
                 android:ellipsize="end"
+                android:hyphenationFrequency="none"
                 android:maxLines="2"
                 android:textAppearance="@style/TextAppearance.Filees.Name" />
 

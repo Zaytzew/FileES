@@ -406,19 +406,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun factsRow(): BrowseRow {
         val share = selectedShare()
+        val cur = FileesSession.current(prefs)
         val access = when (share?.access) {
             "rw" -> getString(R.string.home_access_rw)
             "r" -> getString(R.string.home_access_r)
             else -> share?.access.orEmpty().ifBlank { getString(R.string.home_fact_revision_unknown) }
         }
-        val folder = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
+        val state = when (share?.state) {
+            "active" -> getString(R.string.home_state_active)
+            "initializing" -> getString(R.string.home_state_initializing)
+            else -> share?.state.orEmpty().ifBlank { getString(R.string.home_fact_revision_unknown) }
+        }
         return BrowseRow(
             "", "", directory = false, size = 0,
             kind = BrowseRow.Kind.FACTS,
-            factServer = FileesSession.current(prefs)?.label().orEmpty(),
+            factServer = cur?.displayName?.ifBlank { cur.address }.orEmpty()
+                .ifBlank { getString(R.string.home_fact_revision_unknown) },
             factRevision = if (browseRevision > 0) "r$browseRevision" else getString(R.string.home_fact_revision_unknown),
             factAccess = access,
-            factFolder = folder.ifBlank { getString(R.string.home_fact_revision_unknown) },
+            factFolder = state,
         )
     }
 

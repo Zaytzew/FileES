@@ -845,21 +845,22 @@ class MainActivity : AppCompatActivity() {
         val fresh = shouts.filter {
             !FileesSession.isShoutAcked(prefs, FileesSession.shoutId(repoId, it.first))
         }
+        if (fresh.isEmpty()) return
         val scope = selectedShareName.ifBlank { repoId }
+        val ids = fresh.map { FileesSession.shoutId(repoId, it.first) }
         for (item in fresh) {
             FileesSession.pushJournal(
                 prefs,
                 scope,
                 getString(R.string.home_journal_shout, item.first.toString()) + "\n" + item.second,
+                FileesSession.shoutId(repoId, item.first),
             )
         }
-        if (fresh.isEmpty()) return
+        FileesSession.ackShouts(prefs, ids)
         AlertDialog.Builder(this)
             .setTitle(R.string.shouts_title)
             .setMessage(fresh.joinToString("\n\n") { it.second })
-            .setPositiveButton(R.string.shouts_ack) { _, _ ->
-                FileesSession.ackShouts(prefs, fresh.map { FileesSession.shoutId(repoId, it.first) })
-            }
+            .setPositiveButton(R.string.shouts_ack, null)
             .show()
     }
 

@@ -323,6 +323,9 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if err := r.checkStorageCapacity(configMigrations); err != nil {
+		return err
+	}
 	base, err := r.baseUnveils()
 	if err != nil {
 		return err
@@ -467,6 +470,11 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 
 	var staged []StagedFile
 	var stageRoot string
+	// Check before downloading payloads and before sandbox reduction. A dry
+	// run must expose insufficient capacity rather than promise a viable plan.
+	if err := r.checkStorageCapacity(configMigrations); err != nil {
+		return err
+	}
 	if !opts.DryRun {
 		staged, stageRoot, err = r.stageFiles(ctx, m)
 		if err != nil {

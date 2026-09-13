@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"filees/internal/serverinstall/manifest"
 	"filees/public-shares/storage"
@@ -160,16 +161,16 @@ type storageDirectory struct {
 // Existing ownership is never corrected silently and old caches are untouched.
 // Empty directories left by an interrupted install are safe to reuse.
 func (r *Runner) prepareStorageDirectories(migrations []ConfigMigration) error {
-	budgets := make(map[string]int64)
+	if err := r.checkStorageCapacity(migrations); err != nil {
+		return err
+	}
+	roots := make(map[string]bool)
 	for _, migration := range migrations {
 		for _, dir := range migration.Directories {
-			if dir.Required < 0 || budgets[dir.Root] > math.MaxInt64-dir.Required {
-				return errors.New("public download storage budget overflow")
-			}
-			budgets[dir.Root] += dir.Required
+			roots[dir.Root] = true
 		}
 	}
-	for root, required := range budgets {
+	for root := range roots {
 		parent, err := filepath.EvalSymlinks(filepath.Dir(root))
 		if err != nil {
 			return err
@@ -188,9 +189,6 @@ func (r *Runner) prepareStorageDirectories(migrations []ConfigMigration) error {
 		}
 		if !info.IsDir() || info.Mode().Perm()&0022 != 0 || actual.UID != rootIdentity.UID {
 			return errors.New("public downloads parent must be root-owned and not group/other writable")
-		}
-		if err := storage.RequireSpace(nearestExistingPath(root), required); err != nil {
-			return fmt.Errorf("select a larger install.public_downloads_dir for %s: %w", root, err)
 		}
 	}
 	for _, migration := range migrations {
@@ -224,6 +222,31 @@ func (r *Runner) prepareStorageDirectories(migrations []ConfigMigration) error {
 					return fmt.Errorf("public download directory %s requires owner=%s group=wheel mode=%04o; refusing to change existing metadata", spec.path, spec.owner, spec.mode)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// Display the actual volume and the combined budget before approval; recheck
+// in prepareStorageDirectories because the plan is not a space reservation.
+func (r *Runner) checkStorageCapacity(migrations []ConfigMigration) error {
+	var budgets []storage.Budget
+	for _, migration := range migrations {
+		for _, dir := range migration.Directories {
+			budgets = append(budgets, storage.Budget{Path: dir.Path, Required: dir.Required})
+		}
+	}
+	volumes, err := storage.InspectBudgets(budgets)
+	if err != nil {
+		return err
+	}
+	for _, volume := range volumes {
+		fmt.Fprintf(r.Out, "STORAGE filesystem=%s paths=%s available_bytes=%d required_bytes=%d reserve_bytes=%d\n",
+			volume.Device, strings.Join(volume.Paths, ","), volume.Available, volume.Required, volume.Reserve)
+	}
+	for _, volume := range volumes {
+		if err := volume.Check(); err != nil {
+			return fmt.Errorf("select a larger install.public_downloads_dir for %s: %w", strings.Join(volume.Paths, ","), err)
 		}
 	}
 	return nil

@@ -216,32 +216,49 @@ object FileesSession {
         val entry: String,
     )
 
-    fun pushJournal(prefs: SharedPreferences, scope: String, entry: String) {
-        val next = JSONArray()
-        next.put(
-            JSONObject()
-                .put("at", System.currentTimeMillis())
-                .put("scope", scope)
-                .put("entry", entry),
-        )
+    fun pushJournal(prefs: SharedPreferences, scope: String, entry: String, shoutId: String = "") {
         val prev = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
+        if (shoutId.isNotEmpty()) {
+            for (i in 0 until prev.length()) {
+                if (prev.getJSONObject(i).optString("shout_id") == shoutId) return
+            }
+        }
+        val next = JSONArray()
+        val row = JSONObject()
+            .put("at", System.currentTimeMillis())
+            .put("scope", scope)
+            .put("entry", entry)
+        if (shoutId.isNotEmpty()) row.put("shout_id", shoutId)
+        next.put(row)
+        val seen = HashSet<String>()
+        if (shoutId.isNotEmpty()) seen.add(shoutId)
         for (i in 0 until prev.length()) {
             if (next.length() >= JOURNAL_CAP) break
-            next.put(prev.getJSONObject(i))
+            val o = prev.getJSONObject(i)
+            val id = o.optString("shout_id")
+            if (id.isNotEmpty() && !seen.add(id)) continue
+            next.put(o)
         }
         prefs.edit().putString(PREF_JOURNAL, next.toString()).apply()
     }
 
     fun journal(prefs: SharedPreferences): List<PhoneJournalEntry> {
         val array = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
-        return (0 until array.length()).map { i ->
+        val seen = HashSet<String>()
+        val out = ArrayList<PhoneJournalEntry>(array.length())
+        for (i in 0 until array.length()) {
             val o = array.getJSONObject(i)
-            PhoneJournalEntry(
-                at = o.optLong("at"),
-                scope = o.optString("scope"),
-                entry = o.optString("entry"),
+            val id = o.optString("shout_id")
+            if (id.isNotEmpty() && !seen.add(id)) continue
+            out.add(
+                PhoneJournalEntry(
+                    at = o.optLong("at"),
+                    scope = o.optString("scope"),
+                    entry = o.optString("entry"),
+                ),
             )
         }
+        return out
     }
 
     private fun replace(prefs: SharedPreferences, server: PairedServer) {

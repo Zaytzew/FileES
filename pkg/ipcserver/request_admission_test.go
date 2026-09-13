@@ -3,6 +3,7 @@ package ipcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	contract "filees/pkg/contract/v1"
 	"sync"
 	"testing"
@@ -13,6 +14,51 @@ type admittedAlias struct {
 	entered chan struct{}
 	finish  <-chan struct{}
 	server  *Server
+}
+
+type inspectingLifecycle struct{ check func() }
+
+func (l inspectingLifecycle) Restart()  { l.check() }
+func (l inspectingLifecycle) Shutdown() { l.check() }
+
+func TestRequestAdmissionCoversResponseAndLifecycle(t *testing.T) {
+	for _, writeFails := range []bool{false, true} {
+		s := New("unused")
+		called := false
+		checkHeld := func() {
+			t.Helper()
+			if got := s.requestAdmission.Snapshot(); got.Active != 1 {
+				t.Fatalf("lease not held: %+v", got)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+			defer cancel()
+			if resume, err := s.QuiesceRequests(ctx); err == nil {
+				resume()
+				t.Fatal("drained before request completed")
+			}
+		}
+		s.SetSystemLifecycleService(inspectingLifecycle{check: func() { called = true; checkHeld() }})
+		writeErr := errors.New("peer stopped reading")
+		err := s.executeRequest(contract.Request{RequestID: "restart", Command: contract.CmdSystemRestart}, func(value any) error {
+			checkHeld()
+			if resp := value.(contract.Response); resp.Status != contract.StatusOK {
+				t.Fatalf("response: %+v", resp)
+			}
+			if writeFails {
+				return writeErr
+			}
+			return nil
+		})
+		if writeFails && (!errors.Is(err, writeErr) || called) {
+			t.Fatalf("failed response triggered lifecycle: err=%v called=%v", err, called)
+		}
+		if !writeFails && (err != nil || !called) {
+			t.Fatalf("successful response: err=%v called=%v", err, called)
+		}
+		if got := s.requestAdmission.Snapshot(); got.Active != 0 {
+			t.Fatalf("lease leaked: %+v", got)
+		}
+	}
 }
 
 func (a admittedAlias) Claim(ctx context.Context, _, alias string) (string, error) {

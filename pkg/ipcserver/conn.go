@@ -5,11 +5,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"net"
+	"time"
 
 	contract "filees/pkg/contract/v1"
 )
 
 const maxFrameBytes = 4 * 1024 * 1024 // 4 MiB max single JSON frame
+
+// These bound transport inactivity, not command execution. A slow worker may
+// still finish normally; a peer that stops sending/reading cannot retain a
+// connection and its frame buffer indefinitely. Event streams clear read expiry.
+const connectionIOTimeout = 30 * time.Second
+const initialFrameBytes = 4 * 1024
 
 // handleConn drives one client connection: reads JSON Lines, dispatches commands,
 // writes responses. Switches to event-streaming mode on events.subscribe.
@@ -17,10 +24,25 @@ func (s *Server) handleConn(c net.Conn) {
 	defer c.Close()
 
 	sc := bufio.NewScanner(c)
-	sc.Buffer(make([]byte, maxFrameBytes), maxFrameBytes)
+	sc.Buffer(make([]byte, initialFrameBytes), maxFrameBytes)
 	enc := json.NewEncoder(c)
+	write := func(value any) error {
+		if err := c.SetWriteDeadline(time.Now().Add(connectionIOTimeout)); err != nil {
+			return err
+		}
+		return enc.Encode(value)
+	}
 
-	for sc.Scan() {
+	for {
+		if err := c.SetReadDeadline(time.Now().Add(connectionIOTimeout)); err != nil {
+			return
+		}
+		if !sc.Scan() {
+			return
+		}
+		if err := c.SetReadDeadline(time.Time{}); err != nil {
+			return
+		}
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
 			continue
@@ -28,13 +50,17 @@ func (s *Server) handleConn(c net.Conn) {
 
 		var req contract.Request
 		if err := json.Unmarshal(line, &req); err != nil {
-			_ = enc.Encode(protoErr("", "proto.parse_error",
-				map[string]string{"detail": err.Error()}))
+			if err := write(protoErr("", "proto.parse_error",
+				map[string]string{"detail": err.Error()})); err != nil {
+				return
+			}
 			continue
 		}
 		if err := req.Validate(); err != nil {
-			_ = enc.Encode(protoErr(req.RequestID, "proto.invalid_envelope",
-				map[string]string{"detail": err.Error()}))
+			if err := write(protoErr(req.RequestID, "proto.invalid_envelope",
+				map[string]string{"detail": err.Error()})); err != nil {
+				return
+			}
 			continue
 		}
 
@@ -45,7 +71,10 @@ func (s *Server) handleConn(c net.Conn) {
 		}
 
 		resp := s.dispatch(req)
-		if err := enc.Encode(resp); err == nil && resp.Status == contract.StatusOK {
+		if err := write(resp); err != nil {
+			return
+		}
+		if resp.Status == contract.StatusOK {
 			s.afterResponse(req.Command)
 		}
 	}
@@ -76,7 +105,12 @@ func (s *Server) streamEvents(req contract.Request, c net.Conn, enc *json.Encode
 	defer s.removeSub(ch)
 
 	// acknowledge the subscribe command
-	_ = enc.Encode(contract.OKResponse(req.RequestID, map[string]bool{"streaming": true}))
+	if err := c.SetWriteDeadline(time.Now().Add(connectionIOTimeout)); err != nil {
+		return
+	}
+	if err := enc.Encode(contract.OKResponse(req.RequestID, map[string]bool{"streaming": true})); err != nil {
+		return
+	}
 
 	// detect disconnection: drain scanner in a goroutine
 	disconnected := make(chan struct{})
@@ -89,6 +123,9 @@ func (s *Server) streamEvents(req contract.Request, c net.Conn, enc *json.Encode
 	for {
 		select {
 		case ev := <-ch:
+			if err := c.SetWriteDeadline(time.Now().Add(connectionIOTimeout)); err != nil {
+				return
+			}
 			if err := enc.Encode(ev); err != nil {
 				return
 			}

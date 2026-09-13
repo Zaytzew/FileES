@@ -61,6 +61,13 @@ func (p ServicePublisher) projectShelfParents(repositories map[string]repository
 			return errors.New("conflicting upload shelf parents")
 		}
 		shelf.ParentRepoID = parent.RepoID
+		// Unlike ordinary repositories, shelves are filled by the server upload
+		// worker, never by a desktop INITIAL_COMMIT. An active channel is created
+		// only after provisioning succeeds. Rebuild repairs old initializing
+		// shelves too, without reviving deleted or otherwise blocked records.
+		if record.State == channel.StateActive && parent.State == "active" && shelf.State == "initializing" {
+			shelf.State = "active"
+		}
 		repositories[shelf.RepoID] = shelf
 	}
 	return nil

@@ -362,8 +362,10 @@ func (p ServicePublisher) rebuildGrantAuthority() ([]string, error) {
 		return nil, err
 	}
 	previousParents := map[string]string{}
+	previousStates := map[string]string{}
 	for id, repo := range repositories {
 		previousParents[id] = repo.ParentRepoID
+		previousStates[id] = repo.State
 	}
 	if err := p.projectShelfParents(repositories); err != nil {
 		return nil, err
@@ -371,7 +373,7 @@ func (p ServicePublisher) rebuildGrantAuthority() ([]string, error) {
 	now := p.now()
 	changed := []string{}
 	for id, repo := range repositories {
-		if repo.ParentRepoID == previousParents[id] {
+		if repo.ParentRepoID == previousParents[id] && repo.State == previousStates[id] {
 			continue
 		}
 		path, err := repositoryRecordPath(p.ServiceWC, id)

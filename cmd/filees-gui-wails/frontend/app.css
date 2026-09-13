@@ -469,3 +469,6 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   border-left: 2px solid var(--realm-accent, #ff6a00);
   min-width: 0;
 }
+/* Reuse the action spinner while the update dialog remains open. */
+.update-in-progress::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 2px solid #ff6a0033; border-top-color: #ff6a00; border-radius: 50%; animation: update-spinner 1s linear infinite; }
+@keyframes update-spinner { to { transform: rotate(360deg); } }

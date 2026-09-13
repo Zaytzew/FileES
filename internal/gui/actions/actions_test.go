@@ -1461,7 +1461,10 @@ func (fake *fakeUpdater) UpdatePlan(context.Context) (*actions.UpdatePlan, error
 	}, nil
 }
 
-func (fake *fakeUpdater) UpdateApply(context.Context) (*actions.UpdateResult, error) {
+func (fake *fakeUpdater) UpdateApply(ctx context.Context) (*actions.UpdateResult, error) {
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < 29*time.Minute {
+		return nil, errors.New("update must have its own long transfer deadline")
+	}
 	fake.applyCalls <- struct{}{}
 	return &actions.UpdateResult{InstalledVersion: "1.1", RestartRequired: true}, nil
 }

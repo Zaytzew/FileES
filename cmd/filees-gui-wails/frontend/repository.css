@@ -10,6 +10,10 @@
 html { min-height: 100%; scrollbar-width: none; }
 body { min-width: 760px; min-height: 100vh; margin: 0; overflow-x: hidden; color: var(--text); background: var(--background); }
 button { font: inherit; }
+.share-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.share-actions button { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--soft-text); background: rgba(255,255,255,.03); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.share-actions button:hover { border-color: rgba(255,106,0,.36); color: #ff9a52; }
+.share-actions button:disabled { opacity: .5; cursor: wait; }
 .ambient { position: fixed; z-index: -1; width: 420px; height: 420px; border-radius: 50%; filter: blur(95px); opacity: .14; pointer-events: none; }
 .ambient-a { top: -190px; left: -90px; background: var(--orange); }
 .ambient-b { right: -160px; bottom: -190px; background: #1264a3; }

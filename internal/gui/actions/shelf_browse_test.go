@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"filees/internal/gui/actions"
+	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/platform/platformtest"
 	"filees/internal/gui/tray"
@@ -19,6 +20,26 @@ type recordingShelf struct {
 	channels  []string
 	list      actions.ShelfList
 	err       error
+}
+
+func TestShelfSettingsOpenParentChannelsWithoutGenericSettings(t *testing.T) {
+	vm := lifecycleView(uploadChannelCaps()...)
+	vm.Repos = append(vm.Repos, app.RepoViewModel{ID: "shelf", ServerID: "office", Purpose: "upload_shelf", ParentRepoID: "repo-1"})
+	fake := listedShelf(t)
+	shelf := &recordingShelf{list: actions.ShelfList{ChannelID: "channel-1"}}
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(vm), SettingsBrowser: fake, UploadChannelBrowser: fake, Prompter: fake, Notifier: fake, UploadChannels: oneChannel{}, Shelf: shelf, ShelfBrowser: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office", RepoID: "shelf"})
+	deadline := time.Now().Add(2 * time.Second)
+	for len(fake.Snapshot().ShelfRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(fake.Snapshot().ShelfRequests) != 1 {
+		t.Fatal("shelf settings did not reach channel contents")
+	}
+	if len(fake.Snapshot().SettingsRequests) != 0 {
+		t.Fatal("generic WC settings opened for shelf")
+	}
 }
 
 func (r *recordingShelf) ListShelf(_ context.Context, serverID, channelID string) (actions.ShelfList, error) {

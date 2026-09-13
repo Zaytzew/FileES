@@ -576,6 +576,14 @@ func (c *Controller) startJournal(ctx context.Context) {
 
 func (c *Controller) startSettings(ctx context.Context, serverID, repoID string) {
 	vm := c.cfg.ViewModel()
+	// A shelf is managed through its authoritative parent's channel list,
+	// not through generic working-copy settings (attach/delete/archive).
+	for _, repo := range vm.Repos {
+		if repo.ID == repoID && repo.ServerID == serverID && repo.Purpose == "upload_shelf" && repo.ParentRepoID != "" {
+			c.startManageUploadChannels(ctx, serverID, repo.ParentRepoID)
+			return
+		}
+	}
 	request, ok := c.settingsDialogRequest(vm, serverID, repoID)
 	if !ok {
 		return
@@ -3131,7 +3139,9 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("update")
-		plan, err := c.cfg.Updater.UpdatePlan(ctx)
+		planCtx, cancelPlan := context.WithTimeout(ctx, 2*time.Minute)
+		plan, err := c.cfg.Updater.UpdatePlan(planCtx)
+		cancelPlan()
 		if err != nil {
 			c.updateFailure(ctx, c.uiText("update.planFailed", "Nie można przygotować planu aktualizacji"), err)
 			return
@@ -3154,8 +3164,19 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 		if !confirmed {
 			return
 		}
-		result, err := c.cfg.Updater.UpdateApply(ctx)
+		actionID := c.startProjectedAction(app.PendingAction{Kind: "update_apply", Label: c.uiText("details.updateApply.title", "Aktualizacja FileES")})
+		defer c.finishProjectedAction(actionID)
+		// Start the transfer budget only after the user's confirmation. Other
+		// IPC commands retain their short deadlines.
+		applyCtx, cancelApply := context.WithTimeout(ctx, 30*time.Minute)
+		result, err := c.cfg.Updater.UpdateApply(applyCtx)
+		cancelApply()
 		if err != nil {
+			var networkError net.Error
+			if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &networkError) {
+				c.updateFailure(ctx, c.uiText("update.unconfirmed", "Nie potwierdzono wyniku aktualizacji. Instalacja może nadal trwać; sprawdź stan przed ponowieniem."), err)
+				return
+			}
 			c.updateFailure(ctx, c.uiText("update.failed", "Aktualizacja nie powiodła się"), err)
 			return
 		}

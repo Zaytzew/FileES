@@ -13,10 +13,24 @@
     <color name="filees_text">#0B1D3A</color>
     <color name="filees_soft">#42536A</color>
     <color name="filees_muted">#5F7085</color>
-    <color name="filees_line">#D8DEE6</color>
+    <color name="filees_line">#C5CEDA</color>
     <color name="filees_accent">#FF6A00</color>
-    <color name="filees_eyebrow">#FF8E3D</color>
+    <color name="filees_eyebrow">#B34700</color>
     <color name="filees_on_accent">#FFFFFF</color>
+
+    <!-- Contrast roles, measured against WCAG 2.1 rather than judged by eye.
+         Orange text on the light canvas needs a darker orange: the brand
+         #FF6A00 on white is 2.9:1 and the previous eyebrow 2.3:1, both under
+         4.5:1 for small text. #B34700 is 5.5:1 on the panel and 4.9:1 on the
+         canvas. Brand orange stays for fills, strokes and ripples. Filled
+         buttons and the FAB keep navy by day; values-night overrides them,
+         because navy on the night canvas measures 1.1:1. -->
+    <color name="filees_accent_text">#B34700</color>
+    <color name="filees_button_filled">#0B1D3A</color>
+    <color name="filees_on_button_filled">#FFFFFF</color>
+    <color name="filees_primary_container">#14294D</color>
+    <color name="filees_on_primary_container">#FFFFFF</color>
+    <color name="filees_on_secondary_container">#0B1D3A</color>
     <color name="filees_destructive">#C43D49</color>
     <color name="filees_on_destructive">#FFFFFF</color>
     <color name="filees_scrim">#CCEDF2F6</color>

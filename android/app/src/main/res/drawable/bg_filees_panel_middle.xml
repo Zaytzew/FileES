@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Middle segment of a panel that continues across list items. The shape reaches
+     2dp past the top and bottom edges, so that stroke is drawn outside the view and
+     clipped: segments join without a seam, and each folder or journal entry
+     stays its own recycled item instead of the whole list being inflated
+     into a single view. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="-2dp" android:bottom="-2dp">
+        <shape>
+            <solid android:color="@color/filees_panel" />
+            <stroke
+                android:width="@dimen/filees_hairline"
+                android:color="@color/filees_line" />
+            <corners
+                android:bottomLeftRadius="0dp"
+                android:bottomRightRadius="0dp"
+                android:topLeftRadius="0dp"
+                android:topRightRadius="0dp" />
+        </shape>
+    </item>
+</layer-list>

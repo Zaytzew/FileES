@@ -1,24 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- One panel with dividers, as .metrics is on the Wails dashboard, rather
+     than three bordered cards: at a third of a phone width each, the cards
+     wrapped their notes and ended at different heights. Cells take the row
+     height, which LinearLayout measures uniformly for match_parent children,
+     and every line stays single. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:paddingTop="@dimen/filees_space"
-    android:paddingBottom="@dimen/filees_space_section">
+    android:layout_marginTop="@dimen/filees_space"
+    android:layout_marginBottom="@dimen/filees_space_section"
+    android:background="@drawable/bg_filees_panel"
+    android:baselineAligned="false"
+    android:orientation="horizontal">
 
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="6dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:background="@drawable/bg_filees_metric"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="@dimen/filees_panel_inset">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_servers"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
 
@@ -26,6 +33,7 @@
             android:id="@+id/textMetricServers"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:maxLines="1"
             android:textAppearance="@style/TextAppearance.Filees.Heading"
             android:textSize="20sp"
             tools:text="1" />
@@ -33,23 +41,29 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_servers_note"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
     </LinearLayout>
 
+    <View
+        android:layout_width="@dimen/filees_hairline"
+        android:layout_height="match_parent"
+        android:background="@color/filees_line" />
+
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="3dp"
-        android:layout_marginEnd="3dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:background="@drawable/bg_filees_metric"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="@dimen/filees_panel_inset">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_repos"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
 
@@ -57,6 +71,7 @@
             android:id="@+id/textMetricRepos"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:maxLines="1"
             android:textAppearance="@style/TextAppearance.Filees.Heading"
             android:textSize="20sp"
             tools:text="3" />
@@ -64,22 +79,29 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_repos_note"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
     </LinearLayout>
 
+    <View
+        android:layout_width="@dimen/filees_hairline"
+        android:layout_height="match_parent"
+        android:background="@color/filees_line" />
+
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:background="@drawable/bg_filees_metric"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:padding="@dimen/filees_panel_inset">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_pending"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
 
@@ -87,6 +109,7 @@
             android:id="@+id/textMetricPending"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:maxLines="1"
             android:textAppearance="@style/TextAppearance.Filees.Heading"
             android:textSize="20sp"
             tools:text="0" />
@@ -94,6 +117,8 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/home_metric_pending_note"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
     </LinearLayout>

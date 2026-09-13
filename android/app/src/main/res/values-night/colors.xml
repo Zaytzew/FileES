@@ -6,11 +6,23 @@
     <color name="filees_text">#EFE3DD</color>
     <color name="filees_soft">#C4B8AE</color>
     <color name="filees_muted">#B8A89C</color>
-    <color name="filees_line">#3D4D5C</color>
+    <color name="filees_line">#56687A</color>
     <color name="filees_eyebrow">#FF9A52</color>
     <color name="filees_navy_container">#14294D</color>
     <color name="filees_orange_container">#3D2410</color>
     <color name="filees_destructive">#FF7B84</color>
     <color name="filees_on_destructive">#07101D</color>
     <color name="filees_scrim">#CC07101D</color>
+
+    <!-- Night contrast roles. Navy fills on the night canvas measure 1.1:1,
+         so the filled button and the FAB turn brand orange with canvas-dark
+         text at 6.6:1. Orange text on the night panel already reads at
+         5.2:1. The line lifts to 3.3:1 against the canvas so panels and the
+         toolbar edge stay visible. -->
+    <color name="filees_accent_text">#FF6A00</color>
+    <color name="filees_button_filled">#FF6A00</color>
+    <color name="filees_on_button_filled">#07101D</color>
+    <color name="filees_primary_container">#FF6A00</color>
+    <color name="filees_on_primary_container">#07101D</color>
+    <color name="filees_on_secondary_container">#EFE3DD</color>
 </resources>

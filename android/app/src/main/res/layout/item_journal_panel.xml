@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Panel header for the phone journal. Entries follow as ordinary list
+     items continuing this panel, for the same reason as item_home_server. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="@dimen/filees_space_section"
-    android:layout_marginBottom="@dimen/filees_space"
     android:background="@drawable/bg_filees_panel"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="@dimen/filees_panel_inset">
 
     <TextView
         android:layout_width="match_parent"
@@ -21,13 +22,6 @@
         android:layout_marginTop="2dp"
         android:text="@string/home_journal_intro"
         android:textAppearance="@style/TextAppearance.Filees.Body" />
-
-    <LinearLayout
-        android:id="@+id/listJournal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/filees_space"
-        android:orientation="vertical" />
 
     <TextView
         android:id="@+id/textJournalEmpty"

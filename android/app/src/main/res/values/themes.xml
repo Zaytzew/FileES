@@ -14,13 +14,13 @@
 
         <item name="colorPrimary">@color/filees_navy</item>
         <item name="colorOnPrimary">@color/filees_white</item>
-        <item name="colorPrimaryContainer">@color/filees_navy_container</item>
-        <item name="colorOnPrimaryContainer">@color/filees_white</item>
+        <item name="colorPrimaryContainer">@color/filees_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/filees_on_primary_container</item>
 
         <item name="colorSecondary">@color/filees_accent</item>
         <item name="colorOnSecondary">@color/filees_on_accent</item>
         <item name="colorSecondaryContainer">@color/filees_orange_container</item>
-        <item name="colorOnSecondaryContainer">@color/filees_navy</item>
+        <item name="colorOnSecondaryContainer">@color/filees_on_secondary_container</item>
 
         <item name="colorSurface">@color/filees_panel</item>
         <item name="colorOnSurface">@color/filees_text</item>
@@ -69,9 +69,9 @@
     <style name="Widget.Filees.Button.Filled" parent="Widget.Material3.Button">
         <item name="android:minHeight">@dimen/filees_touch_min</item>
         <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
-        <item name="backgroundTint">@color/filees_navy</item>
-        <item name="android:textColor">@color/filees_white</item>
-        <item name="iconTint">@color/filees_white</item>
+        <item name="backgroundTint">@color/filees_button_filled</item>
+        <item name="android:textColor">@color/filees_on_button_filled</item>
+        <item name="iconTint">@color/filees_on_button_filled</item>
         <item name="cornerRadius">@dimen/filees_radius</item>
     </style>
 
@@ -80,18 +80,18 @@
     <style name="Widget.Filees.Button.TextButton" parent="Widget.Material3.Button.TextButton">
         <item name="android:minHeight">@dimen/filees_touch_min</item>
         <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
-        <item name="android:textColor">@color/filees_accent</item>
+        <item name="android:textColor">@color/filees_accent_text</item>
         <item name="rippleColor">@color/filees_accent</item>
-        <item name="iconTint">@color/filees_accent</item>
+        <item name="iconTint">@color/filees_accent_text</item>
     </style>
 
     <style name="Widget.Filees.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:minHeight">@dimen/filees_touch_min</item>
         <item name="android:textAppearance">@style/TextAppearance.Filees.Button</item>
-        <item name="android:textColor">@color/filees_accent</item>
-        <item name="strokeColor">@color/filees_accent</item>
+        <item name="android:textColor">@color/filees_accent_text</item>
+        <item name="strokeColor">@color/filees_accent_text</item>
         <item name="rippleColor">@color/filees_accent</item>
-        <item name="iconTint">@color/filees_accent</item>
+        <item name="iconTint">@color/filees_accent_text</item>
         <item name="cornerRadius">@dimen/filees_radius</item>
     </style>
 

@@ -10,4 +10,5 @@
     <dimen name="filees_hairline">1dp</dimen>
     <dimen name="filees_icon">40dp</dimen>
     <dimen name="filees_wordmark_height">24dp</dimen>
+    <dimen name="filees_panel_inset">12dp</dimen>
 </resources>

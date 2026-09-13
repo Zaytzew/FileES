@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "update.unconfirmed": "Nie potwierdzono wyniku aktualizacji. Instalacja może nadal trwać; sprawdź stan przed ponowieniem.",
   "memory.recovery_required": "Synchronizacja zatrzymana po błędzie końcowego zapisu. Automatyczny restart zablokowany. Sprawdź dziennik diagnostyczny przed ręcznym ponownym uruchomieniem FileES.",
   "memory.warning": "FileES zużywa nietypowo dużo pamięci. Monitor bezpieczeństwa działa; Twoja praca trwa dalej.",
   "memory.draining": "FileES przygotowuje bezpieczny restart. Czeka na operacje i końcowe zapisy stanu; nie wymusza publikacji plików.",

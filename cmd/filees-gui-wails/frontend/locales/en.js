@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "update.unconfirmed": "The update result is unconfirmed. Installation may still be running; check its status before retrying.",
   "memory.recovery_required": "Synchronization stopped after a finalization error. Automatic restart is blocked. Check the diagnostic log before manually restarting FileES.",
   "memory.warning": "FileES is using unusually high memory. The safety monitor is active; your work continues.",
   "memory.draining": "FileES is preparing a safe restart. Waiting for operations and final state writes; files will not be forced to publish.",

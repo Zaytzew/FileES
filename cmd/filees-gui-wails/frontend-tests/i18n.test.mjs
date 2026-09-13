@@ -219,7 +219,10 @@ test("update UI localizes only its fallback, preserving daemon summaries and act
   };
   const nodes = new Map();
   const node = selector => {
-    if (!nodes.has(selector)) nodes.set(selector, {});
+    if (!nodes.has(selector)) {
+      const classes = new Set(), buttons = [{}];
+      nodes.set(selector, { classList: { toggle: (key, on) => on ? classes.add(key) : classes.delete(key), contains: key => classes.has(key) }, querySelectorAll: () => buttons });
+    }
     return nodes.get(selector);
   };
   let locale = "en";
@@ -227,6 +230,11 @@ test("update UI localizes only its fallback, preserving daemon summaries and act
     $: node, t: (key, args) => translate(catalogues, locale, key, args),
   });
   render.renderVersionDialog({});
+  render.renderVersionDialog({pending_actions: [{kind: "update_apply"}]});
+  assert.equal(node("#version-status").classList.contains("update-in-progress"), true);
+  assert.equal(node("#version-update-actions").querySelectorAll()[0].disabled, true);
+  render.renderVersionDialog({});
+  assert.equal(node("#version-status").classList.contains("update-in-progress"), false);
   assert.equal(node("#version-channel").textContent, "not set");
   assert.equal(node("#version-status").textContent, catalogues.en["version.noUpdateInfo"]);
   const literal = 'Demon: {current} <DWG> — nie można wykonać';

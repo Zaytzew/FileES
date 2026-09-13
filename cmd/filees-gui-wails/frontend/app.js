@@ -998,6 +998,9 @@ function render(snapshot) {
 }
 
 function renderVersionDialog(snapshot) {
+	const applying = (snapshot?.pending_actions || []).some(action => action.kind === "update_apply");
+	$("#version-status").classList.toggle("update-in-progress", applying);
+	$("#version-update-actions").querySelectorAll("button").forEach(button => { button.disabled = applying; });
   const clientVersion = String(snapshot?.client_version || "").trim();
   const update = snapshot?.update;
   const channel = String(update?.channel || "").trim();
@@ -1372,7 +1375,7 @@ $("#dismiss-version").addEventListener("click", closeVersionDialog);
 $("#version-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) closeVersionDialog();
 });
-$("#version-update-actions").addEventListener("click", (event) => {
+for (const selector of ["#version-update-actions", "#version-restart-actions", "#update-restart-actions"]) $(selector).addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
 });

@@ -328,6 +328,35 @@ func nextBackoff(cur time.Duration) time.Duration {
 	return max
 }
 
+// restoreStartup holds admission through cache setup and durable recovery.
+// Call before starting the periodic executors; helpers do not re-enter admission.
+func (s *Service) restoreStartup(ctx context.Context, wc string) bool {
+	release, err := s.Admission.EnterContext(ctx)
+	if err != nil {
+		return false
+	}
+	defer release()
+	s.cachePath = filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+	cacheDir := filepath.Dir(s.cachePath)
+	var cacheDirErr error
+	if s.RequireSVNMetadata {
+		_, cacheDirErr = os.Stat(cacheDir)
+	} else {
+		cacheDirErr = os.MkdirAll(cacheDir, 0o755)
+	}
+	if cacheDirErr != nil {
+		s.Logger.Warnf("commit cache dir: %v — cache disabled", cacheDirErr)
+		s.cachePath = ""
+	} else {
+		s.loadCache()
+	}
+	if _, err := s.recoverCommit(ctx, wc); err != nil {
+		// recoverCommit journals the retained receipt and classified cause.
+	}
+	s.reconcileShouts(ctx, wc)
+	return true
+}
+
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	defer s.cancelConnectivityJournal()
@@ -362,24 +391,9 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	st := make(map[string]*stageItem)
 	s.staging = st
 
-	s.cachePath = filepath.Join(wc, ".filees", "commit_cache", "cache.json")
-	cacheDir := filepath.Dir(s.cachePath)
-	var cacheDirErr error
-	if s.RequireSVNMetadata {
-		_, cacheDirErr = os.Stat(cacheDir)
-	} else {
-		cacheDirErr = os.MkdirAll(cacheDir, 0o755)
+	if !s.restoreStartup(ctx, wc) {
+		return
 	}
-	if cacheDirErr != nil {
-		lg.Warnf("commit cache dir: %v — cache disabled", cacheDirErr)
-		s.cachePath = ""
-	} else {
-		s.loadCache()
-	}
-	if _, err := s.recoverCommit(ctx, wc); err != nil {
-		// recoverCommit journals the retained receipt and classified cause.
-	}
-	s.reconcileShouts(ctx, wc)
 
 	window := s.Rules.Window
 	if window <= 0 {

@@ -133,6 +133,29 @@ func (p *daemonProvisioner) Enqueue(operationID string) {
 func (p *daemonProvisioner) Run(ctx context.Context) {
 	cleanupRetry := time.NewTicker(30 * time.Second)
 	defer cleanupRetry.Stop()
+	if !p.restoreOperations(ctx) {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-cleanupRetry.C:
+			p.retryPendingCleanup(ctx)
+		case operationID := <-p.queue:
+			p.runOne(ctx, operationID)
+		}
+	}
+}
+
+// Restore owns one admission through reconciliation and attachment publication.
+// Enqueued execution acquires its own admission later, never recursively here.
+func (p *daemonProvisioner) restoreOperations(ctx context.Context) bool {
+	release, err := p.admission.EnterContext(ctx)
+	if err != nil {
+		return false
+	}
+	defer release()
 	provisionedActive := make(map[string]struct{})
 	if operations, err := p.provisioning.List(); err != nil {
 		talk.With("provisioning").Errorf("restore operations: %v", err)
@@ -209,18 +232,18 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 			}
 		}
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-cleanupRetry.C:
-			for _, record := range p.local.List() {
-				if record.State == localrepo.StateDeleting && record.ServerDeleteCompleted && !record.LocalCleanupCompleted {
-					p.retryLocalCleanup(ctx, record.OperationID)
-				}
-			}
-		case operationID := <-p.queue:
-			p.runOne(ctx, operationID)
+	return true
+}
+
+func (p *daemonProvisioner) retryPendingCleanup(ctx context.Context) {
+	release, err := p.admission.EnterContext(ctx)
+	if err != nil {
+		return
+	}
+	defer release()
+	for _, record := range p.local.List() {
+		if record.State == localrepo.StateDeleting && record.ServerDeleteCompleted && !record.LocalCleanupCompleted {
+			p.retryLocalCleanup(ctx, record.OperationID)
 		}
 	}
 }

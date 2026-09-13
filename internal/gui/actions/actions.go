@@ -580,7 +580,7 @@ func (c *Controller) startSettings(ctx context.Context, serverID, repoID string)
 	// not through generic working-copy settings (attach/delete/archive).
 	for _, repo := range vm.Repos {
 		if repo.ID == repoID && repo.ServerID == serverID && repo.Purpose == "upload_shelf" && repo.ParentRepoID != "" {
-			c.startManageUploadChannels(ctx, serverID, repo.ParentRepoID)
+			c.startManageUploadChannels(ctx, serverID, repo.ParentRepoID, true)
 			return
 		}
 	}
@@ -653,7 +653,7 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogPublicShares:
 			c.startManagePublicShares(ctx, result.ServerID, result.RepoID, "", false)
 		case platform.SettingsDialogUploadChannels:
-			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID)
+			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogQuarantine:
 			c.startReviewQuarantine(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogRealmVisibility:
@@ -1913,7 +1913,7 @@ func (c *Controller) startRevokePublicShares(ctx context.Context, serverID strin
 	}()
 }
 
-func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, repoID string) {
+func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, repoID string, directEntry bool) {
 	key := "upload-channels." + serverID + "." + repoID
 	if serverID == "" || repoID == "" || c.cfg.UploadChannels == nil || c.cfg.UploadChannelBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
 		return
@@ -1935,6 +1935,9 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				return
 			}
 			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", TextKey: "view.uploads", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji. Odrzuty AV oglądasz z folderu Kwarantanna, w projekcji FileES."}
+			request.DirectEntry = directEntry
+			request.ServerID, request.RepoID, request.RepositoryName = serverID, repoID, repo.DisplayName
+			directEntry = false
 			known := make(map[string]UploadChannelSummary, len(listed.Channels))
 			for _, channel := range listed.Channels {
 				known[channel.ChannelID] = channel
@@ -2056,10 +2059,10 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 		return
 	}
 	if choice.Action == platform.ShelfDialogFetch {
-		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID)
+		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID, shelf.Slug)
 	}
 	if choice.Action == platform.ShelfDialogImport {
-		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID, true)
+		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID, shelf.Slug, true)
 	}
 }
 

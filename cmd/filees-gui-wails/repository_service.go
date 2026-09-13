@@ -686,6 +686,10 @@ func (service *RepositoryService) showRealmGrants(ctx context.Context, request p
 
 func (service *RepositoryService) showUploadChannels(ctx context.Context, request platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error) {
 	service.mu.Lock()
+	if request.DirectEntry && request.ServerID != "" && request.RepoID != "" {
+		service.pendingUploads = repositoryContextKey(request.ServerID, request.RepoID)
+		service.snapshot.Context = RepositoryContextProjection{ServerID: request.ServerID, RepoID: request.RepoID, Name: request.RepositoryName}
+	}
 	contextProjection := service.snapshot.Context
 	pending := service.pendingUploads
 	if pending == "" || pending != repositoryContextKey(contextProjection.ServerID, contextProjection.RepoID) {

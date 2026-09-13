@@ -37,7 +37,10 @@ func TestShelfGUISelectionUsesFolderOnlyAtFirstDownload(t *testing.T) {
 			}
 			fake := listedShelf(t)
 			var picks atomic.Int32
-			fake.PickFolderFunc = func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			fake.PickFolderFunc = func(_ context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
+				if request.Title != "Wybierz folder na przyjęte pliki półki „oferta-a”" {
+					t.Errorf("unformatted shelf picker title: %q", request.Title)
+				}
 				picks.Add(1)
 				return platform.PickFolderResult{Path: filepath.Join(t.TempDir(), "shelf")}, nil
 			}

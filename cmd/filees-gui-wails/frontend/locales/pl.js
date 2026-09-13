@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "memory.recovery_required": "Synchronizacja zatrzymana po błędzie końcowego zapisu. Automatyczny restart zablokowany. Sprawdź dziennik diagnostyczny przed ręcznym ponownym uruchomieniem FileES.",
+  "memory.warning": "FileES zużywa nietypowo dużo pamięci. Monitor bezpieczeństwa działa; Twoja praca trwa dalej.",
+  "memory.draining": "FileES przygotowuje bezpieczny restart. Czeka na operacje i końcowe zapisy stanu; nie wymusza publikacji plików.",
+  "memory.deferred": "Automatyczny restart odroczony: nie potwierdzono bezpiecznego zakończenia. Żaden proces nie został przymusowo zatrzymany. Sprawdź dziennik diagnostyczny.",
+  "memory.cooldown": "Wysokie zużycie pamięci utrzymuje się. Kolejny automatyczny restart jest zablokowany, aby uniknąć zapętlenia. Sprawdź dziennik diagnostyczny.",
+  "memory.restarting": "FileES zakończył operacje i uruchamia się ponownie, aby zwolnić pamięć.",
   "shelf.import.action": "Umieść w folderze macierzystym",
   "shelf.import.destination": "Wybierz folder docelowy wewnątrz WC macierzystej",
   "shelf.import.complete": "Plik umieszczony w folderze macierzystym",

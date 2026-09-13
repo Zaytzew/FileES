@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"filees/pkg/filepolicy"
+	hostruntime "filees/pkg/runtime"
 	"filees/pkg/talk"
 	"github.com/google/uuid"
 )
@@ -279,15 +280,15 @@ func NewScanner(opts Options) (*Scanner, error) {
 func (s *Scanner) Start(ctx context.Context) <-chan Event {
 	events := make(chan Event, s.chanSize)
 	backlogDone := make(chan struct{})
-	go func() {
+	hostruntime.Go(ctx, func() {
 		defer close(backlogDone)
 		s.runBacklogWorker(ctx)
-	}()
-	go func() {
+	})
+	hostruntime.Go(ctx, func() {
 		s.loop(ctx, events)
 		<-backlogDone
 		close(events)
-	}()
+	})
 	return events
 }
 
@@ -367,7 +368,7 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 			// the event channel is closed and drained.
 			s.scanCycle(context.Background(), out)
 			if s.statePath != "" {
-				_ = s.SaveState(s.statePath)
+				hostruntime.FinalizationError(ctx, s.SaveState(s.statePath))
 			}
 			return
 		case <-ticker.C:

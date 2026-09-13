@@ -3,6 +3,7 @@ package reposupervisor
 import (
 	"context"
 	"errors"
+	"filees/pkg/runtime"
 	"sync"
 )
 
@@ -13,6 +14,7 @@ type CleanupFunc func(context.Context) error
 // completion boundary. Stop is idempotent and never returns before Run exits;
 // cleanup is then executed exactly once.
 type ManagedInstance struct {
+	lifetime context.Context
 	cancel   context.CancelFunc
 	done     chan struct{}
 	runErr   error
@@ -27,13 +29,13 @@ func StartManaged(parent context.Context, run RunFunc, cleanup CleanupFunc) (*Ma
 		return nil, errors.New("repository run function is required")
 	}
 	ctx, cancel := context.WithCancel(parent)
-	instance := &ManagedInstance{cancel: cancel, done: make(chan struct{}), cleanup: cleanup, stopDone: make(chan struct{})}
-	go func() { defer close(instance.done); instance.runErr = run(ctx) }()
+	instance := &ManagedInstance{lifetime: ctx, cancel: cancel, done: make(chan struct{}), cleanup: cleanup, stopDone: make(chan struct{})}
+	runtime.Go(ctx, func() { defer close(instance.done); instance.runErr = run(ctx) })
 	return instance, nil
 }
 
 func (m *ManagedInstance) Stop(ctx context.Context) error {
-	m.stopOnce.Do(func() { go m.stop() })
+	m.stopOnce.Do(func() { runtime.Go(m.lifetime, m.stop) })
 	select {
 	case <-m.stopDone:
 		return m.stopErr

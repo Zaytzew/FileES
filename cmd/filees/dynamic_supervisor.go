@@ -111,7 +111,7 @@ func (coordinator *publicShareRefreshCoordinator) Schedule(serverID string, view
 	}
 	coordinator.running[serverID] = true
 	coordinator.mu.Unlock()
-	go coordinator.run(serverID, view)
+	runtime.Go(coordinator.ctx, func() { coordinator.run(serverID, view) })
 }
 
 func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clientview.View) {
@@ -480,7 +480,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			case <-monitorCtx.Done():
 			}
 		}})
-		go func() {
+		runtime.Go(ctx, func() {
 			for view := range views {
 				select {
 				case updates <- projectionUpdate{serverID: serverID, displayName: displayNameNow(), address: address, clientID: clientID, sshPort: sshPort, view: view}:
@@ -488,7 +488,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 					return
 				}
 			}
-		}()
+		})
 		return nil
 	}
 	startProfile := func(profile clientprofile.Profile, activationEvent bool) error {
@@ -542,6 +542,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	for {
 		select {
 		case <-ctx.Done():
+			if runtime.MemoryStopping(ctx) {
+				return supervisor.Stop(context.Background())
+			}
 			stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 			defer cancel()
 			return supervisor.Stop(stopCtx)

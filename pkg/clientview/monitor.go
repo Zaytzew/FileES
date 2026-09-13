@@ -2,6 +2,7 @@ package clientview
 
 import (
 	"context"
+	"filees/pkg/runtime"
 	"time"
 )
 
@@ -26,9 +27,14 @@ func Monitor(ctx context.Context, updater Updater, config MonitorConfig) <-chan 
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	go func() {
+	runtime.Go(ctx, func() {
 		defer close(out)
 		syncOnce := func() {
+			release, err := runtime.EnterOperation(ctx)
+			if err != nil {
+				return
+			}
+			defer release()
 			view, changed, err := Sync(ctx, updater, config.Sync)
 			if err != nil {
 				if ctx.Err() == nil && config.OnError != nil {
@@ -58,6 +64,6 @@ func Monitor(ctx context.Context, updater Updater, config MonitorConfig) <-chan 
 				syncOnce()
 			}
 		}
-	}()
+	})
 	return out
 }

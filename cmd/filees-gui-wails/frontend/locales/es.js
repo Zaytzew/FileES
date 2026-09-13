@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "memory.recovery_required": "Sincronización detenida tras un error de finalización. El reinicio automático está bloqueado. Consulta el registro de diagnóstico antes de reiniciar FileES manualmente.",
+  "memory.warning": "FileES está utilizando una cantidad inusual de memoria. La supervisión de seguridad está activa; tu trabajo continúa.",
+  "memory.draining": "FileES prepara un reinicio seguro y espera a que terminen las operaciones y la escritura del estado. No se forzará la publicación de archivos.",
+  "memory.deferred": "Reinicio automático aplazado: no se pudo confirmar la finalización segura. No se ha detenido ningún proceso a la fuerza. Consulta el registro de diagnóstico.",
+  "memory.cooldown": "El uso elevado de memoria continúa. Se ha bloqueado otro reinicio automático para evitar un bucle. Consulta el registro de diagnóstico.",
+  "memory.restarting": "FileES ha terminado las operaciones y se reinicia para liberar memoria.",
   "shelf.import.action": "Colocar en la carpeta principal",
   "shelf.import.destination": "Elige un destino dentro de la copia de trabajo principal",
   "shelf.import.complete": "Archivo colocado en la carpeta principal",

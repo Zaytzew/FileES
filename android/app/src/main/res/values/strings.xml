@@ -145,18 +145,17 @@
     <string name="shouts_title">Ogłoszenie</string>
     <string name="shouts_ack">OK</string>
 
-    <string name="home_eyebrow">FileES · Twoje pliki</string>
+    <string name="home_eyebrow">FileES</string>
     <string name="home_title">Twoje pliki.\nNa właściwej ścieżce.</string>
     <string name="home_copy_idle">Zeskanuj kod QR z pulpitu FileES, żeby zobaczyć foldery tej strefy.</string>
     <string name="home_copy_paired">Foldery, które ten telefon widzi w strefie.</string>
-    <string name="home_pulse_repos">repo</string>
     <string name="home_metric_servers">Serwery</string>
     <string name="home_metric_servers_note">sparowane</string>
     <string name="home_metric_repos">Foldery</string>
     <string name="home_metric_repos_note">w strefie</string>
     <string name="home_metric_pending">Do decyzji</string>
     <string name="home_metric_pending_note">lokalna kolejka</string>
-    <string name="home_files_eyebrow">Twoje pliki</string>
+    <string name="home_server_eyebrow">Serwer</string>
     <string name="home_server_switch">Dotknij, żeby przełączyć</string>
     <string name="home_chevron">⌄</string>
     <plurals name="home_folder_count">

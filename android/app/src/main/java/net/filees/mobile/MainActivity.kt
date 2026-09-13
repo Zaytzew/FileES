@@ -323,7 +323,6 @@ class MainActivity : AppCompatActivity() {
                 "", "", directory = false, size = 0,
                 kind = BrowseRow.Kind.HERO,
                 heroCopy = copy,
-                pulseValue = selectableShares.size.toString(),
             ),
         )
         rows.add(
@@ -337,6 +336,7 @@ class MainActivity : AppCompatActivity() {
         )
         for (server in servers) {
             val active = server.id == current?.id
+            val folders = if (active) shareRows(selectableShares) else emptyList()
             rows.add(
                 BrowseRow(
                     name = server.displayName.ifBlank { server.address },
@@ -344,29 +344,44 @@ class MainActivity : AppCompatActivity() {
                     directory = false,
                     size = 0,
                     kind = BrowseRow.Kind.SERVER,
-                    serverMeta = if (active) {
-                        resources.getQuantityString(
+                    // The metrics panel already gives the folder count. A named
+                    // server shows its address here instead; an unnamed one
+                    // already has the address as its title, so the count stays.
+                    serverMeta = when {
+                        !active -> getString(R.string.home_server_switch)
+                        server.displayName.isNotBlank() -> server.address
+                        else -> resources.getQuantityString(
                             R.plurals.home_folder_count,
                             selectableShares.size,
                             selectableShares.size,
                         )
-                    } else {
-                        getString(R.string.home_server_switch)
                     },
                     switchServerId = if (active) "" else server.id,
-                    nested = if (active) shareRows(selectableShares) else emptyList(),
+                    panel = if (folders.isEmpty()) BrowseRow.Panel.SINGLE else BrowseRow.Panel.TOP,
                 ),
             )
+            rows.addAll(inPanel(folders))
         }
+        val journal = journalRows()
         rows.add(
             BrowseRow(
                 "", "", directory = false, size = 0,
-                kind = BrowseRow.Kind.JOURNAL,
-                nested = journalRows(),
+                kind = BrowseRow.Kind.JOURNAL_HEAD,
+                panel = if (journal.isEmpty()) BrowseRow.Panel.SINGLE else BrowseRow.Panel.TOP,
             ),
         )
+        rows.addAll(inPanel(journal))
         return rows
     }
+
+    // Rows that continue the panel opened by the item before them: the last
+    // closes the card, the rest sit in its middle.
+    private fun inPanel(members: List<BrowseRow>): List<BrowseRow> =
+        members.mapIndexed { index, row ->
+            row.copy(
+                panel = if (index == members.lastIndex) BrowseRow.Panel.BOTTOM else BrowseRow.Panel.MIDDLE,
+            )
+        }
 
     private fun journalRows(): List<BrowseRow> {
         val rows = mutableListOf<BrowseRow>()

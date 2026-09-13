@@ -60,6 +60,7 @@
     </LinearLayout>
 
     <View
+        android:id="@+id/dividerBrowse"
         android:layout_width="match_parent"
         android:layout_height="@dimen/filees_hairline"
         android:background="@color/filees_line" />

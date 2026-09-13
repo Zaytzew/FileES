@@ -91,13 +91,20 @@ data class BrowseRow(
     val journalTime: String = "",
     val journalEntry: String = "",
     val heroCopy: String = "",
-    val pulseValue: String = "",
     val serverMeta: String = "",
     val switchServerId: String = "",
-    val nested: List<BrowseRow> = emptyList(),
+    val panel: Panel = Panel.NONE,
 ) {
     enum class Kind {
         ITEM, HEADER, HERO, METRICS, SERVER, FACTS, JOURNAL_HEAD, JOURNAL
+    }
+
+    // Where a row sits in a panel that spans several list items. Rows used to
+    // be nested inside one item and inflated by hand, which switched recycling
+    // off; a segment position lets every row be its own item and still draw
+    // as one card. NONE is a row outside any panel, as when browsing a folder.
+    enum class Panel {
+        NONE, TOP, MIDDLE, BOTTOM, SINGLE
     }
 }
 

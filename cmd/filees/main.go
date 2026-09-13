@@ -140,8 +140,10 @@ func runDaemon() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	rootCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	ctx, stopWork := context.WithCancel(rootCtx)
+	defer stopWork()
 	profiles, err := clientprofile.List(clientprofile.DefaultRoot())
 	if err != nil {
 		lg.Errorf("client profiles: %v", err)
@@ -166,6 +168,8 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	lifetime := &runtime.Lifetime{Admission: ipc.OperationAdmission()}
+	ctx = runtime.WithLifetime(ctx, lifetime)
 	whaleManager, err := whaleclient.NewManager(whaleclient.DefaultRoot(), profiles)
 	if err != nil {
 		lg.Errorf("Whale actor: %v", err)
@@ -219,7 +223,7 @@ func runDaemon() {
 	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	provisioner.recoveryRegistry = recoveryRegistry
 	provisioner.attachments = provisionedAttachments
-	go provisioner.Run(ctx)
+	runtime.Go(ctx, func() { provisioner.Run(ctx) })
 	forgetProfile := func(serverID string) {
 		if err := clientprofile.Remove(clientprofile.DefaultRoot(), serverID); err != nil {
 			lg.Warnf("forget revoked server %s: %v", serverID, err)
@@ -272,11 +276,26 @@ func runDaemon() {
 	if clientView.Configured {
 		ipc.RegisterActivation(contract.ActivationStatus{ServerID: clientView.ServerID, DisplayName: clientView.DisplayName, ClientRole: clientView.ClientRole})
 	}
-	if err := ipc.Start(ctx); err != nil {
+	if err := ipc.Start(rootCtx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository); err != nil {
+	supervisorDone := make(chan error, 1)
+	memorySupervisorDone := make(chan error, 1)
+	runtime.Go(ctx, func() {
+		err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository)
+		supervisorDone <- err
+		memorySupervisorDone <- err
+	})
+	memoryDone := make(chan struct{})
+	go func() {
+		defer close(memoryDone)
+		runMemorySafety(rootCtx, ipc, lifetime, stopWork, memorySupervisorDone, func() { lifecycle.action.CompareAndSwap(daemonActionNone, daemonActionRestart) })
+	}()
+	if err := <-supervisorDone; err != nil {
 		lg.Errorf("repository supervisor: %v", err)
+	}
+	if runtime.MemoryStopping(ctx) {
+		<-memoryDone
 	}
 	if lifecycle.action.Load() == daemonActionRestart {
 		if err := restartCurrentProcess(); err != nil {
@@ -337,6 +356,11 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		rs.SetCycle(cycle)
 	}
 	update := func(tickAt time.Time) bool {
+		release, err := runtime.EnterOperation(ctx)
+		if err != nil {
+			return false
+		}
+		defer release()
 		if !workingCopyMetadataAvailable(repo.LocalPath) {
 			markWorkingCopyMissing(rs)
 			return false

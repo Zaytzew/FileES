@@ -19,6 +19,7 @@ import (
 	"filees/pkg/reposupervisor"
 	reservationv1 "filees/pkg/reservation/v1"
 	"filees/pkg/reservationclient"
+	"filees/pkg/runtime"
 	"filees/pkg/talk"
 )
 
@@ -144,7 +145,7 @@ func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clien
 	}
 	coordinator.mu.Unlock()
 	if start {
-		go coordinator.periodic(profile.ServerID)
+		runtime.Go(coordinator.ctx, func() { coordinator.periodic(profile.ServerID) })
 	}
 }
 
@@ -281,6 +282,11 @@ func (coordinator *reservationProjectionCoordinator) Schedule(serverID string) {
 }
 
 func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context, serverID string) {
+	release, admissionErr := runtime.EnterOperation(ctx)
+	if admissionErr != nil {
+		return
+	}
+	defer release()
 	coordinator.mu.RLock()
 	profile, hasProfile := coordinator.profiles[serverID]
 	profileEpoch := coordinator.profileEpochs[serverID]

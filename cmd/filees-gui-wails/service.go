@@ -49,6 +49,7 @@ type GUIService struct {
 }
 
 type Snapshot struct {
+	MemorySafety        *contract.MemorySafetyStatus      `json:"memory_safety,omitempty"`
 	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
 	Revision            uint64                            `json:"revision"`
 	Connected           bool                              `json:"connected"`
@@ -910,6 +911,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		Connected:           vm.Connected,
 		Stale:               vm.Stale,
 		DaemonState:         vm.DaemonState,
+		MemorySafety:        vm.MemorySafety,
 		UptimeSec:           vm.UptimeSec,
 		IconState:           string(vm.Icon),
 		Capabilities:        make([]string, 0, len(vm.Capabilities)),

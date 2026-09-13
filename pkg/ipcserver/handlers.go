@@ -1598,6 +1598,7 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 // handleSystemStatus implements system.status.
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	result := contract.SystemStatusResult{
+		MemorySafety:        s.MemorySafety(),
 		State:               "running",
 		UptimeSec:           s.uptime(),
 		Repos:               len(s.allRepos()),

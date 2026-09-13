@@ -274,7 +274,7 @@ func (s *Service) recordSustainedOffline(generation uint64) {
 		return
 	}
 	s.offlineJournalTimer = nil
-	s.offMu.Unlock()
+	defer s.offMu.Unlock() // shutdown must wait for this final journal write
 
 	s.ErrSink.Emit(errmap.Entry{
 		Code:     errmap.CodeNetUnreachable,
@@ -392,6 +392,19 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	s.staging = st
 
 	if !s.restoreStartup(ctx, wc) {
+		// The watcher is already running. Even an aborted startup must drain
+		// its final scan; otherwise it can block forever or lose queued changes.
+		s.cachePath = filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+		if _, err := os.Stat(filepath.Dir(s.cachePath)); err == nil {
+			s.loadCache()
+		} else {
+			s.cachePath = ""
+			runtime.FinalizationError(ctx, err)
+		}
+		for ev := range events {
+			s.acceptEvent(ev)
+		}
+		runtime.FinalizationError(ctx, s.saveCacheChecked())
 		return
 	}
 
@@ -420,10 +433,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	defer projectCycle(contract.CycleStopped, time.Time{})
 
 	if s.Rules.PollInterval > 0 {
-		go s.runPoller(ctx, wc)
+		runtime.Go(ctx, func() { s.runPoller(ctx, wc) })
 	}
 	s.unportableWake = make(chan struct{}, 1)
-	go s.runUnportableSweep(ctx, wc)
+	runtime.Go(ctx, func() { s.runUnportableSweep(ctx, wc) })
 
 	for {
 		select {
@@ -437,7 +450,11 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 			for ev := range events {
 				s.acceptEvent(ev)
 			}
-			s.shutdownDrain(wc)
+			if runtime.MemoryStopping(ctx) {
+				runtime.FinalizationError(ctx, s.saveCacheChecked())
+			} else {
+				s.shutdownDrain(wc)
+			}
 			lg.Infof("commit service stop")
 			return
 		case ev, ok := <-events:
@@ -446,7 +463,11 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 					lg.Infof("commit service stop: working copy moved")
 					return
 				}
-				s.shutdownDrain(wc)
+				if runtime.MemoryStopping(ctx) {
+					runtime.FinalizationError(ctx, s.saveCacheChecked())
+				} else {
+					s.shutdownDrain(wc)
+				}
 				lg.Infof("commit service stop")
 				return
 			}

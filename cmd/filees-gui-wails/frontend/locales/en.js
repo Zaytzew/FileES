@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "memory.recovery_required": "Synchronization stopped after a finalization error. Automatic restart is blocked. Check the diagnostic log before manually restarting FileES.",
+  "memory.warning": "FileES is using unusually high memory. The safety monitor is active; your work continues.",
+  "memory.draining": "FileES is preparing a safe restart. Waiting for operations and final state writes; files will not be forced to publish.",
+  "memory.deferred": "Automatic restart deferred: safe completion could not be confirmed. No process was forcibly stopped. Check the diagnostic log.",
+  "memory.cooldown": "High memory use persists. Another automatic restart is blocked to prevent a restart loop. Check the diagnostic log.",
+  "memory.restarting": "FileES has completed its work and is restarting to release memory.",
   "shelf.import.action": "Place in parent folder",
   "shelf.import.destination": "Choose a destination inside the parent working copy",
   "shelf.import.complete": "File placed in parent folder",

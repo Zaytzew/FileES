@@ -975,6 +975,11 @@ function render(snapshot) {
   const capabilities = new Set(snapshot.capabilities || []);
   pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
   renderConnection(snapshot);
+  const memory = snapshot.memory_safety;
+  const memoryBanner = $("#memory-safety");
+  const memoryPhases = ["warning", "draining", "deferred", "cooldown", "restarting", "recovery_required"];
+  memoryBanner.hidden = !memoryPhases.includes(memory?.phase);
+  memoryBanner.textContent = memoryBanner.hidden ? "" : t(`memory.${memory.phase}`);
   renderMetrics(snapshot);
   const repositoriesChanged = renderRepositories(snapshot);
   renderActions(snapshot);

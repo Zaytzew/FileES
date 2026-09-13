@@ -366,6 +366,7 @@ func (s appState) viewModel() ViewModel {
 		Connected:           s.connected,
 		Stale:               s.stale,
 		DaemonState:         s.system.State,
+		MemorySafety:        s.system.MemorySafety,
 		UptimeSec:           s.system.UptimeSec,
 		LastRefresh:         s.refreshed,
 		Capabilities:        caps,

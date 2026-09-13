@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "memory.recovery_required": "Synchronisation arrêtée après une erreur de finalisation. Le redémarrage automatique est bloqué. Consultez le journal de diagnostic avant de redémarrer FileES manuellement.",
+  "memory.warning": "FileES utilise une quantité inhabituelle de mémoire. La surveillance est active ; votre travail continue.",
+  "memory.draining": "FileES prépare un redémarrage sûr et attend la fin des opérations et des écritures d’état. La publication des fichiers ne sera pas forcée.",
+  "memory.deferred": "Redémarrage automatique différé : la fin des opérations n’a pas pu être confirmée. Aucun processus n’a été arrêté de force. Consultez le journal de diagnostic.",
+  "memory.cooldown": "L’utilisation élevée de mémoire persiste. Un autre redémarrage automatique est bloqué pour éviter une boucle. Consultez le journal de diagnostic.",
+  "memory.restarting": "FileES a terminé les opérations et redémarre pour libérer de la mémoire.",
   "shelf.import.action": "Placer dans le dossier parent",
   "shelf.import.destination": "Choisissez une destination dans la copie de travail parente",
   "shelf.import.complete": "Fichier placé dans le dossier parent",

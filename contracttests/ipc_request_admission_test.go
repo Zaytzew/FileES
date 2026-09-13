@@ -15,6 +15,7 @@ import (
 func TestIPCRequestAdmissionRefusalAndResume(t *testing.T) {
 	sock := testSocketPath(t)
 	s := ipcserver.New(sock)
+	s.SetMemorySafety(contract.MemorySafetyStatus{Phase: "warning", PrivateBytes: 12345, PhysicalBytes: 999999, MeasuredAt: "2026-09-13T12:00:00Z"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := s.Start(ctx); err != nil {
@@ -54,8 +55,18 @@ func TestIPCRequestAdmissionRefusalAndResume(t *testing.T) {
 		}
 	}
 	for _, command := range []string{contract.CmdSystemHello, contract.CmdSystemStatus} {
-		if resp := call(command); resp.Status != contract.StatusOK {
+		resp := call(command)
+		if resp.Status != contract.StatusOK {
 			t.Fatalf("discovery: %+v", resp)
+		}
+		if command == contract.CmdSystemStatus {
+			var status contract.SystemStatusResult
+			if err := contract.DecodeResult(resp.Result, &status); err != nil {
+				t.Fatal(err)
+			}
+			if status.MemorySafety == nil || status.MemorySafety.Phase != "warning" || status.MemorySafety.PrivateBytes != 12345 {
+				t.Fatalf("memory status: %+v", status.MemorySafety)
+			}
 		}
 	}
 	resume()

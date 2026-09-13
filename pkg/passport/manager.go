@@ -16,6 +16,7 @@ import (
 
 	"filees/internal/durable"
 	"filees/pkg/errcat"
+	"filees/pkg/runtime"
 
 	"github.com/google/uuid"
 )
@@ -434,9 +435,16 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := m.Heartbeat(ctx); err != nil && m.cfg.OnError != nil {
-				m.cfg.OnError(err)
-			}
+			func() {
+				release, err := runtime.EnterOperation(ctx)
+				if err != nil {
+					return
+				}
+				defer release()
+				if err := m.Heartbeat(ctx); err != nil && m.cfg.OnError != nil {
+					m.cfg.OnError(err)
+				}
+			}()
 		}
 	}
 }

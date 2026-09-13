@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "memory.recovery_required": "Synchronisierung nach einem Abschlussfehler gestoppt. Automatischer Neustart gesperrt. Prüfen Sie das Diagnoseprotokoll, bevor Sie FileES manuell neu starten.",
+  "memory.warning": "FileES verwendet ungewöhnlich viel Speicher. Die Sicherheitsüberwachung ist aktiv; Ihre Arbeit wird fortgesetzt.",
+  "memory.draining": "FileES bereitet einen sicheren Neustart vor und wartet auf laufende Vorgänge und abschließende Schreibvorgänge. Dateien werden nicht zwangsweise veröffentlicht.",
+  "memory.deferred": "Automatischer Neustart verschoben: Ein sicherer Abschluss konnte nicht bestätigt werden. Kein Prozess wurde zwangsweise beendet. Prüfen Sie das Diagnoseprotokoll.",
+  "memory.cooldown": "Die hohe Speichernutzung hält an. Ein weiterer automatischer Neustart ist gesperrt, um eine Neustartschleife zu verhindern. Prüfen Sie das Diagnoseprotokoll.",
+  "memory.restarting": "FileES hat die Vorgänge abgeschlossen und startet neu, um Speicher freizugeben.",
   "shelf.import.action": "Im übergeordneten Ordner ablegen",
   "shelf.import.destination": "Ziel innerhalb der übergeordneten Arbeitskopie wählen",
   "shelf.import.complete": "Datei im übergeordneten Ordner abgelegt",

@@ -30,7 +30,8 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	operation := "commit"
 	refreshed := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
 	vm := guiapp.ViewModel{
-		Connected: true, DaemonState: "running", UptimeSec: 42,
+		MemorySafety: &contract.MemorySafetyStatus{Phase: "draining", PrivateBytes: 1234},
+		Connected:    true, DaemonState: "running", UptimeSec: 42,
 		LastRefresh: refreshed, Icon: guiapp.IconBusy,
 		Capabilities: map[string]bool{"repo.status": true, "ignored": false, "repo.list": true, contract.CapRepoPublish: true, contract.CapNoticeAck: true},
 		Repos: []guiapp.RepoViewModel{{
@@ -46,6 +47,9 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 
 	got := projectViewModel(vm, journal.Texts{})
+	if got.MemorySafety == nil || got.MemorySafety.Phase != "draining" || got.MemorySafety.PrivateBytes != 1234 {
+		t.Fatal("memory safety projection lost")
+	}
 	if !got.Connected || got.IconState != "busy" || got.LastRefresh != "2026-08-23T10:00:00Z" {
 		t.Fatalf("unexpected top-level projection: %+v", got)
 	}

@@ -689,7 +689,7 @@ func (m *Manager) launch(parent context.Context, operationID string, run func(co
 	ctx, cancel := context.WithCancel(parent)
 	m.cancels[operationID] = cancel
 	m.mu.Unlock()
-	go func() {
+	runtime.Go(ctx, func() {
 		defer func() {
 			m.mu.Lock()
 			delete(m.cancels, operationID)
@@ -702,7 +702,7 @@ func (m *Manager) launch(parent context.Context, operationID string, run func(co
 		}
 		defer release()
 		run(ctx, operationID)
-	}()
+	})
 }
 
 func (m *Manager) fail(op Operation, err error) {

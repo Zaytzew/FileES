@@ -124,7 +124,7 @@ func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserve
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	lost := make(chan struct{}, 1)
-	go func() {
+	runtime.Go(runCtx, func() {
 		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -140,7 +140,7 @@ func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserve
 				return
 			}
 		}
-	}()
+	})
 	state.SetState(contract.StateActive)
 	events := source.Start(runCtx)
 	committer.Run(runCtx, repo.ID, repo.LocalPath, events)
@@ -209,6 +209,7 @@ type passportRunner interface {
 }
 
 type passportSession struct {
+	lifetime context.Context
 	cancel   context.CancelFunc
 	done     chan struct{}
 	manager  passportRunner
@@ -222,13 +223,13 @@ func startPassportSession(parent context.Context, manager passportRunner) (*pass
 		return nil, errors.New("passport manager is required")
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s := &passportSession{cancel: cancel, done: make(chan struct{}), manager: manager, stopDone: make(chan struct{})}
-	go func() { defer close(s.done); manager.Run(ctx) }()
+	s := &passportSession{lifetime: ctx, cancel: cancel, done: make(chan struct{}), manager: manager, stopDone: make(chan struct{})}
+	runtime.Go(ctx, func() { defer close(s.done); manager.Run(ctx) })
 	return s, nil
 }
 
 func (s *passportSession) Stop(ctx context.Context) error {
-	s.once.Do(func() { go s.stop() })
+	s.once.Do(func() { runtime.Go(s.lifetime, s.stop) })
 	select {
 	case <-s.stopDone:
 		return s.err
@@ -830,11 +831,16 @@ func validateAttachedWorkingCopy(ctx context.Context, svn client.Client, working
 	return validateWorkingCopyIdentity(workingCopy, expectedWorkingCopyIdentity(desired.Key.ServerID, desired.Key.RepoID, desired.URL))
 }
 
-func (s *daemonRepoStarter) startConfigured(lifecycle context.Context, runtime repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
-	if err := ensureWorkingCopyIdentity(runtime.config.LocalPath, expectedWorkingCopyIdentity(desired.Key.ServerID, desired.Key.RepoID, desired.URL)); err != nil {
+func (s *daemonRepoStarter) startConfigured(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
+	release, err := runtime.EnterOperation(lifecycle)
+	if err != nil {
 		return nil, err
 	}
-	guard, err := acquireWorkingCopyGuard(runtime.config.LocalPath)
+	defer release()
+	if err := ensureWorkingCopyIdentity(runtimeRepo.config.LocalPath, expectedWorkingCopyIdentity(desired.Key.ServerID, desired.Key.RepoID, desired.URL)); err != nil {
+		return nil, err
+	}
+	guard, err := acquireWorkingCopyGuard(runtimeRepo.config.LocalPath)
 	if err != nil {
 		return nil, err
 	}
@@ -844,9 +850,9 @@ func (s *daemonRepoStarter) startConfigured(lifecycle context.Context, runtime r
 			_ = guard.Close()
 			return nil, errors.New("read-write pipeline factory is not connected yet")
 		}
-		instance, err = s.startReadWrite(lifecycle, runtime, svn, desired)
+		instance, err = s.startReadWrite(lifecycle, runtimeRepo, svn, desired)
 	} else if desired.Access == contract.AccessReadOnly {
-		instance, err = s.startReadOnly(lifecycle, runtime, svn, desired)
+		instance, err = s.startReadOnly(lifecycle, runtimeRepo, svn, desired)
 	} else {
 		err = errors.New("repository access is invalid")
 	}

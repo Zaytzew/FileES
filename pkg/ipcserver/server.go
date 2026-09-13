@@ -24,6 +24,7 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	memorySafety         *contract.MemorySafetyStatus
 	operationAdmission   runtime.Admission
 	requestAdmission     runtime.Admission
 	projectionMu         sync.Mutex

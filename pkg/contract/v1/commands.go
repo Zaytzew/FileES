@@ -257,10 +257,11 @@ type HelloResult struct {
 
 // SystemStatusResult is the result for CmdSystemStatus.
 type SystemStatusResult struct {
-	State       string             `json:"state"` // "running" | "stopping"
-	UptimeSec   int64              `json:"uptime_sec"`
-	Repos       int                `json:"repos"`
-	Activations []ActivationStatus `json:"activations"`
+	MemorySafety *MemorySafetyStatus `json:"memory_safety,omitempty"`
+	State        string              `json:"state"` // "running" | "stopping"
+	UptimeSec    int64               `json:"uptime_sec"`
+	Repos        int                 `json:"repos"`
+	Activations  []ActivationStatus  `json:"activations"`
 	// Detachments are the relationships that ended, beside the ones that
 	// exist. They are a separate list rather than a flag on an activation
 	// because after a detachment there is no activation left to carry it:
@@ -270,6 +271,15 @@ type SystemStatusResult struct {
 	LockReleaseRequests []LockReleaseRequest `json:"lock_release_requests,omitempty"`
 	Recoveries          []RecoveryStatus     `json:"recoveries,omitempty"`
 	Update              *UpdateStatus        `json:"update,omitempty"`
+}
+
+// MemorySafetyStatus is a daemon decision, not a renderer memory heuristic.
+type MemorySafetyStatus struct {
+	Phase         string `json:"phase"`
+	PrivateBytes  uint64 `json:"private_bytes"`
+	PhysicalBytes uint64 `json:"physical_bytes"`
+	MeasuredAt    string `json:"measured_at"`
+	LastRestartAt string `json:"last_restart_at,omitempty"`
 }
 
 // Detachment reports one ended relationship with a server, carrying the

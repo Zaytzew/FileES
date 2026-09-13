@@ -164,3 +164,53 @@ func TestAdmissionCancelledBeforeAttemptDoesNotClose(t *testing.T) {
 		t.Fatal("cancelled attempt closed admission")
 	}
 }
+
+func TestAdmissionWaiterResumesOnlyWhenReopened(t *testing.T) {
+	var a Admission
+	resume, err := a.Quiesce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resume()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	entered := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		release, err := a.EnterContext(ctx)
+		if err == nil {
+			close(entered)
+			release()
+		}
+		done <- err
+	}()
+	select {
+	case <-entered:
+		t.Fatal("waiter crossed closed barrier")
+	case <-time.After(20 * time.Millisecond):
+	}
+	resume()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s := a.Snapshot(); s.Active != 0 || s.Closed {
+		t.Fatal(s)
+	}
+}
+
+func TestAdmissionCancelledWaiterDoesNotCountAsWork(t *testing.T) {
+	var a Admission
+	resume, err := a.Quiesce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resume()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := a.EnterContext(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	if s := a.Snapshot(); s.Active != 0 || !s.Closed {
+		t.Fatal(s)
+	}
+}

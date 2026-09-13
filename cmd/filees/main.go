@@ -172,6 +172,7 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	whaleManager.EnableSystemSpoolSelection()
+	whaleManager.Admission = ipc.OperationAdmission()
 	whaleManager.OnChange = func(operation whaleclient.Operation) {
 		ipc.Emit(contract.NewEvent("", 0, contract.EvWhaleChanged, operation.LogicalRepoID, projectWhaleOperation(operation)))
 	}
@@ -214,6 +215,7 @@ func runDaemon() {
 	ipc.SetActivitySource(activityJournal)
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
+	provisioner.admission = ipc.OperationAdmission()
 	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	provisioner.recoveryRegistry = recoveryRegistry
 	provisioner.attachments = provisionedAttachments

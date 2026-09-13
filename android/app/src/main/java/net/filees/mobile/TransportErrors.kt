@@ -7,9 +7,14 @@ import androidx.appcompat.app.AppCompatActivity
 fun AppCompatActivity.showTransportError(headline: String, err: Throwable, address: String?) {
     val raw = err.message?.takeIf { it.isNotBlank() } ?: err.toString()
     val catalog = try {
-        androidbind.Androidbind.explain(raw)
+        val lang = resources.configuration.locales[0].language
+        androidbind.Androidbind.explainIn(raw, lang)
     } catch (_: Exception) {
-        ""
+        try {
+            androidbind.Androidbind.explain(raw)
+        } catch (_: Exception) {
+            ""
+        }
     }
     val body = buildString {
         append(catalog.ifBlank { explainTransport(raw) })

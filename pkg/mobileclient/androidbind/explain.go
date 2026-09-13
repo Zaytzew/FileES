@@ -11,40 +11,59 @@ import (
 	"filees/pkg/messagerender"
 )
 
-// explainLocale is the language Explain answers in.
-//
-// Android is out of scope for the i18n vertical: it has its own client cycle,
-// and this constant is not the beginning of one. Moving the sentences here off
-// errcat.Spec.Polish and onto the shipped language pack removes the last
-// second source of user text; it does not add a language switch, a new
-// envelope field or anything Kotlin can see.
+// explainLocale is the language Explain answers in when the UI does not pass one.
 const explainLocale = "pl"
 
-// explainCatalogue is the compiled-in pack, parsed once.
-//
-// The mobile client has no daemon of its own to ask, so it reads the packs it
-// was built with. That is the same data the daemon serves over IPC, from the
-// same validated files, rather than a second catalogue kept in step by hand.
-var explainCatalogue = sync.OnceValue(func() *messagerender.Catalogue {
-	registry, err := domaincatalog.Load()
-	if err != nil {
-		return nil
+var (
+	explainRegistry = sync.OnceValue(func() domaincatalog.Registry {
+		registry, err := domaincatalog.Load()
+		if err != nil {
+			return domaincatalog.Registry{}
+		}
+		return registry
+	})
+	explainCatalogues sync.Map // locale -> *messagerender.Catalogue
+)
+
+func normalizeExplainLocale(locale string) string {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	if i := strings.IndexAny(locale, "_-"); i > 0 {
+		locale = locale[:i]
 	}
-	pack, ok := registry.Pack(explainLocale)
+	switch locale {
+	case "pl", "en", "de", "fr", "es":
+		return locale
+	default:
+		return explainLocale
+	}
+}
+
+func catalogueFor(locale string) *messagerender.Catalogue {
+	locale = normalizeExplainLocale(locale)
+	if cached, ok := explainCatalogues.Load(locale); ok {
+		return cached.(*messagerender.Catalogue)
+	}
+	registry := explainRegistry()
+	pack, ok := registry.Pack(locale)
 	if !ok {
-		return nil
+		pack, ok = registry.Pack(explainLocale)
+		if !ok {
+			return nil
+		}
+		locale = explainLocale
 	}
 	fallback, _ := registry.Pack(domaincatalog.BaseLocale)
 	catalogue := &messagerender.Catalogue{
-		Locale:         explainLocale,
+		Locale:         locale,
 		FallbackLocale: domaincatalog.BaseLocale,
 		CatalogID:      registry.Digest(),
 		Messages:       renderMessages(pack),
 		Fallback:       renderMessages(fallback),
 		Params:         renderParams(),
 	}
-	return catalogue
-})
+	actual, _ := explainCatalogues.LoadOrStore(locale, catalogue)
+	return actual.(*messagerender.Catalogue)
+}
 
 func renderMessages(pack domaincatalog.Pack) map[string]messagerender.Message {
 	out := make(map[string]messagerender.Message, len(pack.Messages))
@@ -78,6 +97,12 @@ func renderParams() map[string][]messagerender.Param {
 // carries the English diagnostic, as it always has. Nothing here changes what
 // goes over the wire.
 func Explain(raw string) string {
+	return ExplainIn(raw, explainLocale)
+}
+
+// ExplainIn is Explain in the phone UI language (pl, en, de, fr, es).
+// Unknown locales keep Polish, the FileES default.
+func ExplainIn(raw, locale string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
@@ -86,8 +111,8 @@ func Explain(raw string) string {
 	if entry.IsNoop() || entry.Key == errcat.KeyUnknown {
 		return ""
 	}
-	catalogue := explainCatalogue()
-	if !catalogue.Ready() {
+	catalogue := catalogueFor(locale)
+	if catalogue == nil || !catalogue.Ready() {
 		// The packs are compiled in and validated by the build, so this is a
 		// broken binary rather than a missing translation. There is no second
 		// catalogue to fall back to on purpose: the UI keeps its own local

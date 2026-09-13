@@ -13,6 +13,6 @@ object HumanSize {
             i++
         }
         val pattern = if (value >= 10) "%.0f %s" else "%.1f %s"
-        return String.format(Locale("pl", "PL"), pattern, value, units[i])
+        return String.format(Locale.getDefault(), pattern, value, units[i])
     }
 }

@@ -112,6 +112,21 @@ func TestExplainKeepsTheSentencesItAlwaysReturned(t *testing.T) {
 	}
 }
 
+func TestExplainInUsesTheRequestedLanguagePack(t *testing.T) {
+	raw := "E170001: Authorization failed"
+	pl := ExplainIn(raw, "pl")
+	en := ExplainIn(raw, "en")
+	if pl == "" || en == "" {
+		t.Fatalf("empty sentence pl=%q en=%q", pl, en)
+	}
+	if pl == en {
+		t.Fatalf("pl and en should differ: %q", pl)
+	}
+	if ExplainIn(raw, "pt-BR") != pl {
+		t.Fatalf("unknown locale should keep Polish")
+	}
+}
+
 // Whatever errmap can classify must have a sentence, or a device shows
 // nothing for a failure the dictionary already understands.
 func TestEveryClassifiableKeyHasASentence(t *testing.T) {

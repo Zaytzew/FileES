@@ -27,6 +27,11 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return contract.ErrResponseFrom(req.RequestID, errcat.New("system.quiescing", nil, admissionErr))
 	}
 	defer release()
+	return s.dispatchAdmitted(req)
+}
+
+// dispatchAdmitted requires the caller to hold request admission.
+func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 	switch req.Command {
 	case contract.CmdSystemHello:
 		return s.handleHello(req)

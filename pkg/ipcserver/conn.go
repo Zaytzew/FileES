@@ -70,12 +70,8 @@ func (s *Server) handleConn(c net.Conn) {
 			return
 		}
 
-		resp := s.dispatch(req)
-		if err := write(resp); err != nil {
+		if err := s.executeRequest(req, write); err != nil {
 			return
-		}
-		if resp.Status == contract.StatusOK {
-			s.afterResponse(req.Command)
 		}
 	}
 }

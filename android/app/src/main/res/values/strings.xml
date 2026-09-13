@@ -124,13 +124,13 @@
     <string name="action_send_as">Wyślij jako…</string>
     <string name="hint_send_as">Nowa nazwa pliku</string>
     <string name="status_waiting_decision">%1$d plików czeka na decyzję.</string>
-    <string name="action_unpair">Odparuj ten serwer</string>
+    <string name="action_unpair">Odłącz ten serwer</string>
     <string name="confirm_unpair">Zapomnieć ten serwer na telefonie? Inne sparowane zostają. Klucz urządzenia zostaje — ponowne parowanie z tym samym hostem użyje go znowu.</string>
     <string name="settings_servers">Sparowane serwery</string>
     <string name="action_switch_server">Serwer</string>
     <string name="action_add_server">Dodaj serwer…</string>
     <string name="server_current">bieżący</string>
-    <string name="error_revoked">To urządzenie nie ma już dostępu do strefy. Można odparować i sparować ponownie, jeśli operator znowu je dopuści.</string>
+    <string name="error_revoked">To urządzenie nie ma już dostępu do strefy. Można odłączyć i sparować ponownie, jeśli operator znowu je dopuści.</string>
     <string name="error_preview">Nie ma aplikacji do otwarcia tego pliku. Zapisano w Pobranych.</string>
     <string name="settings_realm">Strefa: %1$s</string>
     <string name="settings_view_at">Widok z %1$s</string>

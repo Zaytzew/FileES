@@ -143,10 +143,13 @@ type UploadChannelBrowser interface {
 }
 
 type UploadChannelDialogRequest struct {
-	TextKey  string // GUI-authored description; empty preserves Text verbatim.
-	Title    string
-	Text     string
-	Channels []UploadChannelSummary
+	// DirectEntry carries an already-authorized parent context from a shelf action.
+	DirectEntry                      bool
+	ServerID, RepoID, RepositoryName string
+	TextKey                          string // GUI-authored description; empty preserves Text verbatim.
+	Title                            string
+	Text                             string
+	Channels                         []UploadChannelSummary
 }
 
 type UploadChannelSummary struct {

@@ -23,7 +23,7 @@ type ShelfImporter interface {
 	ShelfImport(context.Context, string, string, string, string, string, string) (ShelfDownload, error)
 }
 
-func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoID, channelID, uploadID string, importing ...bool) {
+func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoID, channelID, uploadID, shelfName string, importing ...bool) {
 	downloads, ok := c.cfg.Shelf.(ShelfDownloader)
 	if !ok || c.cfg.FolderPicker == nil {
 		return
@@ -64,7 +64,7 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		destination = picked.Path
 	}
 	if localPath == "" {
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("picker.shelf", "Wybierz folder półki")})
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.shelf", "Wybierz folder na przyjęte pliki półki „%s”"), shelfName)})
 		if err != nil {
 			fail(err)
 			return

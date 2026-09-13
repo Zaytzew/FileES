@@ -375,6 +375,37 @@ func TestRepositoryServiceValidatesUploadChannelChoices(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceOpensUploadChannelsDirectlyFromShelf(t *testing.T) {
+	service := newRepositoryService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = service.showUploadChannels(ctx, platform.UploadChannelDialogRequest{
+			DirectEntry: true, ServerID: "spot", RepoID: "parent", RepositoryName: "Parent",
+			Channels: []platform.UploadChannelSummary{{ChannelID: "shelf-channel", State: "aktywne"}},
+		})
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("direct shelf entry did not show its parent channels")
+	}
+	snapshot := service.Snapshot()
+	if snapshot.Mode != "uploads" || snapshot.Context.RepoID != "parent" || snapshot.Context.ServerID != "spot" {
+		t.Fatalf("wrong direct context: %+v", snapshot)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("direct dialog did not stop")
+	}
+}
+
 func TestRepositoryServiceValidatesQuarantineChoices(t *testing.T) {
 	service := newRepositoryService()
 	service.snapshot.Context = RepositoryContextProjection{ServerID: "spot", RepoID: "trash", Name: "Kwarantanna"}

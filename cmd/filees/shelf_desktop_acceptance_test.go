@@ -69,6 +69,7 @@ func TestShelfDesktopAcceptance(t *testing.T) {
 	s.RegisterProjectedRepoPolicy("parent", "Test odbioru półki", "svn+ssh://synthetic/parent", "shelf-lab", "rw", "active", "owner", "optional", true)
 	r := s.RegisterProjectedRepoPolicy("shelf", "Półka testowa", "svn+ssh://synthetic/shelf", "shelf-lab", "r", "active", "owner", "optional", false)
 	r.SetPurpose(contract.RepoPurposeUploadShelf)
+	r.SetParentRepoID("parent")
 	s.SetUploadChannelService(shelfDesktopAuthority{item: contract.ShelfItem{UploadID: "synthetic-upload", RepoPath: "incoming/nested/selected.txt", OriginalName: "selected.txt", Size: int64(len(data)), SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), Revision: 1, AcceptedAt: time.Now().UTC().Format(time.RFC3339)}})
 	s.SetRepositoryLifecycleService(repositoryLifecycleService{store: store, onCreate: p.Enqueue})
 	must(s.Start(t.Context()))

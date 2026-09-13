@@ -149,9 +149,28 @@ and `_filees-public`, installs disabled `filees_public_authority` and
 - public cache: `_filees-links`, mode `0700`, at configured `cache.root`
   (example `/var/filees-downloads/cache`), outside backups;
 - upload intake: `_filees-links:_filees-public`, mode `0770`, under
-  `/var/tmp/filees-upload-intake`; job subdirectories are also `0770` so
+  `/var/filees-downloads/intake` (override `PUBLIC_UPLOAD_INTAKE_ROOT`);
+  job subdirectories are also `0770` so
   `_filees-state` (in `_filees-public`) can reap them;
 - FastCGI directory: `_filees-links:www`, mode `0750`, socket mode `0660`.
+
+Upload intake is a persistent delivery queue, **not** a cache: never put it
+under `/tmp` or `/var/tmp`, including through symlinks. On OpenBSD, daily
+cleanup can remove an empty directory and invalidate the running service's
+inode-based unveil access even if the directory is later recreated. Changing
+paths requires coordinated configuration and a service restart, not a cron
+job that recreates the directory. The example AV command uses `clamdscan
+--stream`: the state worker reads the payload and sends bytes to clamd, whose
+user does not need traversal permission on the private intake tree.
+
+The bootstrap scripts still preserve existing JSON files and do not rewrite
+examples for `PUBLIC_*` overrides. Set `server.json` `upload.intake_root` and
+`public-links.json` `intake_root` to the same selected directory. The default
+change does **not** migrate existing queues or enable the upload reaper.
+Resource-aware selection, coordinated JSON editing and post-install readiness
+validation remain pending; successful file installation is not proof that
+upload is ready. Preserve pending payloads during any operator-approved
+migration. Native OpenBSD acceptance is required before release.
 
 `public_shares.max_size` limits one authoritative leaf before it can fill the
 private staging filesystem; omission defaults to 1 GiB.

@@ -8,7 +8,8 @@ statedir=${STATEDIR:-/var/filees/onboarding}
 public_downloads_dir=${PUBLIC_DOWNLOADS_DIR:-/var/filees-downloads}
 public_authority_staging_root=${PUBLIC_AUTHORITY_STAGING_ROOT:-$public_downloads_dir/authority}
 public_links_cache_root=${PUBLIC_LINKS_CACHE_ROOT:-$public_downloads_dir/cache}
-for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root"; do
+public_upload_intake_root=${PUBLIC_UPLOAD_INTAKE_ROOT:-$public_downloads_dir/intake}
+for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root" "$public_upload_intake_root"; do
 	case "$public_path" in
 		/|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "Public downloads require dedicated persistent directories" >&2; exit 1 ;;
 		/*) ;;
@@ -87,6 +88,9 @@ fi
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
 echo "Set public_shares.authority_staging_root=$public_authority_staging_root in server.json"
 echo "Set cache.root=$public_links_cache_root in public-links.json; examples are not rewritten."
+echo "Set upload.intake_root=$public_upload_intake_root in server.json and intake_root=$public_upload_intake_root in public-links.json."
+echo "Upload needs shared intake ownership from the platform setup and upload-reap scheduled as the state user."
+echo "Existing intake jobs were not migrated. Intake is a delivery queue, not a disposable cache."
 echo "Set install.public_downloads_dir=$public_downloads_dir in install.conf; use the same PUBLIC_* settings for install-ssh.sh."
 echo "No daemon or rc.d service was installed."
 echo "Manual pages installed under $prefix/man (man filees, man filees-admin)."

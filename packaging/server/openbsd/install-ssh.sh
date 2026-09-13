@@ -13,7 +13,8 @@ public_access_group=_filees-public
 public_downloads_dir=${PUBLIC_DOWNLOADS_DIR:-/var/filees-downloads}
 public_authority_staging_root=${PUBLIC_AUTHORITY_STAGING_ROOT:-$public_downloads_dir/authority}
 public_links_cache_root=${PUBLIC_LINKS_CACHE_ROOT:-$public_downloads_dir/cache}
-for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root"; do
+public_upload_intake_root=${PUBLIC_UPLOAD_INTAKE_ROOT:-$public_downloads_dir/intake}
+for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root" "$public_upload_intake_root"; do
 	case "$public_path" in
 		/|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "Public downloads require dedicated persistent directories" >&2; exit 1 ;;
 		/*) ;;
@@ -126,7 +127,7 @@ install -d -o "$state_user" -g wheel -m 700 /var/filees/repository-operations/pu
 install -d -o root -g wheel -m 755 "$public_downloads_dir"
 install -d -o "$state_user" -g wheel -m 700 "$public_authority_staging_root"
 install -d -o _filees-links -g wheel -m 700 "$public_links_cache_root"
-install -d -o _filees-links -g "$public_access_group" -m 770 /var/tmp/filees-upload-intake
+install -d -o _filees-links -g "$public_access_group" -m 770 "$public_upload_intake_root"
 install -d -o "$state_user" -g "$public_access_group" -m 750 /var/run/filees
 install -d -o _filees-links -g www -m 750 /var/www/run/filees
 if [ ! -e /var/filees/activation/authorized_keys ]; then
@@ -178,3 +179,5 @@ chmod 644 /etc/filees/worker_ed25519.pub
 sshd -t
 rcctl reload sshd
 echo "FileES SSH entries, Public Shares users, binaries and disabled rc.d scripts installed; no Public Shares listener was started."
+echo "Upload requires matching intake_root=$public_upload_intake_root in both JSON configurations and upload-reap scheduled as $state_user."
+echo "Existing configuration and intake jobs were not migrated. Do not remove or relocate a running intake directory."

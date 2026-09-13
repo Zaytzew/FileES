@@ -3,6 +3,7 @@ package repoworker
 import (
 	"context"
 	"errors"
+	control "filees/pkg/control/v1"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,47 @@ import (
 )
 
 type shelfAuthority struct{ owner, repo, alias string }
+
+func TestWorkerRoutesShelfListAndEnforcesOwner(t *testing.T) {
+	service, owner, channelID := shelfFixture(t)
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := Worker{UploadChannels: service, Store: store}
+	clientID := uuid.NewString()
+	for _, tc := range []struct {
+		name, realm     string
+		allowed, wantOK bool
+	}{
+		{"owner", owner, true, true},
+		{"foreign", uuid.NewString(), true, false},
+		{"no capability", owner, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketListShelf, clientID, control.ListShelfPayload{ChannelID: channelID}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := w.Handle(context.Background(), Session{ClientID: clientID, RealmID: tc.realm, CanCreateRepositories: tc.allowed}, ticket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (result.Status == control.ResultOK) != tc.wantOK {
+				t.Fatalf("result=%+v", result)
+			}
+			if tc.wantOK {
+				var listing control.ListShelfResult
+				if err := control.DecodeResultPayload(result.Result, &listing); err != nil {
+					t.Fatal(err)
+				}
+				if listing.ChannelID != channelID {
+					t.Fatalf("wrong shelf: %+v", listing)
+				}
+			}
+		})
+	}
+}
 
 func (a shelfAuthority) OwnsActiveRepository(realmID, repoID string) error {
 	if realmID != a.owner || repoID != a.repo {

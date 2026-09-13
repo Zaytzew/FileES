@@ -507,7 +507,8 @@ function renderRepoGroup(label, repos, className = "", nested = false) {
     <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
     <div class="repo-list">${repos.map(repo => {
       const shelves = shelvesFor(repo, currentSnapshot?.repositories || []);
-      return renderRepo(repo) + (shelves.length ? `<div class="parent-shelves">${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf", true)}</div>` : "");
+      const shelfKey = JSON.stringify([repo.server_id, repo.id, "shelves"]);
+      return renderRepo(repo) + (shelves.length ? `<details class="parent-shelves idle-group" data-idle-key="${escapeHTML(shelfKey)}" ${expandedIdleGroups.has(shelfKey) ? "open" : ""}><summary>${escapeHTML(t("repo.groupShelves"))} (${shelves.length})</summary>${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf", true)}</details>` : "");
     }).join("")}</div>
   </section>`;
 }

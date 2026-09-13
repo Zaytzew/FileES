@@ -364,7 +364,7 @@ func UploadTrashRepositoryID(realmID string) string {
 
 func isUploadChannelTicket(typ control.TicketType) bool {
 	switch typ {
-	case control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel, control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel, control.TicketListQuarantine, control.TicketHideQuarantine, control.TicketFetchQuarantine:
+	case control.TicketListShelf, control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel, control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel, control.TicketListQuarantine, control.TicketHideQuarantine, control.TicketFetchQuarantine:
 		return true
 	default:
 		return false

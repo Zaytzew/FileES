@@ -22,6 +22,11 @@ import (
 // dispatch routes a validated request to the appropriate handler.
 // Unknown commands return a structured error; the connection is not closed.
 func (s *Server) dispatch(req contract.Request) contract.Response {
+	release, admissionErr := s.admitRequest(req.Command)
+	if admissionErr != nil {
+		return contract.ErrResponseFrom(req.RequestID, errcat.New("system.quiescing", nil, admissionErr))
+	}
+	defer release()
 	switch req.Command {
 	case contract.CmdSystemHello:
 		return s.handleHello(req)

@@ -25,6 +25,7 @@ import (
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
 	operationAdmission   runtime.Admission
+	requestAdmission     runtime.Admission
 	projectionMu         sync.Mutex
 	dismissedLocalCopies map[string]bool // runtime fence; durable owner is localrepo
 	sockPath             string

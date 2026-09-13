@@ -4,6 +4,7 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "system.quiescing": "FileES bereitet einen sicheren Neustart vor. Diese Aktion wurde nicht gestartet; versuchen Sie es in Kürze erneut.",
     "activation.begin_failed": "Aktivierung konnte nicht gestartet werden",
     "activation.finish_failed": "Aktivierung konnte nicht abgeschlossen werden",
     "activation.pending_failed": "Ausstehende Aktivierung konnte nicht gelesen werden",

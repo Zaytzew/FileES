@@ -4,6 +4,7 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "system.quiescing": "FileES przygotowuje bezpieczny restart. To działanie nie zostało rozpoczęte; spróbuj ponownie za chwilę.",
     "activation.begin_failed": "Nie udało się rozpocząć aktywacji",
     "activation.finish_failed": "Nie udało się dokończyć aktywacji",
     "activation.pending_failed": "Nie udało się odczytać oczekującej aktywacji",

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/localrepo"
 	"fmt"
 	"github.com/google/uuid"
@@ -12,6 +15,54 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+func TestShelfFirstDownloadCreatesNewFolderAndReusesRecordedPath(t *testing.T) {
+	root := t.TempDir()
+	store, err := localrepo.Open(filepath.Join(root, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: store, onCreate: func(string) {}}
+	item := contract.ShelfItem{UploadID: "upload", RepoPath: "file.txt", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+	path := filepath.Join(root, "new-shelf")
+	for _, existing := range []string{root, filepath.Join(root, "empty")} {
+		if existing != root {
+			if err := os.Mkdir(existing, 0700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := service.BeginShelfFetch("office", uuid.NewString(), "svn+ssh://example/shelf", existing, item); !errors.Is(err, os.ErrExist) {
+			t.Fatalf("existing target: %v", err)
+		}
+	}
+	result, err := service.BeginShelfFetch("office", uuid.NewString(), "svn+ssh://example/shelf", path, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		t.Fatalf("folder not created: %v", err)
+	}
+	record, ok := store.Get(result.OperationID)
+	if !ok || record.LocalPath != path {
+		t.Fatalf("path not recorded: %+v", record)
+	}
+	if got := service.InspectShelf(record.ServerID, record.RepoID); got.LocalPath != path {
+		t.Fatalf("inspect=%+v", got)
+	}
+	if _, err := service.BeginShelfFetch(record.ServerID, record.RepoID, record.RepoURL, path, item); errors.Is(err, os.ErrExist) {
+		t.Fatal("recorded path treated as a new folder")
+	}
+}
+
+func TestShelfFolderIconHasDistinctArtwork(t *testing.T) {
+	icon, err := shelfFolderIconBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(icon) == 0 || bytes.Equal(icon, managedFolderIcon) {
+		t.Fatal("shelf icon is not distinct")
+	}
+}
 
 type shelfSVNStub struct {
 	attachmentSVNStub

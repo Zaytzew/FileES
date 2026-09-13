@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.create.location": "Elegir dónde crear la carpeta de la bandeja",
+  "shelf.create.title": "Crear una carpeta local de la bandeja",
+  "shelf.create.description": "Escriba un nombre de carpeta nuevo. Las carpetas existentes no se modificarán.",
+  "shelf.create.invalid": "Escriba un nombre de carpeta, no una ruta.",
+  "shelf.create.exists": "Ese nombre ya está en uso. Elija otro nombre o ubicación. No se ha sobrescrito nada.",
   "update.unconfirmed": "El resultado de la actualización no está confirmado. La instalación puede seguir en curso; comprueba su estado antes de reintentar.",
   "memory.recovery_required": "Sincronización detenida tras un error de finalización. El reinicio automático está bloqueado. Consulta el registro de diagnóstico antes de reiniciar FileES manualmente.",
   "memory.warning": "FileES está utilizando una cantidad inusual de memoria. La supervisión de seguridad está activa; tu trabajo continúa.",

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -75,7 +77,50 @@ func TestShelfDesktopAcceptance(t *testing.T) {
 	must(s.Start(t.Context()))
 	go p.Run(t.Context())
 	t.Log("desktop lab ready", root)
+	if os.Getenv("FILEES_SHELF_AUTOMATED_ACCEPTANCE") == "1" {
+		consumer := ipcclient.New(filepath.Join(root, "ipc.sock"), "shelf-acceptance")
+		result, err := consumer.ShelfFetch(t.Context(), contract.ShelfFetchPayload{ServerID: "shelf-lab", RepoID: "parent", ChannelID: "channel", UploadID: "synthetic-upload", LocalPath: filepath.Join(root, "received")})
+		must(err)
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			got, ok := store.Get(result.OperationID)
+			if ok && got.ShelfFetch.State == "failed" {
+				t.Fatalf("fetch failed: %+v", got.ShelfFetch)
+			}
+			if ok && got.ShelfFetch.State == "complete" {
+				actual, err := os.ReadFile(filepath.Join(root, "received", "incoming", "nested", "selected.txt"))
+				must(err)
+				if string(actual) != string(data) {
+					t.Fatal("wrong downloaded bytes")
+				}
+				if _, err := os.Stat(filepath.Join(root, "received", "incoming", "nested", "not-selected.txt")); !os.IsNotExist(err) {
+					t.Fatal("unselected sibling fetched")
+				}
+				if runtime.GOOS == "windows" {
+					if _, err := os.Stat(filepath.Join(root, "received", "desktop.ini")); err != nil {
+						t.Fatalf("shelf decoration missing: %v", err)
+					}
+				}
+				// A subsequent request must reuse the recorded folder, not try to
+				// reserve it again. No LocalPath is supplied by the returning GUI.
+				_, err = consumer.ShelfFetch(t.Context(), contract.ShelfFetchPayload{ServerID: "shelf-lab", RepoID: "parent", ChannelID: "channel", UploadID: "synthetic-upload"})
+				must(err)
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatal("download did not complete")
+	}
 	<-t.Context().Done()
+}
+
+func TestShelfNativeCreateAndFetchAcceptance(t *testing.T) {
+	if os.Getenv("FILEES_TEST_NATIVE_SPARSE") == "" {
+		t.Skip("native helper required")
+	}
+	t.Setenv("FILEES_SHELF_DESKTOP_LAB", t.TempDir())
+	t.Setenv("FILEES_SHELF_AUTOMATED_ACCEPTANCE", "1")
+	TestShelfDesktopAcceptance(t)
 }
 
 type shelfDesktopAuthority struct {

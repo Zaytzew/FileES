@@ -2,8 +2,12 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"filees/internal/gui/platform"
+	"filees/pkg/portablepath"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -63,8 +67,10 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		}
 		destination = picked.Path
 	}
-	if localPath == "" {
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.shelf", "Wybierz folder na przyjęte pliki półki „%s”"), shelfName)})
+	newFolder := localPath == ""
+chooseLocalFolder:
+	if newFolder {
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("shelf.create.location", "Wybierz miejsce na nowy folder półki")})
 		if err != nil {
 			fail(err)
 			return
@@ -72,7 +78,26 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		if picked.Cancelled || picked.Path == "" {
 			return
 		}
-		localPath = picked.Path
+		if c.cfg.Prompter == nil {
+			return
+		}
+		name, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+			Title:   c.uiText("shelf.create.title", "Utwórz lokalny folder półki"),
+			Text:    c.uiText("shelf.create.description", "Podaj nazwę nowego folderu. Istniejące foldery nie zostaną zmienione.") + "\n" + picked.Path,
+			Default: shelfName,
+		})
+		if err != nil {
+			fail(err)
+			return
+		}
+		if name.Cancelled {
+			return
+		}
+		if strings.TrimSpace(name.Value) == "" || portablepath.SegmentProblem(name.Value) != nil {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: c.uiText("shelf.create.title", "Utwórz lokalny folder półki"), Text: c.uiText("shelf.create.invalid", "Podaj samą nazwę folderu, bez ścieżki.")})
+			goto chooseLocalFolder
+		}
+		localPath = filepath.Join(picked.Path, name.Value)
 	}
 	if destination != "" {
 		status, err = c.cfg.Shelf.(ShelfImporter).ShelfImport(ctx, serverID, repoID, channelID, uploadID, localPath, destination)
@@ -80,6 +105,16 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		status, err = downloads.ShelfFetch(ctx, serverID, repoID, channelID, uploadID, localPath, false)
 	}
 	if err != nil {
+		var presentation interface {
+			PresentationError() (string, string, string, string)
+		}
+		if newFolder && errors.As(err, &presentation) {
+			_, _, _, message := presentation.PresentationError()
+			if message == "repo.rename_target_exists" {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: c.uiText("shelf.create.title", "Utwórz lokalny folder półki"), Text: c.uiText("shelf.create.exists", "Ta nazwa jest już zajęta. Wybierz inną nazwę lub miejsce. Niczego nie nadpisano.")})
+				goto chooseLocalFolder
+			}
+		}
 		fail(err)
 		return
 	}

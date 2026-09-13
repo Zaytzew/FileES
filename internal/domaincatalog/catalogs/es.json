@@ -4,6 +4,7 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "system.quiescing": "FileES está preparando un reinicio seguro. Esta acción no se ha iniciado; inténtalo de nuevo en unos instantes.",
     "activation.begin_failed": "No se pudo iniciar la activación",
     "activation.finish_failed": "No se pudo completar la activación",
     "activation.pending_failed": "No se pudo leer la activación pendiente",

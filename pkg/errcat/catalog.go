@@ -205,6 +205,7 @@ var specs = []Spec{
 	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Notice acknowledgement failed"},
 
 	{"SYSTEM-0001", "system.lifecycle_unavailable", SevError, HintNone, nil, "Process lifecycle is not available"},
+	{"SYSTEM-0002", "system.quiescing", SevWarn, HintRetryBackoff, nil, "Daemon is preparing a safe restart; command was not started"},
 
 	{"REPO-0001", "repo.lifecycle_unavailable", SevError, HintRetry, nil, "Repository lifecycle is not available"},
 	{"REPO-2001", "repo.create_forbidden", SevError, HintNone, nil, "Repository creation is forbidden"},

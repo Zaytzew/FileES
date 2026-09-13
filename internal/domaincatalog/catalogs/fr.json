@@ -4,6 +4,7 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "system.quiescing": "FileES prépare un redémarrage sûr. Cette action n’a pas été lancée ; réessayez dans quelques instants.",
     "activation.begin_failed": "Impossible de lancer l’activation",
     "activation.finish_failed": "Impossible de terminer l’activation",
     "activation.pending_failed": "Impossible de lire l’activation en attente",

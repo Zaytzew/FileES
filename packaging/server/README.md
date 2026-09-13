@@ -172,6 +172,16 @@ validation remain pending; successful file installation is not proof that
 upload is ready. Preserve pending payloads during any operator-approved
 migration. Native OpenBSD acceptance is required before release.
 
+For existing managed Public Shares storage migrations, `filees-install
+--check`, `--dry-run` and `--apply` now print a `STORAGE` capacity report before
+payload staging: resolved target paths, filesystem device ID, available bytes,
+combined additional required bytes and reserve. Different paths on one
+filesystem share one budget. An insufficient volume is refused with a hint to
+select a larger `install.public_downloads_dir`. Capacity is checked again
+before directory preparation; neither check reserves space. This is scoped to
+planned storage migrations, not all existing repositories, upload queues or
+the shell bootstrap. A run with no storage migration does not certify capacity.
+
 `public_shares.max_size` limits one authoritative leaf before it can fill the
 private staging filesystem; omission defaults to 1 GiB.
 `max_channels_per_realm` defaults to 128 active/revoked channels, and

@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.create.location": "Choisir où créer le dossier de dépôt",
+  "shelf.create.title": "Créer un dossier de dépôt local",
+  "shelf.create.description": "Saisissez un nouveau nom de dossier. Les dossiers existants ne seront pas modifiés.",
+  "shelf.create.invalid": "Saisissez un nom de dossier, pas un chemin.",
+  "shelf.create.exists": "Ce nom est déjà utilisé. Choisissez un autre nom ou emplacement. Rien n’a été écrasé.",
   "update.unconfirmed": "Le résultat de la mise à jour n’est pas confirmé. L’installation peut être en cours ; vérifiez son état avant de réessayer.",
   "memory.recovery_required": "Synchronisation arrêtée après une erreur de finalisation. Le redémarrage automatique est bloqué. Consultez le journal de diagnostic avant de redémarrer FileES manuellement.",
   "memory.warning": "FileES utilise une quantité inhabituelle de mémoire. La surveillance est active ; votre travail continue.",

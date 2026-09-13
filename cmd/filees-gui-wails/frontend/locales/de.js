@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.create.location": "Speicherort für den neuen Ablageordner wählen",
+  "shelf.create.title": "Lokalen Ablageordner erstellen",
+  "shelf.create.description": "Geben Sie einen neuen Ordnernamen ein. Vorhandene Ordner bleiben unverändert.",
+  "shelf.create.invalid": "Geben Sie einen Ordnernamen ein, keinen Pfad.",
+  "shelf.create.exists": "Dieser Name ist bereits vergeben. Wählen Sie einen anderen Namen oder Speicherort. Nichts wurde überschrieben.",
   "update.unconfirmed": "Das Update-Ergebnis ist unbestätigt. Die Installation läuft möglicherweise noch; vor einem erneuten Versuch den Status prüfen.",
   "memory.recovery_required": "Synchronisierung nach einem Abschlussfehler gestoppt. Automatischer Neustart gesperrt. Prüfen Sie das Diagnoseprotokoll, bevor Sie FileES manuell neu starten.",
   "memory.warning": "FileES verwendet ungewöhnlich viel Speicher. Die Sicherheitsüberwachung ist aktiv; Ihre Arbeit wird fortgesetzt.",

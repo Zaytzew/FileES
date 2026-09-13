@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.create.location": "Choose where to create the shelf folder",
+  "shelf.create.title": "Create a local shelf folder",
+  "shelf.create.description": "Enter a new folder name. Existing folders will not be changed.",
+  "shelf.create.invalid": "Enter a folder name, not a path.",
+  "shelf.create.exists": "That name is already taken. Choose another name or location. Nothing was overwritten.",
   "update.unconfirmed": "The update result is unconfirmed. Installation may still be running; check its status before retrying.",
   "memory.recovery_required": "Synchronization stopped after a finalization error. Automatic restart is blocked. Check the diagnostic log before manually restarting FileES.",
   "memory.warning": "FileES is using unusually high memory. The safety monitor is active; your work continues.",

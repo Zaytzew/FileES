@@ -2,6 +2,7 @@ package ipcserver
 
 import (
 	contract "filees/pkg/contract/v1"
+	"os"
 	"testing"
 )
 
@@ -10,6 +11,7 @@ type shelfLifecycleStub struct {
 	selected contract.ShelfItem
 	repoID   string
 	parent   contract.RepoSummary
+	err      error
 }
 
 func (s *shelfLifecycleStub) BeginShelfImport(serverID, repoID, url, path string, item contract.ShelfItem, parent contract.RepoSummary, destination string) (contract.RepoLifecycleResult, error) {
@@ -47,6 +49,9 @@ func (s *shelfLifecycleStub) InspectShelf(serverID, repoID string) contract.Repo
 	return contract.RepoLifecycleResult{ServerID: serverID, RepoID: repoID}
 }
 func (s *shelfLifecycleStub) BeginShelfFetch(serverID, repoID, url, path string, item contract.ShelfItem) (contract.RepoLifecycleResult, error) {
+	if s.err != nil {
+		return contract.RepoLifecycleResult{}, s.err
+	}
 	s.repoID, s.selected = repoID, item
 	return contract.RepoLifecycleResult{OperationID: "op", FetchID: "fetch", FetchState: "queued"}, nil
 }
@@ -69,6 +74,11 @@ func TestShelfFetchResolvesReceiptAndRequiresReadOnlyPurpose(t *testing.T) {
 	if local.repoID != "upload-1" || local.selected.RepoPath != "rzut.dwg" {
 		t.Fatal("selection did not come from authority")
 	}
+	local.err = os.ErrExist
+	if result := s.dispatch(lifecycleRequest(contract.CmdRepoShelfFetch, p)); result.Error == nil || result.Error.MessageKey != "repo.rename_target_exists" {
+		t.Fatalf("folder collision lost its structured message: %+v", result)
+	}
+	local.err = nil
 	p.UploadID = "forged"
 	if result := s.dispatch(lifecycleRequest(contract.CmdRepoShelfFetch, p)); result.Status == contract.StatusOK {
 		t.Fatal("unknown upload accepted")

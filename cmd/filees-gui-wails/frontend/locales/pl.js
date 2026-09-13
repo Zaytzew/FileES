@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.create.location": "Wybierz miejsce na nowy folder półki",
+  "shelf.create.title": "Utwórz lokalny folder półki",
+  "shelf.create.description": "Podaj nazwę nowego folderu. Istniejące foldery nie zostaną zmienione.",
+  "shelf.create.invalid": "Podaj samą nazwę folderu, bez ścieżki.",
+  "shelf.create.exists": "Ta nazwa jest już zajęta. Wybierz inną nazwę lub miejsce. Niczego nie nadpisano.",
   "update.unconfirmed": "Nie potwierdzono wyniku aktualizacji. Instalacja może nadal trwać; sprawdź stan przed ponowieniem.",
   "memory.recovery_required": "Synchronizacja zatrzymana po błędzie końcowego zapisu. Automatyczny restart zablokowany. Sprawdź dziennik diagnostyczny przed ręcznym ponownym uruchomieniem FileES.",
   "memory.warning": "FileES zużywa nietypowo dużo pamięci. Monitor bezpieczeństwa działa; Twoja praca trwa dalej.",

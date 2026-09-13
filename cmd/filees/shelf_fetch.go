@@ -15,6 +15,7 @@ import (
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localrepo"
+	"filees/pkg/portablepath"
 	"filees/pkg/provisioning"
 	"filees/pkg/talk"
 )
@@ -52,11 +53,25 @@ func (service repositoryLifecycleService) beginShelfFetch(serverID, repoID, repo
 		}
 	}
 	if record.OperationID == "" {
+		if !filepath.IsAbs(localPath) || portablepath.SegmentProblem(filepath.Base(localPath)) != nil {
+			return contract.RepoLifecycleResult{}, errors.New("invalid new shelf folder name")
+		}
+		// First use creates a new named shelf, never adopts an existing directory.
+		if _, err := os.Lstat(localPath); err == nil {
+			return contract.RepoLifecycleResult{}, os.ErrExist
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return contract.RepoLifecycleResult{}, err
+		}
 		check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
 		if err != nil {
 			return contract.RepoLifecycleResult{}, err
 		}
 		var errAttach error
+		// Mkdir (not MkdirAll) is the no-replace reservation. The parent is chosen
+		// by the user; a racing creator is rejected rather than adopted.
+		if err := os.Mkdir(check.CanonicalPath, 0700); err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
 		record, errAttach = service.store.BeginShelfAttach(serverID, repoID, repoURL, check.CanonicalPath)
 		if errAttach != nil {
 			return contract.RepoLifecycleResult{}, errAttach
@@ -94,6 +109,11 @@ func (p *daemonProvisioner) runShelfFetch(ctx context.Context, record localrepo.
 		cleanupShelfStage(fetch)
 	}
 	complete := func() {
+		if iconPath, err := shelfFolderIconPath(); err != nil {
+			talk.With("shelf:"+record.OperationID).Warnf("prepare shelf icon: %v", err)
+		} else if err := markManagedFolder(record.LocalPath, iconPath); err != nil {
+			talk.With("shelf:"+record.OperationID).Warnf("decorate shelf: %v", err)
+		}
 		if _, err := p.local.SetShelfFetchState(record.OperationID, fetch.ID, "complete", nil); err == nil {
 			cleanupShelfStage(fetch)
 		}
@@ -145,11 +165,18 @@ func (p *daemonProvisioner) runShelfFetch(ctx context.Context, record localrepo.
 		return
 	}
 	for _, entry := range entries {
-		if entry.Item == "unversioned" && filepath.Clean(entry.Path) == filepath.Join(record.LocalPath, ".filees") {
+		entryPath := filepath.Clean(entry.Path)
+		if !filepath.IsAbs(entryPath) {
+			entryPath = filepath.Join(record.LocalPath, entryPath)
+		}
+		if entry.Item == "unversioned" && entryPath == filepath.Join(record.LocalPath, "desktop.ini") {
+			continue // Local Explorer decoration is never a shelf upload.
+		}
+		if entry.Item == "unversioned" && entryPath == filepath.Join(record.LocalPath, ".filees") {
 			continue
 		}
 		if entry.Item != "normal" && entry.Item != "none" {
-			fail(errors.New("local shelf changes must be resolved before download"))
+			fail(fmt.Errorf("local shelf changes must be resolved before download: %s (%s)", entry.Path, entry.Item))
 			return
 		}
 	}

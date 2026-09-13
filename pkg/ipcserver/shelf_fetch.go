@@ -2,7 +2,9 @@ package ipcserver
 
 import (
 	"context"
+	"errors"
 	contract "filees/pkg/contract/v1"
+	"os"
 	"time"
 )
 
@@ -97,6 +99,9 @@ func (s *Server) handleShelfFetch(req contract.Request) contract.Response {
 		}
 		if err != nil {
 			s.lg.Warnf("shelf download rejected: %v", err)
+			if errors.Is(err, os.ErrExist) {
+				return contract.ErrResponse(req.RequestID, "REPO-2020", "ERROR", "REQUIRE_ACTION", "repo.rename_target_exists", nil)
+			}
 			return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)
 		}
 		return contract.OKResponse(req.RequestID, result)

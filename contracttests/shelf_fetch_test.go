@@ -8,7 +8,9 @@ import (
 )
 
 func TestShelfDownloadContractCarriesSelectionAndDurableReceiptNotBytes(t *testing.T) {
-	p := contract.ShelfFetchPayload{ServerID: "server", RepoID: "parent", ChannelID: "channel", UploadID: "upload"}
+	// First use sends the complete prospective child path, not its parent disk.
+	// The daemon creates it exclusively; later use reuses its durable record.
+	p := contract.ShelfFetchPayload{ServerID: "server", RepoID: "parent", ChannelID: "channel", UploadID: "upload", LocalPath: "/chosen-place/new-shelf"}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		t.Fatal(err)

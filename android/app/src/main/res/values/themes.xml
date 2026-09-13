@@ -32,6 +32,8 @@
         <item name="actionMenuTextColor">@color/filees_white</item>
         <item name="android:textColorPrimary">@color/filees_text</item>
         <item name="android:textColorSecondary">@color/filees_muted</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
         <item name="materialButtonStyle">@style/Widget.Filees.Button.Filled</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.Filees.Button.OutlinedButton</item>
         <item name="borderlessButtonStyle">@style/Widget.Filees.Button.TextButton</item>
@@ -40,14 +42,20 @@
     <style name="TextAppearance.Filees.Heading" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:textColor">@color/filees_text</item>
         <item name="android:letterSpacing">0.01</item>
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
     </style>
 
     <style name="TextAppearance.Filees.Name" parent="TextAppearance.Material3.BodyLarge">
         <item name="android:textColor">@color/filees_text</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="fontFamily">@font/inter_medium</item>
     </style>
 
     <style name="TextAppearance.Filees.Meta" parent="TextAppearance.Material3.BodySmall">
         <item name="android:textColor">@color/filees_muted</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
     </style>
 
     <style name="TextAppearance.Filees.Eyebrow" parent="TextAppearance.Material3.LabelSmall">
@@ -55,15 +63,21 @@
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.14</item>
         <item name="android:textSize">11sp</item>
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
     </style>
 
     <style name="TextAppearance.Filees.Body" parent="TextAppearance.Material3.BodyMedium">
         <item name="android:textColor">@color/filees_soft</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
     </style>
 
     <style name="TextAppearance.Filees.Button" parent="TextAppearance.Material3.LabelLarge">
         <item name="android:textAllCaps">false</item>
         <item name="android:letterSpacing">0.01</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="fontFamily">@font/inter_medium</item>
     </style>
 
     <style name="Widget.Filees.Button.Filled" parent="Widget.Material3.Button">

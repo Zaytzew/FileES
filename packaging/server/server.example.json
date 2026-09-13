@@ -31,9 +31,9 @@
     "data_erasure_max_days": 90
   },
   "upload": {
-    "intake_root": "/var/tmp/filees-upload-intake",
+    "intake_root": "/var/filees-downloads/intake",
     "trash_root": "/var/filees/repository-operations/upload-reject",
-    "av_command": ["/usr/local/bin/clamdscan", "--no-summary", "--stdout"]
+    "av_command": ["/usr/local/bin/clamdscan", "--stream", "--no-summary", "--stdout"]
   },
   "public_shares": {
     "enabled": false,

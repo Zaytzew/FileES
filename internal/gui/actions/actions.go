@@ -2029,7 +2029,7 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 		if err == nil && status.State != "" {
 			request.TextPrefix = c.shelfStatusText(status.State) + " · " + status.LocalPath
 			if status.Destination != "" && status.State == "complete" {
-				request.TextPrefix = c.uiText("shelf.import.complete", "Plik osadzony w folderze macierzystym") + " · " + status.Destination
+				request.TextPrefix = c.uiText("shelf.import.complete", "Plik umieszczony w folderze macierzystym") + " · " + status.Destination
 			}
 		}
 		if err == nil {

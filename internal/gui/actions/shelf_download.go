@@ -31,7 +31,7 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 	fail := func(err error) {
 		title := c.uiText("feedback.n055", "Nie udało się pobrać pliku")
 		if len(importing) > 0 && importing[0] {
-			title = c.uiText("shelf.import.failed", "Nie udało się osadzić pliku")
+			title = c.uiText("shelf.import.failed", "Nie udało się umieścić pliku")
 		}
 		c.reportActionError(ctx, key, title, err.Error())
 	}
@@ -85,7 +85,7 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 	}
 	runningTitle := c.uiText("shelf.download.running", "Pobieranie z półki trwa")
 	if destination != "" {
-		runningTitle = c.uiText("shelf.import.running", "Pobieranie i osadzanie pliku")
+		runningTitle = c.uiText("shelf.import.running", "Pobieranie i umieszczanie pliku")
 	}
 	c.notify(ctx, platform.Notification{ID: key, Group: key, Title: runningTitle, Body: localPath})
 	operationID, fetchID := status.OperationID, status.FetchID
@@ -112,7 +112,7 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		if status.State == "complete" {
 			title := c.uiText("shelf.download.complete", "Pobrano plik z półki")
 			if destination != "" {
-				title = c.uiText("shelf.import.complete", "Plik osadzony w folderze macierzystym")
+				title = c.uiText("shelf.import.complete", "Plik umieszczony w folderze macierzystym")
 			}
 			body := status.LocalPath
 			if status.Destination != "" {

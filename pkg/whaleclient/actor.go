@@ -18,6 +18,7 @@ import (
 	"filees/internal/durable"
 	"filees/pkg/clientprofile"
 	"filees/pkg/privatefile"
+	"filees/pkg/runtime"
 	whale "filees/pkg/whale/v1"
 
 	"github.com/google/uuid"
@@ -80,6 +81,9 @@ type Exchanger interface {
 }
 
 type Manager struct {
+	// Admission covers asynchronous operations, not the public mutation methods.
+	// Set before Resume/Begin; daemon integration must guard those methods too.
+	Admission  *runtime.Admission
 	Root       string
 	WindowSize int64
 	OnChange   func(Operation)
@@ -691,6 +695,12 @@ func (m *Manager) launch(parent context.Context, operationID string, run func(co
 			delete(m.cancels, operationID)
 			m.mu.Unlock()
 		}()
+		defer cancel()
+		release, err := m.Admission.EnterContext(ctx)
+		if err != nil {
+			return
+		}
+		defer release()
 		run(ctx, operationID)
 	}()
 }

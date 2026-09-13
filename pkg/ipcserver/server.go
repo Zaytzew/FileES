@@ -17,12 +17,14 @@ import (
 	"filees/pkg/activity"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/realmbranding"
+	"filees/pkg/runtime"
 	"filees/pkg/talk"
 )
 
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	operationAdmission   runtime.Admission
 	projectionMu         sync.Mutex
 	dismissedLocalCopies map[string]bool // runtime fence; durable owner is localrepo
 	sockPath             string
@@ -64,6 +66,11 @@ type Server struct {
 	subsMu sync.Mutex
 	subs   map[chan contract.Event]struct{}
 }
+
+// OperationAdmission is the daemon's shared top-level work barrier. Wire all
+// participants before starting them. This accessor does not imply that IPC
+// dispatch or every background writer has already joined the barrier.
+func (s *Server) OperationAdmission() *runtime.Admission { return &s.operationAdmission }
 
 type ActivationService interface {
 	Begin(context.Context, contract.ActivationBeginPayload) (contract.ActivationCommandResult, error)

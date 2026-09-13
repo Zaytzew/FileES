@@ -23,10 +23,12 @@ import (
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
 	"filees/pkg/recoverykit"
+	hostruntime "filees/pkg/runtime"
 	"filees/pkg/talk"
 )
 
 type daemonProvisioner struct {
+	admission        *hostruntime.Admission
 	local            *localrepo.Store
 	provisioning     *provisioning.Store
 	mu               sync.RWMutex
@@ -224,6 +226,11 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 }
 
 func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
+	release, admissionErr := p.admission.EnterContext(ctx)
+	if admissionErr != nil {
+		return
+	} // queued intent stays durable for recovery
+	defer release()
 	record, ok := p.local.Get(operationID)
 	if !ok {
 		talk.With("provisioning").Errorf("local lifecycle record %s is missing", operationID)

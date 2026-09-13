@@ -75,8 +75,11 @@ func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
 type Service struct {
-	Cli     client.Client
-	Tickets interface {
+	// Admission covers publication and poll/update through their durable result.
+	// Configure before Run. Nil retains standalone/test operation.
+	Admission *runtime.Admission
+	Cli       client.Client
+	Tickets   interface {
 		CreateNotice(wc string, clientUUID, title, body string) (string, error)
 	}
 	Rules    Rules
@@ -589,6 +592,11 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 
 // pollOnce checks HEAD revision against local and runs svn update when behind.
 func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
+	release, err := s.Admission.EnterContext(ctx)
+	if err != nil {
+		return
+	}
+	defer release()
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
 	if _, err := s.recoverCommit(ctx, wc); err != nil {
@@ -862,6 +870,11 @@ func (s *Service) tryCommit(ctx context.Context, wc string) error {
 }
 
 func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
+	release, err := s.Admission.EnterContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
 	if !s.workingCopyAvailable(wc) {

@@ -24,7 +24,36 @@ type Admission struct {
 }
 
 type admissionDrain struct {
-	done chan struct{}
+	done    chan struct{}
+	resumed chan struct{}
+}
+
+// EnterContext waits while admission is closed, preserving background work
+// instead of turning temporary restart preparation into a failed operation.
+// A nil barrier is an explicit unguarded adapter, useful outside the daemon.
+func (a *Admission) EnterContext(ctx context.Context) (func(), error) {
+	if a == nil {
+		return func() {}, ctx.Err()
+	}
+	for {
+		a.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			a.mu.Unlock()
+			return nil, err
+		}
+		if a.drain == nil {
+			release := a.enterLocked()
+			a.mu.Unlock()
+			return release, nil
+		}
+		resumed := a.drain.resumed
+		a.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-resumed:
+		}
+	}
 }
 
 // Enter atomically races with Quiesce: work is either counted before the
@@ -35,8 +64,13 @@ func (a *Admission) Enter() (release func(), err error) {
 		a.mu.Unlock()
 		return nil, ErrQuiescing
 	}
-	a.active++
+	release = a.enterLocked()
 	a.mu.Unlock()
+	return release, nil
+}
+
+func (a *Admission) enterLocked() func() {
+	a.active++
 	var once sync.Once
 	return func() {
 		once.Do(func() {
@@ -47,7 +81,7 @@ func (a *Admission) Enter() (release func(), err error) {
 				close(a.drain.done)
 			}
 		})
-	}, nil
+	}
 }
 
 // Quiesce closes admission before waiting. Success holds it closed until the
@@ -63,7 +97,7 @@ func (a *Admission) Quiesce(ctx context.Context) (resume func(), err error) {
 		a.mu.Unlock()
 		return nil, ErrQuiescing
 	}
-	drain := &admissionDrain{done: make(chan struct{})}
+	drain := &admissionDrain{done: make(chan struct{}), resumed: make(chan struct{})}
 	a.drain = drain
 	if a.active == 0 {
 		close(drain.done)
@@ -76,6 +110,7 @@ func (a *Admission) Quiesce(ctx context.Context) (resume func(), err error) {
 			defer a.mu.Unlock()
 			if a.drain == drain {
 				a.drain = nil
+				close(drain.resumed)
 			}
 		})
 	}

@@ -83,6 +83,21 @@ func TestPagesDeclareTheirSourceRevision(t *testing.T) {
 	}
 }
 
+// TestIndexMaturityLegendsStayStructurallyEquivalent protects the shared
+// four-column layout. A plain paragraph in either edition becomes the first
+// grid cell and collapses the entire legend into one narrow column.
+func TestIndexMaturityLegendsStayStructurallyEquivalent(t *testing.T) {
+	for _, page := range []string{"assets/en/index.html", "assets/pl/index.html"} {
+		raw, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Count(string(raw), `class="legend-item"`); got != 4 {
+			t.Errorf("%s: maturity legend has %d items, want 4", page, got)
+		}
+	}
+}
+
 // TestKeywordSubstitutionIsEnabled catches the failure that would make the
 // meta useless without making it look broken: the property missing, so the
 // page ships the literal text $Rev$ instead of a number.

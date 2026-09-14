@@ -334,14 +334,15 @@
 <h3>Module map</h3>
 <div class="table-wrap"><table class="field-table">
 <tr><th>Area</th><th>Modules</th><th>Responsibility</th></tr>
-<tr><td>Desktop presentation</td><td><code>cmd/filees-gui</code>, <code>internal/gui/*</code></td><td>View model, actions, tray, native dialogs and notifications; no SVN or engine ownership.</td></tr>
+<tr><td>Desktop presentation</td><td><code>cmd/filees-gui-wails</code>, <code>internal/gui/*</code></td><td>Wails window and tray, view model, actions, native dialogs, notifications and the five-language presentation catalogue; no SVN or engine ownership.</td></tr>
 <tr><td>Local boundary</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Capability-gated GUI/CLI to daemon protocol over a local Unix-domain socket (AF_UNIX, including Windows).</td></tr>
 <tr><td>Client lifecycle</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projection, durable attachment state, create/attach/import operations and dynamic repository runtimes.</td></tr>
-<tr><td>Repository engine</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Scanning, update/publish, edit leases and the only SVN CLI boundary.</td></tr>
+<tr><td>Repository engine</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Scanning, update/publish, edit leases and the only Subversion boundary: the <code>svn</code> CLI, or on Windows the native <code>filees-svn</code> helper.</td></tr>
 <tr><td>Error vocabulary and releases</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Shared code/message catalogue, diagnostic classification, and a release marker in <code>svn:log</code> with a local inbox.</td></tr>
 <tr><td>Server authority</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Authenticated tickets, canonical repository/grant/policy records and forced-command workers. There is no resident FileES server daemon.</td></tr>
 <tr><td>Activation and service view</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Installation identity, authorised realm join and client-specific service-repository projection.</td></tr>
 <tr><td>Other trust boundaries</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Mobile access: read the share, write only under <code>mobile-uploads/</code> (a single upload with different content at the same path is parked as a conflict, while an ingested folder overwrites), public read distribution separated from desktop write credentials, and the tiny setuid helper that repairs service-WC ownership only.</td></tr>
+<tr><td>Upload shelves</td><td><code>public-shares/web</code>, <code>public-shares/channel</code>, <code>internal/uploadworker</code>, <code>pkg/ipcserver</code>, <code>cmd/filees</code></td><td>Closed upload page that writes only into the intake queue; the <code>upload-reap</code> worker that scans and commits into the shelf repository or the reject tree; on the desktop a read-only, on-demand shelf listing and sparse fetch, and placement into the parent working copy without overwrite. Files move one way only: from the contributor over HTTP onto the shelf, and from the shelf to the owner on request.</td></tr>
 <tr><td>Release/install</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Signed desktop updates, manifest-driven server installation and release envelopes.</td></tr>
 </table></div>
 <p>For each configured repository the daemon runs an independent pipeline:</p>
@@ -607,7 +608,7 @@
 <nav class="page-nav"><a href="administration.html">← User: Administration</a><a href="install.html">Install →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

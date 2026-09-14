@@ -253,7 +253,7 @@ svnserve -t
 filees control-v1</code></pre>
 </article>
 <article class="cli-tool" id="filees-worker">
-<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<span class="cli-kind">Wymuszone polecenie oraz dwa czasowniki dla crona, które planujesz sam</span>
 <h2>filees-worker(8)</h2>
 <p class="cli-nd">jedna uwierzytelniona akcja serwera i wyjście</p>
 <h3>Rola</h3>
@@ -261,13 +261,29 @@ filees control-v1</code></pre>
 <p>To jedyny proces, który zmienia kanoniczne rekordy repozytorium usługi, repozytoria danych, uprawnienia, politykę edycji i stan kanałów udziałów publicznych. Publikuje przez zatwierdzenie Subversion ograniczony do ścieżki, pod współdzieloną blokadą service-WC. Niezwersjonowane pozostałości po zabitej starszej programie są uzgadniane przed kolejnym skanem.</p>
 <p>Nie uruchamiaj filees-worker jako root wobec kopii roboczej usługi. Root może obejść tryb katalogu 0700, a potem zostawia w.svn obiekty wewnętrzne należące do użytkownika root.</p>
 <h3>Wywołanie</h3>
-<pre><code>filees-worker</code></pre>
+<pre><code>filees-worker [deploy]
+filees-worker repository-control client-id
+filees-worker whale-v1
+filees-worker upload-reap [-config path]
+filees-worker passport-reap [-config path] [--check]
+filees-worker upload-seed-reject -alias realm-alias
+filees-worker mobile-onboard
+filees-worker mobile-proof operation-id client-id
+filees-worker mobile-finish operation-id client-id</code></pre>
 <h3>Flagi i czasowniki</h3>
-<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<div class="table-wrap"><table class="field-table"><tr><th>Czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>deploy</code></td><td>Domyślny, także bez czasownika: czyta sesję tunelu ze standardowego wejścia i wykonuje bootstrap wdrożenia pulpitu lub serwera.</td></tr>
+<tr><td><code>repository-control</code></td><td>Czyta jedno podpisane zlecenie control/v1 dla <code>client-id</code> i zmienia rekordy kanoniczne, repozytoria danych, uprawnienia, politykę edycji albo stan kanałów udziałów publicznych.</td></tr>
+<tr><td><code>whale-v1</code></td><td>Obsługuje jedno ramkowane żądanie Whale: okno PUT, stan albo zatwierdzenie.</td></tr>
+<tr><td><code>upload-reap</code></td><td>Zadanie crona operatora: przejmuje gotowe zadania przyjęcia, uruchamia <code>upload.av_command</code> i zatwierdza czysty plik do repozytorium półki albo kopiuje odrzucony do drzewa odrzutów. Uruchamiaj jako <code>_filees-state</code>, nigdy jako root.</td></tr>
+<tr><td><code>passport-reap</code></td><td>Jeden ograniczony przebieg sprzątania zarejestrowanych paszportów edycji, jako <code>_filees-state</code>. <code>--check</code> kończy się błędem przy brakującym, trwającym, nieudanym, uszkodzonym albo przeterminowanym stanie konserwacji.</td></tr>
+<tr><td><code>upload-seed-reject</code></td><td>Kładzie jeden nieszkodliwy odrzut EICAR dla <code>realm-alias</code>, żeby właściciel zobaczył widok kwarantanny bez prawdziwej zainfekowanej przesyłki.</td></tr>
+<tr><td><code>mobile-onboard</code>, <code>mobile-proof</code>, <code>mobile-finish</code></td><td>Kroki aktywacji mobilnej, uruchamiane przez <code>filees-entry</code>(8) i <code>filees-mobile-v1</code>(8).</td></tr>
+</table></div>
 <h3>Przykłady</h3>
-<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
-<pre><code># exec’d once per authenticated ticket; do not run as root
-filees-worker</code></pre>
+<p>Crontab zadania przyjęcia dla <code>_filees-state</code>; żaden instalator go nie zakłada:</p>
+<pre><code>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
+<div class="note">Strona mandoc mówi, że <code>clamdscan</code> nie otworzy pliku, jeśli <code>_clamav</code> nie może czytać katalogu zadania. Z <code>--stream</code>, jak w przykładowej konfiguracji, <code>clamdscan</code> czyta plik jako użytkownik zadania przyjęcia i wysyła bajty do <code>clamd</code>, więc dodatkowe członkostwo w grupie nie jest potrzebne (<a href="install.html#ch3-upload">§3.7</a>).</div>
 </article>
 <article class="cli-tool" id="filees-service-wc-corrector">
 <span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>

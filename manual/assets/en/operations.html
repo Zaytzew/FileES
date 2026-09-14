@@ -254,7 +254,7 @@ done</code></pre>
 <tr><td><code>.filees/logs/errors.jsonl</code></td><td>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</td></tr>
 <tr><td><code>filees status</code></td><td>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</td></tr>
 <tr><td><code>filees log N</code></td><td>Last N error log entries, newest first</td></tr>
-<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Combined newest-first activity and error snapshot; up to 12 aggregated rows in the tray and the full available snapshot in a native window</td></tr>
+<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Combined newest-first activity and error snapshot, grouped by repository revision or stage; the daemon keeps 20 groups by default and IPC returns at most 100. Each path keeps only its latest state, so this is not a commit history. The full view opens in the Wails journal window.</td></tr>
 <tr><td><code>/var/filees/onboarding/operations/</code></td><td>Operation bundle files; inspect state field with <code>jq</code></td></tr>
 <tr><td><code>/var/filees/onboarding/audit/</code></td><td>Timestamped audit events</td></tr>
 <tr><td><code>/var/filees/activation/records/</code></td><td>Staged, active, revoking, revoked and expired activation records</td></tr>
@@ -660,7 +660,7 @@ doas -u _filees-state filees-mail send</code></pre>
 <nav class="page-nav"><a href="install.html">← Install</a><a href="security.html">Security →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

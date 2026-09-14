@@ -56,13 +56,13 @@ func TestActivatorUsesInvitationAndOneStateRootForEveryPhase(t *testing.T) {
 	if client.begin.StateRoot != root || client.begin.KnownHostsPath != wantHosts || client.begin.Invitation != wire {
 		t.Fatalf("begin payload = %+v", client.begin)
 	}
-	if err := activator.Finish(t.Context(), target, []byte("123456")); err != nil {
+	if _, err := activator.Finish(t.Context(), target, []byte("123456")); err != nil {
 		t.Fatal(err)
 	}
 	if client.finish.KnownHostsPath != wantHosts || string(client.finish.OTP) != "123456" {
 		t.Fatalf("finish payload = %+v", client.finish)
 	}
-	if err := activator.Resume(t.Context(), target); err != nil || client.resume.KnownHostsPath != wantHosts {
+	if _, err := activator.Resume(t.Context(), target); err != nil || client.resume.KnownHostsPath != wantHosts {
 		t.Fatalf("resume payload = %+v err=%v", client.resume, err)
 	}
 	pending, err := activator.Pending(t.Context())

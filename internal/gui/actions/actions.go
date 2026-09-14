@@ -69,8 +69,8 @@ type RealmAliasManager interface {
 type Activator interface {
 	Pending(ctx context.Context) ([]ActivationTarget, error)
 	Begin(ctx context.Context, invitation string) (ActivationTarget, error)
-	Finish(ctx context.Context, target ActivationTarget, otp []byte) error
-	Resume(ctx context.Context, target ActivationTarget) error
+	Finish(ctx context.Context, target ActivationTarget, otp []byte) (ActivationResult, error)
+	Resume(ctx context.Context, target ActivationTarget) (ActivationResult, error)
 }
 
 // ActivationTarget is derived from a validated invitation, never typed as a
@@ -78,6 +78,11 @@ type Activator interface {
 type ActivationTarget struct {
 	ServerID string
 	Address  string
+}
+
+type ActivationResult struct {
+	RealmID    string
+	RealmAlias string
 }
 
 type RepositoryCreator interface {
@@ -3316,15 +3321,18 @@ func (c *Controller) startActivation(ctx context.Context) {
 			if !resume {
 				continue
 			}
-			if err := c.cfg.Activator.Resume(ctx, target); err != nil {
+			result, err := c.cfg.Activator.Resume(ctx, target)
+			if err != nil {
 				// A reconnect succeeds when the OTP was already consumed. If the
 				// previous GUI stopped earlier, the same durable attempt still
 				// needs its OTP and can finish without importing the invitation.
-				if !c.finishActivationWithOTP(ctx, target) {
+				var ok bool
+				result, ok = c.finishActivationWithOTP(ctx, target)
+				if !ok {
 					return
 				}
 			}
-			c.activationComplete(ctx, target)
+			c.activationComplete(ctx, target, result)
 			return
 		}
 		invitation, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.invitation", Title: "Aktywacja FileES", Text: "Wklej zaproszenie FileES otrzymane e-mailem:", Placeholder: "filees-invite:v1:…", Secret: true})
@@ -3337,29 +3345,39 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		if !c.finishActivationWithOTP(ctx, target) {
+		result, ok := c.finishActivationWithOTP(ctx, target)
+		if !ok {
 			return
 		}
-		c.activationComplete(ctx, target)
+		c.activationComplete(ctx, target, result)
 	}()
 }
 
-func (c *Controller) finishActivationWithOTP(ctx context.Context, target ActivationTarget) bool {
+func (c *Controller) finishActivationWithOTP(ctx context.Context, target ActivationTarget) (ActivationResult, bool) {
 	otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.activationOTP", Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
 	if err != nil || otp.Cancelled || otp.Value == "" {
 		c.activationFailure(ctx, err)
-		return false
+		return ActivationResult{}, false
 	}
 	secret := []byte(otp.Value)
 	defer clear(secret)
-	if err := c.cfg.Activator.Finish(ctx, target, secret); err != nil {
+	result, err := c.cfg.Activator.Finish(ctx, target, secret)
+	if err != nil {
 		c.activationFailure(ctx, err)
-		return false
+		return ActivationResult{}, false
 	}
-	return true
+	return result, true
 }
 
-func (c *Controller) activationComplete(ctx context.Context, target ActivationTarget) {
+func (c *Controller) activationComplete(ctx context.Context, target ActivationTarget, result ActivationResult) {
+	if strings.TrimSpace(result.RealmAlias) != "" {
+		if c.cfg.Prompter != nil {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "result.joinedRealm", PresentationArgs: map[string]string{"realm": result.RealmAlias}, Title: "Komputer dołączony do strefy", Text: "Ten komputer został przypisany do strefy „" + result.RealmAlias + "”."})
+		}
+		c.offerLocalPinSetup(ctx)
+		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: c.uiText("feedback.n092", "Klient FileES aktywowany na serwerze"), Body: target.Address + "\n" + result.RealmAlias, Urgency: platform.UrgencyNormal})
+		return
+	}
 	aliasPending := c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID)
 	if aliasPending {
 		// Activation itself has already completed.  An alias is required

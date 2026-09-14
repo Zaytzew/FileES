@@ -87,9 +87,9 @@ func (activator *Activator) Begin(parent context.Context, wire string) (actions.
 	return actions.ActivationTarget{ServerID: invitation.ServerID, Address: invitation.ServerAddress}, nil
 }
 
-func (activator *Activator) Finish(parent context.Context, target actions.ActivationTarget, otp []byte) error {
+func (activator *Activator) Finish(parent context.Context, target actions.ActivationTarget, otp []byte) (actions.ActivationResult, error) {
 	if err := activator.validate(target.ServerID, target.Address); err != nil {
-		return err
+		return actions.ActivationResult{}, err
 	}
 	// The client deadline has to cover the same work the daemon is doing, and
 	// that work reaches a remote server, deploys a worker and checks out a
@@ -101,7 +101,7 @@ func (activator *Activator) Finish(parent context.Context, target actions.Activa
 	defer cancel()
 	secret := append(contract.Secret(nil), otp...)
 	defer clear(secret)
-	_, err := activator.client.ActivationFinish(ctx, contract.ActivationFinishPayload{
+	result, err := activator.client.ActivationFinish(ctx, contract.ActivationFinishPayload{
 		ServerID: target.ServerID, ServerAddress: target.Address,
 		KnownHostsPath: activator.knownHostsPath(target.ServerID), StateRoot: activator.root, OTP: secret,
 	})
@@ -112,7 +112,13 @@ func (activator *Activator) Finish(parent context.Context, target actions.Activa
 	// activation reached any log from here, so there was no way afterwards to
 	// tell which of the two had spoken.
 	activator.reportFailure("finish", err)
-	return err
+	if err != nil {
+		return actions.ActivationResult{}, err
+	}
+	if result == nil {
+		return actions.ActivationResult{}, errors.New("daemon returned an empty activation result")
+	}
+	return actions.ActivationResult{RealmID: result.RealmID, RealmAlias: result.RealmAlias}, nil
 }
 
 // reportFailure records the one failure the daemon cannot: that the call to it
@@ -132,9 +138,9 @@ func (activator *Activator) reportFailure(step string, err error) {
 	activator.report(step, err)
 }
 
-func (activator *Activator) Resume(parent context.Context, target actions.ActivationTarget) error {
+func (activator *Activator) Resume(parent context.Context, target actions.ActivationTarget) (actions.ActivationResult, error) {
 	if err := activator.validate(target.ServerID, target.Address); err != nil {
-		return err
+		return actions.ActivationResult{}, err
 	}
 	// The client deadline has to cover the same work the daemon is doing, and
 	// that work reaches a remote server, deploys a worker and checks out a
@@ -144,11 +150,17 @@ func (activator *Activator) Resume(parent context.Context, target actions.Activa
 	// r695: a budget set from hope rather than from the operation.
 	ctx, cancel := context.WithTimeout(parent, activationStepDeadline)
 	defer cancel()
-	_, err := activator.client.ActivationResume(ctx, contract.ActivationResumePayload{
+	result, err := activator.client.ActivationResume(ctx, contract.ActivationResumePayload{
 		ServerID: target.ServerID, ServerAddress: target.Address,
 		KnownHostsPath: activator.knownHostsPath(target.ServerID), StateRoot: activator.root,
 	})
-	return err
+	if err != nil {
+		return actions.ActivationResult{}, err
+	}
+	if result == nil {
+		return actions.ActivationResult{}, errors.New("daemon returned an empty activation result")
+	}
+	return actions.ActivationResult{RealmID: result.RealmID, RealmAlias: result.RealmAlias}, nil
 }
 
 // knownHostsPath goes through clientprofile.ServerDir so the pinned host key

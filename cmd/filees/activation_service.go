@@ -93,8 +93,11 @@ func (service daemonActivationService) finalize(ctx context.Context, payload con
 		talk.With("activation:"+passport.ServerID).Warnf("client profile pending: %v", profileErr)
 		state = "active_profile_pending"
 	}
+	status := contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort, SessionTimeoutMin: int(clientProfile.SVNTimeout() / time.Minute)}
+	if profileErr == nil {
+		status = withProjectedRealm(status, clientProfile)
+	}
 	if service.onActive != nil {
-		status := contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort, SessionTimeoutMin: int(clientProfile.SVNTimeout() / time.Minute)}
 		// The realm and its grants come from the server's projection, and by
 		// now the checkout above has fetched it - so read it rather than
 		// registering a server the interface cannot act on.
@@ -106,9 +109,9 @@ func (service daemonActivationService) finalize(ctx context.Context, payload con
 		// projection read once and unchanged never fires again, so the blank
 		// registration survived until the daemon happened to restart. Same
 		// shape as the freshness defect fixed in r733, one field over.
-		service.onActive(withProjectedRealm(status, clientProfile))
+		service.onActive(status)
 	}
-	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state}, nil
+	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state, RealmID: status.RealmID, RealmAlias: status.RealmAlias}, nil
 }
 
 func prepareActivatedClientProfile(ctx context.Context, payload contract.ActivationFinishPayload) (clientprofile.Profile, error) {

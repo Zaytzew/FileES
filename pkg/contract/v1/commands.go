@@ -575,8 +575,10 @@ func (secret *Secret) UnmarshalJSON(data []byte) error {
 }
 
 type ActivationCommandResult struct {
-	ServerID string `json:"server_id"`
-	State    string `json:"state"`
+	ServerID   string `json:"server_id"`
+	State      string `json:"state"`
+	RealmID    string `json:"realm_id,omitempty"`
+	RealmAlias string `json:"realm_alias,omitempty"`
 }
 
 // MobilePairingBeginPayload is the payload for CmdMobilePairingBegin.

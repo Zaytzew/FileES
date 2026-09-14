@@ -78,3 +78,49 @@ func TestDistributionUpdateDefaultsAndExplicitOptOut(t *testing.T) {
 		t.Fatal("half-configured distribution defaults were accepted")
 	}
 }
+
+func TestStoreUpdateModeNeverConfiguresFileReplacement(t *testing.T) {
+	previous := injectedClientUpdateMode
+	defer func() { injectedClientUpdateMode = previous }()
+	injectedClientUpdateMode = "store"
+	// Even an explicit legacy update configuration must not reach the
+	// DirectoryInstaller in a Store build.
+	if err := configureClientUpdate(nil, &config.UpdateConfig{Platform: "windows-amd64"}, true, "0.1.16"); err != nil {
+		t.Fatalf("Store mode must ignore legacy file replacement: %v", err)
+	}
+	injectedClientUpdateMode = "typo"
+	if err := configureClientUpdate(nil, nil, false, "0.1.16"); err == nil || !strings.Contains(err.Error(), "unknown Windows client update mode") {
+		t.Fatalf("unknown distribution mode was accepted: %v", err)
+	}
+}
+
+func TestWindowsPackageIdentityProbe(t *testing.T) {
+	packaged, err := windowsPackageIdentityPresent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packaged {
+		t.Skip("test executable was installed as a package")
+	}
+}
+
+func TestWindowsPackageIdentityAlwaysGuardsTheFileUpdater(t *testing.T) {
+	for _, test := range []struct {
+		packaged bool
+		mode     string
+		allowed  bool
+		fails    bool
+	}{
+		{false, "", true, false},
+		{false, "store", false, false},
+		{true, "store", false, false},
+		{true, "", false, true},
+		{true, "typo", false, true},
+		{false, "typo", false, true},
+	} {
+		allowed, err := windowsClientSelfUpdateAllowed(test.packaged, test.mode)
+		if allowed != test.allowed || (err != nil) != test.fails {
+			t.Errorf("packaged=%t mode=%q: allowed=%t err=%v", test.packaged, test.mode, allowed, err)
+		}
+	}
+}

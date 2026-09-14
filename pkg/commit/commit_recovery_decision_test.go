@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"filees/pkg/activity"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,5 +85,82 @@ func TestCompletedDirectoryMoveIntentAcceptsDescendantRenameSources(t *testing.T
 	got, err := s.readIntent(wc)
 	if err != nil || got == nil || got.Revision != 44 {
 		t.Fatalf("completed move intent rejected: intent=%+v err=%v", got, err)
+	}
+}
+
+func TestConfirmedDirectoryDeletionClosesPendingActivity(t *testing.T) {
+	s, _, journal, wc := transactionFixture(t)
+	if err := journal.Record(activity.Entry{RepoID: s.repoID, Path: "gone", Kind: activity.Deleted, Stage: activity.Pending}); err != nil {
+		t.Fatal(err)
+	}
+	in := &commitIntent{
+		Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc,
+		Phase: "confirmed", FirstRevision: 46, Revision: 46, Paths: []string{"gone"},
+		Items: []intentItem{{Rel: "gone", Op: watcher.Deleted, IsDir: true}},
+	}
+	if err := s.finishIntent(t.Context(), wc, in); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, entry := range journal.List() {
+		if entry.Path == "gone" {
+			found = true
+			if entry.Stage != activity.Published || entry.Revision != 46 {
+				t.Fatalf("directory activity not terminal: %+v", entry)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("directory activity disappeared")
+	}
+}
+
+func TestDoneIntentRepairsLegacyPendingDirectoryActivity(t *testing.T) {
+	s, _, journal, wc := transactionFixture(t)
+	if err := journal.Record(activity.Entry{RepoID: s.repoID, Path: "gone", Kind: activity.Deleted, Stage: activity.Pending}); err != nil {
+		t.Fatal(err)
+	}
+	in := &commitIntent{
+		Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc,
+		Phase: "done", FirstRevision: 46, Revision: 46, Paths: []string{"gone"},
+		Items: []intentItem{{Rel: "gone", Op: watcher.Deleted, IsDir: true}},
+	}
+	if err := s.writeIntent(wc, in); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := s.recoverCommit(t.Context(), wc); err != nil || found {
+		t.Fatalf("done recovery: found=%v err=%v", found, err)
+	}
+	for _, entry := range journal.List() {
+		if entry.Path == "gone" && entry.Stage == activity.Published && entry.Revision == 46 {
+			return
+		}
+	}
+	t.Fatal("legacy pending directory activity was not repaired")
+}
+
+func TestOrphanPendingActivityReconcilesOnlyCleanUnstagedPaths(t *testing.T) {
+	s, client, journal, wc := transactionFixture(t)
+	if err := os.Mkdir(filepath.Join(wc, "clean-dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client.statuses["clean-dir"] = "normal"
+	delete(s.staging, "a.txt")
+	for _, rel := range []string{"clean-dir", "gone-dir"} {
+		if err := journal.Record(activity.Entry{RepoID: s.repoID, Path: rel, Kind: activity.Deleted, Stage: activity.Pending}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.staging["still-staged"] = &stageItem{Rel: "still-staged", Op: watcher.Deleted}
+	if err := journal.Record(activity.Entry{RepoID: s.repoID, Path: "still-staged", Kind: activity.Deleted, Stage: activity.Pending}); err != nil {
+		t.Fatal(err)
+	}
+	s.repairOrphanPendingActivity(t.Context(), wc)
+	states := map[string]activity.Stage{}
+	for _, entry := range journal.List() {
+		states[entry.Path] = entry.Stage
+	}
+	if states["clean-dir"] != activity.Reconciled || states["gone-dir"] != activity.Reconciled || states["still-staged"] != activity.Pending {
+		t.Fatalf("activity stages = %#v", states)
 	}
 }

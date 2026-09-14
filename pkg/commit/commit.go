@@ -147,13 +147,14 @@ type Service struct {
 	wc                  string // set from Run(); local shout inbox / last_seen
 	mu                  sync.Mutex
 	unportableWake      chan struct{}
-	wcOpMu              sync.Mutex            // serialize publication, poll/update and event merging
-	cacheSaveMu         sync.Mutex            // serialize cache snapshots and their durable replacement
-	staging             map[string]*stageItem // rel path -> info
-	cachePath           string                // .filees/commit_cache/cache.json
-	intentPlan          *intentPlanState      // guarded by wcOpMu; unaccepted plans die on restart
-	intentReceipts      []intentReceipt       // guarded by mu; atomically stored with staging
-	intentDiagnosticKey string                // guarded by wcOpMu; diagnostics only
+	wcOpMu              sync.Mutex               // serialize publication, poll/update and event merging
+	cacheSaveMu         sync.Mutex               // serialize cache snapshots and their durable replacement
+	staging             map[string]*stageItem    // rel path -> info
+	cachePath           string                   // .filees/commit_cache/cache.json
+	intentPlan          *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
+	commitRecoveryPlan  *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
+	intentReceipts      []intentReceipt          // guarded by mu; atomically stored with staging
+	intentDiagnosticKey string                   // guarded by wcOpMu; diagnostics only
 	intentDiagnosticAt  time.Time
 	receivedDeletes     map[string]bool // successful update removals, guarded by wcOpMu
 	lastShout           time.Time
@@ -1248,7 +1249,8 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// of them, and dropping them here would silently stop FileES from ever
 	// publishing a removal.
 	commitPaths = commitPaths[:0]
-	commitPaths = append(commitPaths, publishable(wc, addPaths)...)
+	publishableAdds, addAncestors := publishableAddsAndParents(wc, addPaths)
+	commitPaths = append(commitPaths, publishableAdds...)
 	commitPaths = append(commitPaths, publishable(wc, modifiedPaths)...)
 	commitPaths = append(commitPaths, delPaths...)
 	// Renames get the same question, asked the right way round. The source is
@@ -1268,19 +1270,21 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// actually on disk, and a genuine disappearance becomes a deletion once
 	// DeletedDebounce is satisfied. Committing a half-rename would invent a
 	// history nobody performed.
+	publishableRenames, renameAncestors := publishableRenamesAndParents(wc, renamedItems)
+	renamedItems = publishableRenames
 	for _, it := range renamedItems {
-		if len(existingPaths(wc, []string{it.Rel})) == 0 {
-			continue
-		}
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)
 	}
 	// svn add --parents schedules missing ancestors, but svn commit does not
 	// automatically include those scheduled directories when only a child is
 	// named. Close every added destination over its parents so a file-limited
 	// batch is still a valid repository transaction.
-	for _, p := range append(append([]string{}, addPaths...), renameDestinations(renamedItems)...) {
-		commitPaths = append(commitPaths, parentPaths(p)...)
-	}
+	// Expand ancestry only for destinations that survived the final existence
+	// check. Using the stale pre-filter add list can manufacture a directory-only
+	// transaction after a file is moved/deleted during debounce: SVN then makes
+	// no revision and durable receipt recovery holds forever waiting for it.
+	commitPaths = append(commitPaths, addAncestors...)
+	commitPaths = append(commitPaths, renameAncestors...)
 	commitPaths = dedup(commitPaths)
 	// --- KONIEC FILTRA ---
 
@@ -1692,6 +1696,28 @@ func publishable(wc string, paths []string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+func publishableAddsAndParents(wc string, paths []string) ([]string, []string) {
+	adds := publishable(wc, paths)
+	var parents []string
+	for _, path := range adds {
+		parents = append(parents, parentPaths(path)...)
+	}
+	return adds, dedup(parents)
+}
+
+func publishableRenamesAndParents(wc string, items []*stageItem) ([]*stageItem, []string) {
+	kept := make([]*stageItem, 0, len(items))
+	var parents []string
+	for _, item := range items {
+		if len(existingPaths(wc, []string{item.Rel})) == 0 {
+			continue
+		}
+		kept = append(kept, item)
+		parents = append(parents, parentPaths(item.Rel)...)
+	}
+	return kept, dedup(parents)
 }
 
 // existingPaths keeps the paths still present on disk, whatever their kind.

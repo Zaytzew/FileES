@@ -167,6 +167,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleRepoPublish(req)
 	case contract.CmdRepoIntentPlan, contract.CmdRepoIntentApply:
 		return s.handleRepoIntent(req)
+	case contract.CmdRepoCommitRecoveryPlan, contract.CmdRepoCommitRecoveryApply:
+		return s.handleRepoCommitRecovery(req)
 	case contract.CmdNoticeList:
 		return s.handleNoticeList(req)
 	case contract.CmdNoticeAck:

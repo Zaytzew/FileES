@@ -61,17 +61,20 @@ type RepoState struct {
 	passportIssues     []contract.PassportIssue
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
-	lockFn               func(ctx context.Context, paths []string) (string, error)
-	unlockFn             func(ctx context.Context, paths []string) (string, error)
-	reservationListFn    func(ctx context.Context) (ReservationSnapshot, error)
-	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
-	recoveryStatsFn      func() contract.RecoveryStats
-	workingCopySizeFn    func() (int64, bool)
-	publishFn            func(ctx context.Context, comment string) (int64, error)
-	intentPlanFn         func(context.Context) (*contract.IntentPlan, error)
-	intentApplyFn        func(context.Context, string, string) (*contract.IntentApplyResult, error)
-	noticeListFn         func() ([]contract.Notice, error)
-	noticeAckFn          func(id string) error
+	lockFn                   func(ctx context.Context, paths []string) (string, error)
+	unlockFn                 func(ctx context.Context, paths []string) (string, error)
+	reservationListFn        func(ctx context.Context) (ReservationSnapshot, error)
+	reservationReleaseFn     func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
+	recoveryStatsFn          func() contract.RecoveryStats
+	workingCopySizeFn        func() (int64, bool)
+	publishFn                func(ctx context.Context, comment string) (int64, error)
+	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
+	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)
+	commitRecoveryRequiredFn func() bool
+	commitRecoveryPlanFn     func(context.Context) (*contract.CommitRecoveryPlan, error)
+	commitRecoveryApplyFn    func(context.Context, string, string) (*contract.CommitRecoveryApplyResult, error)
+	noticeListFn             func() ([]contract.Notice, error)
+	noticeAckFn              func(id string) error
 }
 
 func (rs *RepoState) ServerID() string {
@@ -565,12 +568,17 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	}
 	wc := rs.localPath
 	recoveryStatsFn := rs.recoveryStatsFn
+	commitRecoveryRequiredFn := rs.commitRecoveryRequiredFn
 	workingCopySizeFn := rs.workingCopySizeFn
 	rs.mu.RUnlock()
 
 	var recovery contract.RecoveryStats
 	if recoveryStatsFn != nil {
 		recovery = recoveryStatsFn()
+	}
+	commitRecoveryRequired := false
+	if commitRecoveryRequiredFn != nil {
+		commitRecoveryRequired = commitRecoveryRequiredFn()
 	}
 	workingCopyBytes, workingCopySizeKnown := int64(0), false
 	if workingCopySizeFn != nil {
@@ -588,29 +596,30 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	}
 
 	snap := contract.RepoStatus{
-		PassportIssues:       passportIssues,
-		RepoID:               rs.id,
-		ServerID:             rs.serverID,
-		DisplayName:          displayName,
-		Attached:             attached,
-		Access:               access,
-		OwnerRealmID:         ownerRealmID,
-		AttachmentPolicy:     attachmentPolicy,
-		EditingPolicy:        editingPolicy,
-		State:                state,
-		Connectivity:         conn,
-		LocalRevision:        localRev,
-		HeadRevision:         headRev,
-		WorkingCopyBytes:     workingCopyBytes,
-		WorkingCopySizeKnown: workingCopySizeKnown,
-		Pending:              pending,
-		Conflicts:            conflicts,
-		UnportableNames:      unportable,
-		CurrentOperation:     currentOp,
-		Cycle:                cycle,
-		Recovery:             recovery,
-		Purpose:              purpose,
-		ParentRepoID:         parentRepoID,
+		PassportIssues:         passportIssues,
+		RepoID:                 rs.id,
+		ServerID:               rs.serverID,
+		DisplayName:            displayName,
+		Attached:               attached,
+		Access:                 access,
+		OwnerRealmID:           ownerRealmID,
+		AttachmentPolicy:       attachmentPolicy,
+		EditingPolicy:          editingPolicy,
+		State:                  state,
+		Connectivity:           conn,
+		LocalRevision:          localRev,
+		HeadRevision:           headRev,
+		WorkingCopyBytes:       workingCopyBytes,
+		WorkingCopySizeKnown:   workingCopySizeKnown,
+		Pending:                pending,
+		Conflicts:              conflicts,
+		UnportableNames:        unportable,
+		CurrentOperation:       currentOp,
+		Cycle:                  cycle,
+		Recovery:               recovery,
+		CommitRecoveryRequired: commitRecoveryRequired,
+		Purpose:                purpose,
+		ParentRepoID:           parentRepoID,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)

@@ -18,6 +18,81 @@ import (
 	"github.com/google/uuid"
 )
 
+type commitRecoveryPlanState struct {
+	id, transactionID           string
+	firstRevision, headRevision int64
+	expires                     time.Time
+}
+
+func (s *Service) CommitRecoveryRequired() bool {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	in, err := s.readIntent(s.wc)
+	return err != nil || (in != nil && in.Phase == "attempting")
+}
+
+// PlanCommitRecovery proves that an attempted transaction has no possible
+// receipt yet. It does not alter the transaction, watcher checkpoint or queue.
+func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecoveryPlan, error) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	in, err := s.readIntent(s.wc)
+	if err != nil {
+		return nil, fmt.Errorf("read attempted commit transaction: %w", err)
+	}
+	if in == nil || in.Phase != "attempting" {
+		return nil, errors.New("no attempted commit transaction requires recovery")
+	}
+	c, ok := s.Cli.(client.TransactionCommitter)
+	if !ok {
+		return nil, errors.New("commit recovery requires transaction-aware SVN client")
+	}
+	head, err := c.CommitHead(ctx, in.RepoURL)
+	if err != nil {
+		return nil, fmt.Errorf("read repository head: %w", err)
+	}
+	if head >= in.FirstRevision {
+		return nil, errors.New("repository advanced; check the transaction receipt again")
+	}
+	now := time.Now()
+	plan := &commitRecoveryPlanState{id: uuid.NewString(), transactionID: in.ID, firstRevision: in.FirstRevision, headRevision: head, expires: now.Add(2 * time.Minute)}
+	s.commitRecoveryPlan = plan
+	return &contract.CommitRecoveryPlan{PlanID: plan.id, RepoID: in.RepoID, TransactionID: in.ID, Choice: contract.CommitRecoveryRetryQueue, FirstRevision: in.FirstRevision, HeadRevision: head, Paths: append([]string(nil), in.Paths...), ExpiresAt: plan.expires.UTC().Format(time.RFC3339Nano)}, nil
+}
+
+// ApplyCommitRecovery retires only an attempt proven to have had no remote
+// effect. Staging and the publication observation are deliberately untouched.
+func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string) (*contract.CommitRecoveryApplyResult, error) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	plan := s.commitRecoveryPlan
+	s.commitRecoveryPlan = nil
+	if plan == nil || plan.id != planID || choice != contract.CommitRecoveryRetryQueue || time.Now().After(plan.expires) {
+		return nil, errors.New("commit recovery plan is absent, expired or mismatched")
+	}
+	in, err := s.readIntent(s.wc)
+	if err != nil || in == nil || in.Phase != "attempting" || in.ID != plan.transactionID || in.FirstRevision != plan.firstRevision {
+		return nil, errors.New("commit transaction changed after the recovery plan")
+	}
+	c, ok := s.Cli.(client.TransactionCommitter)
+	if !ok {
+		return nil, errors.New("commit recovery requires transaction-aware SVN client")
+	}
+	head, err := c.CommitHead(ctx, in.RepoURL)
+	if err != nil || head != plan.headRevision || head >= in.FirstRevision {
+		return nil, errors.New("repository changed after the recovery plan")
+	}
+	in.Phase = "done"
+	if err := s.writeIntent(s.wc, in); err != nil {
+		return nil, err
+	}
+	if err := releaseIntentBusy(s.wc, in); err != nil {
+		return nil, err
+	}
+	s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = "", time.Time{}
+	return &contract.CommitRecoveryApplyResult{PlanID: planID, State: "queued"}, nil
+}
+
 const transactionSchema = "filees.commit-intent/v1"
 
 // One per WC, serialized by wcOpMu. An attempted mutation is never reissued
@@ -122,7 +197,7 @@ func (s *Service) readIntent(wc string) (*commitIntent, error) {
 		paths[p] = true
 	}
 	for _, it := range in.Items {
-		if !paths[it.Rel] || (it.OldRel != "" && (!safeIntentPath(it.OldRel) || !paths[it.OldRel])) || (it.Op != watcher.Added && it.Op != watcher.Modified && it.Op != watcher.Deleted && it.Op != watcher.Renamed) {
+		if !intentPathCovered(paths, it.Rel) || (it.OldRel != "" && !intentPathCovered(paths, it.OldRel)) || (it.Op != watcher.Added && it.Op != watcher.Modified && it.Op != watcher.Deleted && it.Op != watcher.Renamed) {
 			return nil, errors.New("invalid commit intent item")
 		}
 	}
@@ -139,6 +214,21 @@ func (s *Service) readIntent(wc string) (*commitIntent, error) {
 		}
 	}
 	return &in, nil
+}
+
+// A directory target commits its versioned descendants as one SVN transaction.
+// Rename items therefore may name source files below a selected source directory
+// even though the durable target list contains only that directory.
+func intentPathCovered(targets map[string]bool, path string) bool {
+	if !safeIntentPath(path) {
+		return false
+	}
+	for candidate := path; candidate != "." && candidate != ""; candidate = filepath.ToSlash(filepath.Dir(filepath.FromSlash(candidate))) {
+		if targets[candidate] {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) writeIntent(wc string, in *commitIntent) error {

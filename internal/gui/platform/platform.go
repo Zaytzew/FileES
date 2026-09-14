@@ -362,22 +362,23 @@ type SettingsFolder struct {
 	// Editing is a human-readable rendering of the repository editing policy,
 	// shown to every client rather than only the owner: a read-only file with
 	// no stated reason is the confusing state this is meant to replace.
-	Editing                 string
-	CanManageGrants         bool
-	CanSetEditingPolicy     bool // owner-only: switch between free and lock_required
-	LockRequired            bool // current policy, for the action's confirmation text
-	CanManagePublicShares   bool
-	CanManageUploadChannels bool
-	CanReviewQuarantine     bool
-	CanConnect              bool // connect selected unattached repository
-	CanLocate               bool // adopt an existing moved working copy
-	CanMove                 bool // controlled move of the current working copy
-	CanDetach               bool // detach_folder (non-destructive)
-	CanDelete               bool // delete_repository
-	CanLoadDump             bool // load_dump
-	CanRetryLifecycle       bool // retry the same durable local operation
-	CanResolveIntents       bool // inspect daemon-owned uncertainty plan
-	CanAbandonLifecycle     bool // end only the failed local attempt
+	Editing                  string
+	CanManageGrants          bool
+	CanSetEditingPolicy      bool // owner-only: switch between free and lock_required
+	LockRequired             bool // current policy, for the action's confirmation text
+	CanManagePublicShares    bool
+	CanManageUploadChannels  bool
+	CanReviewQuarantine      bool
+	CanConnect               bool // connect selected unattached repository
+	CanLocate                bool // adopt an existing moved working copy
+	CanMove                  bool // controlled move of the current working copy
+	CanDetach                bool // detach_folder (non-destructive)
+	CanDelete                bool // delete_repository
+	CanLoadDump              bool // load_dump
+	CanRetryLifecycle        bool // retry the same durable local operation
+	CanResolveIntents        bool // inspect daemon-owned uncertainty plan
+	CanResolveCommitRecovery bool // retire a proven no-effect commit attempt
+	CanAbandonLifecycle      bool // end only the failed local attempt
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string
@@ -387,30 +388,31 @@ type SettingsRecovery struct {
 type SettingsDialogAction string
 
 const (
-	SettingsDialogClose            SettingsDialogAction = "close"
-	SettingsDialogAddFolder        SettingsDialogAction = "add_folder"
-	SettingsDialogConnectRepos     SettingsDialogAction = "connect_repositories"
-	SettingsDialogLocateFolder     SettingsDialogAction = "locate_folder"
-	SettingsDialogMoveFolder       SettingsDialogAction = "move_folder"
-	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
-	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
-	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
-	SettingsDialogRetryLifecycle   SettingsDialogAction = "retry_lifecycle"
-	SettingsDialogResolveIntents   SettingsDialogAction = "resolve_intents"
-	SettingsDialogAbandonLifecycle SettingsDialogAction = "abandon_lifecycle"
-	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
-	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
-	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
-	SettingsDialogUploadChannels   SettingsDialogAction = "upload_channels"
-	SettingsDialogQuarantine       SettingsDialogAction = "quarantine"
-	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
-	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
-	SettingsDialogRealmAlias       SettingsDialogAction = "realm_alias"
-	SettingsDialogPairMobile       SettingsDialogAction = "pair_mobile"
-	SettingsDialogSessionTimeout   SettingsDialogAction = "session_timeout"
-	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
-	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
-	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"
+	SettingsDialogClose                 SettingsDialogAction = "close"
+	SettingsDialogAddFolder             SettingsDialogAction = "add_folder"
+	SettingsDialogConnectRepos          SettingsDialogAction = "connect_repositories"
+	SettingsDialogLocateFolder          SettingsDialogAction = "locate_folder"
+	SettingsDialogMoveFolder            SettingsDialogAction = "move_folder"
+	SettingsDialogDetachFolder          SettingsDialogAction = "detach_folder"
+	SettingsDialogDeleteRepo            SettingsDialogAction = "delete_repository"
+	SettingsDialogLoadDump              SettingsDialogAction = "load_dump"
+	SettingsDialogRetryLifecycle        SettingsDialogAction = "retry_lifecycle"
+	SettingsDialogResolveIntents        SettingsDialogAction = "resolve_intents"
+	SettingsDialogResolveCommitRecovery SettingsDialogAction = "resolve_commit_recovery"
+	SettingsDialogAbandonLifecycle      SettingsDialogAction = "abandon_lifecycle"
+	SettingsDialogManageGrants          SettingsDialogAction = "manage_grants"
+	SettingsDialogEditingPolicy         SettingsDialogAction = "editing_policy"
+	SettingsDialogPublicShares          SettingsDialogAction = "public_shares"
+	SettingsDialogUploadChannels        SettingsDialogAction = "upload_channels"
+	SettingsDialogQuarantine            SettingsDialogAction = "quarantine"
+	SettingsDialogRealmVisibility       SettingsDialogAction = "realm_visibility"
+	SettingsDialogRealmBranding         SettingsDialogAction = "realm_branding"
+	SettingsDialogRealmAlias            SettingsDialogAction = "realm_alias"
+	SettingsDialogPairMobile            SettingsDialogAction = "pair_mobile"
+	SettingsDialogSessionTimeout        SettingsDialogAction = "session_timeout"
+	SettingsDialogDetachServer          SettingsDialogAction = "detach_server"
+	SettingsDialogRemoveRealm           SettingsDialogAction = "remove_realm"
+	SettingsDialogDownloadRecovery      SettingsDialogAction = "download_recovery"
 )
 
 type SettingsDialogResult struct {

@@ -141,6 +141,7 @@ type RepoProjection struct {
 	PendingFiles             int                        `json:"pending_files"`
 	PendingBytes             int64                      `json:"pending_bytes"`
 	IntentResolutionRequired bool                       `json:"intent_resolution_required"`
+	CommitRecoveryRequired   bool                       `json:"commit_recovery_required"`
 	LastCommitAt             string                     `json:"last_commit_at,omitempty"`
 	CanFoldInactive          bool                       `json:"can_fold_inactive"`
 	Conflicts                int                        `json:"conflicts"`
@@ -1004,6 +1005,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
+			CommitRecoveryRequired:   repo.Attached && !repo.ServerDeleted && repo.CommitRecoveryRequired,
 			LastCommitAt:             repo.LastCommitAt,
 			CanFoldInactive:          vm.CanFoldInactive(repo),
 			UnportableNames:          unportableNames(repo.UnportableNames),

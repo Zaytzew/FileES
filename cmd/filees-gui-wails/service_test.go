@@ -40,7 +40,8 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 			State: contract.StateActive, Connectivity: contract.ConnOnline,
 			LocalRev: 7, HeadRev: 8, CurrentOp: &operation,
 			WorkingCopyBytes: 8192, WorkingCopySizeKnown: true,
-			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3, TotalBytes: 4096},
+			CommitRecoveryRequired: true,
+			Pending:                contract.PendingStats{Added: 1, Modified: 2, Deleted: 3, TotalBytes: 4096},
 		}},
 		Servers: []guiapp.ServerViewModel{{ID: "server-1", DisplayName: "Spot"}},
 		Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Revision: 8, Title: "Wydanie r8", CreatedAt: refreshed.Format(time.RFC3339)}},
@@ -60,7 +61,7 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 		t.Fatalf("repositories = %#v", got.Repositories)
 	}
 	repo := got.Repositories[0]
-	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.WorkingCopyBytes != 8192 || !repo.WorkingCopySizeKnown || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" || !repo.CanPublish {
+	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.WorkingCopyBytes != 8192 || !repo.WorkingCopySizeKnown || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" || !repo.CanPublish || !repo.CommitRecoveryRequired {
 		t.Fatalf("repository projection = %+v", repo)
 	}
 	if len(got.Notices) != 1 || !got.Notices[0].CanAck || got.Notices[0].Revision != 8 || got.Notices[0].Title != "Wydanie r8" {

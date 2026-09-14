@@ -99,6 +99,12 @@ currentSnapshot.repositories[0].intent_resolution_required=false;
 renderAnnouncementBanner(currentSnapshot);
 assert.equal($("#intent-alerts").hidden,true);
 assert.equal($("#announcement-banner").hidden,false);
+currentSnapshot.repositories=[{id:"held",server_id:"s",display_name:"GWIAŹDZISTA",commit_recovery_required:true}];
+renderAnnouncementBanner(currentSnapshot);
+assert.equal($("#intent-alerts").hidden,false);
+assert.match($("#intent-alerts").html,/GWIAŹDZISTA/);
+assert.match($("#intent-alerts").html,/commit|publikac/i);
+assert.match($("#intent-alerts").html,/role="alert"/);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `
 	cmd := exec.CommandContext(t.Context(), node)

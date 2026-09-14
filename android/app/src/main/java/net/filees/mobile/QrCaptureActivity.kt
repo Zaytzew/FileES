@@ -1,5 +1,6 @@
 package net.filees.mobile
 
+import android.content.Context
 import com.journeyapps.barcodescanner.CaptureActivity
 import com.journeyapps.barcodescanner.DecoratedBarcodeView
 
@@ -9,6 +10,10 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView
  * scanner, and it will not reliably read the pairing QR from a screen.
  */
 class QrCaptureActivity : CaptureActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(FileesLocale.wrap(newBase))
+    }
+
     override fun initializeContent(): DecoratedBarcodeView {
         setContentView(R.layout.activity_qr_capture)
         return findViewById(R.id.zxing_barcode_scanner)

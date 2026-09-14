@@ -11,6 +11,9 @@
     <string name="action_scan_qr">Skanuj QR i sparuj z desktopem</string>
     <string name="action_pair_pasted">Sparuj (wklejone dane)</string>
     <string name="action_settings">Ustawienia</string>
+    <string name="settings_language">Język</string>
+    <string name="settings_language_system">Język systemu</string>
+    <string name="settings_language_system_current">Język systemu · %1$s</string>
     <string name="action_pick_folder">Wybierz folder do wysłania</string>
     <string name="action_browse_up">W górę</string>
     <string name="action_add">Dodaj</string>

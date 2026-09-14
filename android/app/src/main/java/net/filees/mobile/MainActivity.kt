@@ -5,6 +5,7 @@ import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -81,6 +82,10 @@ class MainActivity : AppCompatActivity() {
         if (granted) launchScanner()
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(FileesLocale.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installFileesWindow()
@@ -115,6 +120,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (FileesLocale.mismatch(this)) {
+            recreate()
+            return
+        }
         pulseAnimator?.resume()
         bindServerLabel()
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)

@@ -9,6 +9,9 @@
     <string name="action_scan_qr">Scanner le QR et apparier avec le bureau</string>
     <string name="action_pair_pasted">Apparier (données collées)</string>
     <string name="action_settings">Paramètres</string>
+    <string name="settings_language">Langue</string>
+    <string name="settings_language_system">Langue du système</string>
+    <string name="settings_language_system_current">Langue du système · %1$s</string>
     <string name="action_pick_folder">Choisir un dossier à envoyer</string>
     <string name="action_browse_up">Haut</string>
     <string name="action_add">Ajouter</string>

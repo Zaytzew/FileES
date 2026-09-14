@@ -9,6 +9,9 @@
     <string name="action_scan_qr">Escanear QR y emparejar con el escritorio</string>
     <string name="action_pair_pasted">Emparejar (datos pegados)</string>
     <string name="action_settings">Ajustes</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_language_system">Idioma del sistema</string>
+    <string name="settings_language_system_current">Idioma del sistema · %1$s</string>
     <string name="action_pick_folder">Elegir una carpeta para enviar</string>
     <string name="action_browse_up">Arriba</string>
     <string name="action_add">Añadir</string>

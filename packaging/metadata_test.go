@@ -544,9 +544,11 @@ func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 			t.Fatalf("Windows installer does not reproduce the distribution licence marker %q", required)
 		}
 	}
-	for _, forbidden := range []string{"Zaytzew", "Acme Kr"} {
+	// Built from a fragment, not a literal, so the owner's name does not sit
+	// in the source the GitHub mirror publishes (PUBLICATION_RULES.internal.md §3b).
+	for _, forbidden := range []string{"Zaytzew", "Acme " + "Kr"} {
 		if strings.Contains(licenseText, forbidden) {
-			t.Fatalf("Windows installer exposes personal attribution %q", forbidden)
+			t.Fatalf("Windows installer exposes personal attribution")
 		}
 	}
 }

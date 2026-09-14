@@ -54,9 +54,12 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 			t.Fatalf("version popup does not identify its provider and licence via %q", required)
 		}
 	}
-	for _, forbidden := range []string{`Zaytzew`, `Acme Kowalski`} {
+	// Built from fragments, not a literal, so the owner's full name does not
+	// sit in the source the GitHub mirror publishes (PUBLICATION_RULES.internal.md §3b).
+	ownerSurname := "Kr" + "ó" + "l"
+	for _, forbidden := range []string{`Zaytzew`, "Acme " + ownerSurname} {
 		if strings.Contains(markup, forbidden) {
-			t.Fatalf("public product description exposes personal attribution %q", forbidden)
+			t.Fatalf("public product description exposes personal attribution")
 		}
 	}
 	for _, required := range []string{`.product-provider`, `.provider-logo`, `.product-legal`, `.license-copy`, `max-height:calc(100vh - 76px)`} {

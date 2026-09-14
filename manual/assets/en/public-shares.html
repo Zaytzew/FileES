@@ -58,6 +58,7 @@
 <li><a href="#ps-access">Open or closed</a></li>
 <li><a href="#ps-desktop">From the desktop</a></li>
 <li><a href="#ps-ops">Turning it on</a></li>
+<li><a href="#ps-upload">Upload shelves</a></li>
 </ol>
 </nav>
 <div class="manual-content">
@@ -67,7 +68,7 @@
 
 <h2 id="ps-model">5.1 What this is</h2>
 <div class="section-meta"><span class="status status-verified">Verified live</span></div>
-<p>A public share is a read-only landing page at the same HTTPS address as this manual. The visitor never receives write credentials. Upload Channel is a separate product — for receiving files from someone outside, not for distributing them — and does not share this process or these secrets with a public share.</p>
+<p>A public share is a read-only landing page at the same HTTPS address as this manual. The visitor never receives write credentials. An upload shelf works in the opposite direction — receiving files from someone outside (<a href="#ps-upload">§5.7</a>) — and does not share this process or these secrets with a public share.</p>
 <p>The page uses no JavaScript, no cookies and no third-party resources. Branding is the <code>filees:space</code> system plus the owner logo and accent already stored on the server.</p>
 <p>Why the public process never talks to Subversion itself is in <a href="operations.html#ops-ps-model">Operations</a>.</p>
 
@@ -99,6 +100,17 @@
 
 <h2 id="ps-ops">5.6 Turning it on</h2>
 <p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>
+
+<h2 id="ps-upload">5.7 Upload shelves: receiving files</h2>
+<div class="section-meta"><span class="status status-verified">Verified live</span><span>Sender side on a production host, 2026-09-12: upload, antivirus scan, delivery into the shelf. Taking the files on the desktop is implemented and not yet accepted by hand (<a href="user-guide.html#ch2-gui">§2.6</a>).</span></div>
+<p>A public share gives files out; an upload shelf takes them in. A shelf is always closed: there is no anonymous upload and no public form that anyone could find.</p>
+<p><strong>Creating a shelf.</strong> In the actions of the repository the files should arrive into, choose <strong>Upload shelves</strong>. You give the address suffix (3–64 lowercase letters, digits or single hyphens) and the contributors&rsquo; e-mail addresses — at least one. You also decide whether a contributor has to enter a one-time code sent by e-mail before uploading.</p>
+<p><strong>What the contributor gets.</strong> Each address receives its own invitation link:</p>
+<pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;?invite=…</code></pre>
+<p>The invitation is personal and opaque; it does not contain the e-mail address. Without it, or with a wrong one, the address answers with the same 404 as any unknown page. If you asked for the e-mail code, the page first asks for the address and sends the code, and the file field appears only after the code. The contributor then drops a file or clicks to choose one and presses <strong>Wyślij</strong>; the page asks them to keep the tab open until the server confirms receipt. In this version the upload page is in Polish only.</p>
+<p><strong>What happens to the file.</strong> The public process only puts the file into an intake queue and never talks to Subversion. A separate job on the server scans it with the antivirus program, then commits it into the shelf repository — or, if the scan rejects it, records it in <strong>Quarantine</strong>, where it can be reviewed for 48 hours. A file that cannot be scanned is held back, never delivered unscanned. The server limits the size of one file (<code>max_upload_size</code>, 1 GiB in the example configuration).</p>
+<p><strong>Revoke and delete.</strong> Revoking stops the address accepting files; the address stays reserved and what has arrived stays with you. Deleting removes the shelf&rsquo;s policy, reserves the address for good and does not delete the received files.</p>
+<p>Named places per contributor (<code>slots</code>) and the DROPPER release preflight exist in the design and are deliberately switched off. Upload shelves need the server side turned on and a scheduled intake job; that is the administrator&rsquo;s part, in <a href="install.html">Install</a>.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Desktop</a>
@@ -106,7 +118,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

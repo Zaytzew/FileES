@@ -30,9 +30,10 @@ try {
 }
 $makeappx = Join-Path $sdk 'makeappx.exe'
 $makepri = Join-Path $sdk 'makepri.exe'
+$mt = Join-Path $sdk 'mt.exe'
 $magick = (Get-Command magick.exe -ErrorAction Stop).Source
 if (-not (Test-Path -LiteralPath $makeappx -PathType Leaf)) { throw 'MakeAppx is missing from SdkBin' }
-foreach ($tool in @($makeappx, $makepri)) {
+foreach ($tool in @($makeappx, $makepri, $mt)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Windows SDK tool is missing: $tool" }
     $signature = Get-AuthenticodeSignature -LiteralPath $tool
     if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
@@ -70,6 +71,24 @@ try {
     }
 } finally {
     Pop-Location
+}
+
+# Embed before packaging/signing. An AppxManifest does not declare the Win32
+# process DPI context; WACK inspects the executable's RT_MANIFEST resource.
+foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'filees-gui-wails.exe')) {
+    $exe = Join-Path $payload $name
+    $win32Manifest = if ($name -eq 'filees-gui-wails.exe') { 'filees-gui.exe.manifest' } else { 'filees-store-launcher.exe.manifest' }
+    & $mt -nologo -manifest (Join-Path $PSScriptRoot $win32Manifest) "-outputresource:$exe;#1"
+    if ($LASTEXITCODE -ne 0) { throw "Win32 manifest embedding failed: $name" }
+    $extracted = Join-Path $output "$name.manifest"
+    & $mt -nologo "-inputresource:$exe;#1" "-out:$extracted"
+    if ($LASTEXITCODE -ne 0) { throw "Win32 manifest extraction failed: $name" }
+    [xml]$embedded = Get-Content -LiteralPath $extracted -Raw
+    $dpi = $embedded.SelectSingleNode("//*[local-name()='dpiAwareness' and namespace-uri()='http://schemas.microsoft.com/SMI/2016/WindowsSettings']")
+    $execution = $embedded.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+    if ($null -eq $dpi -or $dpi.InnerText -ne 'PerMonitorV2' -or $null -eq $execution -or $execution.GetAttribute('level') -ne 'asInvoker') {
+        throw "Embedded manifest must declare PerMonitorV2 and asInvoker: $name"
+    }
 }
 
 $icon = Join-Path $source 'cmd/filees-gui-wails/assets/app-icon.png'

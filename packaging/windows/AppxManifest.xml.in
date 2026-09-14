@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Draft template only. Do not package or submit until the Store launcher,
-     writable state migration, assets and isolated Windows tests are complete. -->
+<!-- Draft template only. Do not package or submit until the Store launcher is
+     linked into a payload, writable-state tests, assets and isolated Windows
+     install/upgrade tests are complete. -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"

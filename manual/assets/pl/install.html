@@ -58,6 +58,7 @@
 <li><a href="#ch3-serverjson">server.json</a></li>
 <li><a href="#ch3-keys">Generowanie kluczy</a></li>
 <li><a href="#ch3-managed">filees-install / FILEES-BIN</a></li>
+<li><a href="#ch3-upload">Półki przyjęcia</a></li>
 </ol>
 </nav>
 <div class="manual-content">
@@ -81,7 +82,7 @@
 <tr><td><code>_filees-data</code></td><td>SSH na kluczu instalacyjnym do <code>svnserve -t</code> repozytorium danych; kanoniczny użytkownik URL</td></tr>
 <tr><td><code>_filees-mobile</code></td><td>Protokół mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code>; wejście set-id <code>filees-mobile-v1</code></td></tr>
 <tr><td><code>_filees-recovery</code></td><td>Pobieranie archiwów przypisanych do jednej operacji usunięcia strefy</td></tr>
-<tr><td><code>_filees-links</code></td><td>Publiczny proces FastCGI; właściciel publicznej pamięci podręcznej, nigdy poświadczeń SVN</td></tr>
+<tr><td><code>_filees-links</code></td><td>Publiczny proces FastCGI; właściciel publicznej pamięci podręcznej, a przy włączonych półkach zapisuje kolejkę przyjęcia (§3.7); nigdy poświadczeń SVN</td></tr>
 <tr><td><code>_filees-access</code></td><td>Grupa dla plików wykonywalnych set-id klienta, mobile i programu naprawczego</td></tr>
 <tr><td><code>_filees-public</code></td><td>Grupa gniazda procesu autoryzującego współdzielonego z filees-links</td></tr>
 </table></div>
@@ -143,8 +144,17 @@ filees-install -purge -wipe-state</code></pre>
 <li><strong>Pierwsza instalacja</strong> wykonuje też zadania systemowe, które dziś pokrywa <code>install-ssh.sh</code>: tworzy konta protokołu (zapisując, które faktycznie utworzyła), katalogi stanu i sekrety, instaluje Include fragmentu sshd i klasę logowania oraz przeładowuje sshd. Aktualizacje nigdy nie powtarzają zadań systemowych.</li>
 <li><strong>Kopia zapasowa przed nadpisaniem</strong>: każdy zastępowany plik jest kopiowany (pełne bity trybu, w tym setuid) do katalogu kopii z sygnaturą czasu, zapisanego w <code>state.json</code>; <code>-rollback</code> przywraca dokładnie ostatnią instalację.</li>
 <li><strong>Profil sandboxa według klasy uruchomienia</strong>: uruchomienia tylko-plikowe (check, próba bez zmian, upgrade, wycofanie) idą pod pełnym dwuprzebiegowym <code>unveil</code> z pledge zredukowanym do obietnic plikowych. Uruchomienia systemowe (pierwsza instalacja i usuwanie instalacji, aktualizacje dotykające fragmentu sshd) pomijają <code>unveil</code> — jego stan dziedziczą dzieci po exec, co oślepiłoby <code>useradd</code>/<code>rcctl</code>/<code>sshd -t</code> — i trzymają <code>proc exec</code> tylko do końca fazy systemowej.</li>
+<li><strong>Raport pojemności</strong> <span class="status status-implemented">Zaimplementowane</span>: gdy aktualizacja przenosi składowanie udziałów publicznych, <code>--check</code>, <code>--dry-run</code> i <code>--apply</code> wypisują przed przygotowaniem plików raport <code>STORAGE</code> — rozwiązane ścieżki docelowe, system plików, dostępne bajty, łączne dodatkowe wymaganie i rezerwę — i zatrzymują się, gdy ścieżki na jednym systemie plików razem się nie mieszczą. Dotyczy wyłącznie zaplanowanych migracji składowania: przebieg bez migracji nie poświadcza pojemności, a nic nie jest rezerwowane. Jeszcze nie uruchomione natywnie na OpenBSD.</li>
 <li><strong>Usuwanie instalacji respektuje właścicielstwo</strong>: usuwani są tylko użytkownicy zapisani jako utworzeni przez ten instalator; wycofanie, które przywraca fragment sshd, wypisuje ostrzeżenie o ręcznym przeładowaniu sshd zamiast robić exec pod zredukowanym pledge.</li>
 </ul>
+<h2 id="ch3-upload">3.7 Półki przyjęcia na serwerze</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na produkcji</span><span>2026-09-12: wysłanie, skan antywirusowy i dostarczenie na półkę, po ręcznym poprawieniu ścieżki przyjęcia, polecenia antywirusa i zadania przyjęcia opisanych niżej. Przykładowa konfiguracja zawiera już dwie pierwsze poprawki; zadanie przyjęcia nadal planujesz sam.</span></div>
+<p>Półki przyjęcia (<a href="public-shares.html#ps-upload">§5.7</a>) mają na serwerze dwie części. <code>filees-links</code> przyjmuje plik i zapisuje go do kolejki przyjęcia. <code>filees-worker upload-reap</code>, uruchamiany z crona, skanuje każdy gotowy plik i zatwierdza go do repozytorium półki albo zapisuje jako odrzucony. Bez drugiej części strona wysyłania nadal odpowiada i mówi wnoszącemu, że plik przyjęto, a mimo to nic nigdy nie zostaje dostarczone — to najgorsza z trzech awarii, bo wygląda jak sukces.</p>
+<p><strong>1. Jeden katalog przyjęcia, wskazany w obu plikach.</strong> <code>upload.intake_root</code> w <code>server.json</code> i <code>intake_root</code> w <code>public-links.json</code> muszą wskazywać tę samą ścieżkę. Przykład to <code>/var/filees-downloads/intake</code>, właściciel <code>_filees-links:_filees-public</code>, tryb <code>0770</code>; skrypty instalacyjne przyjmują <code>PUBLIC_UPLOAD_INTAKE_ROOT</code>, jeśli wybierasz inną. Katalog przyjęcia to trwała kolejka dostaw, nie pamięć podręczna: nigdy nie umieszczaj go pod <code>/tmp</code> ani <code>/var/tmp</code>, także przez dowiązanie symboliczne.</p>
+<p><strong>2. Polecenie antywirusa, które może przeczytać plik.</strong> Przykładowe <code>av_command</code> to <code>clamdscan --stream --no-summary --stdout</code>. <code>--stream</code> jest istotne: bez niego <code>clamd</code> otwiera plik sam, jako własny użytkownik, który nie wejdzie do prywatnego drzewa przyjęcia, i każdy plik zostaje wstrzymany jako niemożliwy do przeskanowania. Pliku, którego nie da się przeskanować, serwer nigdy nie dostarcza.</p>
+<p><strong>3. Zadanie przyjęcia zaplanuj sam.</strong> Żaden z instalatorów nie zakłada tego crontaba. Dodaj go dla <code>_filees-state</code>, odrzucając standardowe wyjście, żeby bezczynna minuta nie wysyłała poczty; błędy nadal trafią do poczty crona przez standardowe wyjście błędów:</p>
+<pre><code>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
+<div class="warn"><strong>Odtworzenie katalogu nie jest naprawą.</strong> Na OpenBSD <code>filees-links</code> zachowuje dostęp do katalogu przyjęcia, który zastał przy starcie: <code>unveil</code> idzie za samym katalogiem, nie za jego nazwą. Jeśli katalog zostanie usunięty i utworzony ponownie — przez codzienne sprzątanie katalogu tymczasowego albo ręcznie — działająca usługa pozostaje na niego ślepa, a strona wysyłania odpowiada 404. Po każdej zmianie ścieżki albo katalogu przyjęcia uruchom ponownie <code>filees_links</code>.</div>
+<p>Skrypty instalacyjne zachowują istniejące pliki JSON i nie przenoszą istniejącej kolejki. Na aktualizowanym hoście ustaw obie ścieżki, zaplanuj zadanie przyjęcia i uruchom usługę ponownie samodzielnie.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architektura</a><a href="operations.html">Eksploatacja →</a></nav>
 </div>

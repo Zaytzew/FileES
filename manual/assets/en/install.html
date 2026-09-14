@@ -58,6 +58,7 @@
 <li><a href="#ch3-serverjson">server.json</a></li>
 <li><a href="#ch3-keys">Key generation</a></li>
 <li><a href="#ch3-managed">filees-install / FILEES-BIN</a></li>
+<li><a href="#ch3-upload">Upload shelves</a></li>
 </ol>
 </nav>
 <div class="manual-content">
@@ -81,7 +82,7 @@
 <tr><td><code>_filees-data</code></td><td>Installation-key SSH for data-repository <code>svnserve -t</code>; canonical URL user</td></tr>
 <tr><td><code>_filees-mobile</code></td><td>Mobile protocol: read the share, write only under <code>mobile-uploads/</code>; set-id entry <code>filees-mobile-v1</code></td></tr>
 <tr><td><code>_filees-recovery</code></td><td>Capability-bound archive download after realm removal</td></tr>
-<tr><td><code>_filees-links</code></td><td>Public FastCGI process; owns the public cache, never SVN credentials</td></tr>
+<tr><td><code>_filees-links</code></td><td>Public FastCGI process; owns the public cache and, when upload shelves are on, writes the intake queue (§3.7); never SVN credentials</td></tr>
 <tr><td><code>_filees-access</code></td><td>Group for set-id client/mobile/corrector binaries</td></tr>
 <tr><td><code>_filees-public</code></td><td>Group for the authority socket shared with links</td></tr>
 </table></div>
@@ -146,13 +147,22 @@ filees-install -purge -wipe-state</code></pre>
 <li><strong>First install</strong> also performs the system tasks that <code>install-ssh.sh</code> covers today: creates the protocol accounts (recording which ones it actually created), state directories and secrets, installs the sshd fragment Include and login class, and reloads sshd. Upgrades never repeat system tasks.</li>
 <li><strong>Backup before overwrite</strong>: every replaced file is copied (full mode bits, including setuid) into a timestamped backup dir recorded in <code>state.json</code>; <code>-rollback</code> restores exactly the last install.</li>
 <li><strong>Sandbox profile by run class</strong>: file-only runs (check, dry-run, upgrade, rollback) execute under a full two-pass <code>unveil</code> with pledge reduced to file promises. System runs (first install, purge, upgrades touching the sshd fragment) skip <code>unveil</code> — its state is inherited by exec'd children, which would blind <code>useradd</code>/<code>rcctl</code>/<code>sshd&nbsp;-t</code> — and keep <code>proc exec</code> only until the system phase ends.</li>
+<li><strong>Storage capacity report</strong> <span class="status status-implemented">Implemented</span>: when an upgrade migrates Public Shares storage, <code>--check</code>, <code>--dry-run</code> and <code>--apply</code> print a <code>STORAGE</code> report before staging payloads — resolved target paths, filesystem, available bytes, the combined additional requirement and the reserve — and stop when paths on one filesystem do not fit together. It covers planned storage migrations only: a run without one does not certify capacity, and nothing is reserved. Not yet run natively on OpenBSD.</li>
 <li><strong>Purge honours ownership</strong>: only users recorded as created by this installer are removed; a rollback that restores an sshd fragment prints a warning to reload sshd manually instead of exec'ing under the reduced pledge.</li>
 </ul>
+<h2 id="ch3-upload">3.7 Upload shelves on the server</h2><div class="section-meta"><span class="status status-verified">Verified on production</span><span>2026-09-12: upload, antivirus scan and delivery into the shelf, after the intake path, the antivirus command and the reaper job below were corrected by hand. The example configuration now carries the first two; the reaper job is still yours to schedule.</span></div>
+<p>Upload shelves (<a href="public-shares.html#ps-upload">§5.7</a>) have two server parts. <code>filees-links</code> accepts the file and writes it into the intake queue. <code>filees-worker upload-reap</code>, run by cron, scans each ready file and commits it into the shelf repository or records it as rejected. Without the second part the upload page still answers and tells the contributor the file was received, yet nothing is ever delivered — the worst failure of the three, because it looks like success.</p>
+<p><strong>1. One intake directory, named in both files.</strong> <code>upload.intake_root</code> in <code>server.json</code> and <code>intake_root</code> in <code>public-links.json</code> must be the same path. The example is <code>/var/filees-downloads/intake</code>, owned <code>_filees-links:_filees-public</code>, mode <code>0770</code>; the bootstrap scripts accept <code>PUBLIC_UPLOAD_INTAKE_ROOT</code> to choose another. The intake is a persistent delivery queue, not a cache: never put it under <code>/tmp</code> or <code>/var/tmp</code>, not even through a symlink.</p>
+<p><strong>2. An antivirus command that can read the file.</strong> The example <code>av_command</code> is <code>clamdscan --stream --no-summary --stdout</code>. <code>--stream</code> matters: without it <code>clamd</code> opens the file itself, as its own user, which cannot enter the private intake tree, and every file is held back as unscannable. A file that cannot be scanned is never delivered.</p>
+<p><strong>3. Schedule the reaper yourself.</strong> Neither installer creates this crontab. Add it for <code>_filees-state</code>, discarding standard output so an idle minute does not send mail; errors still reach cron mail through standard error:</p>
+<pre><code>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
+<div class="warn"><strong>Recreating the directory is not a repair.</strong> On OpenBSD <code>filees-links</code> keeps access to the intake directory it found at start: <code>unveil</code> follows the directory itself, not its name. If the directory is removed and created again — by the daily cleanup of a temporary directory, or by hand — the running service stays blind to it and the upload page answers 404. Restart <code>filees_links</code> after any change of the intake path or directory.</div>
+<p>The bootstrap scripts keep existing JSON files and do not move an existing queue. On an upgraded host set both paths, schedule the reaper and restart the service yourself.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architecture</a><a href="operations.html">Operations →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

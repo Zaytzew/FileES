@@ -150,6 +150,18 @@ func (b *openbsdBackend) ApplyStateDirs(stateOwner string) error {
 	if err != nil {
 		return fmt.Errorf("lookup %s: %w", stateOwner, err)
 	}
+	linksUID, _, err := lookupUID("_filees-links")
+	if err != nil {
+		return fmt.Errorf("lookup _filees-links: %w", err)
+	}
+	publicGID, err := lookupGID("_filees-public")
+	if err != nil {
+		return fmt.Errorf("lookup _filees-public: %w", err)
+	}
+	wwwGID, err := lookupGID("www")
+	if err != nil {
+		return fmt.Errorf("lookup www: %w", err)
+	}
 
 	// wheel GID = 0 on OpenBSD
 	wheelGID := 0
@@ -169,7 +181,15 @@ func (b *openbsdBackend) ApplyStateDirs(stateOwner string) error {
 		{"/var/filees/activation/records", 0o700, uid, wheelGID},
 		{"/var/filees/activation/proofs", 0o700, uid, wheelGID},
 		{"/var/filees/sessions", 0o700, uid, wheelGID},
-		{"/etc/filees", 0o700, uid, wheelGID},
+		// Public authority owns the configuration directory, while the
+		// public-links service must be able to traverse it to its own 0600
+		// configuration and visit key.
+		{"/etc/filees", 0o750, uid, publicGID},
+		// These volatile socket directories are part of the service contract,
+		// not optional leftovers from install-ssh.sh. Reassert their metadata
+		// on every apply so an upgrade and a cleaned /var/run both start.
+		{"/var/run/filees", 0o750, uid, publicGID},
+		{"/var/www/run/filees", 0o750, linksUID, wwwGID},
 	}
 	for _, d := range dirs {
 		if err := mkdirChown(d.path, d.mode, d.uid, d.gid); err != nil {

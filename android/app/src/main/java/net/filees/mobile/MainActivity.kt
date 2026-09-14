@@ -362,6 +362,12 @@ class MainActivity : AppCompatActivity() {
             )
             rows.addAll(inPanel(folders))
         }
+        rows.add(
+            BrowseRow(
+                "", "", directory = false, size = 0,
+                kind = BrowseRow.Kind.ADD_SERVER,
+            ),
+        )
         val journal = journalRows()
         rows.add(
             BrowseRow(
@@ -473,6 +479,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: BrowseRow) {
+        if (row.kind == BrowseRow.Kind.ADD_SERVER) {
+            onScanQrClicked()
+            return
+        }
         if (row.kind == BrowseRow.Kind.SERVER && row.switchServerId.isNotEmpty()) {
             FileesSession.servers(prefs).firstOrNull { it.id == row.switchServerId }?.let { switchTo(it) }
             return

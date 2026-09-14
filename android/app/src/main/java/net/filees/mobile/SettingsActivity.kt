@@ -65,15 +65,15 @@ class SettingsActivity : AppCompatActivity() {
         binding.buttonPairPasted.setOnClickListener {
             pairFromPayload(binding.editPairingPayload.text?.toString()?.trim().orEmpty())
         }
-        binding.buttonScanQr.setOnClickListener {
+        binding.buttonAddWatched.setOnClickListener { addWatchLauncher.launch(null) }
+        binding.buttonChangeUploadTarget.setOnClickListener { pickUploadTarget() }
+        binding.buttonAddServer.setOnClickListener {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                 launchScanner()
             } else {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         }
-        binding.buttonAddWatched.setOnClickListener { addWatchLauncher.launch(null) }
-        binding.buttonChangeUploadTarget.setOnClickListener { pickUploadTarget() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)

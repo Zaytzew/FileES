@@ -96,7 +96,7 @@ data class BrowseRow(
     val panel: Panel = Panel.NONE,
 ) {
     enum class Kind {
-        ITEM, HEADER, HERO, METRICS, SERVER, FACTS, JOURNAL_HEAD, JOURNAL
+        ITEM, HEADER, HERO, METRICS, SERVER, FACTS, JOURNAL_HEAD, JOURNAL, ADD_SERVER
     }
 
     // Where a row sits in a panel that spans several list items. Rows used to

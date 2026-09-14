@@ -70,6 +70,18 @@ func lookupUID(name string) (uid, gid int, err error) {
 	return int(uid64), int(gid64), nil
 }
 
+func lookupGID(name string) (int, error) {
+	g, err := user.LookupGroup(name)
+	if err != nil {
+		return 0, err
+	}
+	gid64, err := strconv.ParseInt(g.Gid, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("bad gid %q for %s", g.Gid, name)
+	}
+	return int(gid64), nil
+}
+
 // userExists returns true if name is found in the OS user database.
 func userExists(name string) bool {
 	_, err := user.Lookup(name)

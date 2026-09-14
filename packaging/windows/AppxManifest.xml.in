@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Draft template only. Do not package or submit until the Store launcher,
+     writable state migration, assets and isolated Windows tests are complete. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap10 desktop rescap">
+  <Identity Name="FileES.FileESDesktop"
+            Publisher="CN=19672E4E-DB1A-493F-9633-91B7C75CF773"
+            ProcessorArchitecture="x64"
+            Version="@MSIX_VERSION@" />
+  <Properties>
+    <DisplayName>FileES Desktop</DisplayName>
+    <PublisherDisplayName>FileES</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="pl-pl" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.19041.0"
+                        MaxVersionTested="10.0.19041.0" />
+  </Dependencies>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+  <Applications>
+    <Application Id="FileESDesktop"
+                 Executable="filees-store-launcher.exe"
+                 uap10:RuntimeBehavior="packagedClassicApp"
+                 uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="FileES Desktop"
+                          Description="FileES Desktop"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask"
+                           Executable="filees-store-startup.exe"
+                           EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="FileESDesktopStartup"
+                               Enabled="true"
+                               DisplayName="FileES Desktop" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

@@ -106,3 +106,31 @@ func TestReceivedRemovalSurvivesRestartAndRepeatedDelayedEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestReceivedRemovalDirectoryReceipt(t *testing.T) {
+	for _, durable := range []bool{false, true} {
+		for _, rel := range []string{"old/deeper/file.txt", "old-other/file.txt"} {
+			root := t.TempDir()
+			s := &Service{Cli: &revisionClient{status: []client.StatusEntry{{Path: rel, Item: "none", Props: "none"}}}, wc: root, repoID: "repo"}
+			if durable {
+				p := filepath.Join(root, "activity.json")
+				j, err := activity.Open(p, 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := j.Record(activity.Entry{RepoID: "repo", Path: "old", Kind: activity.Deleted, Stage: activity.Received, Revision: 9}); err != nil {
+					t.Fatal(err)
+				}
+				s.Activity, err = activity.Open(p, 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				s.receivedDeletes = map[string]bool{"old": true}
+			}
+			if got := s.receivedRemoval(t.Context(), rel); got != (rel == "old/deeper/file.txt") {
+				t.Fatalf("durable=%v rel=%s accepted=%v", durable, rel, got)
+			}
+		}
+	}
+}

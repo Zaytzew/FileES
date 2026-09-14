@@ -206,6 +206,41 @@ func testIncomingUpdateNeverEntersOutgoingQueue(t *testing.T, cli client.Client)
 			t.Fatal("lost incoming deletion receipt")
 		}
 	}
+	// SVN reports the deleted directory, not every descendant. Exercise the
+	// actual helper, delayed descendant delivery and reopened journal.
+	run("svn", "delete", repoURL+"/01_WYDANIE", "-m", "remove remote tree")
+	out, err = cli.Update(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RecordUpdate(t.Context(), "repo", b, out)
+	for _, receiptRetained := range []bool{true, false} {
+		reopened, err := activity.Open(filepath.Join(root, "activity.json"), 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s = &Service{Cli: cli, RepoURL: repoURL, wc: b, repoID: "repo", staging: make(map[string]*stageItem), Rules: Rules{MaxBatchFiles: 20, MaxBatchBytes: 1024 * 1024}}
+		if receiptRetained {
+			s.Activity = reopened
+		}
+		for _, rel := range []string{"01_WYDANIE/WYCENA/inw.pdf", "01_WYDANIE/WYCENA/01_EDITABLES/przed.ath"} {
+			s.acceptEvents(t.Context(), []watcher.Event{{Rel: rel, Path: filepath.Join(b, rel), Op: watcher.Deleted, Type: watcher.EntryFile}})
+		}
+		if receiptRetained && s.stagingLen() != 0 {
+			t.Fatal("descendants requeued after restart")
+		}
+		// Even after journal retention expires, conservative staging must
+		// reconcile via status rather than fail E155010 or publish a deletion.
+		if err := s.tryCommitMode(t.Context(), b, true); err != nil {
+			t.Fatal(err)
+		}
+		if s.stagingLen() != 0 {
+			t.Fatal("absent descendants stuck in staging")
+		}
+		if rev, err := cli.Revision(t.Context(), repoURL); err != nil || rev != 6 {
+			t.Fatalf("receiver published deletion: rev=%d err=%v", rev, err)
+		}
+	}
 }
 
 func TestUpdateNotificationsRejectAmbiguousOrEscapingPaths(t *testing.T) {

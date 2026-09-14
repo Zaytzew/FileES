@@ -90,8 +90,49 @@ func TestStatusNestedUnversionedTargets(t *testing.T) {
 	if string(before) != string(f.status(t)) {
 		t.Fatal("status mutated WC")
 	}
-	f.jsonCall(t, false, "status", "--disposable-wc", f.wc, "--", "new-folder/deeper/absent.txt")
+	absent := f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--", "new-folder/deeper/absent.txt")["entries"].([]any)
+	if len(absent) != 1 || absent[0].(map[string]any)["item"] != "none" {
+		t.Fatalf("absent status: %#v", absent)
+	}
 	f.jsonCall(t, false, "status", "--disposable-wc", f.wc, "--", "new-folder/../../outside")
+}
+
+func TestStatusReceivedDirectoryDeletion(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	child := "folder/deeper/child.txt"
+	if err := os.MkdirAll(filepath.Join(f.wc, "folder/deeper"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(f.wc, child), "remote deletion fixture")
+	f.svnRun(t, "add", "folder/deeper")
+	f.svnRun(t, "commit", "-m", "nested tree")
+	f.svnRun(t, "delete", f.repoURL+"/folder", "-m", "remote deletion")
+	f.svnRun(t, "update")
+	for _, targets := range [][]string{{child}, {"old.txt", child, "occupied.txt"}} {
+		args := append([]string{"status", "--disposable-wc", f.wc, "--depth", "empty", "--"}, targets...)
+		rows := f.jsonCall(t, true, args...)["entries"].([]any)
+		if len(rows) != len(targets) {
+			t.Fatalf("lost batch rows: %#v", rows)
+		}
+		for i, target := range targets {
+			row := rows[i].(map[string]any)
+			want := "normal"
+			if target == child {
+				want = "none"
+			}
+			if row["path"] != target || row["item"] != want {
+				t.Fatalf("status: %#v", row)
+			}
+		}
+	}
+	if err := os.Remove(filepath.Join(f.wc, "old.txt")); err != nil {
+		t.Fatal(err)
+	}
+	f.svnRun(t, "delete", "occupied.txt")
+	rows := f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--", "old.txt", child, "occupied.txt")["entries"].([]any)
+	if rows[0].(map[string]any)["item"] != "missing" || rows[2].(map[string]any)["item"] != "deleted" {
+		t.Fatalf("local changes lost: %#v", rows)
+	}
 }
 
 func TestWCLocalPropgetErrorIsSingleJSONDocument(t *testing.T) {

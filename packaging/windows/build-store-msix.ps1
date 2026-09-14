@@ -29,11 +29,15 @@ try {
     Pop-Location
 }
 $makeappx = Join-Path $sdk 'makeappx.exe'
+$makepri = Join-Path $sdk 'makepri.exe'
 $magick = (Get-Command magick.exe -ErrorAction Stop).Source
 if (-not (Test-Path -LiteralPath $makeappx -PathType Leaf)) { throw 'MakeAppx is missing from SdkBin' }
-$signature = Get-AuthenticodeSignature -LiteralPath $makeappx
-if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
-    throw 'MakeAppx must have a valid Microsoft signature'
+foreach ($tool in @($makeappx, $makepri)) {
+    if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Windows SDK tool is missing: $tool" }
+    $signature = Get-AuthenticodeSignature -LiteralPath $tool
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+        throw "Windows SDK tool must have a valid Microsoft signature: $tool"
+    }
 }
 $output = [IO.Path]::GetFullPath($OutputDir)
 if (Test-Path -LiteralPath $output) { throw "Output already exists: $output" }
@@ -73,6 +77,16 @@ foreach ($item in @(@('StoreLogo.png', 50), @('Square150x150Logo.png', 150), @('
     & $magick $icon -resize "$($item[1])x$($item[1])" (Join-Path $assets $item[0])
     if ($LASTEXITCODE -ne 0) { throw "Icon generation failed: $($item[0])" }
 }
+# The base 44px logo is a tile asset. Without target-size unplated variants,
+# Windows can shrink the taskbar icon and put it on an accent-coloured plate.
+# Keep all variants based on the same transparent FileES artwork.
+foreach ($size in @(16, 20, 24, 30, 32, 36, 40, 44, 48, 60, 64, 72, 80, 96, 256)) {
+    foreach ($variant in @('', '_altform-unplated', '_altform-lightunplated')) {
+        $name = "Square44x44Logo.targetsize-$size$variant.png"
+        & $magick $icon -resize "${size}x${size}" (Join-Path $assets $name)
+        if ($LASTEXITCODE -ne 0) { throw "Taskbar icon generation failed: $name" }
+    }
+}
 $identity = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'store-identity.json') -Raw | ConvertFrom-Json
 $template = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'AppxManifest.xml.in') -Raw
 foreach ($value in @($identity.identityName, $identity.publisher, $identity.publisherDisplayName)) {
@@ -81,6 +95,11 @@ foreach ($value in @($identity.identityName, $identity.publisher, $identity.publ
 $manifest = $template.Replace('@MSIX_VERSION@', $Version)
 [xml]$parsedManifest = $manifest
 [IO.File]::WriteAllText((Join-Path $payload 'AppxManifest.xml'), $manifest, [Text.UTF8Encoding]::new($false))
+$priConfig = Join-Path $output 'priconfig.xml'
+& $makepri createconfig /cf $priConfig /dq en-US /o
+if ($LASTEXITCODE -ne 0) { throw 'MakePri configuration failed' }
+& $makepri new /pr $payload /cf $priConfig /of (Join-Path $payload 'resources.pri') /o
+if ($LASTEXITCODE -ne 0) { throw 'MakePri resource indexing failed' }
 $package = Join-Path $output ("FileES-Desktop-$Version-unsigned.msix")
 & $makeappx pack /d $payload /p $package
 if ($LASTEXITCODE -ne 0) { throw 'MakeAppx semantic validation/package creation failed' }

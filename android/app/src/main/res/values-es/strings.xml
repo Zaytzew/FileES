@@ -117,6 +117,7 @@
     <string name="hint_send_as">Nuevo nombre de archivo</string>
     <string name="status_waiting_decision">%1$d archivos esperan una decisión.</string>
     <string name="action_unpair">Desconectar este servidor</string>
+    <string name="action_unpair_short">Desconectar</string>
     <string name="confirm_unpair">¿Olvidar este servidor en el teléfono? Los demás emparejamientos siguen. La clave del dispositivo sigue: un nuevo emparejamiento con el mismo host la reutilizará.</string>
     <string name="settings_servers">Servidores emparejados</string>
     <string name="action_switch_server">Servidor</string>
@@ -139,7 +140,7 @@
     <string name="home_eyebrow">FileES</string>
     <string name="home_title">Sus archivos.\nEn la ruta correcta.</string>
     <string name="home_copy_idle">Escanee el QR del escritorio FileES para ver las carpetas de este ámbito.</string>
-    <string name="home_copy_paired">Carpetas que este teléfono ve en el ámbito.</string>
+    <string name="home_copy_paired">Carpetas del ámbito.</string>
     <string name="home_metric_servers">Servidores</string>
     <string name="home_metric_servers_note">emparejados</string>
     <string name="home_metric_repos">Carpetas</string>
@@ -153,8 +154,8 @@
         <item quantity="one">%d carpeta</item>
         <item quantity="other">%d carpetas</item>
     </plurals>
-    <string name="home_journal_title">Diario del teléfono</string>
-    <string name="home_journal_intro">Anuncios y decisiones de envío de este dispositivo. No es el diario del demonio.</string>
+    <string name="home_journal_title">Diario</string>
+    <string name="home_journal_intro">Anuncios y registro de operaciones.</string>
     <string name="home_journal_empty">Sin entradas.</string>
     <string name="home_journal_pending">Hace falta una decisión: %1$s</string>
     <string name="home_journal_shout">Anuncio r%1$s</string>

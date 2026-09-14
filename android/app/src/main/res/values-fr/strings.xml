@@ -117,6 +117,7 @@
     <string name="hint_send_as">Nouveau nom de fichier</string>
     <string name="status_waiting_decision">%1$d fichiers en attente d’une décision.</string>
     <string name="action_unpair">Déconnecter ce serveur</string>
+    <string name="action_unpair_short">Déconnecter</string>
     <string name="confirm_unpair">Oublier ce serveur sur le téléphone ? Les autres appariements restent. La clé de l’appareil reste — un nouvel appariement avec le même hôte la réutilisera.</string>
     <string name="settings_servers">Serveurs appariés</string>
     <string name="action_switch_server">Serveur</string>
@@ -139,7 +140,7 @@
     <string name="home_eyebrow">FileES</string>
     <string name="home_title">Vos fichiers.\nSur la bonne voie.</string>
     <string name="home_copy_idle">Scannez le QR du bureau FileES pour voir les dossiers de ce domaine.</string>
-    <string name="home_copy_paired">Dossiers que ce téléphone voit dans le domaine.</string>
+    <string name="home_copy_paired">Dossiers du domaine.</string>
     <string name="home_metric_servers">Serveurs</string>
     <string name="home_metric_servers_note">appariés</string>
     <string name="home_metric_repos">Dossiers</string>
@@ -153,8 +154,8 @@
         <item quantity="one">%d dossier</item>
         <item quantity="other">%d dossiers</item>
     </plurals>
-    <string name="home_journal_title">Journal du téléphone</string>
-    <string name="home_journal_intro">Annonces et décisions d’envoi de cet appareil. Ce n’est pas le journal du démon.</string>
+    <string name="home_journal_title">Journal</string>
+    <string name="home_journal_intro">Annonces et registre des opérations.</string>
     <string name="home_journal_empty">Aucune entrée.</string>
     <string name="home_journal_pending">Décision requise : %1$s</string>
     <string name="home_journal_shout">Annonce r%1$s</string>

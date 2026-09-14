@@ -125,6 +125,7 @@
     <string name="hint_send_as">Nowa nazwa pliku</string>
     <string name="status_waiting_decision">%1$d plików czeka na decyzję.</string>
     <string name="action_unpair">Odłącz ten serwer</string>
+    <string name="action_unpair_short">Odłącz</string>
     <string name="confirm_unpair">Zapomnieć ten serwer na telefonie? Inne sparowane zostają. Klucz urządzenia zostaje — ponowne parowanie z tym samym hostem użyje go znowu.</string>
     <string name="settings_servers">Sparowane serwery</string>
     <string name="action_switch_server">Serwer</string>
@@ -148,7 +149,7 @@
     <string name="home_eyebrow">FileES</string>
     <string name="home_title">Twoje pliki.\nNa właściwej ścieżce.</string>
     <string name="home_copy_idle">Zeskanuj kod QR z pulpitu FileES, żeby zobaczyć foldery tej strefy.</string>
-    <string name="home_copy_paired">Foldery, które ten telefon widzi w strefie.</string>
+    <string name="home_copy_paired">Foldery strefy.</string>
     <string name="home_metric_servers">Serwery</string>
     <string name="home_metric_servers_note">sparowane</string>
     <string name="home_metric_repos">Foldery</string>
@@ -164,8 +165,8 @@
         <item quantity="many">%d folderów</item>
         <item quantity="other">%d folderu</item>
     </plurals>
-    <string name="home_journal_title">Dziennik telefonu</string>
-    <string name="home_journal_intro">Ogłoszenia i decyzje wrzutki z tego urządzenia. To nie jest dziennik daemona.</string>
+    <string name="home_journal_title">Dziennik</string>
+    <string name="home_journal_intro">Ogłoszenia i rejestr operacji.</string>
     <string name="home_journal_empty">Brak wpisów.</string>
     <string name="home_journal_pending">Do decyzji: %1$s</string>
     <string name="home_journal_shout">Ogłoszenie r%1$s</string>

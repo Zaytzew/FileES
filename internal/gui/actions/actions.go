@@ -1179,7 +1179,11 @@ func (c *Controller) awaitRelocationOutcome(ctx context.Context, key, name, targ
 			return
 		}
 		if err == nil && lastError != "" {
-			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), name+" — "+lastError)
+			body := name + " — " + lastError
+			if moveBlockedByOpenHandle(lastError) {
+				body += "\n\n" + c.uiText("feedback.moveClosePrograms", "Zamknij programy i okna Eksploratora, które mogą pracować z zawartością tej kopii roboczej, a następnie spróbuj ponownie.")
+			}
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), body)
 			return
 		}
 		select {
@@ -1189,6 +1193,13 @@ func (c *Controller) awaitRelocationOutcome(ctx context.Context, key, name, targ
 		}
 	}
 	c.reportActionError(ctx, key, c.uiText("feedback.movePending", "Przenoszenie folderu nie zostało jeszcze potwierdzone"), name)
+}
+
+func moveBlockedByOpenHandle(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(normalized, "access is denied") ||
+		strings.Contains(normalized, "sharing violation") ||
+		strings.Contains(normalized, "being used by another process")
 }
 
 func locatableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {

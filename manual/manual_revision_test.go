@@ -19,7 +19,13 @@ import (
 // on 2026-09-09 the pages announced "source r1042" while the tree stood at
 // r1070 — twenty-eight revisions of drift inside a single day, on a service
 // that is publicly reachable.
-var handWrittenStamp = regexp.MustCompile(`(?i)(source|źródło|zrodlo)\s+r\d+`)
+//
+// The first version matched only "source r1042" and missed the same claim
+// written as "Source SVN r1042", "signed r1042 on production" and "points at
+// release r1042", which stood on the pages for another five days. History
+// ("composition has been derived since r601") and command examples
+// ("--adopt r1042") do not age and are not matched.
+var handWrittenStamp = regexp.MustCompile(`(?i)(source|źródło|zrodlo|svn|signed|podpisan\p{L}*|release|wydani\p{L}*)\s+r\d+`)
 
 const revisionMeta = `name="filees-source-revision"`
 

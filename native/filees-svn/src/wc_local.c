@@ -133,6 +133,35 @@ static svn_error_t *nested_unversioned_status(svn_error_t *original,
     return original;
 }
 
+/* A received directory deletion leaves descendants absent from both disk
+ * and WC metadata. status6 reports E155010 for them, unlike the CLI's
+ * non-fatal warning. Never turn scheduled deletions or hidden nodes into
+ * this result: ask the WC database with both visibility flags enabled. */
+static svn_error_t *absent_status(svn_error_t *original, const char *path,
+                                  svn_client_ctx_t *ctx,
+                                  struct status_baton *b, apr_pool_t *pool)
+{
+    apr_finfo_t info;
+    svn_node_kind_t kind;
+    svn_error_t *err;
+    const char *rel;
+    struct status_row *row;
+    if (!svn_error_find_cause(original, SVN_ERR_WC_PATH_NOT_FOUND)) return original;
+    if (!APR_STATUS_IS_ENOENT(apr_stat(&info, path, APR_FINFO_TYPE | APR_FINFO_LINK, pool)))
+        return original;
+    err = svn_wc_read_kind2(&kind, ctx->wc_ctx, path, TRUE, TRUE, pool);
+    if (err) return svn_error_compose_create(original, err);
+    if (kind != svn_node_none) return original;
+    err = filees_relpath(&rel, b->wc, path, pool);
+    if (err) return svn_error_compose_create(original, err);
+    row = apr_array_push(b->rows);
+    row->path = rel;
+    row->item = row->props = "none";
+    row->local_lock = row->repos_lock = NULL;
+    svn_error_clear(original);
+    return SVN_NO_ERROR;
+}
+
 static void status_lock(const char *name, const svn_lock_t *lock, apr_pool_t *pool)
 {
     printf(",\"%s\":", name);
@@ -182,7 +211,8 @@ svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
             if (err) {
                 b.rows->nelts = before;
                 if (remote) return err; /* no invented repository lock observation */
-                SVN_ERR(nested_unversioned_status(err, path, ctx, &b, pool));
+                err = nested_unversioned_status(err, path, ctx, &b, pool);
+                if (err) SVN_ERR(absent_status(err, path, ctx, &b, pool));
             }
         }
     }

@@ -185,12 +185,17 @@ func updateActivityPaths(output string) map[string]watcher.OpType {
 
 func (s *Service) receivedRemoval(ctx context.Context, rel string) bool {
 	proven := s.receivedDeletes[rel]
+	// SVN emits one deletion notification for a whole directory. The
+	// filesystem watcher emits its descendants separately after debounce.
+	for parent := filepath.ToSlash(filepath.Dir(rel)); !proven && parent != "." && parent != "/"; parent = filepath.ToSlash(filepath.Dir(parent)) {
+		proven = s.receivedDeletes[parent]
+	}
 	// Watcher debounce/replay may outlive the service. The durable incoming
 	// receipt is evidence of origin, not an inference from an absent SVN row.
 	if !proven {
 		if source, ok := s.Activity.(interface{ List() []activity.Entry }); ok {
 			for _, entry := range source.List() {
-				if entry.RepoID == s.repoID && entry.Path == rel && entry.Stage == activity.Received && entry.Kind == activity.Deleted {
+				if entry.RepoID == s.repoID && (entry.Path == rel || (entry.Path != "" && strings.HasPrefix(rel, entry.Path+"/"))) && entry.Stage == activity.Received && entry.Kind == activity.Deleted {
 					proven = true
 					break
 				}

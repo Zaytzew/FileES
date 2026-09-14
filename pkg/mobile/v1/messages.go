@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+var leadingColorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 const (
 	// Schema tags request and response envelopes.
@@ -165,12 +168,15 @@ type RepositorySummary struct {
 // host:port. Desktop-only fields (editing_policy, lock_release_requests,
 // attachment_policy, capabilities) stay off this thinned view.
 type ListRepositoriesResult struct {
-	ViewGeneration    int64               `json:"view_generation"`
-	RealmID           string              `json:"realm_id"`
-	RealmAlias        string              `json:"realm_alias,omitempty"`
-	ServerDisplayName string              `json:"server_display_name,omitempty"`
-	GeneratedAt       *time.Time          `json:"generated_at,omitempty"`
-	Repositories      []RepositorySummary `json:"repositories"`
+	ViewGeneration    int64  `json:"view_generation"`
+	RealmID           string `json:"realm_id"`
+	RealmAlias        string `json:"realm_alias,omitempty"`
+	ServerDisplayName string `json:"server_display_name,omitempty"`
+	// LeadingColor is the realm's public brand (#RRGGBB). Empty means the
+	// phone uses FileES orange, the same default as the desktop panel.
+	LeadingColor string              `json:"leading_color,omitempty"`
+	GeneratedAt  *time.Time          `json:"generated_at,omitempty"`
+	Repositories []RepositorySummary `json:"repositories"`
 }
 
 // RefreshManifestResult is NOT_MODIFIED (Manifest nil) only when both the view
@@ -571,6 +577,9 @@ func (r ListRepositoriesResult) Validate() error {
 				return errors.New("server_display_name is invalid")
 			}
 		}
+	}
+	if r.LeadingColor != "" && !leadingColorRe.MatchString(r.LeadingColor) {
+		return errors.New("leading_color must be #RRGGBB")
 	}
 	if r.GeneratedAt != nil && r.GeneratedAt.IsZero() {
 		return errors.New("generated_at is zero")

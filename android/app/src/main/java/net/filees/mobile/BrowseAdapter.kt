@@ -89,8 +89,13 @@ class BrowseAdapter(
         private val name: TextView = itemView.findViewById(R.id.textServerPanelName)
         private val meta: TextView = itemView.findViewById(R.id.textServerPanelMeta)
         private val chevron: View = itemView.findViewById(R.id.textServerChevron)
+        private val accentBar: View = itemView.findViewById(R.id.viewRealmAccent)
+        private val eyebrow: TextView = itemView.findViewById(R.id.textServerEyebrow)
         fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
             itemView.setBackgroundResource(panelBackground(row.panel))
+            val accent = RealmAccent.parse(row.accentColor)
+            accentBar.setBackgroundColor(accent)
+            eyebrow.setTextColor(accent)
             name.text = row.name
             meta.text = row.serverMeta
             val switch = row.switchServerId.isNotEmpty()

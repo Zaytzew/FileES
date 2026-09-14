@@ -2,6 +2,7 @@ package servertool
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"filees/internal/mobileworker"
 	"filees/internal/obsandbox"
 	"filees/pkg/clientview"
+	"filees/pkg/realmbranding"
 	"filees/pkg/serverconfig"
 )
 
@@ -96,10 +98,40 @@ func (a clientviewMobileAuthority) List(_ context.Context, clientID string) (mob
 		RealmID:           view.RealmID,
 		RealmAlias:        view.RealmAlias,
 		ServerDisplayName: view.ServerDisplayName,
+		LeadingColor:      realmLeadingColor(a.ServiceWorkingCopy, view.RealmID),
 		Generation:        view.Generation,
 		GeneratedAt:       view.GeneratedAt,
 		Repositories:      repos,
 	}, nil
+}
+
+type realmBrandingFile struct {
+	RealmID        string                  `json:"realm_id"`
+	State          string                  `json:"state"`
+	PublicBranding *realmbranding.Branding `json:"public_branding"`
+}
+
+func realmLeadingColor(serviceWC, realmID string) string {
+	if serviceWC == "" || realmID == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(serviceWC, "admin", "realms", realmID+".json"))
+	if err != nil {
+		return ""
+	}
+	var record realmBrandingFile
+	if json.Unmarshal(raw, &record) != nil || record.RealmID != realmID || record.State != "active" {
+		return ""
+	}
+	branding := realmbranding.Default()
+	if record.PublicBranding != nil {
+		branding = *record.PublicBranding
+	}
+	normalized, err := realmbranding.Normalize(branding)
+	if err != nil {
+		return ""
+	}
+	return normalized.LeadingColor
 }
 
 func (a clientviewMobileAuthority) loadView(clientID string) (clientview.View, error) {

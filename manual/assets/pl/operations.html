@@ -248,7 +248,7 @@ done</code></pre>
 <tr><td><code>.filees/logs/errors.jsonl</code></td><td>Strukturalny dziennik błędów; kody, ważność, wskazówki, znaczniki czasu. Odpytuj standardowymi narzędziami JSON.</td></tr>
 <tr><td><code>filees status</code></td><td>Żywy zrzut stanów wszystkich repozytoriów, łączności, liczb oczekujących oraz rewizji lokalnych/HEAD</td></tr>
 <tr><td><code>filees log N</code></td><td>Ostatnie N wpisów dziennika błędów, od najnowszego</td></tr>
-<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Połączony zrzut aktywności i błędów od najnowszego; do 12 zagregowanych wierszy w zasobniku i pełny dostępny zrzut w natywnym oknie</td></tr>
+<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Wspólny obraz aktywności i błędów od najnowszych, grupowany według rewizji albo etapu repozytorium; demon trzyma domyślnie 20 grup, a IPC zwraca najwyżej 100. Każda ścieżka zachowuje tylko swój ostatni stan, więc nie jest to historia zatwierdzeń. Pełny widok otwiera okno dziennika Wails.</td></tr>
 <tr><td><code>/var/filees/onboarding/operations/</code></td><td>Pakiety operacji; pole stanu można odczytać przez jq</td></tr>
 <tr><td><code>/var/filees/onboarding/audit/</code></td><td>Zdarzenia ze znacznikiem czasu</td></tr>
 <tr><td><code>/var/filees/activation/records/</code></td><td>Rekordy aktywacji w stanach <code>staged</code>, <code>active</code>, <code>revoking</code>, <code>revoked</code> i <code>expired</code></td></tr>

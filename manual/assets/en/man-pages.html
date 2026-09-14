@@ -253,7 +253,7 @@ svnserve -t
 filees control-v1</code></pre>
 </article>
 <article class="cli-tool" id="filees-worker">
-<span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
+<span class="cli-kind">Forced command, plus two cron verbs you schedule yourself</span>
 <h2>filees-worker(8)</h2>
 <p class="cli-nd">execute one authenticated FileES server action and exit</p>
 <h3>Role</h3>
@@ -261,13 +261,29 @@ filees control-v1</code></pre>
 <p>It is the only process that mutates canonical service-repository records, data repositories, grants, editing policy and Public Shares channel state. It publishes through a path-scoped Subversion commit under the shared service-WC lock. Unversioned leftovers from a killed older binary are reconciled before the next scan.</p>
 <p>Do not run filees-worker as root against the service working copy. Root can bypass the 0700 directory mode and then leaves root-owned pristine objects in .svn .</p>
 <h3>Invocation</h3>
-<pre><code>filees-worker</code></pre>
+<pre><code>filees-worker [deploy]
+filees-worker repository-control client-id
+filees-worker whale-v1
+filees-worker upload-reap [-config path]
+filees-worker passport-reap [-config path] [--check]
+filees-worker upload-seed-reject -alias realm-alias
+filees-worker mobile-onboard
+filees-worker mobile-proof operation-id client-id
+filees-worker mobile-finish operation-id client-id</code></pre>
 <h3>Flags and verbs</h3>
-<p>No operator flags — the process does not take a typed argument list.</p>
+<div class="table-wrap"><table class="field-table"><tr><th>Verb</th><th>Meaning</th></tr>
+<tr><td><code>deploy</code></td><td>Default, also reached with no verb: reads a tunnel session from stdin and runs the desktop/server bootstrap deploy.</td></tr>
+<tr><td><code>repository-control</code></td><td>Reads one signed control/v1 ticket scoped to <code>client-id</code> and changes canonical records, data repositories, grants, editing policy or Public Shares channel state.</td></tr>
+<tr><td><code>whale-v1</code></td><td>Serves one framed Whale PUT window, status or commit request.</td></tr>
+<tr><td><code>upload-reap</code></td><td>Operator cron: claims ready intake jobs, runs <code>upload.av_command</code>, and commits a clean file into the shelf repository or copies a rejected one into the trash tree. Run as <code>_filees-state</code>, never as root.</td></tr>
+<tr><td><code>passport-reap</code></td><td>One bounded cleanup pass over registered edit passports, as <code>_filees-state</code>. <code>--check</code> fails for missing, running, failed, corrupt or stale maintenance state.</td></tr>
+<tr><td><code>upload-seed-reject</code></td><td>Plants one harmless EICAR reject for <code>realm-alias</code>, so the owner can see the quarantine view without a real infected upload.</td></tr>
+<tr><td><code>mobile-onboard</code>, <code>mobile-proof</code>, <code>mobile-finish</code></td><td>Mobile activation steps, exec&rsquo;d by <code>filees-entry</code>(8) and <code>filees-mobile-v1</code>(8).</td></tr>
+</table></div>
 <h3>Examples</h3>
-<p>No EXAMPLES section in mandoc; the invocation below is taken from the description.</p>
-<pre><code># exec’d once per authenticated ticket; do not run as root
-filees-worker</code></pre>
+<p>The reaper crontab for <code>_filees-state</code>; no installer creates it:</p>
+<pre><code>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
+<div class="note">The mandoc page says <code>clamdscan</code> cannot open the payload unless <code>_clamav</code> can read the job directory. With <code>--stream</code>, as in the example configuration, <code>clamdscan</code> reads the file as the reaper user and sends the bytes to <code>clamd</code>, so no extra group membership is needed (<a href="install.html#ch3-upload">§3.7</a>).</div>
 </article>
 <article class="cli-tool" id="filees-service-wc-corrector">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
@@ -423,5 +439,5 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 
 <nav class="page-nav"><a href="security.html">← Security</a><span></span></nav>
 </div></div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-09-14</span></footer>
 </main></body></html>

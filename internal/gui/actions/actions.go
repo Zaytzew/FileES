@@ -106,6 +106,11 @@ type RepositoryLocator interface {
 	LocateStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+type RepositoryRelocator interface {
+	RelocateRepository(ctx context.Context, serverID, repoID, newLocalPath string) (operationID string, err error)
+	RelocationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
+}
+
 type RepositoryDetacher interface {
 	DetachRepository(context.Context, string, string, bool) error
 }
@@ -358,6 +363,7 @@ type Config struct {
 	RepositoryCreator    RepositoryCreator
 	RepositoryAttacher   RepositoryAttacher
 	RepositoryLocator    RepositoryLocator
+	RepositoryRelocator  RepositoryRelocator
 	RepositoryDetacher   RepositoryDetacher
 	RepositoryRepairer   RepositoryLifecycleRepairer
 	IntentResolver       IntentResolver
@@ -641,6 +647,9 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogLocateFolder:
 			c.endOperation(operationKey)
 			c.startLocateRepository(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogMoveFolder:
+			c.endOperation(operationKey)
+			c.startMoveRepository(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogDetachFolder:
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogDeleteRepo:
@@ -974,6 +983,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanReviewQuarantine:     quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
 			CanConnect:              repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+			CanMove:                 repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
 			CanDelete:               repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
 			CanLoadDump:             repo.Purpose == "" && !locallyProvisioning && repo.Attached && ownedAndCreatable,
@@ -1099,6 +1109,77 @@ func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID
 		}
 		c.awaitLocateOutcome(ctx, key, name, operationID)
 	}()
+}
+
+func (c *Controller) startMoveRepository(ctx context.Context, serverID, repoID string) {
+	key := "move-repository:" + serverID + ":" + repoID
+	if serverID == "" || repoID == "" || c.cfg.RepositoryRelocator == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || repo.Purpose != "" || !repo.Attached || repo.DisplayState() != app.RepoDisplayActive || !vm.CanRelocateRepository() {
+			return
+		}
+		name := firstNonBlank(repo.DisplayName, repo.ID)
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.moveParent", "Wybierz nowy folder nadrzędny dla „%s”"), name)})
+		if err != nil || picked.Cancelled {
+			if err != nil {
+				c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.actionErrorBody(err))
+			}
+			return
+		}
+		target := filepath.Join(filepath.Clean(picked.Path), filepath.Base(filepath.Clean(repo.LocalPath)))
+		if !filepath.IsAbs(target) || filepath.Clean(target) == filepath.Clean(repo.LocalPath) {
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.uiText("feedback.moveSame", "Wybierz inny folder nadrzędny."))
+			return
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.moveFolder", PresentationArgs: map[string]string{"name": name, "source": repo.LocalPath, "target": target}, Title: "Przenieś folder FileES", Text: "FileES zatrzyma synchronizację, przeniesie cały folder wraz z lokalnymi zmianami i wznowi pracę w nowej lokalizacji.", ConfirmText: "Przenieś", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		operationID, err := c.cfg.RepositoryRelocator.RelocateRepository(ctx, serverID, repoID, target)
+		if err != nil {
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), name+" — "+c.actionErrorBody(err))
+			return
+		}
+		c.awaitRelocationOutcome(ctx, key, name, target, operationID)
+	}()
+}
+
+func (c *Controller) awaitRelocationOutcome(ctx context.Context, key, name, target, operationID string) {
+	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
+	if interval <= 0 {
+		interval = creationStatusPollInterval
+	}
+	if timeout <= 0 {
+		timeout = creationStatusPollTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		state, lastError, err := c.cfg.RepositoryRelocator.RelocationStatus(ctx, operationID)
+		if err == nil && state == "attached" && lastError == "" {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.moveComplete", "Folder przeniesiony"), Body: name + "\n" + target, Urgency: platform.UrgencyNormal})
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
+			return
+		}
+		if err == nil && lastError != "" {
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), name+" — "+lastError)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
+	c.reportActionError(ctx, key, c.uiText("feedback.movePending", "Przenoszenie folderu nie zostało jeszcze potwierdzone"), name)
 }
 
 func locatableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {

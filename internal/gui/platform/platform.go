@@ -371,6 +371,7 @@ type SettingsFolder struct {
 	CanReviewQuarantine     bool
 	CanConnect              bool // connect selected unattached repository
 	CanLocate               bool // adopt an existing moved working copy
+	CanMove                 bool // controlled move of the current working copy
 	CanDetach               bool // detach_folder (non-destructive)
 	CanDelete               bool // delete_repository
 	CanLoadDump             bool // load_dump
@@ -390,6 +391,7 @@ const (
 	SettingsDialogAddFolder        SettingsDialogAction = "add_folder"
 	SettingsDialogConnectRepos     SettingsDialogAction = "connect_repositories"
 	SettingsDialogLocateFolder     SettingsDialogAction = "locate_folder"
+	SettingsDialogMoveFolder       SettingsDialogAction = "move_folder"
 	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"

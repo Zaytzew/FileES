@@ -71,6 +71,7 @@ type Record struct {
 	// normal relocation. The provisioner must validate and adopt this path;
 	// it must never checkout into or otherwise replace it.
 	RelocationAdoptExisting bool   `json:"relocation_adopt_existing,omitempty"`
+	RelocationMoveExisting  bool   `json:"relocation_move_existing,omitempty"`
 	DetachOperationID       string `json:"detach_operation_id,omitempty"`
 	DeleteRepository        bool   `json:"delete_repository,omitempty"`
 	// ServerDeleteCompleted is the durable semantic boundary between the
@@ -404,6 +405,7 @@ func (s *Store) Abandon(operationID string) (Record, error) {
 		record.State, record.LastError = StateAbandoned, ""
 		record.PendingLocalPath = ""
 		record.RelocationAdoptExisting = false
+		record.RelocationMoveExisting = false
 		record.ReconcileOperationID = ""
 		record.LoadDumpApplyIgnorePolicy = false
 		record.LoadDumpKeepLastRevisions = nil
@@ -472,17 +474,20 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 	})
 }
 
-func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string) (Record, error) {
-	return s.beginRelocation(serverID, repoID, newLocalPath, false)
+func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string, moveExisting bool) (Record, error) {
+	return s.beginRelocation(serverID, repoID, newLocalPath, false, moveExisting)
 }
 
 func (s *Store) BeginLocate(serverID, repoID, existingLocalPath string) (Record, error) {
-	return s.beginRelocation(serverID, repoID, existingLocalPath, true)
+	return s.beginRelocation(serverID, repoID, existingLocalPath, true, false)
 }
 
-func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting bool) (Record, error) {
+func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting, moveExisting bool) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if adoptExisting && moveExisting {
+		return Record{}, errors.New("relocation cannot adopt and move the same working copy")
+	}
 	newLocalPath = filepath.Clean(newLocalPath)
 	var operationID string
 	for id, record := range s.records {
@@ -495,7 +500,7 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, os.ErrNotExist
 	}
 	record := s.records[operationID]
-	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting {
+	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting && record.RelocationMoveExisting == moveExisting {
 		return record, nil
 	}
 	for _, existing := range s.records {
@@ -520,7 +525,7 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		}
 	}
 	before := record
-	record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, adoptExisting, "", s.now().UTC()
+	record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, adoptExisting, moveExisting, "", s.now().UTC()
 	if err := validate(record); err != nil {
 		return Record{}, err
 	}
@@ -537,7 +542,7 @@ func (s *Store) CompleteRelocation(operationID string) (Record, error) {
 		if record.State != StateRelocating || record.PendingLocalPath == "" {
 			return errors.New("repository relocation is not in progress")
 		}
-		record.LocalPath, record.PendingLocalPath, record.RelocationAdoptExisting, record.State, record.LastError = record.PendingLocalPath, "", false, StateAttached, ""
+		record.LocalPath, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.State, record.LastError = record.PendingLocalPath, "", false, false, StateAttached, ""
 		return nil
 	})
 }
@@ -547,7 +552,7 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 		if record.State != StateRelocating || cause == nil || strings.TrimSpace(cause.Error()) == "" {
 			return errors.New("active relocation and failure are required")
 		}
-		record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.LastError = StateAttached, "", false, cause.Error()
+		record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError = StateAttached, "", false, false, cause.Error()
 		return nil
 	})
 }
@@ -954,6 +959,9 @@ func validate(r Record) error {
 		}
 	}
 	if r.State == StateRelocating {
+		if r.RelocationAdoptExisting && r.RelocationMoveExisting {
+			return errors.New("repository relocation mode is invalid")
+		}
 		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) {
 			return errors.New("repository relocation target is invalid")
 		}
@@ -961,7 +969,7 @@ func validate(r Record) error {
 		if pathsOverlap(r.LocalPath, r.PendingLocalPath) && !(r.RelocationAdoptExisting && sameRoot) {
 			return errors.New("repository relocation target is invalid")
 		}
-	} else if r.PendingLocalPath != "" || r.RelocationAdoptExisting {
+	} else if r.PendingLocalPath != "" || r.RelocationAdoptExisting || r.RelocationMoveExisting {
 		return errors.New("repository relocation target exists outside relocation")
 	}
 	if r.State == StateReconciling {

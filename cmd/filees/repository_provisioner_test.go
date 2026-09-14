@@ -659,6 +659,51 @@ func TestDaemonProvisionerRelocatesOnlyAfterQuiesce(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerMovesExistingWorkingCopyAfterQuiesce(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	// Convert the existing relocation fixture into the user-requested move
+	// variant while retaining the same durable operation identity.
+	target := record.PendingLocalPath
+	if _, err := local.FailRelocation(record.OperationID, errors.New("prepare move fixture")); err != nil {
+		t.Fatal(err)
+	}
+	record, err := local.BeginRelocation(record.ServerID, record.RepoID, target, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(record.LocalPath, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureWorkingCopyIdentity(record.LocalPath, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
+		t.Fatal(err)
+	}
+	localDraft := filepath.Join(record.LocalPath, "local-draft.txt")
+	if err := os.WriteFile(localDraft, []byte("not committed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stub := &attachmentSVNStub{url: record.RepoURL}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	go func() { quiesce := <-events; quiesce.Result <- nil }()
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != record.PendingLocalPath || stub.checkout != 0 {
+		t.Fatalf("moved=%+v checkout=%d", got, stub.checkout)
+	}
+	if raw, err := os.ReadFile(filepath.Join(got.LocalPath, "local-draft.txt")); err != nil || string(raw) != "not committed" {
+		t.Fatalf("local draft raw=%q err=%v", raw, err)
+	}
+	if _, err := os.Stat(record.LocalPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old root still exists: %v", err)
+	}
+	final := <-events
+	if final.Quiesce || final.Repo.LocalPath != got.LocalPath {
+		t.Fatalf("final attachment=%+v", final)
+	}
+}
+
 func TestDaemonProvisionerRelocationRollbackRestoresOldRuntime(t *testing.T) {
 	local, journal, profile, record := relocationFixture(t)
 	stub := &attachmentSVNStub{status: []client.StatusEntry{{Path: "broken", Item: "missing"}}}
@@ -931,7 +976,7 @@ func relocationFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, cli
 	record, _ := local.BeginAttach("office", uuid.NewString(), oldPath, false)
 	record, _ = local.ApproveAttach(record.OperationID, "office", record.RepoID, "svn+ssh://_filees-client@example/shared", "rw")
 	record, _ = local.MarkAttached(record.OperationID, record.RepoID)
-	record, err = local.BeginRelocation("office", record.RepoID, newPath)
+	record, err = local.BeginRelocation("office", record.RepoID, newPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,7 +1032,7 @@ func TestOpenBSDAttachmentE2E(t *testing.T) {
 		t.Fatalf("checked-out repository content: %v", err)
 	}
 	relocatedWC := filepath.Join(root, "relocated-wc")
-	record, err = local.BeginRelocation(profile.ServerID, repoID, relocatedWC)
+	record, err = local.BeginRelocation(profile.ServerID, repoID, relocatedWC, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1045,12 +1090,12 @@ func TestOpenBSDChaosChild(t *testing.T) {
 			t.Fatal(err)
 		}
 	case "relocation_intent":
-		if _, err := local.BeginRelocation(record.ServerID, record.RepoID, os.Getenv("FILEES_CHAOS_TARGET")); err != nil {
+		if _, err := local.BeginRelocation(record.ServerID, record.RepoID, os.Getenv("FILEES_CHAOS_TARGET"), false); err != nil {
 			t.Fatal(err)
 		}
 	case "relocation_switched":
 		target := os.Getenv("FILEES_CHAOS_TARGET")
-		record, err = local.BeginRelocation(record.ServerID, record.RepoID, target)
+		record, err = local.BeginRelocation(record.ServerID, record.RepoID, target, false)
 		if err != nil {
 			t.Fatal(err)
 		}

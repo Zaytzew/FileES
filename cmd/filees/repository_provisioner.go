@@ -217,7 +217,7 @@ func (p *daemonProvisioner) restoreOperations(ctx context.Context) bool {
 			p.mu.RLock()
 			profile, ok := p.profiles[record.ServerID]
 			p.mu.RUnlock()
-			if ok {
+			if ok && !record.RelocationMoveExisting {
 				p.publishLocalRecord(ctx, record, profile)
 			}
 			p.Enqueue(record.OperationID)
@@ -511,19 +511,35 @@ func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operat
 
 func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
 	mode := provisioning.LocalPathAttach
-	if record.RelocationAdoptExisting {
+	if record.RelocationAdoptExisting || (record.RelocationMoveExisting && movedRootPresent(record.PendingLocalPath)) {
 		mode = provisioning.LocalPathAttachResume
 	}
 	check, err := provisioning.PreflightLocalPath(record.PendingLocalPath, mode, p.otherRoots(record.OperationID))
 	if err != nil {
+		if record.RelocationMoveExisting && !workingCopyRootPresent(record.LocalPath) {
+			talk.With("relocation:"+record.OperationID).Errorf("moved working-copy target cannot be verified; pending intent preserved: %v", err)
+			return
+		}
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
 	}
+	if record.RelocationMoveExisting && check.Exists && mode == provisioning.LocalPathAttach {
+		p.rollbackRelocation(ctx, record, profile, errors.New("move destination must not exist"))
+		return
+	}
 	if err := p.quiesceAttachment(ctx, record); err != nil {
+		if record.RelocationMoveExisting && !workingCopyRootPresent(record.LocalPath) {
+			talk.With("relocation:"+record.OperationID).Errorf("cannot quiesce post-move attachment; pending intent preserved: %v", err)
+			return
+		}
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
 	}
 	svn := p.newAttachmentSVN(profile, record.OperationID)
+	if record.RelocationMoveExisting {
+		p.runMoveExisting(ctx, record, profile, svn, check.CanonicalPath)
+		return
+	}
 	if !record.RelocationAdoptExisting {
 		if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
 			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("checkout relocated repository: %w", err))
@@ -558,6 +574,67 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 	updated, err := p.local.CompleteRelocation(record.OperationID)
 	if err != nil {
 		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	p.publishLocalRecord(ctx, updated, profile)
+}
+
+func movedRootPresent(root string) bool {
+	info, err := os.Lstat(filepath.Join(root, ".svn"))
+	return err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0
+}
+
+func workingCopyRootPresent(root string) bool {
+	info, err := os.Lstat(root)
+	return err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0
+}
+
+// runMoveExisting preserves local edits and .filees state. The durable
+// relocating record is written before quiesce, so a restart can distinguish
+// the pre-rename and post-rename positions without a second checkout.
+func (p *daemonProvisioner) runMoveExisting(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, svn attachmentSVN, target string) {
+	source := record.LocalPath
+	sourceInfo, sourceErr := os.Lstat(source)
+	targetInfo, targetErr := os.Lstat(target)
+	sourceExists := sourceErr == nil && sourceInfo.IsDir() && sourceInfo.Mode()&os.ModeSymlink == 0
+	targetExists := targetErr == nil && targetInfo.IsDir() && targetInfo.Mode()&os.ModeSymlink == 0
+	if sourceErr != nil && !errors.Is(sourceErr, os.ErrNotExist) || targetErr != nil && !errors.Is(targetErr, os.ErrNotExist) {
+		p.rollbackRelocation(ctx, record, profile, fmt.Errorf("inspect moved working copy: source=%v target=%v", sourceErr, targetErr))
+		return
+	}
+	if sourceExists == targetExists {
+		// Both present is ambiguous; neither present has no recoverable copy.
+		// Preserve the durable intent rather than reattaching a guessed path.
+		talk.With("relocation:"+record.OperationID).Errorf("move requires exactly one working-copy root; source present=%v target present=%v", sourceExists, targetExists)
+		return
+	}
+	expected := expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)
+	current := source
+	if targetExists {
+		current = target
+	}
+	if err := validateWorkingCopyIdentity(current, expected); err != nil {
+		talk.With("relocation:"+record.OperationID).Errorf("moved working-copy identity is uncertain: %v", err)
+		return
+	}
+	info, err := svn.GetInfo(ctx, current)
+	if err != nil || !infoHasURL(info, record.RepoURL) {
+		talk.With("relocation:"+record.OperationID).Errorf("moved working-copy URL is uncertain: %v", err)
+		return
+	}
+	if sourceExists {
+		if err := os.Rename(source, target); err != nil {
+			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("move working copy within one volume: %w", err))
+			return
+		}
+	}
+	if err := ensureWorkingCopyIdentity(target, expected); err != nil {
+		talk.With("relocation:"+record.OperationID).Errorf("moved working-copy validation failed; pending intent preserved: %v", err)
+		return
+	}
+	updated, err := p.local.CompleteRelocation(record.OperationID)
+	if err != nil {
+		talk.With("relocation:"+record.OperationID).Errorf("persist moved working-copy location: %v", err)
 		return
 	}
 	p.publishLocalRecord(ctx, updated, profile)

@@ -624,6 +624,7 @@ type RepoRelocatePayload struct {
 	ServerID     string `json:"server_id"`
 	RepoID       string `json:"repo_id"`
 	NewLocalPath string `json:"new_local_path"`
+	MoveExisting bool   `json:"move_existing,omitempty"`
 }
 
 // RepoRenameUnportablePayload renames one object the portable-name gate is

@@ -406,7 +406,7 @@ func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
 	record, _ := store.BeginAttach("primary", "repo-1", oldPath, false)
 	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
 	_, _ = store.MarkAttached(record.OperationID, "repo-1")
-	relocating, err := store.BeginRelocation("primary", "repo-1", newPath)
+	relocating, err := store.BeginRelocation("primary", "repo-1", newPath, false)
 	if err != nil || relocating.State != StateRelocating || relocating.LocalPath != oldPath || relocating.PendingLocalPath != newPath {
 		t.Fatalf("relocating=%+v err=%v", relocating, err)
 	}
@@ -414,7 +414,7 @@ func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
 	if err != nil || failed.State != StateAttached || failed.LocalPath != oldPath || failed.PendingLocalPath != "" || failed.LastError == "" {
 		t.Fatalf("failed=%+v err=%v", failed, err)
 	}
-	_, _ = store.BeginRelocation("primary", "repo-1", newPath)
+	_, _ = store.BeginRelocation("primary", "repo-1", newPath, false)
 	completed, err := store.CompleteRelocation(record.OperationID)
 	if err != nil || completed.State != StateAttached || completed.LocalPath != newPath || completed.PendingLocalPath != "" {
 		t.Fatalf("completed=%+v err=%v", completed, err)

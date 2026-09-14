@@ -300,6 +300,15 @@ func (c *Client) RepoLocate(ctx context.Context, payload contract.RepoLocatePayl
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RepoRelocate(ctx context.Context, payload contract.RepoRelocatePayload) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoRelocate, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) ServerDetach(ctx context.Context, serverID string) (*contract.ServerDetachResult, error) {
 	resp, err := c.do(ctx, contract.CmdServerDetach, "", contract.ServerDetachPayload{ServerID: serverID})
 	if err != nil {

@@ -166,6 +166,7 @@ type fakeActivator struct {
 	beginErr   error
 	finishErr  error
 	resumeErr  error
+	result     actions.ActivationResult
 }
 
 func (f *fakeActivator) Pending(_ context.Context) ([]actions.ActivationTarget, error) {
@@ -262,15 +263,15 @@ func (f *fakeActivator) Begin(_ context.Context, invitation string) (actions.Act
 	}
 	return actions.ActivationTarget{ServerID: "office", Address: "filees.example.net:22"}, nil
 }
-func (f *fakeActivator) Finish(_ context.Context, target actions.ActivationTarget, otp []byte) error {
+func (f *fakeActivator) Finish(_ context.Context, target actions.ActivationTarget, otp []byte) (actions.ActivationResult, error) {
 	f.finishes <- target.ServerID + "|" + target.Address + "|" + string(otp)
-	return f.finishErr
+	return f.result, f.finishErr
 }
-func (f *fakeActivator) Resume(_ context.Context, target actions.ActivationTarget) error {
+func (f *fakeActivator) Resume(_ context.Context, target actions.ActivationTarget) (actions.ActivationResult, error) {
 	if f.resumes != nil {
 		f.resumes <- target.ServerID + "|" + target.Address
 	}
-	return f.resumeErr
+	return f.result, f.resumeErr
 }
 
 func newFakeLocker() *fakeLockUnlocker {
@@ -440,6 +441,49 @@ func TestControllerActivationPromptsForInvitationThenSecretOTP(t *testing.T) {
 	if len(requests) != 2 || !requests[0].Secret || !requests[1].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
+}
+
+func TestControllerJoinInvitationReportsAssignedRealmWithoutAliasPrompt(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "filees-invite:v1:test"}, {Value: "OTP-CODE"}}
+	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
+		if request.PresentationKey == "input.alias" {
+			t.Fatalf("join activation must not ask the user to name an existing realm")
+		}
+		result := responses[0]
+		responses = responses[1:]
+		return result, nil
+	}}
+	activator := &fakeActivator{
+		begins: make(chan string, 1), finishes: make(chan string, 1),
+		result: actions.ActivationResult{RealmID: "realm-pracownia", RealmAlias: "pracownia"},
+	}
+	aliases := &fakeRealmAliases{aliases: make(chan string, 1)}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: fake, Notifier: fake, Activator: activator, RealmAliases: aliases})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.finishes, "activation finish")
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := fake.Snapshot()
+		if len(snapshot.InfoRequests) > 0 {
+			info := snapshot.InfoRequests[0]
+			if info.PresentationKey != "result.joinedRealm" || info.PresentationArgs["realm"] != "pracownia" {
+				t.Fatalf("join result=%+v", info)
+			}
+			if len(snapshot.PromptRequests) != 2 {
+				t.Fatalf("prompts=%+v, want invitation and OTP only", snapshot.PromptRequests)
+			}
+			select {
+			case alias := <-aliases.aliases:
+				t.Fatalf("unexpected alias claim %q", alias)
+			default:
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("assigned realm was not reported: %+v", fake.Snapshot())
 }
 
 func TestControllerResumesPendingActivationWithoutInvitationOrOTP(t *testing.T) {

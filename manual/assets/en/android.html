@@ -69,9 +69,11 @@
 <h2 id="and-what">What it is</h2>
 <div class="section-meta"><span class="status status-verified">Verified live</span><span>2026-09-09 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
 <p>The app never creates repositories and never asks for a UUID. After pairing it shows the same shares the desktop has in the realm projection. Opening a share is a folder-and-file list with human sizes. The launcher mark is <code>f:s</code>; folder rows use the square filees:space symbol.</p>
+<p>The home screen follows the desktop panel: a header with the number of folders, one panel of counts (servers, folders, queue), a panel per server, and a journal of announcements and of your decisions on parked files. An announcement is acknowledged when you first see it and appears in that journal once. The interface follows the phone&rsquo;s language — Polish, English, German, French or Spanish, with Polish for any other language — and error messages come from the same catalogue as on the desktop. The typeface is Inter.</p>
+<div class="note"><span class="status status-implemented">Implemented</span> The home screen, the localisation and the single journal entry per announcement are in builds made after 2026-09-09 and have not yet been accepted on a device. The live verification above is of the earlier build.</div>
 
 <h2 id="and-pair">Pairing</h2>
-<p>On an already activated desktop: tray → server → <strong>Pair mobile device…</strong>. A local page asks for a PIN and shows a QR code (five minutes). The phone scans it. After a successful pair the home scan button goes away; emergency pairing stays under Settings (the gear).</p>
+<p>On an already activated desktop press <strong>Pair</strong> in the panel header, confirm your local PIN and choose the server. The FileES window shows a QR code valid for five minutes; no browser and no local web page are involved. The phone scans it. After a successful pair the home scan button goes away; emergency pairing stays under Settings (the gear).</p>
 <p>The phone inherits that desktop's share list. It does not create a realm. How the desktop issues the QR is in the <a href="user-guide.html#ch2-gui">desktop guide</a>.</p>
 
 <h2 id="and-browse">Browse and download</h2>
@@ -94,7 +96,7 @@
 <li>it does not create shares and does not take a typed UUID;</li>
 <li>it does not show an upload queue — a spinner, then success or an error.</li>
 </ul>
-<p>The server must support <code>UPLOAD_TREE</code> (the signed release with this feature; on <code>spot</code> from r1042). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
+<p>The server must support <code>UPLOAD_TREE</code> (signed server releases have carried it since 2026-09-09). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Desktop</a>
@@ -102,7 +104,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

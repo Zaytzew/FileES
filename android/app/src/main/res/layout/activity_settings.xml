@@ -121,6 +121,14 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonAddServer"
+            style="@style/Widget.Filees.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_add_server" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -150,13 +158,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/action_pair_pasted" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonScanQr"
-            style="@style/Widget.Filees.Button.TextButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/action_scan_qr" />
     </LinearLayout>
     </ScrollView>
 </LinearLayout>

@@ -29,6 +29,7 @@ class BrowseAdapter(
         BrowseRow.Kind.JOURNAL_HEAD -> VIEW_JOURNAL_HEAD
         BrowseRow.Kind.JOURNAL -> VIEW_JOURNAL
         BrowseRow.Kind.HEADER -> VIEW_HEADER
+        BrowseRow.Kind.ADD_SERVER -> VIEW_ADD_SERVER
         BrowseRow.Kind.ITEM -> VIEW_ITEM
     }
 
@@ -42,6 +43,7 @@ class BrowseAdapter(
             VIEW_JOURNAL_HEAD -> JournalPanelHolder(inflater.inflate(R.layout.item_journal_panel, parent, false))
             VIEW_JOURNAL -> JournalEntryHolder(inflater.inflate(R.layout.item_journal, parent, false))
             VIEW_HEADER -> HeaderHolder(inflater.inflate(R.layout.item_browse_header, parent, false))
+            VIEW_ADD_SERVER -> AddServerHolder(inflater.inflate(R.layout.item_add_server, parent, false))
             else -> Holder(inflater.inflate(R.layout.item_browse, parent, false))
         }
     }
@@ -56,6 +58,7 @@ class BrowseAdapter(
             is JournalPanelHolder -> holder.bind(row)
             is JournalEntryHolder -> holder.bind(row)
             is HeaderHolder -> holder.bind(row)
+            is AddServerHolder -> holder.bind(row, onOpen)
             is Holder -> holder.bind(row, onOpen, onDownload)
         }
     }
@@ -142,6 +145,13 @@ class BrowseAdapter(
         }
     }
 
+    class AddServerHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val button: MaterialButton = itemView.findViewById(R.id.buttonAddServerRow)
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
+            button.setOnClickListener { onOpen(row) }
+        }
+    }
+
     class HeaderHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val label: TextView = itemView.findViewById(R.id.textSectionHeader)
         fun bind(row: BrowseRow) {
@@ -191,6 +201,7 @@ class BrowseAdapter(
         private const val VIEW_FACTS = 5
         private const val VIEW_JOURNAL_HEAD = 6
         private const val VIEW_JOURNAL = 7
+        private const val VIEW_ADD_SERVER = 8
     }
 }
 

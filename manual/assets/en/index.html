@@ -50,13 +50,13 @@
 <h1>FileES Manual: User and Tech</h1>
 <p class="hero-copy">FileES synchronises folders with a remote repository and lets you share files with someone who will never install the client. This HTML set is the public manual for the system, split into two parts: <strong>User</strong> covers everyday use — what to click and why, <strong>Tech</strong> covers the architecture and contracts of the system. Administration mostly uses the User part. The OpenBSD manual pages (<code>mandoc</code>) belong to Tech.</p>
 <div class="meta-strip">
-<span><strong>Version</strong> 0.1.15</span>
-<span><strong>Date</strong> 2026-09-09</span>
-<span><strong>Source</strong> SVN r1042</span>
-<span><strong>Server</strong> OpenBSD 7.9 · signed r1042 on production</span>
-<span><strong>Client</strong> Linux and Windows desktop · Android (live-tested)</span>
+<span><strong>Version</strong> 0.1.16</span>
+<span><strong>Date</strong> 2026-09-14</span>
+<span><strong>Server</strong> OpenBSD 7.9 · signed release channel</span>
+<span><strong>Client</strong> Linux and Windows desktop · Android</span>
+<span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
 </div>
-<div class="canonical-note"><strong>Languages:</strong> this is the English edition. The Polish edition is under <a href="../pl/index.html" hreflang="pl">assets/pl/</a>. The desktop GUI remains Polish-only; architecture terms stay English on the wire — see the <a href="user-guide.html#ch2-glossary">GUI terminology glossary</a>.</div>
+<div class="canonical-note"><strong>Languages:</strong> this is the English edition. The Polish edition is under <a href="../pl/index.html" hreflang="pl">assets/pl/</a>. The desktop GUI speaks Polish, English, French, German and Spanish; architecture terms stay English on the wire — see the <a href="user-guide.html#ch2-glossary">GUI terminology glossary</a>.</div>
 </section>
 <section aria-label="Maturity status legend" class="maturity-legend">
 <div class="legend-item"><span class="status status-verified">Verified</span><p>Behaviour is implemented and covered by relevant native, integration, regression or chaos tests, or by a live production acceptance. A badge often carries a scope after the word &mdash; <em>Verified on OpenBSD</em>, <em>Verified live</em>, <em>Verified cross-client</em> &mdash; and that scope is the point: it says where the evidence comes from, not merely that some exists.</p></div>
@@ -101,7 +101,7 @@
 </div>
 <p>The previous single-file <code>manual-filees.html</code> is a stub. Each page keeps the <code>filees:space</code> visual system and has no network dependencies. FileES is a work-in-progress. A maturity badge is not a product release.</p>
 <h2 id="user">User</h2>
-<p>Start here if you use the desktop client or run a realm. The tone is: what to click, what happens, why the feature exists. Protocol-level names stay English; the desktop speaks everyday Polish (<em>strefa</em> is a realm).</p>
+<p>Start here if you use the desktop client or run a realm. The tone is: what to click, what happens, why the feature exists. Protocol-level names stay English; the desktop speaks the language chosen in its header (in Polish a realm is a <em>strefa</em>).</p>
 <ul>
 <li><a href="user-guide.html">Desktop howto</a> — install the client, first folder, Settings, locks, journal.</li>
 <li><a href="android.html">Android client</a> — QR pairing, share listing, send into <code>mobile-uploads/</code>.</li>
@@ -117,20 +117,24 @@
 <li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
 <li><a href="man-pages.html">Man pages / CLI extract</a> — role, invocation, flags and examples for every server command.</li>
 </ul>
-<h2>What is current as of 2026-09-09</h2>
+<h2>What is current as of 2026-09-14</h2>
+<p>Each row names its evidence. <em>Verified</em> means someone watched it work on a real system; <em>Implemented</em> means the code and its tests exist, and the row says what has not yet been watched.</p>
 <div class="table-wrap"><table>
 <tr><th>Surface</th><th>State</th></tr>
 <tr><td>Desktop daemon + tray</td><td><span class="status status-verified">Verified</span> Linux and Windows; GUI is a thin IPC client</td></tr>
-<tr><td>Android client</td><td><span class="status status-verified">Verified live</span> 2026-09-09 on <code>spot</code>: QR, listing, download, 198 files in one commit</td></tr>
+<tr><td>Desktop GUI languages</td><td><span class="status status-verified">Verified</span> 2026-09-11 in a real Wails window: Polish, English, French, German and Spanish, chosen from the window header or following the system; plural forms and relative times follow the chosen language without restarting the GUI</td></tr>
+<tr><td>Android client</td><td><span class="status status-verified">Verified live</span> 2026-09-09 on <code>spot</code>: QR, listing, download, 198 files in one commit. Later builds with a redesigned home screen and an interface that follows the phone&rsquo;s language (PL, EN, DE, FR, ES) are built but <em>not yet accepted on a device</em></td></tr>
 <tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> including Windows named-pipe OTP and resume of an accepted attempt</td></tr>
 <tr><td>Selective attach, locate, detach, load-dump</td><td><span class="status status-verified">Verified</span></td></tr>
 <tr><td>Realm grants and visibility</td><td><span class="status status-verified">Verified</span> owner-only; no transitive re-delegation</td></tr>
 <tr><td>Repository editing policy</td><td><span class="status status-verified">Verified</span> live 6/6 on two Windows clients</td></tr>
-<tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; object map is a snapshot</td></tr>
-<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r1042 (alpha) on production OpenBSD</td></tr>
-<tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
+<tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; each fresh visit freezes one revision and lists the shared folder as it stands at that revision</td></tr>
+<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> on production OpenBSD: hosts install and upgrade from the signed channel <code>alpha</code>; the latest recorded upgrade, 2026-09-13, carried the upload shelf server release</td></tr>
+<tr><td>Windows MSI / self-update</td><td><span class="status status-implemented">Implemented</span> one MSI installs the daemon, the GUI and the start scripts together; signed self-update of the pair was accepted on earlier releases. The MSI carries no Authenticode signature, and an MSI upgrade over an installed pair has not been exercised</td></tr>
 <tr><td>Linux server</td><td><span class="status status-implemented">Implemented</span> the server code builds and its test suite runs on Linux — first measured natively on Debian 13, 2026-09-09, after which the only failures left were defects that had nothing to do with the platform. Installation, service supervision, privilege drop and packaging are <em>not implemented yet</em>: there is no Linux installer, and <code>pledge</code>/<code>unveil</code> confinement does not exist outside OpenBSD, so on Linux that is the administrator&rsquo;s job</td></tr>
-<tr><td>Upload Channel</td><td><span class="status status-implemented">Implemented</span> the upload shelf has been live in production since r601 (create, upload, list, revoke); uploader OTP and AV quarantine (48h) are complete in source, awaiting the next signed <code>FILEES-BIN</code> release; <code>slots</code>/DROPPER remain deliberately off</td></tr>
+<tr><td>Upload Channel — sender side</td><td><span class="status status-verified">Verified</span> 2026-09-12 on a production host: public upload, antivirus scan and commit into the delivery repository. It needed three fixes to package defaults first; the installer still does not schedule the <code>upload-reap</code> job, and without it uploads are accepted and never processed (see <a href="install.html">Install</a>). <code>slots</code>/DROPPER remain deliberately off</td></tr>
+<tr><td>Upload Channel — recipient side</td><td><span class="status status-implemented">Implemented</span> an upload shelf appears under its parent repository, lists what arrived, fetches chosen files on demand and read-only into a new folder you name, and places a file into the parent working copy without overwriting anything. Tested including a real sparse fetch on Windows; <em>not yet accepted by hand in a released GUI</em>, and not yet shipped in a desktop release</td></tr>
+<tr><td>Daemon memory safety</td><td><span class="status status-implemented">Implemented</span> IPC frames are read with small initial buffers and bounded time; under sustained memory pressure the daemon stops taking new work, saves its queue and asks to be restarted instead of being killed. No long-run observation of this code has been completed yet</td></tr>
 </table></div>
 <p>On the server host the Tech pages pair with:</p>
 <pre><code>man filees
@@ -144,7 +148,7 @@ man filees-install</code></pre>
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

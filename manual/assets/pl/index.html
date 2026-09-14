@@ -49,7 +49,14 @@
 <p class="eyebrow">FileES / podręcznik</p>
 <h1>Podręcznik FileES</h1>
 <p class="hero-copy">FileES synchronizuje katalogi ze zdalnym repozytorium i pozwala udostępniać pliki osobom, które nie mają zainstalowanego klienta. Podręcznik jest podzielony na część dotyczącą obsługi oraz część techniczną. Pierwsza opisuje codzienną pracę, druga architekturę, instalację, eksploatację i bezpieczeństwo systemu.</p>
-<div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu pozostaje wyłącznie polskie; nazwy protokołu i strony <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
+<div class="meta-strip">
+<span><strong>Wersja</strong> 0.1.16</span>
+<span><strong>Data</strong> 2026-09-14</span>
+<span><strong>Serwer</strong> OpenBSD 7.9 · podpisany kanał wydań</span>
+<span><strong>Klient</strong> pulpit Linux i Windows · Android</span>
+<span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
+</div>
+<div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu mówi po polsku, angielsku, francusku, niemiecku i hiszpańsku; nazwy protokołu i strony <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
 </section>
 <section aria-label="Legenda dojrzałości" class="maturity-legend">
 <p>Oznaczenia dojrzałości &mdash; <span class="status status-verified">Zweryfikowane</span>, <span class="status status-implemented">Zaimplementowane</span>, <span class="status status-designed">Zaprojektowane</span>, <span class="status status-planned">Planowane</span> &mdash; wraz z zakresem dowodu stoją przy poszczególnych częściach <strong>wydania angielskiego</strong>. Do 2026-09-10 legenda opisywała tu oznaczenia, których w polskiej treści nie było ani razu; teraz obie edycje niosą ten sam zestaw, potwierdzony przy kodzie.</p>
@@ -99,26 +106,30 @@
 <h2 id="tech">Technika</h2>
 <p>Ta część jest przeznaczona do wdrażania, utrzymania i audytu systemu. Opisuje architekturę, kontrakty danych, granice bezpieczeństwa oraz zachowanie wymagane podczas eksploatacji.</p>
 <ul>
-<li>Architektura — topologia, kolejność operacji, OTP, tunel SSH i piaskownica.</li>
+<li><a href="architecture.html">Architektura</a> — topologia, kolejność operacji, OTP, tunel SSH i piaskownica.</li>
 <li><a href="install.html">Instalacja serwera</a> — <code>install-server.sh</code>, <code>install-ssh.sh</code>, <code>filees-install</code>.</li>
 <li><a href="operations.html">Eksploatacja</a> — pliki zleceń, schematy poczty i audytu, protokół rotacji i usunięcia strefy, <code>object_map</code>, sshd i <code>server.json</code>.</li>
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
-<li>Polecenia systemowe — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
+<li><a href="man-pages.html">Polecenia systemowe</a> — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
-<h2>Stan na 2026-09-10</h2>
+<h2>Stan na 2026-09-14</h2>
+<p>Każdy wiersz podaje swój dowód. <em>Zweryfikowane</em> znaczy, że ktoś widział działanie na prawdziwym systemie; <em>Zaimplementowane</em> znaczy, że istnieje kod z testami, a wiersz mówi, czego jeszcze nie oglądano.</p>
 <div class="table-wrap"><table>
 <tr><th>Obszar</th><th>Stan</th></tr>
 <tr><td>Demon pulpitu i tacka</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
-<tr><td>Klient Android</td><td><span class="status status-verified">Zweryfikowane live</span> 2026-09-09 na <code>spot</code>: QR, przegląd, pobranie, 198 plików w jednym zatwierdzeniu</td></tr>
+<tr><td>Języki GUI pulpitu</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-11 w prawdziwym oknie Wails: polski, angielski, francuski, niemiecki i hiszpański, wybierane w nagłówku okna albo za ustawieniem systemu; liczebniki i czas względny idą za wybranym językiem bez ponownego uruchamiania GUI</td></tr>
+<tr><td>Klient Android</td><td><span class="status status-verified">Zweryfikowane live</span> 2026-09-09 na <code>spot</code>: QR, przegląd, pobranie, 198 plików w jednym zatwierdzeniu. Nowsze kompilacje z przebudowanym ekranem głównym i interfejsem w języku telefonu (PL, EN, DE, FR, ES) są zbudowane, ale <em>jeszcze nie odebrane na urządzeniu</em></td></tr>
 <tr><td>Aktywacja i dołączenie do strefy</td><td><span class="status status-verified">Zweryfikowane</span> łącznie z OTP przez nazwany potok na Windows i wznowieniem przyjętej próby</td></tr>
 <tr><td>Wybiórcze podłączenie, odnalezienie, odłączenie, wczytanie zrzutu</td><td><span class="status status-verified">Zweryfikowane</span></td></tr>
 <tr><td>Uprawnienia strefy i widoczność</td><td><span class="status status-verified">Zweryfikowane</span> wyłącznie właściciel; bez przekazywania dalej</td></tr>
 <tr><td>Polityka edycji repozytorium</td><td><span class="status status-verified">Zweryfikowane</span> odbiór na żywo 6/6 na dwóch klientach Windows</td></tr>
-<tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> punkt HTTPS na żywo, OTP, oznaczenia, ZIP; mapa obiektów jest migawką</td></tr>
-<tr><td><code>FILEES-BIN</code> / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> podpisane r1042 (alpha) na produkcyjnym OpenBSD</td></tr>
-<tr><td>MSI dla Windows i pakowanie usługi</td><td><span class="status status-implemented">Zaimplementowane</span> wyłącznie MSI z GUI; demon jest osobną binarką</td></tr>
+<tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> punkt HTTPS na żywo, OTP, oznaczenia, ZIP; każda świeża wizyta zamraża jedną rewizję i pokazuje udostępniony folder w stanie z tej rewizji</td></tr>
+<tr><td><code>FILEES-BIN</code> / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> na produkcyjnym OpenBSD: hosty instalują się i aktualizują z podpisanego kanału <code>alpha</code>; ostatnia odnotowana aktualizacja, 2026-09-13, wniosła serwerową część półek przyjęcia</td></tr>
+<tr><td>MSI dla Windows i samoaktualizacja</td><td><span class="status status-implemented">Zaimplementowane</span> jedno MSI instaluje razem demona, GUI i skrypty startowe; podpisana samoaktualizacja pary została odebrana na wcześniejszych wydaniach. MSI nie ma podpisu Authenticode, a aktualizacji przez MSI na zainstalowanej parze jeszcze nie przećwiczono</td></tr>
 <tr><td>Serwer linuksowy</td><td><span class="status status-implemented">Zaimplementowane</span> kod serwera buduje się i przechodzi swój zestaw testów na Linuksie — zmierzone po raz pierwszy natywnie na Debianie 13 dnia 2026-09-09, po czym jedyne pozostałe porażki okazały się wadami niezwiązanymi z platformą. Instalacja, nadzór usługi, zrzucanie uprawnień i pakowanie są <em>jeszcze nie wdrożone</em>: nie ma linuksowego instalatora, a <code>pledge</code>/<code>unveil</code> nie istnieje poza OpenBSD, więc na Linuksie zamknięcie procesu jest obowiązkiem administratora</td></tr>
-<tr><td>Kanał wrzutek</td><td><span class="status status-implemented">Zaimplementowane</span> półka wrzutek działa na produkcji od r601 (utworzenie, wysyłka, lista, cofnięcie); OTP nadawcy i kwarantanna antywirusowa (48 h) są gotowe w źródłach i czekają na następne podpisane wydanie <code>FILEES-BIN</code>; <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
+<tr><td>Kanał wrzutek — strona nadawcy</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-12 na hoście produkcyjnym: publiczne wysłanie, skan antywirusowy i zatwierdzenie do repozytorium dostawy. Wcześniej trzeba było poprawić trzy domyślne ustawienia pakietu; instalator nadal nie planuje zadania <code>upload-reap</code>, a bez niego pliki są przyjmowane i nigdy nie przetwarzane (zobacz <a href="install.html">Instalację</a>). <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
+<tr><td>Kanał wrzutek — strona odbiorcy</td><td><span class="status status-implemented">Zaimplementowane</span> półka przyjęcia pojawia się pod swoim repozytorium macierzystym, pokazuje, co przyszło, pobiera wybrane pliki na żądanie i tylko do odczytu do nowego folderu o podanej nazwie, a plik umieszcza w kopii roboczej rodzica bez nadpisywania czegokolwiek. Przetestowane łącznie z prawdziwym pobraniem wybiórczym na Windows; <em>jeszcze nie odebrane ręcznie w wydanym GUI</em> i jeszcze nie ma go w wydaniu pulpitu</td></tr>
+<tr><td>Bezpieczeństwo pamięci demona</td><td><span class="status status-implemented">Zaimplementowane</span> ramki IPC są czytane z małym buforem początkowym i ograniczonym czasem; przy trwałym braku pamięci demon przestaje przyjmować pracę, zapisuje kolejkę i prosi o ponowne uruchomienie, zamiast dać się zabić. Długiej obserwacji tego kodu jeszcze nie zakończono</td></tr>
 </table></div>
 </div>
 </div>

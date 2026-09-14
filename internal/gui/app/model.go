@@ -426,6 +426,9 @@ func (vm ViewModel) CanRepairRepositoryLifecycle() bool {
 func (vm ViewModel) CanLocateRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoLocate)
 }
+func (vm ViewModel) CanRelocateRepository() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoRelocate)
+}
 func (vm ViewModel) CanClaimRealmAlias() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmAliasClaim)
 }

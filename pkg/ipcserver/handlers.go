@@ -1221,7 +1221,7 @@ func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 	if !rs.Snapshot().Attached {
 		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
 	}
-	result, err := service.BeginRelocate(payload.ServerID, payload.RepoID, payload.NewLocalPath)
+	result, err := service.BeginRelocate(payload.ServerID, payload.RepoID, payload.NewLocalPath, payload.MoveExisting)
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", nil)
 	}

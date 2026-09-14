@@ -101,6 +101,19 @@ func TestRepositoryServiceProjectsOnlyFocusedFolderActions(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceProjectsControlledMoveSeparatelyFromLocate(t *testing.T) {
+	request := platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{
+		ID: "spot", Folders: []platform.SettingsFolder{{ID: "docs", Name: "Dokumenty", CanMove: true}},
+	}}}
+	snapshot, ok := projectRepositorySettings(request)
+	if !ok || len(snapshot.Actions) != 1 || snapshot.Actions[0].ID != string(platform.SettingsDialogMoveFolder) {
+		t.Fatalf("move action=%+v ok=%v", snapshot.Actions, ok)
+	}
+	if snapshot.Actions[0].ID == string(platform.SettingsDialogLocateFolder) {
+		t.Fatal("controlled move was collapsed into missing-folder recovery")
+	}
+}
+
 func TestRepositoryServiceProjectsCurrentEditingPolicyAction(t *testing.T) {
 	for _, test := range []struct {
 		lockRequired bool

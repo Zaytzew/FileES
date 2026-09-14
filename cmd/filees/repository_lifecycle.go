@@ -28,12 +28,12 @@ type repositoryLifecycleService struct {
 	onRepair      func(context.Context, string, string) (localrepo.Record, error)
 }
 
-func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
+func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error) {
 	check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRoots())
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
-	record, err := service.store.BeginRelocation(serverID, repoID, check.CanonicalPath)
+	record, err := service.store.BeginRelocation(serverID, repoID, check.CanonicalPath, moveExisting)
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}

@@ -22,6 +22,7 @@ type lifecycleStub struct {
 	repairResult                                                                                                                          contract.RepoLifecycleResult
 	repairErr                                                                                                                             error
 	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                                       string
+	relocationMoveExisting                                                                                                                bool
 }
 
 func (stub *lifecycleStub) DismissRecovery(serverID, repoID, operationID string) (contract.RepoRecoveryDismissResult, error) {
@@ -36,8 +37,9 @@ func (stub *lifecycleStub) ApproveAttach(operationID, serverID, repoID, repoURL,
 	stub.approveCalls++
 	return contract.RepoLifecycleResult{OperationID: operationID, ServerID: serverID, RepoID: repoID, State: "attaching"}, nil
 }
-func (stub *lifecycleStub) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
+func (stub *lifecycleStub) BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error) {
 	stub.relocateCalls++
+	stub.relocationMoveExisting = moveExisting
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: "/old", PendingLocalPath: newLocalPath, State: "relocating"}, nil
 }
 func (stub *lifecycleStub) BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error) {
@@ -367,7 +369,7 @@ func TestRelocationRequiresAttachedRepository(t *testing.T) {
 	stub := &lifecycleStub{}
 	server.SetRepositoryLifecycleService(stub)
 	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn+ssh://_filees-client@example/repo", "primary", "r", "active", "owner", "optional", false)
-	req := lifecycleRequest(contract.CmdRepoRelocate, contract.RepoRelocatePayload{ServerID: "primary", RepoID: "repo-1", NewLocalPath: "/new"})
+	req := lifecycleRequest(contract.CmdRepoRelocate, contract.RepoRelocatePayload{ServerID: "primary", RepoID: "repo-1", NewLocalPath: "/new", MoveExisting: true})
 	if response := server.dispatch(req); response.Status == contract.StatusOK {
 		t.Fatal("unattached repository relocation accepted")
 	}
@@ -375,7 +377,7 @@ func TestRelocationRequiresAttachedRepository(t *testing.T) {
 	if response := server.dispatch(req); response.Status != contract.StatusOK {
 		t.Fatalf("attached relocation rejected: %+v", response.Error)
 	}
-	if stub.relocateCalls != 1 {
+	if stub.relocateCalls != 1 || !stub.relocationMoveExisting {
 		t.Fatalf("relocation calls=%d", stub.relocateCalls)
 	}
 }

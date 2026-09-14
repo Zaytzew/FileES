@@ -66,23 +66,24 @@
 </nav>
 <div class="manual-content">
 <h1 id="ch2">Chapter 2: User Guide</h1><div class="chapter-content">
-<h2 id="ch2-install">2.1 Client Installation</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>The Wails client runs live on Linux; complete Windows MSI packaging remains a release task.</span></div>
+<h2 id="ch2-install">2.1 Client Installation</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>The Wails client runs live on Linux and Windows; on Windows one MSI installs the daemon and the GUI together.</span></div>
 <h4>Linux (current Wails alpha client)</h4>
 <pre><code># Unpack the filees-client-linux-amd64 bundle
 chmod +x install-user.sh
 ./install-user.sh                     # installs to ~/.local/
 ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
-<p>The current client installs the daemon and Wails GUI as a user-session pair and never overwrites an existing <code>config.json</code> on upgrade. The old <code>packaging/build-gui.sh</code> still builds the abandoned Fyne renderer and is not the source of the current Wails artifact.</p>
+<p>The current client installs the daemon and Wails GUI as a user-session pair and never overwrites an existing <code>config.json</code> on upgrade.</p>
 <p>To start the daemon as a user service:</p>
 <pre><code>systemctl --user enable --now filees.service</code></pre>
 <h4>Windows client (MSI)</h4>
-<p>The target artifact is a per-user, no-UAC MSI containing the daemon and Wails, with Start shortcut, AUMID, autostart and alpha-channel updater. The current <code>packaging/windows/</code> directory still describes the historical GUI-only MSI and is not a Wails release. The migration plan is in <code>WINDOWS_CLIENT_MSI_ALPHA_CONCEPT.md</code>.</p>
+<p>One file, <code>filees-&lt;version&gt;.msi</code>, installs without administrator rights into <code>%LOCALAPPDATA%\Programs\FileES</code>. It carries the pair — the daemon <code>filees.exe</code>, which watches your files in the background, and the window <code>filees-gui-wails.exe</code> — together with the start scripts, a Start menu shortcut, a desktop shortcut and a shortcut in the Startup folder, so FileES starts by itself at the next sign-in.</p>
+<p>The installer is not yet signed with a certificate, so SmartScreen warns before running it. Continue only if you know who gave you the file. The first start writes a minimal <code>config.json</code>; no update and no uninstall touches it, your working copies or your files. Updates arrive through the signed channel (§2.7) or by installing a newer MSI over the old one.</p>
 <h4>Requirements</h4>
 <div class="table-wrap"><table>
 <tr><th>Platform</th><th>Requirements</th></tr>
 <tr><td>Linux daemon</td><td><code>svn</code> and OpenSSH <code>ssh</code> in PATH, an activated FileES installation identity and pinned service host key; Go 1.25+ only when building from source</td></tr>
 <tr><td>Linux GUI</td><td>GTK4 and WebKitGTK 6.0; an SNI-compatible desktop (GNOME requires the AppIndicator extension); <code>xdg-open</code>; optional <code>notify-send</code></td></tr>
-<tr><td>Windows GUI</td><td>Windows 11 with WebView2 Runtime; ultimately the complete client MSI for autostart, updates and AUMID registration</td></tr>
+<tr><td>Windows client</td><td>Windows 11 with WebView2 Runtime; installed from the MSI</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
 <p>Everyday shape of the installation is changed in Settings (§2.6), not by editing a file. The daemon still reads <code>config.json</code> from the working directory (or <code>--config</code>). An existing file is never overwritten on upgrade. Working-copy paths must be absolute and must not nest. The field table is in <a href="operations.html#ops-config">Operations</a>.</p>
@@ -120,7 +121,9 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Changing the policy is a migration, not a local preference. Files held by someone else are left alone and retried later. A guest with read-write access still uses <strong>Wypożycz do edycji</strong>; autolock is only for the owner realm. Per-path ownership and <strong>Poproś o zwolnienie</strong> are not in this version.</p>
 <h2 id="ch2-gui">2.6 Wails desktop panel</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Wails is the current desktop GUI; live Linux acceptance covered the panel, tray, state projections and domain actions.</span></div>
 <p><code>filees-gui-wails</code> is a separate process and only talks to the daemon. Its full window shows servers, repositories, queue, locks, shares, announcements, quarantine and journal. Closing the window hides it to the tray; only explicit <strong>Shut down FileES</strong> stops both daemon and GUI.</p>
-<div class="note"><strong>Current status:</strong> Wails is the only developed desktop GUI. The old Fyne + <code>zenity</code>/<code>yad</code>/WinForms renderer is deprecated/abandoned and retained only as deployment history pending removal.</div>
+<div class="note"><strong>Current status:</strong> Wails is the only desktop GUI. The old Fyne renderer and its <code>zenity</code>/<code>yad</code>/WinForms dialogs have been removed from the source tree.</div>
+<h4>Interface language</h4>
+<p>The language button in the panel header opens the list: Polish, English, French, German, Spanish, or <strong>System (automatic)</strong>, which follows the operating system. The choice applies at once to the panel and its windows, without restarting; plural forms, dates and relative times follow it. File names, server aliases, command names and protocol identifiers are shown as they are.</p>
 <h4>Icon states (priority order)</h4>
 <div class="table-wrap"><table>
 <tr><th>Icon</th><th>State</th><th>Condition</th></tr>
@@ -151,7 +154,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Permanent removal is always limited to repositories of your own realm. It can never reach a share belonging to another realm, nor a repository with <code>attachment_policy=required</code>. Detaching a folder never deletes user files — that applies to every row above.</p>
 <div class="note"><strong>Realm alias:</strong> the GUI asks once only for a new, empty realm's immutable globally unique alias. Another installation joining an existing realm inherits the canonical alias in its first projection and is never invited to rename it. If repositories are already projected but the alias is empty, this is incomplete server projection data, not an alias-creation task. Visibility and lock actions remain unavailable with an explicit projection message until reconciliation; a matching idempotent claim can repair an older server view.</div>
 <h4>Realm grants and visibility</h4>
-<p>The GUI shows the realm concept to end users under the plain-language label <strong>strefa</strong> (§2.10). Where this manual says "realm" below, the desktop window says "strefa".</p>
+<p>The English interface says <strong>realm</strong>; the Polish one says <strong>strefa</strong> (§2.10).</p>
 <p>Further actions appear in the Wails windows once the daemon reports the corresponding capability:</p>
 <ul>
 <li><strong>Widoczność…</strong> (<code>realm_visibility</code>, IPC <code>realm.set_visibility</code>) toggles this realm's own entry in the private recipient directory between hidden and listed. A realm must be listed before another realm can pick it as a grant recipient; toggling visibility never reveals repositories or existing access — only whether this realm can be found at all.</li>
@@ -162,7 +165,17 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <h4>Announcements</h4>
 <p>Shouting commits are presented as <strong>Announcements</strong>. The recent-announcements card retains every unread record and a bounded read history. A new announcement pulses red, selects the red megaphone tray icon and raises a system notification. Opening it shows repository and revision; <strong>Potwierdź odczyt</strong> acknowledges it in the local inbox.</p>
 <h4>Upload quarantine</h4>
-<p>An owner quarantine repository exposes <strong>Przejrzyj kwarantannę</strong>. The Wails window reads the daemon's AV-reject projection and can fetch or hide an entry. An empty quarantine does not expose a dead action. Payloads are not listed through public HTTPS.</p>
+<p>An owner quarantine repository exposes <strong>Przejrzyj kwarantannę</strong>. The Wails window reads the daemon's AV-reject projection and can fetch or hide an entry. Rejected items expire automatically after 48 hours. An empty quarantine does not expose a dead action. Payloads are not listed through public HTTPS.</p>
+<h4>Upload shelves: receiving files</h4>
+<p>An upload shelf is how people without FileES send you files. You invite them by e-mail address — a shelf is never anonymous — and each of them uploads through a browser. Creating a shelf and what the contributor sees are in the <a href="public-shares.html">Shares</a> chapter; this section is about taking the files.</p>
+<p>In the panel a shelf sits under the repository it delivers into, collapsed by default. A shelf whose parent repository is not visible on this computer stays in the separate <strong>Upload shelves</strong> group. <strong>Upload shelves</strong> in the parent repository's actions lists its shelves, and <strong>View contents</strong> shows what has arrived: the name in the repository, when it was delivered and in which revision. Files stay on the server until you take them.</p>
+<p>Taking a file is always your action. Nothing is downloaded automatically, and nothing ever travels back from your computer to the shelf:</p>
+<ul>
+<li><strong>Download</strong> fetches only the file you chose. The first time, FileES asks where to create the shelf folder and what to name it. It creates a new folder and never takes over an existing one, not even an empty one; if the name is taken, nothing is overwritten and you choose again. Later downloads go to the same folder. On Windows that folder has its own icon with a purple dot.</li>
+<li><strong>Place in parent folder</strong> appears only when the parent repository has a working copy on this computer that is active and writable. You choose a destination inside it; FileES downloads the file, checks its size and SHA-256, and puts it there only if nothing of that name exists yet. From there it is published like any other new file. The file also stays on the shelf.</li>
+</ul>
+<p>Revoking a shelf stops its address from accepting files, but the address stays reserved and files already received stay with you. Deleting a shelf removes its policy, keeps the address reserved for good and does not delete the folder with received files.</p>
+<div class="note"><span class="status status-implemented">Implemented</span> Tested, including a real download on Windows; <em>not yet accepted by hand in a released GUI</em>. FileES does not yet notify you about new uploads — open the shelf to check.</div>
 <h4>Reconnect behaviour</h4>
 <p>If the daemon is unreachable, the GUI retries with exponential backoff: 1 s → 2 s → 5 s → 10 s → 30 s. The last known snapshot remains visible but is marked stale. “Reconnect” in the menu forces an immediate retry.</p>
 <p>Lock and unlock appear only while the daemon is reachable and advertises them. Your own lock can be released; a lock held by another user or device exposes <strong>Request release</strong>. The requester sees its state and the holder answers <strong>OK</strong> or <strong>Release</strong>; the response remains tied to the exact lock token. The hello / subscribe / resync sequence is in <a href="operations.html#ops-gui">Operations</a>.</p>
@@ -181,7 +194,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>The wide <strong>Pair</strong> button in the panel header is available after server activation. After local-PIN verification the user selects a server and Wails renders the QR code without launching a browser or local HTTP server. <code>mobile_pairing.begin</code> mints a short-lived (5 minute) <code>MOBILE_PAIRING</code> token through the daemon's authenticated control-plane channel. The phone inherits the servers and repositories visible to that desktop activation.</p>
 <p>The local PIN is stored encrypted at rest. Its wrapping key is bound to a random <code>device_id</code> beside <code>pin.json</code>, not a network MAC address. A wrong PIN can be corrected without leaving the flow; after successful verification the QR is rendered natively in Wails. On Windows the state files are protected by a per-user DACL.</p>
 <h4>Autostart</h4>
-<p>Autostart belongs to the current client installer, not a Wails command mode. On Linux it starts the daemon+GUI pair in the user session. The complete Windows MSI is expected to install and remove autostart with the client. The old <code>filees-gui --autostart ...</code> commands belonged to the abandoned renderer.</p>
+<p>Autostart belongs to the current client installer, not a Wails command mode. On Linux it starts the daemon+GUI pair in the user session. On Windows the MSI puts a shortcut in the Startup folder, and uninstalling removes it.</p>
 <h2 id="ch2-update">2.7 Signed Desktop Updates</h2><div class="section-meta"><span class="status status-verified">Verified end to end</span><span>Signed SVN release, dry run, existing Linux installer, anti-rollback and controlled GUI restart are covered by a reproducible integration test.</span></div>
 <p>Desktop updates are opt-in. The build carries one trusted public key; Settings cannot replace it or skip the signature. The envelope and anti-rollback rules are in <a href="operations.html#ops-update">Operations</a>.</p>
 <h4>User flow</h4>
@@ -215,25 +228,29 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <tr><th>Symptom</th><th>Action</th></tr>
 <tr><td>GUI icon does not appear (GNOME)</td><td>Install the <strong>AppIndicator and KStatusNotifierItem Support</strong> extension from extensions.gnome.org; log out and back in</td></tr>
 <tr><td>“Disconnected” but daemon is running</td><td>Check the socket path with <code>filees status</code>; run <code>filees-gui-wails --socket /path/to/daemon.sock</code></td></tr>
-<tr><td>Panel or Settings does not open (Linux)</td><td>Check GTK4 and WebKitGTK 6.0. Installing <code>yad</code>/<code>zenity</code> does not repair Wails; those belong to the abandoned renderer.</td></tr>
-<tr><td>Toast notifications missing (Windows)</td><td>Ensure installation was via MSI (registers AUMID). Running <code>filees-gui.exe</code> without the installer will not register the AUMID.</td></tr>
+<tr><td>Panel or Settings does not open (Linux)</td><td>Check GTK4 and WebKitGTK 6.0. Installing <code>yad</code>/<code>zenity</code> does not repair Wails, which does not use them.</td></tr>
+<tr><td>Toast notifications missing (Windows)</td><td>Start FileES from a shortcut the MSI installed, not by running a copied executable, and check that Windows allows notifications for FileES.</td></tr>
 <tr><td>Multiple tray icons</td><td>A per-user lock prevents a second instance from initialising the tray. If two icons appear, one may be from an older version. Terminate the obsolete GUI process with the operating-system tools, then use “Shut down FileES” in the current instance and start the current installation again. The menu has no GUI-only shutdown action.</td></tr>
 <tr><td>Conflict files accumulating in <code>!kolizje/</code></td><td>These are preserved local versions of files where a server change won. Review them manually. The directory is scanner-ignored and will never be committed.</td></tr>
 <tr><td><strong>Widoczność…</strong> is unavailable or Settings shows <strong>brak aliasu</strong></td><td>The existing realm's canonical alias is missing from this client projection. Do not create a new alias. Refresh/reconnect; if the state returns after restart, the server worker must reconcile and publish this client's <code>view.json</code>. The GUI deliberately blocks visibility and alias-dependent locks until identity is authoritative.</td></tr>
 <tr><td>Repository reports <code>working_copy_missing</code></td><td>Check whether the disk is mounted or the working-copy root was moved. Use <strong>Wskaż kopię</strong> to select the existing <code>.svn</code> root. Do not create an empty replacement directory and do not use first-checkout <strong>Połącz</strong> to recover a moved working copy.</td></tr>
 </table></div>
-<h2 id="ch2-glossary">2.10 GUI Terminology (Glossary)</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Tracks every case where the desktop GUI's Polish vocabulary deliberately diverges from the architecture's SVN-derived terminology.</span></div>
-<p>The desktop GUI is Polish-only and targets non-technical end users. Where the architecturally correct term — used throughout this manual, the codebase and the wire protocol — would expose SVN- or protocol-level jargon with no intuitive meaning to a user, the GUI substitutes plain language instead. Internal identifiers, IPC field names and protocol messages keep the architecture term unchanged; only what the user reads changes. The mapping is 1:1 and stable: a given GUI term always corresponds to exactly one architecture term.</p>
+<h2 id="ch2-glossary">2.10 GUI Terminology (Glossary)</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Tracks every case where the desktop GUI's wording deliberately diverges from the architecture's SVN-derived terminology.</span></div>
+<p>The desktop GUI speaks five languages and targets non-technical end users. Where the architecturally correct term — used throughout this manual, the codebase and the wire protocol — would expose SVN- or protocol-level jargon with no intuitive meaning to a user, the GUI substitutes plain language instead. Internal identifiers, IPC field names and protocol messages keep the architecture term unchanged; only what the user reads changes. The mapping is 1:1 and stable within each language: a given GUI term always corresponds to exactly one architecture term. The table gives the English and Polish wording.</p>
 <div class="table-wrap"><table>
-<tr><th>GUI term (Polish)</th><th>Architecture term</th><th>Meaning</th></tr>
-<tr><td><strong>strefa</strong></td><td><code>realm</code></td><td>The durable identity of an owner (a person or organisational unit) that can span multiple installations/devices, owns repositories, and is the subject grants and shares bind to. See <a href="security.html#ch5-identity">Identity and grant model</a>.</td></tr>
+<tr><th>GUI term (EN / PL)</th><th>Architecture term</th><th>Meaning</th></tr>
+<tr><td><strong>realm</strong> / <strong>strefa</strong></td><td><code>realm</code></td><td>The durable identity of an owner (a person or organisational unit) that can span multiple installations/devices, owns repositories, and is the subject grants and shares bind to. See <a href="security.html#ch5-identity">Identity and grant model</a>.</td></tr>
+<tr><td><strong>upload shelf</strong> / <strong>półka przyjęcia</strong></td><td>upload channel and its delivery repository (<code>upload_shelf</code>)</td><td>A repository that receives files uploaded through a public link by invited contributors. On the desktop it is read-only and fetched only on demand.</td></tr>
+<tr><td><strong>quarantine</strong> / <strong>kwarantanna</strong></td><td>AV-reject repository (<code>upload_trash</code>)</td><td>Uploads the antivirus scan rejected, kept for review for 48 hours and never delivered to the shelf.</td></tr>
+<tr><td><strong>Place in parent folder</strong> / <strong>Umieść w folderze macierzystym</strong></td><td>shelf fetch with a destination in the parent working copy</td><td>Copies one verified file from a shelf into the working copy of the repository the shelf belongs to, without overwriting.</td></tr>
+<tr><td><strong>announcement</strong> / <strong>ogłoszenie</strong></td><td>Shouting Commit</td><td>A publication that carries a message every recipient must acknowledge.</td></tr>
 </table></div>
 <p>Add a row here whenever another GUI-facing term is deliberately renamed for the same reason, in the same commit that changes the strings.</p>
 </div>
 <nav class="page-nav"><a href="index.html">← Overview</a><a href="public-shares.html">Shares →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
 </main>
 </body>
 </html>

@@ -1129,14 +1129,20 @@ func (c *Controller) startMoveRepository(ctx context.Context, serverID, repoID s
 			return
 		}
 		name := firstNonBlank(repo.DisplayName, repo.ID)
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.moveParent", "Wybierz nowy folder nadrzędny dla „%s”"), name)})
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.moveParent", "Wybierz folder nadrzędny (nie folder „%s”)"), name), InitialDir: filepath.Dir(repo.LocalPath)})
 		if err != nil || picked.Cancelled {
 			if err != nil {
 				c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.actionErrorBody(err))
 			}
 			return
 		}
-		target := filepath.Join(filepath.Clean(picked.Path), filepath.Base(filepath.Clean(repo.LocalPath)))
+		pickedPath := filepath.Clean(picked.Path)
+		base := filepath.Base(filepath.Clean(repo.LocalPath))
+		if strings.EqualFold(filepath.Base(pickedPath), base) {
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), fmt.Sprintf(c.uiText("feedback.moveSelectParent", "Wskaż folder nadrzędny, np. „%s”, a nie przygotowany folder „%s”. FileES sam przeniesie do niego cały folder."), filepath.Dir(pickedPath), base))
+			return
+		}
+		target := filepath.Join(pickedPath, base)
 		if !filepath.IsAbs(target) || filepath.Clean(target) == filepath.Clean(repo.LocalPath) {
 			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.uiText("feedback.moveSame", "Wybierz inny folder nadrzędny."))
 			return

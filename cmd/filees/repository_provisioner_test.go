@@ -704,6 +704,36 @@ func TestDaemonProvisionerMovesExistingWorkingCopyAfterQuiesce(t *testing.T) {
 	}
 }
 
+func TestMoveWorkingCopyRetriesTransientRenameFailure(t *testing.T) {
+	attempts := 0
+	err := moveWorkingCopyWithRetry(t.Context(), "old", "new", func(source, target string) error {
+		attempts++
+		if source != "old" || target != "new" {
+			t.Fatalf("rename paths = %q -> %q", source, target)
+		}
+		if attempts < 3 {
+			return errors.New("transient access denied")
+		}
+		return nil
+	})
+	if err != nil || attempts != 3 {
+		t.Fatalf("move err=%v attempts=%d", err, attempts)
+	}
+}
+
+func TestMoveWorkingCopyStopsRetryingWhenContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	err := moveWorkingCopyWithRetry(ctx, "old", "new", func(string, string) error {
+		attempts++
+		cancel()
+		return errors.New("access denied")
+	})
+	if !errors.Is(err, context.Canceled) || attempts != 1 {
+		t.Fatalf("move err=%v attempts=%d", err, attempts)
+	}
+}
+
 func TestDaemonProvisionerRelocationRollbackRestoresOldRuntime(t *testing.T) {
 	local, journal, profile, record := relocationFixture(t)
 	stub := &attachmentSVNStub{status: []client.StatusEntry{{Path: "broken", Item: "missing"}}}

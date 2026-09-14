@@ -623,7 +623,7 @@ func (p *daemonProvisioner) runMoveExisting(ctx context.Context, record localrep
 		return
 	}
 	if sourceExists {
-		if err := os.Rename(source, target); err != nil {
+		if err := moveWorkingCopyWithRetry(ctx, source, target, os.Rename); err != nil {
 			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("move working copy within one volume: %w", err))
 			return
 		}
@@ -638,6 +638,35 @@ func (p *daemonProvisioner) runMoveExisting(ctx context.Context, record localrep
 		return
 	}
 	p.publishLocalRecord(ctx, updated, profile)
+}
+
+// moveWorkingCopyWithRetry bridges the short gap between a confirmed daemon
+// quiesce and Windows releasing every incidental directory handle. Explorer,
+// indexing and antivirus filters can keep the root non-renamable for a moment
+// after FileES has closed its own guard. A bounded retry avoids turning that
+// normal race into a failed durable relocation; a real ACL/open-file problem
+// is still returned to the user after the deadline.
+func moveWorkingCopyWithRetry(ctx context.Context, source, target string, rename func(string, string) error) error {
+	if rename == nil {
+		return errors.New("working-copy rename function is unavailable")
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var last error
+	for {
+		if last = rename(source, target); last == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(last, ctx.Err())
+		case <-deadline.C:
+			return last
+		case <-ticker.C:
+		}
+	}
 }
 
 func (p *daemonProvisioner) quiesceAttachment(ctx context.Context, record localrepo.Record) error {

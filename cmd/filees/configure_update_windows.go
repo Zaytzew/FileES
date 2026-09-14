@@ -31,8 +31,18 @@ import (
 // the installing differs, because the two platforms lay the product out
 // differently, and that difference is the whole of clientupdate.DirectoryInstaller.
 func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string) error {
+	packaged, err := windowsPackageIdentityPresent()
+	if err != nil {
+		return fmt.Errorf("detect Windows package identity before configuring updates: %w", err)
+	}
+	selfUpdate, err := windowsClientSelfUpdateAllowed(packaged, injectedClientUpdateMode)
+	if err != nil {
+		return err
+	}
+	if !selfUpdate {
+		return nil
+	}
 	if update == nil && !explicitlyConfigured {
-		var err error
 		update, err = distributionClientUpdateConfig()
 		if err != nil {
 			return err
@@ -84,6 +94,27 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 	}
 	ipc.SetUpdateService(service)
 	return nil
+}
+
+func windowsClientSelfUpdateAllowed(packaged bool, mode string) (bool, error) {
+	if packaged {
+		// A package is serviced by Windows/Store. DirectoryInstaller must never
+		// rename files inside WindowsApps, regardless of config.json or build
+		// defaults. An accidentally packaged MSI build fails closed.
+		if mode != "store" {
+			return false, errors.New("packaged Windows client requires a Store update build")
+		}
+		return false, nil
+	}
+	if mode == "store" {
+		// Allow a Store candidate to run unpackaged in an isolated Windows lab;
+		// an old user-owned update section must not enable the file updater.
+		return false, nil
+	}
+	if mode != "" {
+		return false, fmt.Errorf("unknown Windows client update mode %q", mode)
+	}
+	return true, nil
 }
 
 // distributionClientUpdateConfig turns immutable build metadata into an

@@ -2,10 +2,52 @@ package activity
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestPublishedReceiptReplayPreservesTimeAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity.json")
+	j, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	j.now = func() time.Time { return now }
+	receipt := Entry{RepoID: "docs", Path: "folder", Kind: Deleted, Stage: Published, Revision: 46}
+	if err := j.Record(receipt); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err = Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	j.now = func() time.Time { return now }
+	if err := j.Record(receipt); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) || !j.List()[0].UpdatedAt.Equal(now.Add(-time.Hour)) {
+		t.Fatal("replayed receipt changed the existing history")
+	}
+	receipt.Revision = 47
+	if err := j.Record(receipt); err != nil {
+		t.Fatal(err)
+	}
+	if got := j.List()[0]; got.Revision != 47 || !got.UpdatedAt.Equal(now) {
+		t.Fatalf("new commit did not advance the history: %+v", got)
+	}
+}
 
 func TestJournalSurvivesRestartAndCollapsesPipelineStages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "activity.json")

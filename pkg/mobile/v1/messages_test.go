@@ -153,6 +153,17 @@ func TestListRepositoriesResultValidation(t *testing.T) {
 		t.Fatal("nil repositories should be rejected")
 	}
 
+	branded := ok
+	branded.LeadingColor = "#2D5A3D"
+	if _, err := NewSuccess(rid(), OpListRepositories, branded); err != nil {
+		t.Fatalf("realm leading color should be valid: %v", err)
+	}
+	badColor := ok
+	badColor.LeadingColor = "orange"
+	if _, err := NewSuccess(rid(), OpListRepositories, badColor); err == nil {
+		t.Fatal("non-hex leading_color should be rejected")
+	}
+
 	named := ok
 	named.ServerDisplayName = " Serwer"
 	if _, err := NewSuccess(rid(), OpListRepositories, named); err == nil {

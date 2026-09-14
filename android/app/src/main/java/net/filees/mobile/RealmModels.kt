@@ -32,11 +32,12 @@ data class RealmProjection(
     val realmAlias: String,
     val serverDisplayName: String,
     val generatedAt: String,
+    val leadingColor: String = "",
     val shares: List<RealmShare>,
 ) {
     companion object {
         fun fromJson(json: String): RealmProjection {
-            if (json.isBlank()) return RealmProjection("", "", "", "", emptyList())
+            if (json.isBlank()) return RealmProjection("", "", "", "", "", emptyList())
             val root = JSONObject(json)
             val entries = root.optJSONArray("repositories")
             val shares = mutableListOf<RealmShare>()
@@ -59,6 +60,7 @@ data class RealmProjection(
                 realmAlias = root.optString("realm_alias"),
                 serverDisplayName = root.optString("server_display_name"),
                 generatedAt = root.optString("generated_at"),
+                leadingColor = root.optString("leading_color"),
                 shares = shares,
             )
         }
@@ -93,6 +95,7 @@ data class BrowseRow(
     val heroCopy: String = "",
     val serverMeta: String = "",
     val switchServerId: String = "",
+    val accentColor: String = "",
     val panel: Panel = Panel.NONE,
 ) {
     enum class Kind {

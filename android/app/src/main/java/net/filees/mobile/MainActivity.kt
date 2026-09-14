@@ -357,6 +357,7 @@ class MainActivity : AppCompatActivity() {
                         )
                     },
                     switchServerId = if (active) "" else server.id,
+                    accentColor = server.leadingColor,
                     panel = if (folders.isEmpty()) BrowseRow.Panel.SINGLE else BrowseRow.Panel.TOP,
                 ),
             )

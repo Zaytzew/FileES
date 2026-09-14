@@ -15,6 +15,7 @@ data class PairedServer(
     val selectedRepoId: String = "",
     val uploadRepoId: String = "",
     val uploadRepoName: String = "",
+    val leadingColor: String = "",
 ) {
     fun label(): String {
         val name = displayName.ifBlank { address }
@@ -31,6 +32,7 @@ data class PairedServer(
         .put("selected_repo_id", selectedRepoId)
         .put("upload_repo_id", uploadRepoId)
         .put("upload_repo_name", uploadRepoName)
+        .put("leading_color", leadingColor)
 
     companion object {
         fun fromJson(o: JSONObject): PairedServer? {
@@ -48,6 +50,7 @@ data class PairedServer(
                 selectedRepoId = o.optString("selected_repo_id"),
                 uploadRepoId = o.optString("upload_repo_id"),
                 uploadRepoName = o.optString("upload_repo_name"),
+                leadingColor = o.optString("leading_color"),
             )
         }
     }
@@ -157,6 +160,7 @@ object FileesSession {
                 generatedAt = projection.generatedAt.ifBlank { cur.generatedAt },
                 uploadRepoId = if (uploadOk) cur.uploadRepoId else "",
                 uploadRepoName = if (uploadOk) cur.uploadRepoName else "",
+                leadingColor = projection.leadingColor.ifBlank { cur.leadingColor },
             ),
         )
     }

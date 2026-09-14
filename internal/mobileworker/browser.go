@@ -54,6 +54,7 @@ type Projection struct {
 	RealmID           string
 	RealmAlias        string
 	ServerDisplayName string
+	LeadingColor      string
 	Generation        int64
 	GeneratedAt       time.Time
 	Repositories      []RepositoryGrant
@@ -189,6 +190,7 @@ func (b Browser) ListRepositories(ctx context.Context, clientID string) (v1.List
 		RealmID:           proj.RealmID,
 		RealmAlias:        proj.RealmAlias,
 		ServerDisplayName: proj.ServerDisplayName,
+		LeadingColor:      proj.LeadingColor,
 		Repositories:      repos,
 	}
 	if !proj.GeneratedAt.IsZero() {

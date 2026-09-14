@@ -2,12 +2,72 @@ package commit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"filees/pkg/activity"
+	"filees/pkg/client"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/watcher"
 )
+
+// repairOrphanPendingActivity repairs presentation rows left by an older
+// daemon after their durable staging entry was already retired. It never
+// changes staging or SVN: a successful status check must prove that the path
+// is clean (normal when present, absent/none when gone). Without the original
+// receipt it says reconciled, not published, and invents no revision.
+func (s *Service) repairOrphanPendingActivity(ctx context.Context, wc string) {
+	lister, ok := s.Activity.(interface{ List() []activity.Entry })
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	staged := make(map[string]bool, len(s.staging))
+	for rel := range s.staging {
+		staged[rel] = true
+	}
+	s.mu.Unlock()
+	entriesByPath := make(map[string]activity.Entry)
+	var paths []string
+	for _, entry := range lister.List() {
+		if entry.RepoID == s.repoID && entry.Stage == activity.Pending && !staged[entry.Path] && safeIntentPath(entry.Path) {
+			entriesByPath[entry.Path] = entry
+			paths = append(paths, entry.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return
+	}
+	status, err := s.Cli.Status(ctx, wc, paths)
+	if err != nil {
+		return
+	}
+	states := make(map[string]client.StatusEntry, len(status))
+	for _, item := range status {
+		states[strings.ReplaceAll(item.Path, "\\", "/")] = item
+	}
+	changed := false
+	for _, rel := range paths {
+		item, reported := states[rel]
+		info, statErr := os.Lstat(filepath.Join(wc, filepath.FromSlash(rel)))
+		clean := statErr == nil && (info.Mode().IsRegular() || info.IsDir()) && reported && item.Item == "normal" && (item.Props == "none" || item.Props == "normal")
+		gone := errors.Is(statErr, os.ErrNotExist) && (!reported || item.Item == "none")
+		if !clean && !gone {
+			continue
+		}
+		entry := entriesByPath[rel]
+		entry.Stage, entry.Revision, entry.ErrorID = activity.Reconciled, 0, ""
+		if err := s.Activity.Record(entry); err != nil {
+			continue
+		}
+		changed = true
+	}
+	if changed {
+		s.emit(contract.EvActivityChanged, nil)
+	}
+}
 
 // reconcileCleanPending requires wcOpMu. Only explicit normal text AND props
 // on an unchanged, existing regular file prove a watcher add/modify is a no-op.

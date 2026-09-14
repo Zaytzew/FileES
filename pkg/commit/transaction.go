@@ -258,6 +258,14 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, res
 	}
 	if in == nil || in.Phase == "done" {
 		if in != nil {
+			// Completed transactions are the durable source of truth for their
+			// presentation too. Replaying this idempotent upsert repairs journals
+			// written by older clients that skipped directory entries. A journal
+			// failure must not turn a proven completed commit back into HOLD.
+			if err := s.recordIntentPublishedActivity(in); err != nil {
+				s.Logger.Warnf("repair completed commit activity: %v", err)
+			}
+			s.repairOrphanPendingActivity(ctx, wc)
 			return false, releaseIntentBusy(wc, in)
 		}
 		return false, nil
@@ -384,15 +392,8 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 			}
 		}
 	}
-	if s.Activity != nil {
-		for _, it := range in.Items {
-			if it.IsDir {
-				continue
-			}
-			if err := s.Activity.Record(activity.Entry{RepoID: in.RepoID, Path: it.Rel, Kind: activity.Kind(opName(it.Op)), Stage: activity.Published, Revision: in.Revision}); err != nil {
-				return err
-			}
-		}
+	if err := s.recordIntentPublishedActivity(in); err != nil {
+		return err
 	}
 	// A clean WC can retire this snapshot. Later edits remain staged. If C
 	// died before updating WC metadata, don't reissue the remote transaction.
@@ -492,6 +493,18 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 	}
 	s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{Revision: in.Revision, Paths: len(in.Paths)})
 	s.emit(contract.EvActivityChanged, nil)
+	return nil
+}
+
+func (s *Service) recordIntentPublishedActivity(in *commitIntent) error {
+	if s.Activity == nil || in == nil || in.Revision < 1 {
+		return nil
+	}
+	for _, it := range in.Items {
+		if err := s.Activity.Record(activity.Entry{RepoID: in.RepoID, Path: it.Rel, Kind: activity.Kind(opName(it.Op)), Stage: activity.Published, Revision: in.Revision}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Draft template only. Do not package or submit until the Store launcher is
-     linked into a payload, writable-state tests, assets and isolated Windows
-     install/upgrade tests are complete. -->
+<!-- Store build template. Local MakeAppx validation does not prove install,
+     upgrade or Store certification. Never submit without separate approval. -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"

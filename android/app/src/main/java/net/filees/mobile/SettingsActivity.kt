@@ -1,6 +1,7 @@
 package net.filees.mobile
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -50,6 +51,10 @@ class SettingsActivity : AppCompatActivity() {
         if (uri != null) confirmAndAddWatch(uri)
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(FileesLocale.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installFileesWindow()
@@ -97,6 +102,23 @@ class SettingsActivity : AppCompatActivity() {
         renderServers()
         renderWatched()
         renderUploadTarget()
+        bindLanguage()
+        binding.buttonChangeLanguage.setOnClickListener { pickLanguage() }
+    }
+
+    private fun bindLanguage() {
+        binding.textLanguage.text = FileesLocale.displayName(this, FileesLocale.preference(this))
+    }
+
+    private fun pickLanguage() {
+        val codes = FileesLocale.pickerCodes()
+        val labels = codes.map { FileesLocale.pickerLabel(this, it) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_language)
+            .setItems(labels) { _, index ->
+                FileesLocale.applyChoice(this, codes[index])
+            }
+            .show()
     }
 
     private fun bindServerDetails(prefs: android.content.SharedPreferences) {

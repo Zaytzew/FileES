@@ -11,6 +11,9 @@
     <string name="action_scan_qr">Scan QR and pair with the desktop</string>
     <string name="action_pair_pasted">Pair (pasted data)</string>
     <string name="action_settings">Settings</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">System language</string>
+    <string name="settings_language_system_current">System language · %1$s</string>
     <string name="action_pick_folder">Choose a folder to send</string>
     <string name="action_browse_up">Up</string>
     <string name="action_add">Add</string>

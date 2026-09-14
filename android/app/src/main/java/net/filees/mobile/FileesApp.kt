@@ -3,10 +3,15 @@ package net.filees.mobile
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.os.Build
 import androidx.core.content.getSystemService
 
 class FileesApp : Application() {
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(FileesLocale.wrap(base))
+    }
+
     override fun onCreate() {
         super.onCreate()
         TreeZip.sweep(cacheDir)

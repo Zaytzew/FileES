@@ -969,6 +969,9 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 	if folder.CanResolveIntents {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogResolveIntents), LabelKey: "repoAction.resolve_intents.label", DescriptionKey: "repoAction.resolve_intents.description", Tone: "warning"})
 	}
+	if folder.CanResolveCommitRecovery {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogResolveCommitRecovery), LabelKey: "repoAction.resolve_commit_recovery.label", DescriptionKey: "repoAction.resolve_commit_recovery.description", Tone: "warning"})
+	}
 	if folder.CanDetach {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDetachFolder), LabelKey: "repoAction.detach_folder.label", DescriptionKey: "repoAction.detach_folder.description", Tone: "warning"})
 	}

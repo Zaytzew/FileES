@@ -44,3 +44,11 @@ func TestIntentResolutionFolderActionProjection(t *testing.T) {
 		t.Fatal("renderer invented permission")
 	}
 }
+
+func TestCommitRecoveryFolderActionProjection(t *testing.T) {
+	request := platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{ID: "spot", Folders: []platform.SettingsFolder{{ID: "docs", CanResolveCommitRecovery: true}}}}}
+	projection, ok := projectRepositorySettings(request)
+	if !ok || len(projection.Actions) != 1 || projection.Actions[0].ID != string(platform.SettingsDialogResolveCommitRecovery) {
+		t.Fatalf("projection=%+v", projection)
+	}
+}

@@ -164,6 +164,7 @@ func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetReservationReleaseFunc(nil)
 	state.SetPublishFunc(nil)
 	state.SetIntentFuncs(nil, nil)
+	state.SetCommitRecoveryFuncs(nil, nil, nil)
 	state.SetNoticeFuncs(nil, nil)
 	state.SetCurrentOp(stringPtr("working_copy_missing"))
 	state.SetState(contract.StateInteractionRequired)
@@ -446,6 +447,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
+	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, service.ApplyCommitRecovery)
 	lockFuncsWired := true
 	defer func() {
 		if sizeFuncWired {
@@ -460,6 +462,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			}
 			runtimeRepo.state.SetPublishFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
+			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
 			logger.Infof("reservation/lock listing unwired (instance setup unwound)")
 		}
@@ -477,6 +480,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 		runtimeRepo.state.SetPublishFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
+		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
 		logger.Infof("reservation/lock listing unwired (instance stopping)")
 		if passports != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
+	contract "filees/pkg/contract/v1"
 	"fmt"
 	"strings"
 	"time"
@@ -23,6 +24,47 @@ type IntentResolutionPath struct {
 type IntentResolver interface {
 	PlanIntents(context.Context, string) (*IntentResolutionPlan, error)
 	ApplyIntents(context.Context, string, string, string) error
+	PlanCommitRecovery(context.Context, string) (*contract.CommitRecoveryPlan, error)
+	ApplyCommitRecovery(context.Context, string, string, string) error
+}
+
+func (c *Controller) startResolveCommitRecovery(ctx context.Context, serverID, repoID string) {
+	key := "resolve-commit-recovery:" + serverID + ":" + repoID
+	if c.cfg.IntentResolver == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || !repo.CommitRecoveryRequired || !vm.Connected || vm.Stale || !vm.CanResolveCommitRecovery() {
+			return
+		}
+		readCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		plan, err := c.cfg.IntentResolver.PlanCommitRecovery(readCtx, repoID)
+		cancel()
+		if err != nil {
+			c.reportActionError(ctx, key, "Nie można sprawdzić publikacji", c.actionErrorBody(err))
+			return
+		}
+		text := fmt.Sprintf("FileES ponownie sprawdził serwer. Próba %s nie utworzyła oczekiwanej rewizji r%d (HEAD: r%d). Zamknąć wyłącznie tę próbę i ponowić zachowaną kolejkę %d ścieżek?", plan.TransactionID, plan.FirstRevision, plan.HeadRevision, len(plan.Paths))
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "details.commitRecovery", PresentationArgs: map[string]string{"transaction": plan.TransactionID, "firstRevision": fmt.Sprint(plan.FirstRevision), "headRevision": fmt.Sprint(plan.HeadRevision), "pathCount": fmt.Sprint(len(plan.Paths))}, Title: "Uzgodnij wstrzymaną publikację", Text: text, ConfirmText: "Ponów zachowaną kolejkę", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		applyCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err = c.cfg.IntentResolver.ApplyCommitRecovery(applyCtx, repoID, plan.PlanID, plan.Choice)
+		cancel()
+		if err != nil {
+			c.reportActionError(ctx, key, "Publikacja nadal wymaga uzgodnienia", c.actionErrorBody(err))
+			return
+		}
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
 }
 
 func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID string) {

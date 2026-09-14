@@ -10,7 +10,25 @@ import (
 type intentResolutionClient interface {
 	RepoIntentPlan(context.Context, string) (*contract.IntentPlan, error)
 	RepoIntentApply(context.Context, string, string, string) (*contract.IntentApplyResult, error)
+	RepoCommitRecoveryPlan(context.Context, string) (*contract.CommitRecoveryPlan, error)
+	RepoCommitRecoveryApply(context.Context, string, string, string) (*contract.CommitRecoveryApplyResult, error)
 }
+
+func (a intentResolverAdapter) PlanCommitRecovery(ctx context.Context, repoID string) (*contract.CommitRecoveryPlan, error) {
+	return a.client.RepoCommitRecoveryPlan(ctx, repoID)
+}
+
+func (a intentResolverAdapter) ApplyCommitRecovery(ctx context.Context, repoID, planID, choice string) error {
+	result, err := a.client.RepoCommitRecoveryApply(ctx, repoID, planID, choice)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.PlanID != planID || result.State != "queued" {
+		return errors.New("invalid commit recovery response")
+	}
+	return nil
+}
+
 type intentResolverAdapter struct{ client intentResolutionClient }
 
 func (a intentResolverAdapter) PlanIntents(ctx context.Context, repoID string) (*actions.IntentResolutionPlan, error) {

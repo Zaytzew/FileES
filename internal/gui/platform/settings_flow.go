@@ -16,6 +16,7 @@ type settingsActionSpec struct {
 // Order is the user-facing list. Local and realm actions come first.
 // Destructive server actions stay last so they are not the default row.
 var settingsActionCatalog = []settingsActionSpec{
+	{SettingsDialogResolveCommitRecovery, "resolve_commit_recovery", "resolve_commit_recovery", "Uzgodnij wstrzymaną publikację", true, false},
 	{SettingsDialogResolveIntents, "resolve_intents", "resolve_intents", "Rozstrzygnij niejednoznaczne zmiany", true, false},
 	{SettingsDialogSessionTimeout, "session_timeout", "session_timeout", "Limit czasu wysyłki i pobierania…", false, false},
 	{SettingsDialogRealmVisibility, "realm_visibility", "realm_visibility", "Widoczność mojej strefy", false, false},
@@ -129,6 +130,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 	switch action {
 	case SettingsDialogResolveIntents:
 		return folder.CanResolveIntents
+	case SettingsDialogResolveCommitRecovery:
+		return folder.CanResolveCommitRecovery
 	case SettingsDialogConnectRepos:
 		return folder.CanConnect
 	case SettingsDialogLocateFolder:
@@ -162,6 +165,8 @@ func settingsActionFromID(id string) SettingsDialogAction {
 	switch id {
 	case "resolve_intents":
 		return SettingsDialogResolveIntents
+	case "resolve_commit_recovery":
+		return SettingsDialogResolveCommitRecovery
 	case "add_folder", "add", "Dodaj folder":
 		return SettingsDialogAddFolder
 	case "connect_repositories", "connect", "Połącz":

@@ -179,6 +179,7 @@ const (
 	CapRepoLifecycleRepair   = "repo.lifecycle_repair"
 	CapRepoActivity          = "repo.activity"
 	CapRepoPublish           = "repo.publish"
+	CapRepoCommitRecovery    = "repo.commit_recovery.resolve.v1"
 	CapNoticeList            = "notice.list"
 	CapNoticeAck             = "notice.ack"
 	CapSystemRestart         = "system.restart"
@@ -240,6 +241,7 @@ var AllCapabilities = []string{
 	CapRepoLifecycleStatus,
 	CapRepoLifecycleRepair,
 	CapRepoPublish,
+	CapRepoCommitRecovery,
 	CapRepoIntentResolution,
 	CapNoticeList,
 	CapNoticeAck,

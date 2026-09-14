@@ -636,6 +636,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		switch result.Action {
 		case platform.SettingsDialogResolveIntents:
 			c.startResolveIntents(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogResolveCommitRecovery:
+			c.startResolveCommitRecovery(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogAddFolder:
 			c.startCreateRepository(ctx, result.ServerID)
 		case platform.SettingsDialogConnectRepos:
@@ -976,22 +978,23 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			// Ownership alone, not ownedAndCreatable: whether a realm may
 			// create new repositories says nothing about its right to set
 			// the working rules of one it already owns.
-			CanSetEditingPolicy:     repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
-			CanManageGrants:         repo.Purpose == "" && !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
-			CanManagePublicShares:   repo.Purpose == "" && !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
-			CanManageUploadChannels: repo.Purpose == "" && !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
-			CanReviewQuarantine:     quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
-			CanConnect:              repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
-			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
-			CanMove:                 repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
-			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-			CanDelete:               repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-			CanLoadDump:             repo.Purpose == "" && !locallyProvisioning && repo.Attached && ownedAndCreatable,
-			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
-			CanResolveIntents:       repo.Purpose == "" && vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
-			LastCommitAt:            repo.LastCommitAt,
-			CanFoldInactive:         vm.CanFoldInactive(repo),
-			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
+			CanSetEditingPolicy:      repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanManageGrants:          repo.Purpose == "" && !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
+			CanManagePublicShares:    repo.Purpose == "" && !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
+			CanManageUploadChannels:  repo.Purpose == "" && !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
+			CanReviewQuarantine:      quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
+			CanConnect:               repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+			CanLocate:                repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+			CanMove:                  repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
+			CanDetach:                repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
+			CanDelete:                repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanLoadDump:              repo.Purpose == "" && !locallyProvisioning && repo.Attached && ownedAndCreatable,
+			CanRetryLifecycle:        vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
+			CanResolveIntents:        repo.Purpose == "" && vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
+			CanResolveCommitRecovery: repo.Purpose == "" && vm.Connected && !vm.Stale && vm.CanResolveCommitRecovery() && repo.Attached && repo.Access == "rw" && repo.CommitRecoveryRequired,
+			LastCommitAt:             repo.LastCommitAt,
+			CanFoldInactive:          vm.CanFoldInactive(repo),
+			CanAbandonLifecycle:      vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})
 	}
 	return row, hadPending
@@ -2448,10 +2451,16 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 		return PublicShareDeclaration{}, false
 	}
 	initialDir := repo.LocalPath
+	pickerTitle := c.uiText("picker.share", "Wybierz folder udostępnienia")
 	if current != nil {
-		initialDir = filepath.Join(repo.LocalPath, filepath.FromSlash(current.SourceRoot))
+		candidate := filepath.Join(repo.LocalPath, filepath.FromSlash(current.SourceRoot))
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			initialDir = candidate
+		} else {
+			pickerTitle = c.uiText("picker.shareMissing", "Folder udziału już nie istnieje — wskaż nowy folder")
+		}
 	}
-	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("picker.share", "Wybierz folder udostępnienia"), InitialDir: initialDir})
+	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: pickerTitle, InitialDir: initialDir})
 	if err != nil {
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.folderPickerFailed", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Nie udało się otworzyć wyboru folderu", Text: err.Error()})
 		return PublicShareDeclaration{}, false

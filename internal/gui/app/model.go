@@ -43,45 +43,46 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
-	ID                   string
-	DisplayName          string
-	ServerID             string
-	Attached             bool
-	Access               string
-	OwnerRealmID         string
-	AttachmentPolicy     string
-	EditingPolicy        string
-	Purpose              string
-	ParentRepoID         string
-	URL                  string
-	LocalPath            string
-	State                string
-	Connectivity         string
-	LocalRev             int64
-	HeadRev              int64
-	WorkingCopyBytes     int64
-	WorkingCopySizeKnown bool
-	Pending              contract.PendingStats
-	Conflicts            int
-	UnportableNames      []contract.UnportableName
-	LastSyncAt           string
-	LastCommitAt         string
-	CurrentOp            *string
-	ReservationCount     int
-	Cycle                contract.CycleStatus
-	ServerDeleted        bool
-	LocalCopyPreserved   bool
-	LocalCopyStatus      string
-	LocalCleanupPending  bool
-	RetainUntil          string
-	RecoveryOperationID  string
-	RecoveryAvailable    bool
-	RecoveryPending      bool
-	CleanupError         string
-	LifecycleOperationID string
-	LifecycleError       string
-	CanRetryLifecycle    bool
-	CanAbandonLifecycle  bool
+	ID                     string
+	DisplayName            string
+	ServerID               string
+	Attached               bool
+	Access                 string
+	OwnerRealmID           string
+	AttachmentPolicy       string
+	EditingPolicy          string
+	Purpose                string
+	ParentRepoID           string
+	URL                    string
+	LocalPath              string
+	State                  string
+	Connectivity           string
+	LocalRev               int64
+	HeadRev                int64
+	WorkingCopyBytes       int64
+	WorkingCopySizeKnown   bool
+	Pending                contract.PendingStats
+	Conflicts              int
+	UnportableNames        []contract.UnportableName
+	LastSyncAt             string
+	LastCommitAt           string
+	CurrentOp              *string
+	ReservationCount       int
+	Cycle                  contract.CycleStatus
+	ServerDeleted          bool
+	LocalCopyPreserved     bool
+	LocalCopyStatus        string
+	LocalCleanupPending    bool
+	RetainUntil            string
+	RecoveryOperationID    string
+	RecoveryAvailable      bool
+	RecoveryPending        bool
+	CleanupError           string
+	LifecycleOperationID   string
+	LifecycleError         string
+	CanRetryLifecycle      bool
+	CanAbandonLifecycle    bool
+	CommitRecoveryRequired bool
 }
 
 type PendingAction struct {
@@ -361,13 +362,14 @@ func (vm ViewModel) CanFoldInactive(repo RepoViewModel) bool {
 // leaking capability names into tray adapters. CanMutateLock and
 // CanMutateUnlock additionally apply the live-state gate shared by presenters
 // and action controllers.
-func (vm ViewModel) CanLock() bool           { return vm.HasCap(contract.CapRepoLock) }
-func (vm ViewModel) CanUnlock() bool         { return vm.HasCap(contract.CapRepoUnlock) }
-func (vm ViewModel) CanListErrors() bool     { return vm.HasCap(contract.CapErrorList) }
-func (vm ViewModel) CanListActivity() bool   { return vm.HasCap(contract.CapRepoActivity) }
-func (vm ViewModel) CanPublish() bool        { return vm.HasCap(contract.CapRepoPublish) }
-func (vm ViewModel) CanResolveIntents() bool { return vm.HasCap(contract.CapRepoIntentResolution) }
-func (vm ViewModel) CanAckNotices() bool     { return vm.HasCap(contract.CapNoticeAck) }
+func (vm ViewModel) CanLock() bool                  { return vm.HasCap(contract.CapRepoLock) }
+func (vm ViewModel) CanUnlock() bool                { return vm.HasCap(contract.CapRepoUnlock) }
+func (vm ViewModel) CanListErrors() bool            { return vm.HasCap(contract.CapErrorList) }
+func (vm ViewModel) CanListActivity() bool          { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanPublish() bool               { return vm.HasCap(contract.CapRepoPublish) }
+func (vm ViewModel) CanResolveIntents() bool        { return vm.HasCap(contract.CapRepoIntentResolution) }
+func (vm ViewModel) CanResolveCommitRecovery() bool { return vm.HasCap(contract.CapRepoCommitRecovery) }
+func (vm ViewModel) CanAckNotices() bool            { return vm.HasCap(contract.CapNoticeAck) }
 func (vm ViewModel) SupportsReservationListing() bool {
 	return vm.HasCap(contract.CapRepoReservationList)
 }
@@ -563,6 +565,9 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 }
 
 func repoIconState(r RepoViewModel) IconState {
+	if r.Attached && !r.ServerDeleted && r.CommitRecoveryRequired {
+		return IconError
+	}
 	if r.Attached && !r.ServerDeleted && r.Pending.RenameUncertain > 0 {
 		return IconError
 	}

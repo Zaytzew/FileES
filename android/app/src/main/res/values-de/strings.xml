@@ -117,6 +117,7 @@
     <string name="hint_send_as">Neuer Dateiname</string>
     <string name="status_waiting_decision">%1$d Dateien warten auf eine Entscheidung.</string>
     <string name="action_unpair">Diesen Server trennen</string>
+    <string name="action_unpair_short">Trennen</string>
     <string name="confirm_unpair">Diesen Server auf dem Telefon vergessen? Andere Kopplungen bleiben. Der Geräteschlüssel bleibt — eine erneute Kopplung mit demselben Host verwendet ihn wieder.</string>
     <string name="settings_servers">Gekoppelte Server</string>
     <string name="action_switch_server">Server</string>
@@ -139,7 +140,7 @@
     <string name="home_eyebrow">FileES</string>
     <string name="home_title">Ihre Dateien.\nAuf dem richtigen Weg.</string>
     <string name="home_copy_idle">Scannen Sie den QR-Code vom FileES-Desktop, um die Ordner dieses Bereichs zu sehen.</string>
-    <string name="home_copy_paired">Ordner, die dieses Telefon im Bereich sieht.</string>
+    <string name="home_copy_paired">Ordner des Bereichs.</string>
     <string name="home_metric_servers">Server</string>
     <string name="home_metric_servers_note">gekoppelt</string>
     <string name="home_metric_repos">Ordner</string>
@@ -153,8 +154,8 @@
         <item quantity="one">%d Ordner</item>
         <item quantity="other">%d Ordner</item>
     </plurals>
-    <string name="home_journal_title">Telefon-Journal</string>
-    <string name="home_journal_intro">Mitteilungen und Upload-Entscheidungen dieses Geräts. Das ist nicht das Daemon-Journal.</string>
+    <string name="home_journal_title">Journal</string>
+    <string name="home_journal_intro">Mitteilungen und Betriebsprotokoll.</string>
     <string name="home_journal_empty">Keine Einträge.</string>
     <string name="home_journal_pending">Entscheidung nötig: %1$s</string>
     <string name="home_journal_shout">Mitteilung r%1$s</string>

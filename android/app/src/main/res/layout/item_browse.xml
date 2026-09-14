@@ -37,7 +37,7 @@
                 android:breakStrategy="simple"
                 android:ellipsize="end"
                 android:hyphenationFrequency="none"
-                android:maxLines="2"
+                android:maxLines="1"
                 android:textAppearance="@style/TextAppearance.Filees.Name" />
 
             <TextView

@@ -8,7 +8,10 @@
     android:layout_marginTop="@dimen/filees_space_section"
     android:background="@drawable/bg_filees_panel"
     android:orientation="vertical"
-    android:padding="@dimen/filees_panel_inset">
+    android:paddingStart="@dimen/filees_panel_inset"
+    android:paddingTop="@dimen/filees_panel_inset"
+    android:paddingEnd="@dimen/filees_panel_inset"
+    android:paddingBottom="16dp">
 
     <TextView
         android:layout_width="match_parent"

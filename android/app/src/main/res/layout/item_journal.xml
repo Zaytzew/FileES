@@ -6,13 +6,15 @@
     android:orientation="vertical"
     android:paddingStart="@dimen/filees_panel_inset"
     android:paddingTop="@dimen/filees_space"
-    android:paddingEnd="@dimen/filees_panel_inset">
+    android:paddingEnd="@dimen/filees_panel_inset"
+    android:paddingBottom="@dimen/filees_panel_inset">
 
     <TextView
         android:id="@+id/textJournalEntry"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Filees.Name"
+        android:textAppearance="@style/TextAppearance.Filees.Body"
+        android:textSize="13sp"
         tools:text="Ogłoszenie r21" />
 
     <TextView

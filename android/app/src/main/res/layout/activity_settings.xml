@@ -121,14 +121,6 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonUnpair"
-            style="@style/Widget.Filees.Button.OutlinedButton.Destructive"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/action_unpair" />
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

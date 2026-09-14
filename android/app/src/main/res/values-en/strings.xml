@@ -122,6 +122,7 @@
     <string name="hint_send_as">New file name</string>
     <string name="status_waiting_decision">%1$d files waiting for a decision.</string>
     <string name="action_unpair">Disconnect this server</string>
+    <string name="action_unpair_short">Disconnect</string>
     <string name="confirm_unpair">Forget this server on the phone? Other pairings stay. The device key stays — pairing again with the same host will reuse it.</string>
     <string name="settings_servers">Paired servers</string>
     <string name="action_switch_server">Server</string>
@@ -145,7 +146,7 @@
     <string name="home_eyebrow">FileES</string>
     <string name="home_title">Your files.\nOn the right path.</string>
     <string name="home_copy_idle">Scan the QR code from the FileES desktop to see this realm’s folders.</string>
-    <string name="home_copy_paired">Folders this phone can see in the realm.</string>
+    <string name="home_copy_paired">Realm folders.</string>
     <string name="home_metric_servers">Servers</string>
     <string name="home_metric_servers_note">paired</string>
     <string name="home_metric_repos">Folders</string>
@@ -159,8 +160,8 @@
         <item quantity="one">%d folder</item>
         <item quantity="other">%d folders</item>
     </plurals>
-    <string name="home_journal_title">Phone journal</string>
-    <string name="home_journal_intro">Announcements and upload decisions from this device. This is not the daemon journal.</string>
+    <string name="home_journal_title">Journal</string>
+    <string name="home_journal_intro">Announcements and operation log.</string>
     <string name="home_journal_empty">No entries.</string>
     <string name="home_journal_pending">Needs a decision: %1$s</string>
     <string name="home_journal_shout">Announcement r%1$s</string>

@@ -74,7 +74,6 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.buttonAddWatched.setOnClickListener { addWatchLauncher.launch(null) }
         binding.buttonChangeUploadTarget.setOnClickListener { pickUploadTarget() }
-        binding.buttonUnpair.setOnClickListener { confirmUnpair() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)
@@ -95,7 +94,6 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         bindServerDetails(prefs)
-        binding.buttonUnpair.visibility = if (FileesSession.current(prefs) == null) View.GONE else View.VISIBLE
         renderServers()
         renderWatched()
         renderUploadTarget()
@@ -144,34 +142,30 @@ class SettingsActivity : AppCompatActivity() {
                 finish()
             }
             val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-            remove.text = getString(R.string.action_unpair)
+            remove.text = getString(R.string.action_unpair_short)
             styleFileesOutline(remove, R.color.filees_destructive)
-            remove.setOnClickListener {
-                val wasCurrent = server.id == currentId
-                FileesSession.unpairId(prefs, server.id)
-                if (wasCurrent) {
-                    finish()
-                    return@setOnClickListener
-                }
-                bindServerDetails(prefs)
-                binding.buttonUnpair.visibility =
-                    if (FileesSession.current(prefs) == null) View.GONE else View.VISIBLE
-                renderServers()
-                renderUploadTarget()
-            }
+            remove.setOnClickListener { confirmUnpair(server) }
             row.addView(label)
             row.addView(remove)
             binding.listServers.addView(row)
         }
     }
 
-    private fun confirmUnpair() {
+    private fun confirmUnpair(server: PairedServer) {
+        val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         AlertDialog.Builder(this)
-            .setTitle(R.string.action_unpair)
+            .setTitle(R.string.action_unpair_short)
             .setMessage(R.string.confirm_unpair)
-            .setPositiveButton(R.string.action_unpair) { _, _ ->
-                FileesSession.unpair(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))
-                finish()
+            .setPositiveButton(R.string.action_unpair_short) { _, _ ->
+                val wasCurrent = server.id == FileesSession.current(prefs)?.id
+                FileesSession.unpairId(prefs, server.id)
+                if (wasCurrent) {
+                    finish()
+                    return@setPositiveButton
+                }
+                bindServerDetails(prefs)
+                renderServers()
+                renderUploadTarget()
             }
             .setNegativeButton(R.string.action_cancel, null)
             .show()

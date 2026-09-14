@@ -86,6 +86,8 @@ foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'fi
     [xml]$embedded = Get-Content -LiteralPath $extracted -Raw
     $dpi = $embedded.SelectSingleNode("//*[local-name()='dpiAwareness' and namespace-uri()='http://schemas.microsoft.com/SMI/2016/WindowsSettings']")
     $execution = $embedded.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+    $legacyDpi = $embedded.SelectSingleNode("//*[local-name()='dpiAware' and namespace-uri()='http://schemas.microsoft.com/SMI/2005/WindowsSettings']")
+    if ($null -eq $legacyDpi -or $legacyDpi.InnerText -ne 'true/pm') { throw "Embedded manifest lacks DPI compatibility declaration: $name" }
     if ($null -eq $dpi -or $dpi.InnerText -ne 'PerMonitorV2' -or $null -eq $execution -or $execution.GetAttribute('level') -ne 'asInvoker') {
         throw "Embedded manifest must declare PerMonitorV2 and asInvoker: $name"
     }

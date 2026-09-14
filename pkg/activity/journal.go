@@ -109,6 +109,13 @@ func (j *Journal) Record(entry Entry) error {
 		if entry.Size == nil {
 			entry.Size = old.Size
 		}
+		// Replaying an unchanged commit receipt is not a new publication.
+		// Preserve its existing timestamp, including across daemon restarts.
+		if entry.Stage == Published && old.Stage == Published && entry.Revision == old.Revision &&
+			entry.Kind == old.Kind && entry.ErrorID == old.ErrorID && entry.DetectedAt.Equal(old.DetectedAt) &&
+			(entry.Size == old.Size || (entry.Size != nil && old.Size != nil && *entry.Size == *old.Size)) {
+			return nil
+		}
 	}
 	if entry.DetectedAt.IsZero() {
 		entry.DetectedAt = now

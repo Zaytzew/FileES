@@ -176,6 +176,30 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 </ul>
 <p>Revoking a shelf stops its address from accepting files, but the address stays reserved and files already received stay with you. Deleting a shelf removes its policy, keeps the address reserved for good and does not delete the folder with received files.</p>
 <div class="note"><span class="status status-implemented">Implemented</span> Tested, including a real download on Windows; <em>not yet accepted by hand in a released GUI</em>. FileES does not yet notify you about new uploads — open the shelf to check.</div>
+<h4>Time machine: files in time</h4>
+<p>The time machine shows a repository as it was at any moment and lets you download a copy of it. It does not roll back the working copy, does not commit and publishes nothing. Open it from a folder's gear (<strong>Browse history…</strong>) or from the tray (<strong>Time machine…</strong>). Both entries appear only when the daemon offers history, and only for ordinary repositories you own. Shelves, the bin and repositories shared with you by another realm do not have it yet.</p>
+<p>The <strong>Files in time</strong> window keeps two choices of time apart:</p>
+<ul>
+<li><strong>Interval of changes.</strong> The “Save history” chart spans the whole repository history; a bar's height is the number of path changes in its interval. Granularity of 1, 2, 4, 6, 12 or 24 hours only changes the grouping. Clicking a bar opens the <strong>Changes in the interval</strong> tab with path changes, unique paths, saves, and a list of saves with exact time and revision. A bar does not move the selected moment.</li>
+<li><strong>Moment.</strong> The slider, the date-and-time field with <strong>Go</strong>, clicking a save in the list, or <strong>State at the end of the interval</strong> select a moment. The daemon resolves the newest revision not later than that moment; the window shows the moment in your time zone, the revision and the time of the last save before it separately. The state at the end of an interval is the last save before its end, resolved by the daemon.</li>
+</ul>
+<p>The <strong>Files at this moment</strong> tab shows the whole tree of the selected revision, including files unchanged for a long time and files that no longer exist today. Each file shows its size and the revision and date of its last change.</p>
+<p>Download a copy with <strong>Download selected…</strong>, <strong>Download this folder…</strong> or <strong>Download a record of this state…</strong> (the whole repository):</p>
+<ul>
+<li>You choose a parent folder. It must lie outside every FileES working copy; otherwise the old version would become a new change waiting to be published, so the daemon refuses such a folder.</li>
+<li>Before anything is downloaded the window shows the plan: repository, revision, moment, scope, file count, size and free space. The daemon does not start unless free space covers the size with a 64 MiB margin. There is no other size limit.</li>
+<li>The copy always lands in a new subfolder named after the repository, the moment and the revision, e.g. <code>CEMPKOWO-HALA_2026-09-11_16-00-00_r74</code>. An existing folder of that name is never taken over or overwritten — the new copy gets the suffix <code>_2</code>. Paths inside follow the repository paths.</li>
+<li>Files are fetched as the repository's raw bytes, with no keyword expansion and no line-ending conversion. While downloading, everything sits in a hidden <code>.filees-export-…</code> folder; only a complete result receives the final name. Cancelling removes only that working folder. If the daemon stops mid-way, the operation is marked interrupted and never poses as a finished copy.</li>
+<li>The root of the copy holds <code>filees-export.json</code>: repository, revision, moment, selection, file and byte counts, changed names and omissions.</li>
+</ul>
+<p>What the copy does not contain is stated in the plan before downloading, not after:</p>
+<ul>
+<li><strong>Names this drive cannot store</strong> (e.g. <code>CON</code>, a forbidden character, a trailing dot) and symbolic links are left out, with the reason shown for every path. Everything else is downloaded.</li>
+<li><strong>Names differing only in letter case</strong> get a bracket with the original name on Windows: of <code>a.txt</code> and <code>A.txt</code>, the second is saved as <code>a(A).txt</code>. The list of changed names is in the plan and in <code>filees-export.json</code>.</li>
+<li><strong>Large files (Whale)</strong> are not part of a historical copy; the plan gives their count and total size.</li>
+</ul>
+<p>The selected view of the past lives in the daemon. After a daemon restart a download ends with “This view of the past has expired”; <strong>Go</strong> restores it for the same moment and your selection stays.</p>
+<div class="note"><span class="status status-verified">Verified on Windows</span> Live acceptance on 2026-09-15 covered both entries, the chart, interval, moment, file list, and downloading selected files and a whole state with SHA-256 sums matching the repository; the working copy stayed untouched. On Linux, history appears once the package ships the native SVN helper. Not there yet: <em>Before deletion</em>, the author's realm on a save, and access for guests (<a href="security.html#ch5-gui">G-7</a>).</div>
 <h4>Reconnect behaviour</h4>
 <p>If the daemon is unreachable, the GUI retries with exponential backoff: 1 s → 2 s → 5 s → 10 s → 30 s. The last known snapshot remains visible but is marked stale. “Reconnect” in the menu forces an immediate retry.</p>
 <p>Lock and unlock appear only while the daemon is reachable and advertises them. Your own lock can be released; a lock held by another user or device exposes <strong>Request release</strong>. The requester sees its state and the holder answers <strong>OK</strong> or <strong>Release</strong>; the response remains tied to the exact lock token. The hello / subscribe / resync sequence is in <a href="operations.html#ops-gui">Operations</a>.</p>

@@ -90,3 +90,34 @@ func TestRunWritesHeaderAndList(t *testing.T) {
 		t.Fatalf("header missing sources:\n%s", raw)
 	}
 }
+
+func TestFragmentsLongerThanANickAreDropped(t *testing.T) {
+	// A nick has at most nine letters, so a ten-letter fragment could never
+	// match and would only make the file look more thorough than it is.
+	got := atMost([]string{"anal", "fellatio", "masturbate"}, 9)
+	if !reflect.DeepEqual(got, []string{"anal", "fellatio"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestRunWritesAttributionAsASingleCommentLine(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "en.txt")
+	if err := os.WriteFile(src, []byte("porn\nmasturbation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := run([]string{"-attribution", "Word lists: LDNOOBW\nCC-BY-4.0", src}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "# Attribution: Word lists: LDNOOBW CC-BY-4.0\n") {
+		t.Fatalf("attribution line missing or split:\n%s", stdout.String())
+	}
+	entries, err := readEntries(&stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(entries, []string{"porn"}) {
+		t.Fatalf("list %v; attribution leaked or long fragment kept", entries)
+	}
+}

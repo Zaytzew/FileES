@@ -22,7 +22,7 @@ static const char *const k_verbs[] = {
     "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "list",
-    "fetch-file", NULL
+    "fetch-file", "list-tree", "fetch-tree", NULL
 };
 
 static void print_ok_version(void)
@@ -36,7 +36,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -88,6 +88,59 @@ static svn_error_t *stdin_targets(const char ***paths, int *n, apr_pool_t *pool)
     }
     *paths = (const char **)list->elts;
     *n = list->nelts;
+    return SVN_NO_ERROR;
+}
+
+/* A repository path in a manifest is the repository's own name and may hold
+ * what a local name cannot (a colon, a trailing dot); it only must not climb. */
+static int manifest_repo_path(const char *p)
+{
+    const char *segment = p, *end;
+    if (!*p || *p == '/') return 0;
+    do {
+        size_t n;
+        end = strchr(segment, '/');
+        n = end ? (size_t)(end - segment) : strlen(segment);
+        if (!n || (n == 1 && segment[0] == '.') || (n == 2 && segment[0] == '.' && segment[1] == '.'))
+            return 0;
+        segment = end ? end + 1 : NULL;
+    } while (segment);
+    return 1;
+}
+
+/* fetch-tree manifest: NUL-terminated (repository path, local path) pairs.
+ * Local paths pass the same guard as working-copy targets, and a local path
+ * named twice is refused before the first byte is fetched. */
+static svn_error_t *stdin_manifest(const char ***pairs, int *npairs, apr_pool_t *pool)
+{
+    char *buf = apr_palloc(pool, FILEES_SVN_TARGET_BYTES + 1);
+    size_t bytes, off = 0;
+    apr_array_header_t *list = apr_array_make(pool, 1024, sizeof(const char *));
+    apr_hash_t *seen = apr_hash_make(pool);
+#ifdef _WIN32
+    if (_setmode(_fileno(stdin), _O_BINARY) == -1) return filees_refuse("cannot read binary manifest");
+#endif
+    bytes = fread(buf, 1, FILEES_SVN_TARGET_BYTES + 1, stdin);
+    if (ferror(stdin)) return filees_refuse("cannot read manifest");
+    if (!bytes || bytes > FILEES_SVN_TARGET_BYTES || buf[bytes - 1] != '\0')
+        return filees_refuse("empty, oversized or truncated manifest");
+    while (off < bytes) {
+        const char *path = buf + off;
+        if (list->nelts >= FILEES_SVN_MAX_TARGETS) return filees_refuse("too many manifest entries");
+        if (!target_utf8((const unsigned char *)path)) return filees_refuse("manifest entry is not valid UTF-8");
+        if (list->nelts % 2) {
+            if (!filees_safe_relative(path)) return filees_refuse("unsafe local path in manifest");
+            if (apr_hash_get(seen, path, APR_HASH_KEY_STRING)) return filees_refuse("local path named twice in manifest");
+            apr_hash_set(seen, path, APR_HASH_KEY_STRING, path);
+        } else if (!manifest_repo_path(path)) {
+            return filees_refuse("unsafe repository path in manifest");
+        }
+        APR_ARRAY_PUSH(list, const char *) = path;
+        off += strlen(path) + 1;
+    }
+    if (list->nelts % 2) return filees_refuse("manifest must hold path pairs");
+    *pairs = (const char **)list->elts;
+    *npairs = list->nelts / 2;
     return SVN_NO_ERROR;
 }
 
@@ -481,6 +534,37 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         }
         if (fetch) return filees_history_fetch_file(url, out, revision, pool);
         return filees_history_list(url, revision, pool);
+    }
+
+    if (!strcmp(verb, "list-tree") || !strcmp(verb, "fetch-tree")) {
+        /* Tree export (history.c). The manifest comes only from stdin:
+         * thousands of pairs do not fit a command line. */
+        svn_boolean_t fetch = !strcmp(verb, "fetch-tree"), manifest = FALSE;
+        const char *url = NULL, *place = NULL;
+        svn_revnum_t revision = SVN_INVALID_REVNUM;
+        for (i = 2; i < argc; ++i) {
+            if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+            if (!fetch && !strcmp(argv[i], "--out") && i + 1 < argc) { place = argv[++i]; continue; }
+            if (fetch && !strcmp(argv[i], "--dest") && i + 1 < argc) { place = argv[++i]; continue; }
+            if (fetch && !strcmp(argv[i], "--manifest-stdin")) { manifest = TRUE; continue; }
+            if (!strcmp(argv[i], "--revision")) {
+                SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
+                continue;
+            }
+            return filees_refuse(fetch
+                                 ? "usage: filees-svn fetch-tree --url ROOT --revision N --dest DIR --manifest-stdin"
+                                 : "usage: filees-svn list-tree --url URL --revision N --out FILE");
+        }
+        if (fetch) {
+            const char **pairs;
+            int npairs;
+            if (!manifest) return filees_refuse("fetch-tree requires --manifest-stdin");
+            if (!SVN_IS_VALID_REVNUM(revision))
+                return filees_refuse("fetch-tree requires --revision; history reads never default to HEAD");
+            SVN_ERR(stdin_manifest(&pairs, &npairs, pool));
+            return filees_history_fetch_tree(url, place, revision, pairs, npairs, pool);
+        }
+        return filees_history_list_tree(url, place, revision, pool);
     }
 
     if (!strcmp(verb, "cat")) {

@@ -33,9 +33,9 @@ const ReasonWorkingCopyName = "working_copy_name"
 
 // Node is one plan entry with a repository-root-relative path.
 type Node struct {
-	Path string
-	Kind string // file or dir
-	Size int64  // bytes for a file
+	Path string `json:"path"`
+	Kind string `json:"kind"` // file or dir
+	Size int64  `json:"size"` // bytes for a file
 }
 
 type Options struct {
@@ -52,17 +52,17 @@ type File struct {
 }
 
 type Rename struct {
-	RepoPath  string
-	LocalPath string
+	RepoPath  string `json:"repo_path"`
+	LocalPath string `json:"local_path"`
 }
 
 // Skip is an object left out, with what it withholds: itself for a file, the
 // whole subtree for a folder.
 type Skip struct {
-	RepoPath string
-	Reason   string
-	Files    int64
-	Bytes    int64
+	RepoPath string `json:"repo_path"`
+	Reason   string `json:"reason"`
+	Files    int64  `json:"files"`
+	Bytes    int64  `json:"bytes"`
 }
 
 type Plan struct {

@@ -141,6 +141,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleHistoryList(req)
 	case contract.CmdRepoHistoryFetch:
 		return s.handleHistoryFetch(req)
+	case contract.CmdRepoHistoryDensity:
+		return s.handleHistoryDensity(req)
 	case contract.CmdRepoHistoryOperation, contract.CmdRepoHistoryConfirm, contract.CmdRepoHistoryCancel:
 		return s.handleHistoryOperation(req)
 	case contract.CmdRepoQuarantineList:

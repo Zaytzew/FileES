@@ -52,6 +52,7 @@ type Server struct {
 	historyReads         HistoryService
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
+	historyDensity       HistoryDensityService
 	mobilePair           MobilePairingService
 	serverDetach         ServerDetachService
 	sessionTimeout       SessionTimeoutService
@@ -339,6 +340,9 @@ func (s *Server) capabilities() []string {
 		caps = append(caps, contract.CapRepoHistory)
 		if s.historyExportService() != nil {
 			caps = append(caps, contract.CapRepoHistoryExport)
+		}
+		if s.historyDensityService() != nil {
+			caps = append(caps, contract.CapRepoHistoryDensity)
 		}
 	}
 	if s.whaleService() != nil {

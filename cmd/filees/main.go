@@ -259,6 +259,7 @@ func runDaemon() {
 		lg.Warnf("history exports recovery: %v", err)
 	}
 	ipc.SetHistoryExportService(historyExports)
+	ipc.SetHistoryDensityService(newHistoryDensityService(defaultHistoryIndexPath(), history.densitySource))
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), detachments: detachmentStore})
 	ipc.SetSessionTimeoutService(sessionTimeoutService{root: clientprofile.DefaultRoot(), provisioner: provisioner, onChange: func(profile clientprofile.Profile) {

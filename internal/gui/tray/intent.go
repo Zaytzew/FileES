@@ -40,6 +40,9 @@ const (
 	IntentRevokePublicShares IntentKind = "revoke_public_shares"
 	IntentLocateFolder       IntentKind = "locate_folder"
 	IntentReviewQuarantine   IntentKind = "review_quarantine"
+	// IntentBrowseHistory opens Wehikuł czasu; an empty RepoID asks the window
+	// to offer a choice among the owner's repositories.
+	IntentBrowseHistory IntentKind = "browse_history"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

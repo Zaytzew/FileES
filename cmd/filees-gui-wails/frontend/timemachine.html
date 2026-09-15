@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#07101d" media="(prefers-color-scheme: dark)">
+  <title data-i18n="window.timeMachine">Pliki w czasie — FileES</title>
+  <link rel="stylesheet" href="./repository.css">
+  <link rel="stylesheet" href="./timemachine.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="tm-shell">
+    <header id="tm-titlebar" class="repository-titlebar">
+      <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong>FileES</strong><small data-i18n="timeMachine.context">Pliki w czasie</small></div></div>
+      <div class="window-controls">
+        <button id="tm-minimise" class="window-button" type="button" title="Minimalizuj" aria-label="Minimalizuj" data-i18n-title="window.minimize" data-i18n-aria-label="window.minimize">—</button>
+        <button id="tm-close" class="window-button close" type="button" title="Zamknij okno" aria-label="Zamknij okno" data-i18n-title="window.close" data-i18n-aria-label="window.close">×</button>
+      </div>
+    </header>
+
+    <section class="tm-hero">
+      <div>
+        <p class="eyebrow" data-i18n="timeMachine.eyebrow">Twoje pliki. Ich historia.</p>
+        <h1><span data-i18n="timeMachine.title">Pliki w czasie</span><span class="tm-accent">.</span></h1>
+        <p class="tm-subtitle" data-i18n="timeMachine.subtitle">Wskaż moment. Zobacz stan. Pobierz kopię.</p>
+      </div>
+      <label class="tm-repo-card">
+        <small data-i18n="timeMachine.repository">Repozytorium</small>
+        <select id="tm-repository"></select>
+      </label>
+    </section>
+
+    <p id="tm-empty" class="tm-empty" hidden data-i18n="timeMachine.noRepositories">Nie ma repozytoriów, których historię możesz przeglądać.</p>
+
+    <section id="tm-chart-card" class="content-card tm-chart-card">
+      <header class="tm-card-head">
+        <div><h2 data-i18n="timeMachine.chart">Historia zapisu</h2><p id="tm-range" class="tm-muted"></p></div>
+        <div class="tm-granularity">
+          <span id="tm-granularity-label" class="tm-muted" data-i18n="timeMachine.granularity">Granulacja</span>
+          <div id="tm-granularity" class="tm-segmented" role="radiogroup" aria-labelledby="tm-granularity-label"></div>
+        </div>
+      </header>
+      <div class="tm-legend">
+        <span><i class="tm-legend-bar"></i><span data-i18n="timeMachine.legendChanges">Liczba zmian ścieżek</span></span>
+        <span><i class="tm-legend-moment"></i><span data-i18n="timeMachine.legendMoment">Wybrany moment</span></span>
+        <span id="tm-index-status" class="tm-muted" aria-live="polite"></span>
+        <span class="tm-muted tm-push" data-i18n="timeMachine.clickBar">Kliknij słupek, aby zobaczyć zmiany</span>
+      </div>
+      <div id="tm-chart" class="tm-chart"></div>
+      <div class="tm-slider">
+        <div class="tm-slider-end"><strong id="tm-first-date">—</strong><small data-i18n="timeMachine.start">początek</small></div>
+        <div class="tm-slider-track">
+          <label for="tm-moment" class="eyebrow" data-i18n="timeMachine.moveMoment">Przesuń moment w całej historii</label>
+          <input id="tm-moment" type="range" min="0" max="0" step="60000" value="0" disabled>
+        </div>
+        <div class="tm-slider-end tm-right"><strong id="tm-head-date">—</strong><small id="tm-head-rev"></small></div>
+      </div>
+      <div class="tm-moment-row">
+        <div>
+          <p class="eyebrow" data-i18n="timeMachine.selectedMoment">Wybrany moment · stan zapisany na serwerze</p>
+          <div class="tm-moment-value"><strong id="tm-moment-label">—</strong><span id="tm-snapshot-badge" class="tm-badge"></span></div>
+        </div>
+        <form id="tm-goto" class="tm-goto">
+          <label><small id="tm-zone" class="tm-muted"></small><input id="tm-exact" type="datetime-local" step="1" aria-label="Dokładna data i godzina" data-i18n-aria-label="timeMachine.exactMoment"></label>
+          <button type="submit" class="quiet-button" data-i18n="timeMachine.goTo">Przejdź</button>
+        </form>
+      </div>
+    </section>
+
+    <div class="tm-body">
+      <section class="content-card tm-main">
+        <div class="tm-tabs" role="tablist">
+          <button id="tab-changes" class="active" role="tab" type="button" aria-selected="true" aria-controls="panel-changes"><span data-i18n="timeMachine.tabChanges">Zmiany w przedziale</span><span id="tm-changes-count" class="tm-count"></span></button>
+          <button id="tab-files" role="tab" type="button" aria-selected="false" aria-controls="panel-files"><span data-i18n="timeMachine.tabFiles">Pliki w tym momencie</span><span id="tm-files-count" class="tm-count"></span></button>
+        </div>
+        <div id="panel-changes" role="tabpanel" aria-labelledby="tab-changes">
+          <div id="tm-interval-head" class="tm-panel-head"></div>
+          <div id="tm-commits" class="tm-list"></div>
+        </div>
+        <div id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden>
+          <div class="tm-panel-head"><nav id="tm-breadcrumb" class="tm-breadcrumb"></nav></div>
+          <div id="tm-entries" class="tm-list"></div>
+        </div>
+      </section>
+      <aside class="content-card tm-side">
+        <p class="eyebrow" data-i18n="timeMachine.selectedState">Wybrany stan</p>
+        <strong id="tm-side-moment" class="tm-big">—</strong>
+        <p id="tm-side-revision" class="tm-muted"></p>
+        <p id="tm-side-saved" class="tm-muted"></p>
+        <p id="tm-side-selection" class="tm-muted"></p>
+        <div class="tm-actions">
+          <button id="tm-download-selected" type="button" class="primary-button" disabled data-i18n="timeMachine.downloadSelected">Pobierz zaznaczone…</button>
+          <button id="tm-download-folder" type="button" class="quiet-button" disabled data-i18n="timeMachine.downloadFolder">Pobierz ten folder…</button>
+          <button id="tm-download-state" type="button" class="quiet-button" disabled data-i18n="timeMachine.downloadState">Pobierz zapis tego stanu…</button>
+        </div>
+        <p class="tm-note" data-i18n="timeMachine.copyNote">Pobranie tworzy osobną kopię. Nie cofa pliku i nie wykonuje commitu.</p>
+      </aside>
+    </div>
+  </main>
+
+  <div id="tm-dialog" class="tm-dialog-backdrop" hidden>
+    <section class="content-card tm-dialog" role="dialog" aria-modal="true" aria-labelledby="tm-dialog-title">
+      <h2 id="tm-dialog-title"></h2>
+      <div id="tm-dialog-body"></div>
+      <footer class="tm-dialog-actions">
+        <button id="tm-dialog-cancel" type="button" class="quiet-button"></button>
+        <button id="tm-dialog-confirm" type="button" class="primary-button" hidden></button>
+      </footer>
+    </section>
+  </div>
+  <div id="tm-toasts" class="toast-stack" aria-live="polite"></div>
+  <script type="module" src="./timemachine.js"></script>
+</body>
+</html>

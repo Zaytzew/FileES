@@ -941,6 +941,9 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 	if folder.CanReviewQuarantine {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogQuarantine), LabelKey: "repoAction.quarantine.label", DescriptionKey: "repoAction.quarantine.description", Tone: "primary"})
 	}
+	if folder.CanBrowseHistory {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogBrowseHistory), LabelKey: "repoAction.browse_history.label", DescriptionKey: "repoAction.browse_history.description", Tone: "primary"})
+	}
 	if folder.CanSetEditingPolicy {
 		label := "repoAction.enable_editing_lock.label"
 		description := "repoAction.enable_editing_lock.description"

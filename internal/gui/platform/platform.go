@@ -269,6 +269,20 @@ type QuarantineDialogResult struct {
 	UploadID string
 }
 
+// HistoryBrowser opens the Wehikuł czasu window
+// (concepts/REPOSITORY_HISTORY_CONCEPT.md §7). The window reads and exports on
+// its own and the daemon authorises every call again, so opening returns at
+// once; the controller only decides whether the entry is offered.
+type HistoryBrowser interface {
+	OpenHistory(context.Context, HistoryOpenRequest) error
+}
+
+// HistoryOpenRequest focuses one repository; an empty RepoID lets the window
+// offer a choice among the repositories the owner may browse.
+type HistoryOpenRequest struct {
+	ServerID, RepoID string
+}
+
 type RealmGrantDialogRequest struct {
 	TextKey    string // GUI-authored description; empty preserves Text verbatim.
 	Title      string
@@ -369,6 +383,7 @@ type SettingsFolder struct {
 	CanManagePublicShares    bool
 	CanManageUploadChannels  bool
 	CanReviewQuarantine      bool
+	CanBrowseHistory         bool // owner-only: Wehikuł czasu for an ordinary repository
 	CanConnect               bool // connect selected unattached repository
 	CanLocate                bool // adopt an existing moved working copy
 	CanMove                  bool // controlled move of the current working copy
@@ -405,6 +420,7 @@ const (
 	SettingsDialogPublicShares          SettingsDialogAction = "public_shares"
 	SettingsDialogUploadChannels        SettingsDialogAction = "upload_channels"
 	SettingsDialogQuarantine            SettingsDialogAction = "quarantine"
+	SettingsDialogBrowseHistory         SettingsDialogAction = "browse_history"
 	SettingsDialogRealmVisibility       SettingsDialogAction = "realm_visibility"
 	SettingsDialogRealmBranding         SettingsDialogAction = "realm_branding"
 	SettingsDialogRealmAlias            SettingsDialogAction = "realm_alias"

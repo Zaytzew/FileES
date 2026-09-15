@@ -132,6 +132,9 @@ func main() {
 	prompts := newPromptService()
 	promptBridge := newPromptBridge(prompts)
 	pairing := newPairingService()
+	// Wehikuł czasu talks to the daemon itself; refusals render through the
+	// same domain catalogue as every other daemon sentence.
+	timeMachine := newTimeMachineService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -147,6 +150,7 @@ func main() {
 			application.NewService(repository),
 			application.NewService(promptBridge),
 			application.NewService(newPairingBridge(pairing)),
+			application.NewService(timeMachine),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),
@@ -166,6 +170,7 @@ func main() {
 	repository.attachEmitter(host.Event)
 	prompts.attachEmitter(host.Event)
 	pairing.attachEmitter(host.Event)
+	timeMachine.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "filees-main",
@@ -233,6 +238,23 @@ func main() {
 		DevToolsEnabled: *devtools,
 		Windows:         application.WindowsWindow{NonClientRegionSupport: true},
 	})
+	timeMachineWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "filees-timemachine",
+		Title:            "Pliki w czasie — FileES",
+		URL:              "/timemachine.html",
+		Width:            1320,
+		Height:           880,
+		MinWidth:         900,
+		MinHeight:        640,
+		Frameless:        true,
+		Hidden:           true,
+		JS:               themeJS,
+		BackgroundColour: themeBackground,
+		DevToolsEnabled:  *devtools,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
+	})
 	settings.attachPresentation(func() {
 		settingsWindow.Show()
 		settingsWindow.Center()
@@ -269,8 +291,20 @@ func main() {
 		event.Cancel()
 		pairing.Cancel()
 	})
+	timeMachine.attachPresentation(func() {
+		timeMachineWindow.Show()
+		timeMachineWindow.UnMinimise()
+		timeMachineWindow.Focus()
+	}, func() { timeMachineWindow.Hide() })
+	timeMachineWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		// Closing only hides. An export already confirmed belongs to the daemon
+		// and keeps running; reopening the window shows its state again.
+		event.Cancel()
+		timeMachineWindow.Hide()
+	})
 
 	nativePicker := newWailsFolderPicker(host.Dialog)
+	timeMachine.attachPicker(wailsHistoryPicker(nativePicker))
 	shouts := shoutAdapter{client: daemon}
 	realmGrants := realmGrantAdapter{client: daemon}
 	branding := realmBrandingAdapter{client: daemon, changed: func(serverID string, value realmbranding.Branding) {
@@ -285,7 +319,7 @@ func main() {
 			opjournal.RecordFailure("activation", "Interfejs nie doczekał się odpowiedzi demona podczas aktywacji ("+step+")", err)
 		}), pinStore, mobilePairingAdapter{text: gui.localizeText, client: daemon, pinStore: pinStore, prompter: prompts, presenter: pairing, servers: func() []PromptOption { return pairingServerOptions(gui.Snapshot()) }}, shouts, intentResolverAdapter{client: daemon}, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, prompter: prompts}, branding,
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
-		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryUploadChannelBrowserAdapter{service: repository}, uploadChannelAdapter{client: daemon}, repositoryQuarantineBrowserAdapter{service: repository}, quarantineAdapter{client: daemon}, repositoryShelfBrowserAdapter{service: repository}, shelfAdapter{client: daemon}, repositoryCreateAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryLocateAdapter{client: daemon}, repositoryRelocateAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, repositoryLifecycleRepairAdapter{client: daemon}, repositoryDumpLoadAdapter{client: daemon}, serverDetachAdapter{client: daemon}, realmRemovalAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, recoveryDismissAdapter{client: daemon}, unportableRenameAdapter{client: daemon}, consentPromptAdapter{prompter: prompts}, actionPlatform, nativePicker, nativePicker, prompts,
+		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryUploadChannelBrowserAdapter{service: repository}, uploadChannelAdapter{client: daemon}, repositoryQuarantineBrowserAdapter{service: repository}, quarantineAdapter{client: daemon}, timeMachineBrowserAdapter{service: timeMachine}, repositoryShelfBrowserAdapter{service: repository}, shelfAdapter{client: daemon}, repositoryCreateAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryLocateAdapter{client: daemon}, repositoryRelocateAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, repositoryLifecycleRepairAdapter{client: daemon}, repositoryDumpLoadAdapter{client: daemon}, serverDetachAdapter{client: daemon}, realmRemovalAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, recoveryDismissAdapter{client: daemon}, unportableRenameAdapter{client: daemon}, consentPromptAdapter{prompter: prompts}, actionPlatform, nativePicker, nativePicker, prompts,
 		func() {
 			select {
 			case restartRequested <- struct{}{}:
@@ -304,7 +338,7 @@ func main() {
 	})
 	host.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
 		dark := systemPrefersDark(event.Context().IsDarkMode())
-		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow, pairingWindow)
+		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow, pairingWindow, timeMachineWindow)
 	})
 	// The small icon waits for the window itself, not for the application.
 	//
@@ -335,6 +369,7 @@ func main() {
 		settingsWindow.SetTitle(language.text("window.settings"))
 		repositoryWindow.SetTitle(language.text("window.repository"))
 		pairingWindow.SetTitle(language.text("window.pairing"))
+		timeMachineWindow.SetTitle(language.text("window.timeMachine"))
 	})
 
 	if err := host.Run(); err != nil {

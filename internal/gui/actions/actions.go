@@ -403,6 +403,7 @@ type Config struct {
 	PublicShareBrowser   platform.PublicShareBrowser
 	UploadChannelBrowser platform.UploadChannelBrowser
 	QuarantineBrowser    platform.QuarantineBrowser
+	HistoryBrowser       platform.HistoryBrowser
 	ConsentPrompter      platform.ConsentPrompter
 	// Progress renders the "still working" window for operations that keep
 	// running after their dialog closes. nil → the window is simply skipped;
@@ -548,6 +549,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentReviewQuarantine:
 		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID, true)
+	case tray.IntentBrowseHistory:
+		c.startBrowseHistory(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentRenameUnportable:
 		c.startRenameUnportable(ctx, intent.ServerID, intent.RepoID, intent.Path)
 	}
@@ -672,6 +675,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogQuarantine:
 			c.startReviewQuarantine(ctx, result.ServerID, result.RepoID, false)
+		case platform.SettingsDialogBrowseHistory:
+			c.startBrowseHistory(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
@@ -872,7 +877,7 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID, repoID st
 			continue
 		}
 		pending := c.pendingAttachments(vm, server.ID)
-		row, hadPending := settingsServerRow(vm, server, pending, c.cfg.QuarantineBrowser != nil)
+		row, hadPending := settingsServerRow(vm, server, pending, c.cfg.QuarantineBrowser != nil, c.cfg.HistoryBrowser != nil)
 		if hadPending {
 			request.TextKey = "view.settingsPending"
 			request.Text = "Wybierz serwer, potem działanie. Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
@@ -917,7 +922,7 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID, repoID st
 	return request, true
 }
 
-func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map[string]pendingAttachment, quarantineBrowser bool) (platform.SettingsServer, bool) {
+func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map[string]pendingAttachment, quarantineBrowser, historyBrowser bool) (platform.SettingsServer, bool) {
 	name := server.DisplayName
 	if strings.TrimSpace(name) == "" {
 		name = server.ID
@@ -983,6 +988,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanManagePublicShares:    repo.Purpose == "" && !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
 			CanManageUploadChannels:  repo.Purpose == "" && !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
 			CanReviewQuarantine:      quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
+			CanBrowseHistory:         historyBrowser && vm.CanBrowseHistory() && server.Owns(repo) && repo.Purpose == "",
 			CanConnect:               repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:                repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanMove:                  repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
@@ -2379,6 +2385,40 @@ func managedQuarantineRepository(vm app.ViewModel, serverID, repoID string) (app
 		return app.RepoViewModel{}, false
 	}
 	return repo, true
+}
+
+// startBrowseHistory opens Wehikuł czasu. The window reads and exports on its
+// own and the daemon authorises each call again, so this gate only decides
+// whether the entry may be offered: the daemon must support history and a
+// focused repository must be an ordinary one this realm owns. An empty RepoID
+// (the tray entry) lets the window offer the choice.
+func (c *Controller) startBrowseHistory(ctx context.Context, serverID, repoID string) {
+	if c.cfg.HistoryBrowser == nil {
+		return
+	}
+	key := "history." + serverID + "." + repoID
+	vm := c.cfg.ViewModel()
+	if !vm.CanBrowseHistory() || (repoID != "" && !ownedHistoryRepository(vm, serverID, repoID)) {
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.historyUnavailable", "Wehikuł czasu jest niedostępny"), Body: c.uiText("feedback.historyUnavailableBody", "Historię repozytorium przegląda tylko jego właściciel, gdy demon ją obsługuje."), Urgency: platform.UrgencyNormal})
+		return
+	}
+	if err := c.cfg.HistoryBrowser.OpenHistory(ctx, platform.HistoryOpenRequest{ServerID: serverID, RepoID: repoID}); err != nil {
+		c.reportActionError(ctx, key, c.uiText("feedback.historyOpenFailed", "Nie udało się otworzyć Wehikułu czasu"), err.Error())
+	}
+}
+
+func ownedHistoryRepository(vm app.ViewModel, serverID, repoID string) bool {
+	for _, server := range vm.Servers {
+		if server.ID != serverID {
+			continue
+		}
+		for _, repo := range server.Repos {
+			if repo.ID == repoID && repo.Purpose == "" && server.Owns(repo) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func projectedPublicShareExists(vm app.ViewModel, serverID, repoID, channelID string) bool {

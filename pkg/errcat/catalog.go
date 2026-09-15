@@ -201,6 +201,10 @@ var specs = []Spec{
 	{"HISTORY-2002", "history.snapshot_unknown", SevError, HintRequireAction, nil, "History snapshot is unknown or no longer valid"},
 	{"HISTORY-2003", "history.invalid_request", SevError, HintRequireAction, nil, "History request is invalid"},
 	{"HISTORY-2004", "history.path_absent", SevError, HintNone, nil, "Path was not a folder at that revision"},
+	{"HISTORY-2005", "history.destination_refused", SevError, HintRequireAction, nil, "History export destination was refused"},
+	{"HISTORY-2006", "history.insufficient_space", SevError, HintRequireAction, nil, "Not enough free space for the history export"},
+	{"HISTORY-2007", "history.operation_unknown", SevError, HintNone, nil, "History export operation is unknown"},
+	{"HISTORY-2008", "history.operation_state", SevError, HintNone, nil, "History export operation is not in a state for that"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid"},

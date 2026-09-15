@@ -15,6 +15,7 @@ var historyEpoch = time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 // historyStub is a repository with one commit per minute after historyEpoch.
 type historyStub struct {
 	enabled bool
+	uuid    string            // "" answers uuid-1
 	commits []HistoryLogEntry // newest first
 	list    []contract.RepoHistoryEntry
 	listed  []string
@@ -36,6 +37,9 @@ func historyAt(minute int) string {
 func (h *historyStub) HistoryEnabled() bool { return h.enabled }
 
 func (h *historyStub) HistoryRepositoryUUID(context.Context, string, string) (string, error) {
+	if h.uuid != "" {
+		return h.uuid, nil
+	}
 	return "uuid-1", nil
 }
 

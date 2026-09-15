@@ -20,8 +20,21 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1"]}`)
 		return
+	}
+	// fetch-file writes its --out like the real helper, so a receipt can be
+	// checked against a file that actually exists.
+	if len(os.Args) > 1 && os.Args[1] == "fetch-file" {
+		if body, ok := os.LookupEnv("FILEES_TEST_RA_FILE"); ok {
+			for i := 2; i+1 < len(os.Args); i++ {
+				if os.Args[i] == "--out" {
+					if err := os.WriteFile(os.Args[i+1], []byte(body), 0600); err != nil {
+						panic(err)
+					}
+				}
+			}
+		}
 	}
 	if p := os.Getenv("FILEES_TEST_RA_TRACE"); p != "" {
 		f, e := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)

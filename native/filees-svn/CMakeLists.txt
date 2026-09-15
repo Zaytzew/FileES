@@ -8,7 +8,10 @@ find_library(SVN_CLIENT_LIBRARY NAMES svn_client-1 libsvn_client-1 REQUIRED)
 find_library(SVN_SUBR_LIBRARY NAMES svn_subr-1 libsvn_subr-1 REQUIRED)
 find_library(SVN_WC_LIBRARY NAMES svn_wc-1 libsvn_wc-1 REQUIRED)
 # History reads (history.c) call svn_ra_get_file for untranslated bytes.
-find_library(SVN_RA_LIBRARY NAMES svn_ra-1 libsvn_ra-1 REQUIRED)
+# The release stage passes only the client/wc/subr libraries explicitly, so
+# libsvn_ra is looked up next to the client library it ships with.
+get_filename_component(SVN_LIBRARY_DIR "${SVN_CLIENT_LIBRARY}" DIRECTORY)
+find_library(SVN_RA_LIBRARY NAMES svn_ra-1 libsvn_ra-1 HINTS "${SVN_LIBRARY_DIR}" REQUIRED)
 find_library(APR_LIBRARY NAMES apr-1 libapr-1 REQUIRED)
 add_executable(filees-svn src/main.c src/common.c src/move.c src/wc_local.c src/ra.c src/history.c src/writer.c)
 set_target_properties(filees-svn PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)

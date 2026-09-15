@@ -195,6 +195,13 @@ var specs = []Spec{
 	{"UPLOAD-1002", "upload_channel.rejected", SevError, HintRequireAction, nil, "Upload channel mutation was rejected"},
 	{"UPLOAD-2001", "upload_channel.forbidden", SevError, HintNone, nil, "Upload channel action is forbidden"},
 
+	{"HISTORY-0001", "history.unavailable", SevError, HintRetry, nil, "Repository history is not available on this client"},
+	{"HISTORY-1001", "history.read_failed", SevError, HintRetry, nil, "Repository history could not be read"},
+	{"HISTORY-2001", "history.forbidden", SevError, HintNone, nil, "Repository history is not allowed for this activation"},
+	{"HISTORY-2002", "history.snapshot_unknown", SevError, HintRequireAction, nil, "History snapshot is unknown or no longer valid"},
+	{"HISTORY-2003", "history.invalid_request", SevError, HintRequireAction, nil, "History request is invalid"},
+	{"HISTORY-2004", "history.path_absent", SevError, HintNone, nil, "Path was not a folder at that revision"},
+
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid"},
 	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only"},

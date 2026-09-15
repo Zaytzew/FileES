@@ -21,6 +21,12 @@
     "hint.require_action": "votre décision est requise",
     "hint.retry_backoff": "FileES réessaiera plus tard",
     "hint.retry_local": "réessayez",
+    "history.forbidden": "Seul le propriétaire de ce dépôt peut parcourir son historique",
+    "history.invalid_request": "Impossible d’afficher cette vue de l’historique. Choisissez de nouveau le moment ou la période",
+    "history.path_absent": "Ce dossier n’existait pas au moment choisi",
+    "history.read_failed": "Impossible de lire l’historique du dépôt",
+    "history.snapshot_unknown": "Cette vue du passé a expiré. Choisissez de nouveau le moment",
+    "history.unavailable": "L’historique du dépôt n’est pas disponible sur cet ordinateur",
     "intent.ambiguous": "L’envoi est suspendu : résolvez les modifications ambiguës dans les paramètres du dossier",
     "intent.resolution_refused": "Cette décision ne peut plus être acceptée. Rouvrez le plan de modifications ; les fichiers, la file d’attente ou vos accès ont peut-être changé",
     "lock.held_by_other": [

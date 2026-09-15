@@ -230,8 +230,15 @@ filees-svn fetch-file --url URL --revision N --out PATH
   shares `cat`'s `.part` and never-overwrite rules, and refuses a path absent in
   that revision, a directory, and an `svn:special` node until the concept
   settles the export policy for special nodes.
-- Advertised by `verbs` as `history_list_v1` and `history_raw_file_v1`. Not
-  routed by the Go adapter yet.
+- `log --revision` also takes a dated revision, `{2026-09-12T10:00:00.000000Z}`
+  or `{…}:0`: the newest revision not later than that moment, resolved by the
+  repository. Only SVN's own UTC timestamp form is accepted, so there is no
+  local-time ambiguity; a range splits after the closing brace, because the
+  timestamp has colons of its own. Wehikuł czasu uses `log {moment}:0 --limit 1`
+  to turn a moment into a revision without paging the log.
+- Advertised by `verbs` as `history_list_v1`, `history_raw_file_v1` and
+  `history_dated_log_v1`. Routed by `pkg/client/history.go` (`HistoryReader`)
+  and served to the GUI through `repo.history_*` IPC commands.
 
 `info` is implemented in the helper but **not yet routed** by the Go adapter.
 Its two callers need deciding first: `Revision()` accepts a URL as well as a

@@ -111,3 +111,83 @@ type RepoHistoryListResult struct {
 	Entries    []RepoHistoryEntry `json:"entries"`
 	NextCursor string             `json:"next_cursor,omitempty"`
 }
+
+// Export of a snapshot: "Pobierz kopię pliku…", "Pobierz zaznaczone…" and
+// "Pobierz zapis tego stanu…". repo.history_fetch plans in the background and
+// the operation waits in state "planned" for repo.history_confirm, so the
+// confirmation dialog shows size, free space, renames, skips and the Whale
+// annotation before the first byte moves. The daemon names the new subfolder.
+const (
+	CapRepoHistoryExport    = "repo.history_export"
+	CmdRepoHistoryFetch     = "repo.history_fetch"
+	CmdRepoHistoryOperation = "repo.history_operation"
+	CmdRepoHistoryConfirm   = "repo.history_confirm"
+	CmdRepoHistoryCancel    = "repo.history_cancel"
+)
+
+const (
+	HistorySelectionAll     = "all"
+	HistorySelectionSubtree = "subtree"
+	HistorySelectionPaths   = "paths"
+)
+
+type RepoHistoryFetchPayload struct {
+	SnapshotID string   `json:"snapshot_id"`
+	Selection  string   `json:"selection"`       // all, subtree or paths
+	Path       string   `json:"path,omitempty"`  // subtree: repository-relative folder
+	Paths      []string `json:"paths,omitempty"` // paths: repository-relative files
+	// DestinationParent is the folder the user chose; the export lands in a new
+	// subfolder of it, never in it directly.
+	DestinationParent string `json:"destination_parent"`
+	// UTCOffsetMinutes is the zone the user saw the moment in; it dates the
+	// subfolder name. The snapshot keeps the exact UTC moment.
+	UTCOffsetMinutes int `json:"utc_offset_minutes"`
+}
+
+type RepoHistoryOperationPayload struct {
+	OperationID string `json:"operation_id"`
+}
+
+type RepoHistoryRename struct {
+	RepoPath  string `json:"repo_path"`
+	LocalPath string `json:"local_path"`
+}
+
+// RepoHistorySkip is an object left out and what it withholds. Reason is a
+// token: reserved_device, reserved_rune, control_rune, trailing_dot_or_space,
+// working_copy_name or special (a symbolic link).
+type RepoHistorySkip struct {
+	RepoPath string `json:"repo_path"`
+	Reason   string `json:"reason"`
+	Files    int64  `json:"files"`
+	Bytes    int64  `json:"bytes"`
+}
+
+// RepoHistoryOperation states: planning, planned, fetching, finalizing,
+// complete, failed, cancelled, interrupted. Only complete has a FinalPath the
+// user may open as a finished copy.
+type RepoHistoryOperation struct {
+	OperationID       string              `json:"operation_id"`
+	State             string              `json:"state"`
+	ServerID          string              `json:"server_id"`
+	RepoID            string              `json:"repo_id"`
+	Revision          int64               `json:"revision"`
+	Subtree           string              `json:"subtree,omitempty"`
+	SelectedPaths     []string            `json:"selected_paths,omitempty"`
+	DestinationParent string              `json:"destination_parent"`
+	FinalPath         string              `json:"final_path,omitempty"`
+	StagingPath       string              `json:"staging_path,omitempty"`
+	FilesTotal        int64               `json:"files_total"`
+	FilesDone         int64               `json:"files_done"`
+	BytesTotal        int64               `json:"bytes_total"`
+	BytesDone         int64               `json:"bytes_done"`
+	SpaceAvailable    int64               `json:"space_available"`
+	Renamed           []RepoHistoryRename `json:"renamed"`
+	Skipped           []RepoHistorySkip   `json:"skipped"`
+	WhaleExcluded     bool                `json:"whale_excluded,omitempty"`
+	WhaleFiles        int64               `json:"whale_files,omitempty"`
+	WhaleBytes        int64               `json:"whale_bytes,omitempty"`
+	// Diagnostic is English log text for support, never shown as a sentence.
+	Diagnostic   string `json:"diagnostic,omitempty"`
+	CleanupError string `json:"cleanup_error,omitempty"`
+}

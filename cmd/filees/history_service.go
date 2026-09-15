@@ -5,15 +5,39 @@ import (
 	"errors"
 	"net/url"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/historyexport"
 	"filees/pkg/ipcserver"
 	"filees/pkg/shout"
 )
+
+// defaultHistoryExportPath holds one journal record per export, so a restart
+// can finish a half-moved result or remove an abandoned staging folder.
+func defaultHistoryExportPath() string {
+	return filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "history-exports")
+}
+
+// historyExportFoldsCase: on Windows a.txt and A.txt are one file, so the
+// planner brackets the second instead of letting the helper refuse it.
+func historyExportFoldsCase() bool { return goruntime.GOOS == "windows" }
+
+func (h historyService) exportReader(serverID string) (historyexport.Reader, error) {
+	reader, err := h.reader(serverID)
+	if err != nil {
+		return nil, err
+	}
+	tree, ok := reader.(historyexport.Reader)
+	if !ok {
+		return nil, errors.New("history: SVN client cannot export trees")
+	}
+	return tree, nil
+}
 
 // historyService answers Wehikuł czasu reads through a client built from the
 // server's profile. The IPC handlers own the owner gate and paging; this only

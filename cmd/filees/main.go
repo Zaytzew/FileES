@@ -23,6 +23,7 @@ import (
 	"filees/pkg/deploy"
 	"filees/pkg/detachment"
 	"filees/pkg/errmap"
+	"filees/pkg/historyexport"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -247,8 +248,17 @@ func runDaemon() {
 	ipc.SetUploadChannelService(realmAliases)
 	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetLockReleaseService(realmAliases)
-	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue, onRepair: provisioner.RepairLifecycle})
-	ipc.SetHistoryService(historyService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath})
+	lifecycleService := repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue, onRepair: provisioner.RepairLifecycle}
+	ipc.SetRepositoryLifecycleService(lifecycleService)
+	history := historyService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath}
+	ipc.SetHistoryService(history)
+	// An export must land outside every working copy, so it asks the lifecycle
+	// store for the current roots at the moment it begins.
+	historyExports := &historyexport.Runner{Journal: defaultHistoryExportPath(), Reader: history.exportReader, Roots: lifecycleService.allRoots, FoldCase: historyExportFoldsCase(), Admission: ipc.OperationAdmission()}
+	if err := historyExports.Recover(); err != nil {
+		lg.Warnf("history exports recovery: %v", err)
+	}
+	ipc.SetHistoryExportService(historyExports)
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), detachments: detachmentStore})
 	ipc.SetSessionTimeoutService(sessionTimeoutService{root: clientprofile.DefaultRoot(), provisioner: provisioner, onChange: func(profile clientprofile.Profile) {

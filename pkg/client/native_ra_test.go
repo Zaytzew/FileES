@@ -20,8 +20,34 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1","history_dated_log_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1","history_dated_log_v1","history_tree_v1"]}`)
 		return
+	}
+	// list-tree writes its plan and fetch-tree its files like the real helper,
+	// so receipts are checked against what is really on disk.
+	argValue := func(flag string) string {
+		for i := 2; i+1 < len(os.Args); i++ {
+			if os.Args[i] == flag {
+				return os.Args[i+1]
+			}
+		}
+		return ""
+	}
+	if plan, ok := os.LookupEnv("FILEES_TEST_RA_PLAN"); ok && len(os.Args) > 1 && os.Args[1] == "list-tree" {
+		if err := os.WriteFile(argValue("--out"), []byte(plan), 0600); err != nil {
+			panic(err)
+		}
+	}
+	if tree, ok := os.LookupEnv("FILEES_TEST_RA_TREE"); ok && len(os.Args) > 1 && os.Args[1] == "fetch-tree" {
+		var files map[string]string
+		if err := json.Unmarshal([]byte(tree), &files); err != nil {
+			panic(err)
+		}
+		for path, body := range files {
+			if err := os.WriteFile(filepath.Join(argValue("--dest"), filepath.FromSlash(path)), []byte(body), 0600); err != nil {
+				panic(err)
+			}
+		}
 	}
 	// fetch-file writes its --out like the real helper, so a receipt can be
 	// checked against a file that actually exists.
@@ -42,12 +68,12 @@ func fakeNativeRA() {
 			panic(e)
 		}
 		json.NewEncoder(f).Encode(os.Args[1:])
-		if len(os.Args) > 1 && os.Args[1] == "commit" {
+		if len(os.Args) > 1 && (os.Args[1] == "commit" || os.Args[1] == "fetch-tree") {
 			b, _ := io.ReadAll(os.Stdin)
 			json.NewEncoder(f).Encode(strings.Split(string(b), "\x00"))
 		}
 		f.Close()
-	} else if len(os.Args) > 1 && os.Args[1] == "commit" {
+	} else if len(os.Args) > 1 && (os.Args[1] == "commit" || os.Args[1] == "fetch-tree") {
 		_, _ = io.Copy(io.Discard, os.Stdin)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "info" {

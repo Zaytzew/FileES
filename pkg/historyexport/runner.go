@@ -261,7 +261,14 @@ func (r *Runner) Begin(req Request) (Record, error) {
 	}
 	var roots []string
 	if r.Roots != nil {
-		roots = r.Roots()
+		// A repository without a working copy (a shelf, one mid-delete) has no
+		// root. It contains nothing, and passing "" on made the preflight refuse
+		// every destination on the owner's machine (2026-09-15).
+		for _, root := range r.Roots() {
+			if strings.TrimSpace(root) != "" {
+				roots = append(roots, root)
+			}
+		}
 	}
 	check, err := provisioning.PreflightLocalPath(filepath.Join(req.Parent, stagePrefix+req.ID), provisioning.LocalPathAttach, roots)
 	if err != nil {

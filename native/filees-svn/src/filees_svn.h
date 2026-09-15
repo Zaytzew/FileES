@@ -82,6 +82,13 @@ svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,
                         svn_boolean_t changed_paths, const char **revprops,
                         int nrevprops, apr_pool_t *pool);
 
+/* History reads for Wehikuł czasu; see history.c. Always an explicit revision,
+ * which is also the peg, so paths gone from HEAD stay reachable. */
+svn_error_t *filees_history_list(const char *url, svn_revnum_t revision,
+                                 apr_pool_t *pool);
+svn_error_t *filees_history_fetch_file(const char *url, const char *out_path,
+                                       svn_revnum_t revision, apr_pool_t *pool);
+
 svn_error_t *filees_wc_add(const char *wc, svn_boolean_t live,
                            const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_delete(const char *wc, svn_boolean_t live,

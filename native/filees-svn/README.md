@@ -207,6 +207,32 @@ symlink anywhere in its parent chain.
 Not routed by the Go adapter yet; `internal/serverinstall/svnfetch` still calls
 the CLI and buffers the whole file in memory.
 
+`list` and `fetch-file` are the history reads for Wehikuł czasu
+(`concepts/REPOSITORY_HISTORY_CONCEPT.md`), added 2026-09-15:
+
+```
+filees-svn list       --url URL --revision N
+filees-svn fetch-file --url URL --revision N --out PATH
+```
+
+- **The revision is mandatory and is also the peg.** An omitted revision would
+  quietly mean HEAD, which answers the wrong question for history. As the peg,
+  it makes a name mean the object that lived there in that revision, so
+  folders a reorganisation removed stay listable and readable.
+- `list` (`svn_client_list4`, immediates) returns entries sorted by name with
+  kind, size for files, last changing revision, its date and `last_author`,
+  and refuses a URL that is not a directory.
+- `fetch-file` returns the **repository bytes**, which `cat` cannot: with
+  keyword expansion off, `svn_client_cat3` still translates line endings for
+  any file carrying `svn:eol-style` (libsvn_client/cat.c, 1.14.5, lines
+  264-307), and `svn_client_export5` does too. `fetch-file` uses
+  `svn_ra_get_file`, which is why the main target now links `libsvn_ra`. It
+  shares `cat`'s `.part` and never-overwrite rules, and refuses a path absent in
+  that revision, a directory, and an `svn:special` node until the concept
+  settles the export policy for special nodes.
+- Advertised by `verbs` as `history_list_v1` and `history_raw_file_v1`. Not
+  routed by the Go adapter yet.
+
 `info` is implemented in the helper but **not yet routed** by the Go adapter.
 Its two callers need deciding first: `Revision()` accepts a URL as well as a
 working-copy path (client.go:666), and `VerifyCommittedMove` asks for

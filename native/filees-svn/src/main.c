@@ -20,7 +20,8 @@
 static const char *const k_verbs[] = {
     "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
-    "propdel", "cleanup", "revert", "resolve", "recover-commit", NULL
+    "propdel", "cleanup", "revert", "resolve", "recover-commit", "list",
+    "fetch-file", NULL
 };
 
 static void print_ok_version(void)
@@ -34,7 +35,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -436,6 +437,27 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "recover-commit")) return run_recover_commit(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
     if (!strcmp(verb, "info")) return run_info(argc, argv, pool);
+
+    if (!strcmp(verb, "list") || !strcmp(verb, "fetch-file")) {
+        /* History reads (history.c). No working copy, and the revision is
+         * mandatory: an omitted revision would quietly mean HEAD. */
+        svn_boolean_t fetch = !strcmp(verb, "fetch-file");
+        const char *url = NULL, *out = NULL;
+        svn_revnum_t revision = SVN_INVALID_REVNUM;
+        for (i = 2; i < argc; ++i) {
+            if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+            if (fetch && !strcmp(argv[i], "--out") && i + 1 < argc) { out = argv[++i]; continue; }
+            if (!strcmp(argv[i], "--revision")) {
+                SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
+                continue;
+            }
+            return filees_refuse(fetch
+                                 ? "usage: filees-svn fetch-file --url URL --revision N --out PATH"
+                                 : "usage: filees-svn list --url URL --revision N");
+        }
+        if (fetch) return filees_history_fetch_file(url, out, revision, pool);
+        return filees_history_list(url, revision, pool);
+    }
 
     if (!strcmp(verb, "cat")) {
         /* Handled before the shared flag loop: cat is the first verb with no

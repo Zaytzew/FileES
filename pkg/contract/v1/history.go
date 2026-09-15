@@ -112,6 +112,48 @@ type RepoHistoryListResult struct {
 	NextCursor string             `json:"next_cursor,omitempty"`
 }
 
+// repo.history_density feeds the chart (§7.1): every indexed revision grouped
+// into bars of 1, 2, 4, 6, 12 or 24 hours aligned to the user's zone. The index
+// grows in the background only while a window asks; Indexing true means ask
+// again, and the bars so far are already exact for what they cover.
+const (
+	CapRepoHistoryDensity = "repo.history_density"
+	CmdRepoHistoryDensity = "repo.history_density"
+)
+
+type RepoHistoryDensityPayload struct {
+	SnapshotID       string `json:"snapshot_id"`
+	BucketHours      int    `json:"bucket_hours"`
+	UTCOffsetMinutes int    `json:"utc_offset_minutes"`
+	From             string `json:"from,omitempty"` // RFC 3339, inclusive
+	To               string `json:"to,omitempty"`   // RFC 3339, inclusive
+	Cursor           string `json:"cursor,omitempty"`
+}
+
+type RepoHistoryDensityBucket struct {
+	Start        string `json:"start"` // RFC 3339 UTC
+	End          string `json:"end"`
+	ChangedPaths int64  `json:"changed_paths"`
+	// UniquePaths counts distinct changed paths; UniqueExact is false when a
+	// large revision or the size budget kept only part of its path list.
+	UniquePaths int64 `json:"unique_paths"`
+	UniqueExact bool  `json:"unique_exact"`
+	Commits     int64 `json:"commits"`
+	Shouts      int64 `json:"shouts"`
+}
+
+type RepoHistoryDensityResult struct {
+	FirstDate       string                     `json:"first_date,omitempty"`
+	LastIndexedDate string                     `json:"last_indexed_date,omitempty"`
+	HeadRevision    int64                      `json:"head_revision"`
+	IndexedRevision int64                      `json:"indexed_revision"`
+	Indexing        bool                       `json:"indexing"`
+	Buckets         []RepoHistoryDensityBucket `json:"buckets"`
+	NextCursor      string                     `json:"next_cursor,omitempty"`
+	// IndexDiagnostic is the last background failure, English, for support.
+	IndexDiagnostic string `json:"index_diagnostic,omitempty"`
+}
+
 // Export of a snapshot: "Pobierz kopię pliku…", "Pobierz zaznaczone…" and
 // "Pobierz zapis tego stanu…". repo.history_fetch plans in the background and
 // the operation waits in state "planned" for repo.history_confirm, so the

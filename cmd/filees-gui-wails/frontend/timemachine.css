@@ -95,6 +95,9 @@ body.tm-is-empty .tm-chart-card, body.tm-is-empty .tm-body { display: none; }
 .tm-side { position: sticky; top: 14px; display: grid; gap: 6px; }
 .tm-side p { margin: 0; }
 .tm-side p:empty { display: none; }
+/* The selection line keeps its height, so the first tick does not push the
+   download buttons down under the pointer. */
+.tm-side #tm-side-selection { display: block; min-height: 1.4em; }
 .tm-big { font-size: 20px; }
 .tm-actions { display: grid; gap: 8px; margin: 12px 0 6px; }
 .tm-actions button:disabled, .tm-dialog-actions button:disabled { opacity: .45; cursor: not-allowed; }

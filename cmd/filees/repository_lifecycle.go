@@ -256,6 +256,12 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 			if record.OperationID == operationID || record.State == localrepo.StateError || record.State == localrepo.StateAbandoned || record.State == localrepo.StateDetached || record.State == localrepo.StateDeleted {
 				continue
 			}
+			// A remote-only deletion (BeginDelete without a working copy) has no
+			// root. Passing "" on made the preflight refuse every path on the
+			// owner's machine while such a record waited for its retry.
+			if record.LocalPath == "" {
+				continue
+			}
 			roots = append(roots, record.LocalPath)
 		}
 	}

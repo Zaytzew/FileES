@@ -54,7 +54,9 @@ function toast(message) {
   body.textContent = message;
   node.append(title, body);
   $("#tm-toasts").appendChild(node);
-  window.setTimeout(() => node.remove(), 7000);
+  // Long enough to survive a trip through the native folder picker, which is
+  // where a refusal most often arrives while the person is looking elsewhere.
+  window.setTimeout(() => node.remove(), 15000);
 }
 
 // ---- Loading ---------------------------------------------------------------
@@ -117,7 +119,7 @@ async function resolveMoment(momentISO, boundary = "at", token = state.token) {
   }
   if (token !== state.token) return;
   const revisionChanged = state.snapshot?.revision !== snapshot.revision;
-  state.snapshot = snapshot;
+  state.snapshot = { ...snapshot, boundary };
   state.momentMs = Date.parse(snapshot.requested_moment);
   if (revisionChanged) state.selection.clear();
   renderMoment();
@@ -128,6 +130,28 @@ async function resolveMoment(momentISO, boundary = "at", token = state.token) {
   if (revisionChanged || !state.entries.length) await loadEntries(token, true);
 }
 
+// withSnapshot runs one call against the current view of the past. That view
+// lives in the daemon and does not survive its restart, so a failed call
+// resolves the same moment once more and repeats only when it still names the
+// same revision: a download stays pinned to the state the person is looking at.
+// Anything else keeps the original error.
+async function withSnapshot(call, token = state.token) {
+  const before = state.snapshot;
+  try {
+    return await call(before.snapshot_id);
+  } catch (error) {
+    let fresh;
+    try {
+      fresh = await TimeMachine.Resolve(state.repo.server_id, state.repo.repo_id, before.requested_moment, before.boundary ?? "at");
+    } catch {
+      throw error;
+    }
+    if (token !== state.token || state.snapshot !== before || fresh?.revision !== before.revision) throw error;
+    state.snapshot = { ...fresh, boundary: before.boundary };
+    return call(fresh.snapshot_id);
+  }
+}
+
 async function loadDensity(token = state.token) {
   if (!state.snapshot) return;
   window.clearTimeout(state.densityTimer);
@@ -136,7 +160,7 @@ async function loadDensity(token = state.token) {
   let result = null;
   try {
     for (let page = 0; page < 20; page++) {
-      result = await TimeMachine.Density(state.snapshot.snapshot_id, state.granularity, offsetMinutes(Date.now()), cursor);
+      result = await withSnapshot(id => TimeMachine.Density(id, state.granularity, offsetMinutes(Date.now()), cursor), token);
       if (token !== state.token) return;
       buckets.push(...(result?.buckets ?? []));
       cursor = result?.next_cursor ?? "";
@@ -171,7 +195,7 @@ async function loadCommits(reset = true, token = state.token) {
   renderCommits();
   const { from, to } = intervalBounds(bar);
   try {
-    const result = await TimeMachine.Commits(state.snapshot.snapshot_id, from, to, state.commitsCursor);
+    const result = await withSnapshot(id => TimeMachine.Commits(id, from, to, state.commitsCursor), token);
     if (token !== state.token || bar !== state.selectedBar) return;
     state.commits = state.commits.concat(result?.commits ?? []);
     state.commitsCursor = result?.next_cursor ?? "";
@@ -198,7 +222,7 @@ async function loadChanges(revision, token = state.token) {
   if (!entry || !state.snapshot) return;
   entry.loading = true;
   try {
-    const result = await TimeMachine.Changes(state.snapshot.snapshot_id, revision, entry.cursor);
+    const result = await withSnapshot(id => TimeMachine.Changes(id, revision, entry.cursor), token);
     if (token !== state.token) return;
     entry.changed.push(...(result?.changed ?? []));
     entry.cursor = result?.next_cursor ?? "";
@@ -218,7 +242,7 @@ async function loadEntries(token = state.token, reset = true) {
   state.entriesLoading = true;
   renderEntries();
   try {
-    const result = await TimeMachine.List(state.snapshot.snapshot_id, state.path, state.entriesCursor);
+    const result = await withSnapshot(id => TimeMachine.List(id, state.path, state.entriesCursor), token);
     if (token !== state.token) return;
     state.entries = state.entries.concat(result?.entries ?? []);
     state.entriesCursor = result?.next_cursor ?? "";
@@ -437,10 +461,10 @@ async function startExport(scope) {
   renderSide();
   $("#tm-dialog-cancel").focus();
   try {
-    const operation = await TimeMachine.Fetch({
-      snapshot_id: snapshot.snapshot_id, selection: scope.kind, path: scope.path ?? "", paths: scope.paths ?? [],
+    const operation = await withSnapshot(id => TimeMachine.Fetch({
+      snapshot_id: id, selection: scope.kind, path: scope.path ?? "", paths: scope.paths ?? [],
       destination_parent: parent, utc_offset_minutes: offsetMinutes(state.momentMs),
-    });
+    }));
     trackOperation(operation);
   } catch (error) {
     closeDialog();

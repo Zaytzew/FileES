@@ -11,6 +11,29 @@ import (
 	"filees/pkg/provisioning"
 )
 
+// A shelf deleted from another machine leaves a "deleting" record with no local
+// path until its server step succeeds. On the owner's machine (2026-09-15) one
+// such record, stuck retrying, made every create, attach and shelf fetch fail
+// with `existing repository root must be absolute: ""`.
+func TestRemoteOnlyDeletionDoesNotBlockNewPaths(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stuck, err := local.BeginDelete("office", "shelf-1", "Półka")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stuck.State != localrepo.StateDeleting || stuck.LocalPath != "" {
+		t.Fatalf("this test proves nothing unless the record is a pathless deletion: %+v", stuck)
+	}
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	service := repositoryLifecycleService{store: local, provisioning: journal, clientID: func(string) string { return "client-a" }, onCreate: func(string) {}}
+	if _, err := service.BeginCreate("office", "Docs", filepath.Join(t.TempDir(), "Docs")); err != nil {
+		t.Fatalf("a pathless deletion blocked an unrelated create: %v", err)
+	}
+}
+
 func TestConfiguredRepositoryMigrationSuppressesDetachedWCOnRestart(t *testing.T) {
 	store, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

@@ -19,7 +19,13 @@ func (s sessionTimeoutService) SetSessionTimeout(_ context.Context, serverID str
 	if err != nil {
 		return 0, err
 	}
-	path := filepath.Join(s.root, serverID, "client-profile.json")
+	// ServerDir, not a join: `atmprojekt:filees` lives in `atmprojekt+3Afilees`,
+	// and the raw ID is not even a valid path on Windows.
+	dir, err := clientprofile.ServerDir(s.root, serverID)
+	if err != nil {
+		return 0, err
+	}
+	path := filepath.Join(dir, "client-profile.json")
 	profile, err := clientprofile.Load(path)
 	if err != nil {
 		return 0, err

@@ -21,6 +21,12 @@
     "hint.require_action": "se requiere su decisión",
     "hint.retry_backoff": "FileES volverá a intentarlo más tarde",
     "hint.retry_local": "vuelva a intentarlo",
+    "history.forbidden": "Solo el propietario de este repositorio puede consultar su historial",
+    "history.invalid_request": "No se puede mostrar esta vista del historial. Elija de nuevo el momento o el intervalo",
+    "history.path_absent": "Esta carpeta no existía en el momento elegido",
+    "history.read_failed": "No se pudo leer el historial del repositorio",
+    "history.snapshot_unknown": "Esta vista del pasado ha caducado. Elija de nuevo el momento",
+    "history.unavailable": "El historial del repositorio no está disponible en este equipo",
     "intent.ambiguous": "El envío está detenido: resuelva los cambios ambiguos en la configuración de la carpeta",
     "intent.resolution_refused": "Esta decisión ya no se puede aceptar. Abra de nuevo el plan de cambios; los archivos, la cola o su acceso pueden haber cambiado",
     "lock.held_by_other": [

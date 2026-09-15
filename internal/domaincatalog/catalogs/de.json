@@ -21,6 +21,12 @@
     "hint.require_action": "Ihre Entscheidung ist erforderlich",
     "hint.retry_backoff": "FileES versucht es später erneut",
     "hint.retry_local": "versuchen Sie es erneut",
+    "history.forbidden": "Nur der Eigentümer dieses Repositorys kann seinen Verlauf durchsuchen",
+    "history.invalid_request": "Diese Verlaufsansicht kann nicht angezeigt werden. Wählen Sie den Zeitpunkt oder den Zeitraum erneut",
+    "history.path_absent": "Dieser Ordner existierte zum gewählten Zeitpunkt nicht",
+    "history.read_failed": "Der Verlauf des Repositorys konnte nicht gelesen werden",
+    "history.snapshot_unknown": "Diese Ansicht der Vergangenheit ist abgelaufen. Wählen Sie den Zeitpunkt erneut",
+    "history.unavailable": "Der Repository-Verlauf ist auf diesem Computer nicht verfügbar",
     "intent.ambiguous": "Der Versand ist angehalten: Klären Sie die mehrdeutigen Änderungen in den Ordnereinstellungen",
     "intent.resolution_refused": "Diese Entscheidung kann nicht mehr angenommen werden. Öffnen Sie den Änderungsplan erneut; Dateien, Warteschlange oder Zugriffsrechte könnten sich geändert haben",
     "lock.held_by_other": [

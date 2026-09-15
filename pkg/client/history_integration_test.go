@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/internal/svnurl"
 )
@@ -75,5 +76,42 @@ func TestHistoryReaderAgainstTheNativeHelper(t *testing.T) {
 	}
 	if _, err := c.HistoryFetchFile(t.Context(), url+"/OLD/01_EDITABLES/opis.txt", 2, filepath.Join(root, "gone.txt")); err == nil {
 		t.Fatal("fetched a path that did not exist at r2")
+	}
+
+	if uuid, err := c.HistoryRepositoryUUID(t.Context(), url); err != nil || uuid == "" {
+		t.Fatalf("uuid = %q %v", uuid, err)
+	}
+	commits, err := c.HistoryLog(t.Context(), url, 2, 1, 10)
+	if err != nil || len(commits) != 2 || commits[0].Revision != 2 || commits[1].Revision != 1 {
+		t.Fatalf("log = %+v %v", commits, err)
+	}
+	if got := commits[0].Changes; len(got) != 1 || got[0].Path != "OLD" || got[0].Action != "D" {
+		t.Fatalf("r2 changes = %+v", got)
+	}
+	added := map[string]HistoryChange{}
+	for _, change := range commits[1].Changes {
+		added[change.Path] = change
+	}
+	if change := added["OLD/01_EDITABLES/opis.txt"]; change.Action != "A" || change.Kind != "file" || change.CopyFromRevision != -1 {
+		t.Fatalf("r1 changes = %+v", commits[1].Changes)
+	}
+	if rev, _, err := c.HistoryRevisionAt(t.Context(), url, time.Now().Add(time.Hour)); err != nil || rev != 2 {
+		t.Fatalf("a moment after HEAD = r%d %v", rev, err)
+	}
+	if rev, date, err := c.HistoryRevisionAt(t.Context(), url, time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil || rev != 0 || date != "" {
+		t.Fatalf("a moment before every commit = r%d %q %v", rev, date, err)
+	}
+	firstDate, err := time.Parse(time.RFC3339Nano, commits[1].Date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev, date, err := c.HistoryRevisionAt(t.Context(), url, firstDate); err != nil || rev != 1 || date != commits[1].Date {
+		t.Fatalf("the exact date of r1 = r%d %q %v", rev, date, err)
+	}
+	if _, err := c.HistoryList(t.Context(), url+"/OLD", 2); !HistoryPathAbsent(err) {
+		t.Fatalf("a folder gone at r2 is not reported absent: %v", err)
+	}
+	if _, err := c.HistoryList(t.Context(), url+"/OLD/01_EDITABLES/opis.txt", 1); !HistoryPathAbsent(err) {
+		t.Fatalf("a file listed as a folder is not reported absent: %v", err)
 	}
 }

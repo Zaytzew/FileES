@@ -131,6 +131,14 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleShelfList(req)
 	case contract.CmdRepoShelfFetch:
 		return s.handleShelfFetch(req)
+	case contract.CmdRepoHistoryResolve:
+		return s.handleHistoryResolve(req)
+	case contract.CmdRepoHistoryCommits:
+		return s.handleHistoryCommits(req)
+	case contract.CmdRepoHistoryChanges:
+		return s.handleHistoryChanges(req)
+	case contract.CmdRepoHistoryList:
+		return s.handleHistoryList(req)
 	case contract.CmdRepoQuarantineList:
 		return s.handleQuarantine(req, "list")
 	case contract.CmdRepoQuarantineHide:

@@ -49,6 +49,8 @@ type Server struct {
 	lockReleases         LockReleaseService
 	lockReleaseRequests  map[string][]contract.LockReleaseRequest
 	lifecycle            RepositoryLifecycleService
+	historyReads         HistoryService
+	historySnaps         historySnapshotStore
 	mobilePair           MobilePairingService
 	serverDetach         ServerDetachService
 	sessionTimeout       SessionTimeoutService
@@ -331,6 +333,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.activitySource() != nil {
 		caps = append(caps, contract.CapRepoActivity)
+	}
+	if history := s.historyService(); history != nil && history.HistoryEnabled() {
+		caps = append(caps, contract.CapRepoHistory)
 	}
 	if s.whaleService() != nil {
 		caps = append(caps, contract.CapWhaleList, contract.CapWhaleGet, contract.CapWhalePutBegin, contract.CapWhaleGetBegin, contract.CapWhaleGetConfirm, contract.CapWhaleRetry, contract.CapWhaleCancel)

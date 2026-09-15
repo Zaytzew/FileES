@@ -10,6 +10,7 @@
 #include <svn_cmdline.h>
 #include <svn_dirent_uri.h>
 #include <svn_pools.h>
+#include <svn_time.h>
 #include <svn_version.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -35,7 +36,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -113,12 +114,33 @@ static svn_error_t *collect_paths(int i, int argc, const char **argv,
     return SVN_NO_ERROR;
 }
 
-static svn_error_t *parse_one_revision(const char *text, svn_opt_revision_t *rev)
+static svn_error_t *parse_one_revision(const char *text, apr_pool_t *pool,
+                                       svn_opt_revision_t *rev)
 {
     char *end;
     long value;
     if (!strcmp(text, "HEAD")) {
         rev->kind = svn_opt_revision_head;
+        return SVN_NO_ERROR;
+    }
+    /* {TIMESTAMP} names the newest revision not later than that moment, which
+     * is how Wehikuł czasu turns a chosen moment into a revision without
+     * reading the whole log. Only SVN's own timestamp form is accepted
+     * (2026-09-12T10:00:00.000000Z), so there is no local-time ambiguity. */
+    if (text[0] == '{') {
+        size_t len = strlen(text);
+        char stamp[64];
+        svn_error_t *err;
+        if (len < 3 || len - 2 >= sizeof stamp || text[len - 1] != '}')
+            return filees_refuse("date revision must be {YYYY-MM-DDTHH:MM:SS.ffffffZ}");
+        memcpy(stamp, text + 1, len - 2);
+        stamp[len - 2] = '\0';
+        rev->kind = svn_opt_revision_date;
+        err = svn_time_from_cstring(&rev->value.date, stamp, pool);
+        if (err) {
+            svn_error_clear(err);
+            return filees_refuse("date revision must be {YYYY-MM-DDTHH:MM:SS.ffffffZ}");
+        }
         return SVN_NO_ERROR;
     }
     value = strtol(text, &end, 10);
@@ -134,14 +156,16 @@ static svn_error_t *parse_revision_range(const char *text, apr_pool_t *pool,
                                          svn_opt_revision_t *start,
                                          svn_opt_revision_t *end)
 {
-    const char *colon = strchr(text, ':');
+    /* A timestamp has colons of its own; the range separator follows its brace. */
+    const char *close = text[0] == '{' ? strchr(text, '}') : NULL;
+    const char *colon = strchr(close ? close : text, ':');
     if (!colon) {
-        SVN_ERR(parse_one_revision(text, start));
+        SVN_ERR(parse_one_revision(text, pool, start));
         *end = *start;
         return SVN_NO_ERROR;
     }
-    SVN_ERR(parse_one_revision(apr_pstrndup(pool, text, (apr_size_t)(colon - text)), start));
-    return parse_one_revision(colon + 1, end);
+    SVN_ERR(parse_one_revision(apr_pstrndup(pool, text, (apr_size_t)(colon - text)), pool, start));
+    return parse_one_revision(colon + 1, pool, end);
 }
 
 #define FILEES_LOG_MAX_REVPROPS 8

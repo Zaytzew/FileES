@@ -21,6 +21,12 @@
     "hint.require_action": "wymagane działanie użytkownika",
     "hint.retry_backoff": "ponowienie nastąpi później",
     "hint.retry_local": "spróbuj ponownie",
+    "history.forbidden": "Historię tego repozytorium może przeglądać tylko jego właściciel",
+    "history.invalid_request": "Nie da się pokazać tego widoku historii — wybierz ponownie moment lub przedział",
+    "history.path_absent": "W wybranym momencie ten folder nie istniał",
+    "history.read_failed": "Nie udało się odczytać historii repozytorium",
+    "history.snapshot_unknown": "Ten widok przeszłości wygasł — wybierz moment ponownie",
+    "history.unavailable": "Historia repozytorium nie jest dostępna na tym komputerze",
     "intent.ambiguous": "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu",
     "intent.resolution_refused": "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić",
     "lock.held_by_other": [

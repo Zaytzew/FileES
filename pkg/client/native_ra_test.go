@@ -20,7 +20,7 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1","history_dated_log_v1"]}`)
 		return
 	}
 	// fetch-file writes its --out like the real helper, so a receipt can be

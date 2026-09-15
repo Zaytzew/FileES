@@ -21,6 +21,12 @@
     "hint.require_action": "your decision is needed",
     "hint.retry_backoff": "FileES will try again later",
     "hint.retry_local": "try again",
+    "history.forbidden": "Only the owner of this repository can browse its history",
+    "history.invalid_request": "This history view cannot be shown — choose the moment or the range again",
+    "history.path_absent": "This folder did not exist at the chosen moment",
+    "history.read_failed": "The repository history could not be read",
+    "history.snapshot_unknown": "This view of the past has expired — choose the moment again",
+    "history.unavailable": "Repository history is not available on this computer",
     "intent.ambiguous": "Sending is on hold: resolve the ambiguous changes in the folder settings",
     "intent.resolution_refused": "This decision can no longer be accepted. Open the change plan again; the files, the queue or your access may have changed",
     "lock.held_by_other": [

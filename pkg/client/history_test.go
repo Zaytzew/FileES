@@ -6,7 +6,136 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestHistoryRevisionAtLetsTheRepositoryResolveTheDate(t *testing.T) {
+	moment := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	logReply := func(body string) string {
+		return `{"schema":"filees.native-svn/v1","ok":true,"entries":[` + body + `]}`
+	}
+	c := raFake(t, logReply(`{"revision":7,"author":"399c0801","date":"2026-09-14T11:03:08.000000Z","message":"m","revprops":{},"paths":[]}`))
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("FILEES_TEST_RA_TRACE", trace)
+	rev, date, err := c.HistoryRevisionAt(t.Context(), "file:///lab", moment)
+	if err != nil || rev != 7 || date != "2026-09-14T11:03:08.000000Z" {
+		t.Fatalf("rev=%d date=%q err=%v", rev, date, err)
+	}
+	argv, _ := os.ReadFile(trace)
+	if !strings.Contains(string(argv), `"log","--url","file:///lab","--revision","{2026-09-14T12:00:00.000000Z}:0","--limit","1"`) {
+		t.Fatalf("argv = %s", argv)
+	}
+
+	for name, reply := range map[string]string{
+		"nothing that early": logReply(``),
+		"revision zero":      logReply(`{"revision":0,"author":null,"date":"2026-01-01T00:00:00.000000Z","message":null,"revprops":{},"paths":[]}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := raFake(t, reply)
+			if rev, date, err := c.HistoryRevisionAt(t.Context(), "file:///lab", moment); err != nil || rev != 0 || date != "" {
+				t.Fatalf("rev=%d date=%q err=%v", rev, date, err)
+			}
+		})
+	}
+	for name, reply := range map[string]string{
+		"dated after the moment": logReply(`{"revision":8,"date":"2026-09-14T12:00:01.000000Z","paths":[]}`),
+		"more than the limit":    logReply(`{"revision":8,"date":"2026-09-14T10:00:00.000000Z","paths":[]},{"revision":7,"date":"2026-09-14T09:00:00.000000Z","paths":[]}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := raFake(t, reply)
+			if _, _, err := c.HistoryRevisionAt(t.Context(), "file:///lab", moment); err == nil {
+				t.Fatalf("accepted %s", name)
+			}
+		})
+	}
+	t.Run("old helper", func(t *testing.T) {
+		c := raFake(t, logReply(``))
+		t.Setenv("FILEES_TEST_RA_OLD_HELPER", "1")
+		trace := filepath.Join(t.TempDir(), "trace")
+		t.Setenv("FILEES_TEST_RA_TRACE", trace)
+		if _, _, err := c.HistoryRevisionAt(t.Context(), "file:///lab", moment); err == nil {
+			t.Fatal("a helper without dated log was asked a date")
+		}
+		if _, err := os.Stat(trace); !os.IsNotExist(err) {
+			t.Fatalf("log ran on an old helper (err=%v)", err)
+		}
+	})
+}
+
+func TestHistoryLogParsesChangesAndRefusesUnsafeReceipts(t *testing.T) {
+	logReply := func(body string) string {
+		return `{"schema":"filees.native-svn/v1","ok":true,"entries":[` + body + `]}`
+	}
+	c := raFake(t, logReply(
+		`{"revision":5,"author":"a","date":"2026-09-14T11:00:00.000000Z","message":"m","revprops":{},"paths":[`+
+			`{"path":"/NEW","action":"A","kind":"dir","copyfrom_path":"/OLD","copyfrom_rev":4},`+
+			`{"path":"/OLD","action":"D","kind":"dir","copyfrom_path":null,"copyfrom_rev":null}]},`+
+			`{"revision":3,"author":null,"date":"2026-09-13T11:00:00.000000Z","message":null,"revprops":{},"paths":[{"path":"/","action":"M","kind":"unknown","copyfrom_path":null,"copyfrom_rev":null}]}`))
+	trace := filepath.Join(t.TempDir(), "trace")
+	t.Setenv("FILEES_TEST_RA_TRACE", trace)
+	commits, err := c.HistoryLog(t.Context(), "file:///lab", 5, 2, 10)
+	if err != nil || len(commits) != 2 {
+		t.Fatalf("commits=%+v err=%v", commits, err)
+	}
+	moved := commits[0].Changes[0]
+	if moved.Path != "NEW" || moved.Action != "A" || moved.Kind != "dir" || moved.CopyFromPath != "OLD" || moved.CopyFromRevision != 4 {
+		t.Fatalf("copy = %+v", moved)
+	}
+	if plain := commits[0].Changes[1]; plain.CopyFromRevision != -1 || plain.CopyFromPath != "" {
+		t.Fatalf("plain change = %+v", plain)
+	}
+	if root := commits[1].Changes[0]; root.Path != "" || root.Kind != "" || commits[1].Author != "" {
+		t.Fatalf("root change = %+v / %+v", root, commits[1])
+	}
+	argv, _ := os.ReadFile(trace)
+	if !strings.Contains(string(argv), `"log","--url","file:///lab","--revision","5:2","--limit","10","--changed-paths"`) {
+		t.Fatalf("argv = %s", argv)
+	}
+
+	entry := func(rev, paths string) string {
+		return `{"revision":` + rev + `,"date":"2026-09-14T11:00:00.000000Z","paths":[` + paths + `]}`
+	}
+	for name, reply := range map[string]string{
+		"out of order":       logReply(entry("3", ``) + `,` + entry("4", ``)),
+		"above the range":    logReply(entry("6", ``)),
+		"below the range":    logReply(entry("1", ``)),
+		"climbing path":      logReply(entry("4", `{"path":"/a/../b","action":"M"}`)),
+		"relative path":      logReply(entry("4", `{"path":"a","action":"M"}`)),
+		"unknown action":     logReply(entry("4", `{"path":"/a","action":"X"}`)),
+		"half a copy source": logReply(entry("4", `{"path":"/a","action":"A","copyfrom_path":"/b"}`)),
+		"copy from future":   logReply(entry("4", `{"path":"/a","action":"A","copyfrom_path":"/b","copyfrom_rev":4}`)),
+		"invalid date":       logReply(`{"revision":4,"date":"yesterday","paths":[]}`),
+		"no revision":        logReply(`{"date":"2026-09-14T11:00:00.000000Z","paths":[]}`),
+		"no entries":         `{"schema":"filees.native-svn/v1","ok":true}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := raFake(t, reply)
+			if commits, err := c.HistoryLog(t.Context(), "file:///lab", 5, 2, 10); err == nil {
+				t.Fatalf("accepted %s: %+v", name, commits)
+			}
+		})
+	}
+	for name, call := range map[string]func(HistoryReader) error{
+		"reversed range": func(r HistoryReader) error { _, err := r.HistoryLog(t.Context(), "file:///lab", 2, 5, 10); return err },
+		"zero limit":     func(r HistoryReader) error { _, err := r.HistoryLog(t.Context(), "file:///lab", 5, 2, 0); return err },
+	} {
+		if err := call(raFake(t, logReply(``))); err == nil {
+			t.Fatalf("accepted %s", name)
+		}
+	}
+}
+
+func TestHistoryPathAbsentReadsCodesNotSentences(t *testing.T) {
+	if !HistoryPathAbsent(&NativeFailure{Verb: "list", Entries: []NativeErrorEntry{{Code: 200009, Message: "x"}, {Code: 160013, Message: "y"}}}) {
+		t.Fatal("not-found chain not recognised")
+	}
+	if HistoryPathAbsent(&NativeFailure{Verb: "list", Entries: []NativeErrorEntry{{Code: 170013, Message: "path not found"}}}) {
+		t.Fatal("a connection failure read as an absent path")
+	}
+	if HistoryPathAbsent(errors.New("E160013: path not found")) {
+		t.Fatal("a sentence read as a code")
+	}
+}
 
 func TestHistoryRequiresAHelper(t *testing.T) {
 	c := New(Options{}).(HistoryReader)

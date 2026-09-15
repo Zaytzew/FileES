@@ -54,7 +54,13 @@ func (h historyService) reader(serverID string) (client.HistoryReader, error) {
 	if serverID == "" || serverID == "." || serverID == ".." || strings.ContainsAny(serverID, `/\`) {
 		return nil, errors.New("history: invalid server id")
 	}
-	profile, err := clientprofile.Load(filepath.Join(h.root, serverID, "client-profile.json"))
+	// ServerDir, not a join: `atmprojekt:filees` lives in `atmprojekt+3Afilees`,
+	// and the raw ID is not even a valid path on Windows.
+	dir, err := clientprofile.ServerDir(h.root, serverID)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := clientprofile.Load(filepath.Join(dir, "client-profile.json"))
 	if err != nil {
 		return nil, err
 	}

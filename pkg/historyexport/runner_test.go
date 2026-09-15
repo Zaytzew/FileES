@@ -184,6 +184,33 @@ func entries(t *testing.T, dir string) []string {
 	return names
 }
 
+// A repository without a working copy (here: one stuck mid-delete) reports an
+// empty root. On the owner's machine that one entry made every destination
+// refused; it must be ignored while real roots still guard their subtrees.
+func TestEmptyRepositoryRootDoesNotRefuseEveryDestination(t *testing.T) {
+	workingCopy := t.TempDir()
+	r := newRunner(t, newFakeTree())
+	r.Roots = func() []string { return []string{"", "  ", workingCopy} }
+
+	parent := t.TempDir()
+	rec, err := r.Begin(exportRequest(40, parent))
+	if err != nil {
+		t.Fatalf("an empty root refused an unrelated destination: %v", err)
+	}
+	waitState(t, r, rec.ID, StatePlanned)
+	if _, err := r.Cancel(rec.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	inside := filepath.Join(workingCopy, "sub")
+	if err := os.Mkdir(inside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Begin(exportRequest(41, inside)); err == nil || !strings.Contains(err.Error(), "destination refused") {
+		t.Fatalf("a destination inside a working copy was accepted: %v", err)
+	}
+}
+
 func TestExportWholeStateLandsInANewDatedFolder(t *testing.T) {
 	tree := newFakeTree()
 	r := newRunner(t, tree)

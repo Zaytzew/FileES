@@ -25,6 +25,32 @@ disabled-by-default Public Shares services:
   not install that crontab. Run it as `_filees-state` and redirect stdout
   (`>/dev/null`) so an idle minute does not mail `accepted=0`.
 
+## Activation nick blocklist
+
+`nick-blocklist.txt` is the default list of vulgar and offensive fragments
+that an activation nick must not contain
+(`concepts/ACTIVATION_NICK_CONCEPT.md` §4.1). It belongs at
+`/etc/filees/nick-blocklist.txt`, next to `server.json`, owned by
+`_filees-state`. An installer places it only when the file is absent and
+never overwrites an administrator's edits; no installer does that yet.
+
+Format: plain UTF-8, one lowercase fragment per line using only the nick
+alphabet, blank lines and `#` comments ignored, matched as a substring.
+A missing file or an invalid line must stop nick issuance with a specific
+error rather than run with an empty list.
+
+The file is generated, not edited by hand. It is built from the LDNOOBW
+word lists (PL, EN, DE, FR, ES; CC-BY-4.0, credited in its header):
+
+```sh
+go run ./tools/nick-blocklist -out packaging/server/nick-blocklist.txt \
+  -sample 100000 -attribution "Word lists: LDNOOBW ... CC-BY-4.0" pl.txt en.txt de.txt fr.txt es.txt
+```
+
+The generator keeps only fragments of 3–9 letters spellable with the nick
+alphabet and drops any entry already covered by a shorter one. The shipped
+list has 175 fragments and blocks about 1.5% of random nicks.
+
 ## Passport expiry maintenance (M45)
 
 `filees-worker passport-reap -config /etc/filees/server.json` performs one

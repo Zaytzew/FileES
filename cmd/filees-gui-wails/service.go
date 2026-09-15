@@ -740,6 +740,16 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 			}
 		}
 		return tray.Intent{Kind: tray.IntentRevokePublicShares, ServerID: request.ServerID, ChannelIDs: channelIDs}, true
+	case string(tray.IntentBrowseHistory):
+		if !vm.CanBrowseHistory() {
+			return tray.Intent{}, false
+		}
+		intent := tray.Intent{Kind: tray.IntentBrowseHistory, ServerID: request.ServerID, RepoID: request.RepoID}
+		if request.RepoID == "" {
+			return intent, true
+		}
+		repo, ok := projectedRepo(vm, request.RepoID)
+		return intent, ok && repo.ServerID == request.ServerID
 	case string(tray.IntentSettings):
 		intent := tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID, RepoID: request.RepoID}
 		if request.RepoID == "" {

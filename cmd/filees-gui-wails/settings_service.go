@@ -275,6 +275,8 @@ func settingsActionDescription(action platform.SettingsDialogAction) string {
 		return "settingsAction.PublicShares.description"
 	case platform.SettingsDialogUploadChannels:
 		return "settingsAction.UploadChannels.description"
+	case platform.SettingsDialogBrowseHistory:
+		return "settingsAction.BrowseHistory.description"
 	case platform.SettingsDialogDetachFolder:
 		return "settingsAction.DetachFolder.description"
 	case platform.SettingsDialogDeleteRepo:

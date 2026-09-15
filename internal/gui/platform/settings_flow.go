@@ -32,6 +32,7 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogEditingPolicy, "editing_policy", "editing_policy", "Zasady edycji", true, false},
 	{SettingsDialogPublicShares, "public_shares", "public_shares", "Udostępnienia publiczne", true, false},
 	{SettingsDialogUploadChannels, "upload_channels", "upload_channels", "Półki przyjęcia", true, false},
+	{SettingsDialogBrowseHistory, "browse_history", "browse_history", "Przeglądaj historię…", true, false},
 	{SettingsDialogDetachFolder, "detach_folder", "detach", "Odłącz tylko folder", true, false},
 	{SettingsDialogDeleteRepo, "delete_repository", "delete", "Usuń repozytorium", true, false},
 	{SettingsDialogLoadDump, "load_dump", "load_dump", "Odtwórz z archiwum", true, false},
@@ -146,6 +147,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 		return folder.CanManageUploadChannels
 	case SettingsDialogQuarantine:
 		return folder.CanReviewQuarantine
+	case SettingsDialogBrowseHistory:
+		return folder.CanBrowseHistory
 	case SettingsDialogDetachFolder:
 		return folder.CanDetach
 	case SettingsDialogDeleteRepo:

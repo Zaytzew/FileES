@@ -245,6 +245,12 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	activateItem := menu.Add(language.text("tray.activate")).OnClick(func(_ *application.Context) {
 		service.Trigger(ActionRequest{Kind: string(guitray.IntentActivate)})
 	})
+	// Hidden until a snapshot shows the daemon offers history; the controller
+	// and the daemon still decide per repository.
+	timeMachineItem := menu.Add(language.text("tray.timeMachine")).OnClick(func(_ *application.Context) {
+		service.Trigger(ActionRequest{Kind: string(guitray.IntentBrowseHistory)})
+	})
+	timeMachineItem.SetHidden(true)
 	menu.AddSeparator()
 	fileESMenu := menu.AddSubmenu("FileES")
 	restartItem := fileESMenu.Add(language.text("tray.restart")).OnClick(func(_ *application.Context) {
@@ -266,6 +272,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		showItem.SetLabel(language.text("tray.show"))
 		refreshItem.SetLabel(language.text("tray.refresh"))
 		activateItem.SetLabel(language.text("tray.activate"))
+		timeMachineItem.SetLabel(language.text("tray.timeMachine"))
 		restartItem.SetLabel(language.text("tray.restart"))
 		shutdownItem.SetLabel(language.text("tray.quit"))
 		label := language.text("tray.announcements")
@@ -325,6 +332,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		unread = projection.Unread
 		refreshMenuLabels()
 		restartItem.SetHidden(!projection.CanRestart)
+		timeMachineItem.SetHidden(!timeMachineOffered(snapshot))
 		shutdownItem.SetHidden(!projection.CanShutdown)
 		systemTray.SetTooltip(projection.Tooltip)
 		if projection.Tooltip != lastTooltip {

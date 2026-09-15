@@ -449,6 +449,12 @@ func (vm ViewModel) CanManageUploadChannels() bool {
 func (vm ViewModel) CanReviewQuarantine() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoQuarantineList) && vm.HasCap(contract.CapRepoQuarantineHide) && vm.HasCap(contract.CapRepoQuarantineFetch)
 }
+
+// CanBrowseHistory is the daemon's offer of Wehikuł czasu. Ownership is a
+// separate, per-repository question, and the daemon checks it again per call.
+func (vm ViewModel) CanBrowseHistory() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoHistory)
+}
 func (vm ViewModel) CanSetRealmVisibility() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
 }

@@ -236,8 +236,28 @@ filees-svn fetch-file --url URL --revision N --out PATH
   local-time ambiguity; a range splits after the closing brace, because the
   timestamp has colons of its own. Wehikuł czasu uses `log {moment}:0 --limit 1`
   to turn a moment into a revision without paging the log.
-- Advertised by `verbs` as `history_list_v1`, `history_raw_file_v1` and
-  `history_dated_log_v1`. Routed by `pkg/client/history.go` (`HistoryReader`)
+- Tree export uses one process and one RA session per step, because composing
+  `list` and `fetch-file` per file costs an SSH handshake per file:
+
+  ```text
+  filees-svn list-tree  --url URL --revision N --out FILE
+  filees-svn fetch-tree --url ROOT --revision N --dest DIR --manifest-stdin
+  ```
+
+  `list-tree` (`svn_client_list4`, depth infinity, externals not followed)
+  writes the plan to `FILE` as one JSON object per line, `{"path","kind"}`
+  plus `size` for files, because a whole repository does not fit the
+  adapter's bounded stdout; stdout carries only the receipt with `dirs`,
+  `files` and `bytes`. It refuses a file target and an existing `--out`.
+  `fetch-tree` reads NUL-terminated (repository path, local path) pairs from
+  stdin. Local paths pass the working-copy target guard and may not repeat;
+  the destination and every ancestor must be real directories; each file goes
+  through an exclusive `.part` and is never replaced. Local names are the
+  daemon's choice (portable names, Windows collisions such as `a(A).txt`).
+  An `svn:special` node is removed again and listed under `skipped` with reason
+  `special`: the owner's rule is to fetch the rest and say what was left out.
+- Advertised by `verbs` as `history_list_v1`, `history_raw_file_v1`,
+  `history_dated_log_v1` and `history_tree_v1`. Routed by `pkg/client/history.go` (`HistoryReader`)
   and served to the GUI through `repo.history_*` IPC commands.
 
 `info` is implemented in the helper but **not yet routed** by the Go adapter.

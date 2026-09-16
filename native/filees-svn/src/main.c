@@ -556,8 +556,11 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
                                  : "usage: filees-svn list-tree --url URL --revision N --out FILE");
         }
         if (fetch) {
-            const char **pairs;
-            int npairs;
+            /* stdin_manifest always sets both on its only success path, but
+             * that is invisible across the call, and GCC on Linux (unlike
+             * the MSVC build this verb was first built with) flags it. */
+            const char **pairs = NULL;
+            int npairs = 0;
             if (!manifest) return filees_refuse("fetch-tree requires --manifest-stdin");
             if (!SVN_IS_VALID_REVNUM(revision))
                 return filees_refuse("fetch-tree requires --revision; history reads never default to HEAD");

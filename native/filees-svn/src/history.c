@@ -313,7 +313,9 @@ static svn_error_t *exclusive_out(apr_file_t **file, const char **partial,
 svn_error_t *filees_history_list_tree(const char *url_arg, const char *out_arg,
                                       svn_revnum_t revision, apr_pool_t *pool)
 {
-    const char *url, *out_path, *partial;
+    /* partial is always set on exclusive_out's only success path, but that
+     * is invisible across the call (GCC on Linux flags it; MSVC did not). */
+    const char *url, *out_path, *partial = NULL;
     svn_client_ctx_t *ctx;
     svn_opt_revision_t peg;
     apr_file_t *file;

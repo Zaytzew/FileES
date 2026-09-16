@@ -137,12 +137,16 @@ func TestHistoryFetchTreeWritesRepositoryBytesUnderLocalNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(f.wc, "Docs", "deep", "text.txt"), want)
-	write(t, filepath.Join(f.wc, "link"), "link occupied.txt")
+	// A real symlink, not svn:special propset on a plain file: the latter
+	// leaves the working copy's on-disk kind out of sync with what the
+	// property claims, and svn commit refuses it ("unexpectedly changed
+	// kind") on a platform that actually enforces the check.
+	if err := os.Symlink("occupied.txt", filepath.Join(f.wc, "link")); err != nil {
+		t.Fatalf("symlink fixture unavailable; acceptance incomplete: %v", err)
+	}
 	f.svnRun(t, "add", "Docs", "link")
 	f.svnRun(t, "propset", "svn:eol-style", "native", "Docs/deep/text.txt")
 	f.svnRun(t, "propset", "svn:keywords", "Id", "Docs/deep/text.txt")
-	// "on", not "*": svn.exe's C runtime expands "*" into file names on Windows.
-	f.svnRun(t, "propset", "svn:special", "on", "link")
 	f.svnRun(t, "commit", "--username", "editor", "-m", "tree") // r2
 
 	dest := filepath.Join(f.root, "export-stage")

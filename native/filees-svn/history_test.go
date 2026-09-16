@@ -181,11 +181,14 @@ func TestHistoryReadsRefuseUnsafeOrAmbiguousArguments(t *testing.T) {
 // export policy for special nodes.
 func TestHistoryFetchFileRefusesSpecialNodes(t *testing.T) {
 	f := newFixture(t, "old.txt")
-	write(t, filepath.Join(f.wc, "link"), "link occupied.txt")
+	// A real symlink, not svn:special propset on a plain file: the latter
+	// leaves the working copy's on-disk kind out of sync with what the
+	// property claims, and svn commit refuses it ("unexpectedly changed
+	// kind") on a platform that actually enforces the check.
+	if err := os.Symlink("occupied.txt", filepath.Join(f.wc, "link")); err != nil {
+		t.Fatalf("symlink fixture unavailable; acceptance incomplete: %v", err)
+	}
 	f.svnRun(t, "add", "link")
-	// SVN stores any value of svn:special as "*". Passing "*" itself does not
-	// work on Windows: the C runtime of svn.exe expands it into file names.
-	f.svnRun(t, "propset", "svn:special", "on", "link")
 	f.svnRun(t, "commit", "--username", "editor", "-m", "special") // r2
 	out := filepath.Join(f.root, "link.out")
 	f.jsonCall(t, false, "fetch-file", "--url", f.repoURL+"/link", "--revision", "2", "--out", out)

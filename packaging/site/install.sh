@@ -7,6 +7,10 @@
 # Safe to run again: it updates the program and its files, publishes once as
 # the service user, and leaves an existing symlink and cron entry in place.
 set -eu
+# A root shell from `su` without `-` keeps the caller's PATH, which on Debian
+# has no sbin directories: useradd and runuser live in /usr/sbin.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 die() {
 	echo "filees-site install: $*" >&2
@@ -22,7 +26,7 @@ published="$home/site/download"
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo sh install.sh)"
 [ -d "$docroot" ] || die "web root not found: $docroot (set DOCROOT)"
-for tool in svn flock logger runuser; do
+for tool in svn flock logger useradd install; do
 	command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 for file in filees-site-download download.json release-key.pub download.html filees-site-download.cron; do
@@ -41,9 +45,12 @@ install -m 0644 -o root -g root "$here/download.json" "$here/release-key.pub" "$
 
 # Publish once now, as the service user. A release that does not verify stops
 # the installation here, before the web root is touched.
-runuser -u "$user" -- env HOME="$home" /usr/local/bin/filees-site-download \
-	-config "$share/download.json" -key "$share/release-key.pub" -template "$share/download.html" \
-	-out "$published" -state "$home/state.json"
+publish="HOME=$home /usr/local/bin/filees-site-download -config $share/download.json -key $share/release-key.pub -template $share/download.html -out $published -state $home/state.json"
+if command -v runuser >/dev/null 2>&1; then
+	runuser -u "$user" -- sh -c "$publish"
+else
+	su -s /bin/sh -c "$publish" "$user"
+fi
 
 # The web root keeps pointing at the publication through one symlink, so the
 # service user never needs write access to the web root itself.

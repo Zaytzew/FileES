@@ -290,6 +290,9 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-pair-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-svn"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(fakeBin, "systemctl"), []byte("#!/bin/sh\n[ \"$2\" = is-active ] && exit 1\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -314,12 +317,15 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	}
 	for _, path := range []string{
 		filepath.Join(prefix, "bin", "filees"), filepath.Join(prefix, "bin", "filees-gui"),
-		filepath.Join(prefix, "bin", "filees-pair-gui"),
+		filepath.Join(prefix, "bin", "filees-pair-gui"), filepath.Join(prefix, "bin", "filees-svn"),
 		filepath.Join(configHome, "systemd", "user", "filees.service"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("installed artifact %s: %v", path, err)
 		}
+	}
+	if unit, err := os.ReadFile(filepath.Join(configHome, "systemd", "user", "filees.service")); err != nil || !strings.Contains(string(unit), "FILEES_NATIVE_SVN=\""+filepath.Join(prefix, "bin", "filees-svn")+"\"") {
+		t.Fatalf("installed unit does not point FILEES_NATIVE_SVN at the installed helper: %q err=%v", unit, err)
 	}
 	runScript(t, filepath.Join(bundle, "uninstall-user.sh"), env)
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees")); !os.IsNotExist(err) {
@@ -327,6 +333,9 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees-pair-gui")); !os.IsNotExist(err) {
 		t.Fatalf("pairing helper binary survived uninstall: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees-svn")); !os.IsNotExist(err) {
+		t.Fatalf("native SVN helper survived uninstall: %v", err)
 	}
 	if got, err := os.ReadFile(configPath); err != nil || !stringEqual(got, custom) {
 		t.Fatalf("uninstall removed config: %q err=%v", got, err)

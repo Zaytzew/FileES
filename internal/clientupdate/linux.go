@@ -59,6 +59,7 @@ func (installer LinuxInstaller) Plan(ctx context.Context, resolved *releaseenvel
 	mappings := []struct{ source, target, detail string }{
 		{"bin/filees", filepath.Join(paths.Prefix, "bin", "filees"), "daemon"},
 		{"bin/filees-gui", filepath.Join(paths.Prefix, "bin", "filees-gui"), "GUI"},
+		{"bin/filees-svn", filepath.Join(paths.Prefix, "bin", "filees-svn"), "natywny helper SVN (Wehikuł czasu)"},
 		{"share/icons/hicolor/scalable/apps/filees-gui.svg", filepath.Join(paths.DataHome, "icons", "hicolor", "scalable", "apps", "filees-gui.svg"), "ikona aplikacji"},
 	}
 	changes := make([]contract.UpdateChange, 0, len(mappings)+3)
@@ -127,12 +128,22 @@ func (installer LinuxInstaller) normalizedPaths() (LinuxPaths, error) {
 	return paths, nil
 }
 
-func validateLinuxBundle(root string) error {
-	for _, required := range []string{
-		"install-user.sh", "SHA256SUMS", "VERSION", "bin/filees", "bin/filees-gui",
+// RequiredLinuxBundleFiles lists what a Linux client bundle must contain, as
+// slash-separated paths relative to its root. Exported so the shell script
+// that produces bundles can be checked against the Go code that consumes
+// them, the same way RequiredBundleFiles lets packaging check the Windows
+// producer: a path that stopped matching between the two would otherwise
+// surface only as a client refusing an update it was just handed.
+func RequiredLinuxBundleFiles() []string {
+	return []string{
+		"install-user.sh", "SHA256SUMS", "VERSION", "bin/filees", "bin/filees-gui", "bin/filees-svn",
 		"share/icons/hicolor/scalable/apps/filees-gui.svg", "share/applications/filees-gui.desktop",
 		"share/systemd/user/filees.service", "share/filees/config.example.json",
-	} {
+	}
+}
+
+func validateLinuxBundle(root string) error {
+	for _, required := range RequiredLinuxBundleFiles() {
 		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(required)))
 		if err != nil {
 			return fmt.Errorf("bundle missing %s: %w", required, err)

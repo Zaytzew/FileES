@@ -32,6 +32,7 @@ func linuxBundle(t *testing.T) ([]byte, *releaseenvelope.Resolved) {
 		{name: "VERSION", typeflag: 0, mode: 0o644, data: "1.1\n"},
 		{name: "bin/filees", typeflag: 0, mode: 0o755, data: "daemon-new"},
 		{name: "bin/filees-gui", typeflag: 0, mode: 0o755, data: "gui-new"},
+		{name: "bin/filees-svn", typeflag: 0, mode: 0o755, data: "native-svn-new"},
 		{name: "share/icons/hicolor/scalable/apps/filees-gui.svg", typeflag: 0, mode: 0o644, data: "<svg/>"},
 		{name: "share/applications/filees-gui.desktop", typeflag: 0, mode: 0o644, data: "desktop"},
 		{name: "share/systemd/user/filees.service", typeflag: 0, mode: 0o644, data: "unit"},

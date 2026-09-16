@@ -13,6 +13,7 @@ rm -f \
     "$prefix/bin/filees" \
     "$prefix/bin/filees-gui" \
     "$prefix/bin/filees-pair-gui" \
+    "$prefix/bin/filees-svn" \
     "$data_home/applications/filees-gui.desktop" \
     "$data_home/icons/hicolor/scalable/apps/filees-gui.svg" \
     "$config_home/autostart/filees-gui.desktop" \

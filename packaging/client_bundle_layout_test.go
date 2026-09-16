@@ -39,6 +39,22 @@ func TestTheBundleBuilderStagesWhatTheInstallerRequires(t *testing.T) {
 	}
 }
 
+// Same check for the Linux producer in the same script, against
+// clientupdate.RequiredLinuxBundleFiles instead of the Windows list.
+func TestTheBundleBuilderStagesWhatTheLinuxInstallerRequires(t *testing.T) {
+	raw, err := os.ReadFile("build-client-bundle.sh")
+	if err != nil {
+		t.Fatalf("the client bundle builder is missing: %v", err)
+	}
+	script := string(raw)
+
+	for _, required := range clientupdate.RequiredLinuxBundleFiles() {
+		if !strings.Contains(script, required) {
+			t.Errorf("the bundle builder never stages %q, which the Linux installer requires", required)
+		}
+	}
+}
+
 // And the installer must not require something the script has no way to
 // provide - a requirement nobody produces fails every release, which is the
 // same fault pointing the other way.

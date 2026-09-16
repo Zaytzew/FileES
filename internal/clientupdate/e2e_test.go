@@ -116,14 +116,14 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
 	plan, err := service.Plan(ctx)
-	if err != nil || !plan.RestartRequired || len(plan.Changes) != 6 {
+	if err != nil || !plan.RestartRequired || len(plan.Changes) != 7 {
 		t.Fatalf("plan = %+v, %v", plan, err)
 	}
 	result, err := service.Apply(ctx)
 	if err != nil || result.InstalledVersion != "2.0.0" || !result.RestartRequired {
 		t.Fatalf("apply = %+v, %v", result, err)
 	}
-	for _, installed := range []string{".local/bin/filees", ".local/bin/filees-gui", ".local/bin/filees-pair-gui", ".config/filees/config.json"} {
+	for _, installed := range []string{".local/bin/filees", ".local/bin/filees-gui", ".local/bin/filees-pair-gui", ".local/bin/filees-svn", ".config/filees/config.json"} {
 		if _, err := os.Stat(filepath.Join(home, installed)); err != nil {
 			t.Fatalf("installed %s: %v", installed, err)
 		}
@@ -188,9 +188,10 @@ func makeE2EBundle(t *testing.T, root string) string {
 	writeE2EFile(t, filepath.Join(payload, "bin/filees"), []byte("#!/bin/sh\n[ \"$1\" = config-check ]\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "bin/filees-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "bin/filees-pair-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	writeE2EFile(t, filepath.Join(payload, "bin/filees-svn"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "VERSION"), []byte("2.0.0\n"), 0o644)
 	var sums strings.Builder
-	for _, name := range []string{"VERSION", "bin/filees", "bin/filees-gui", "bin/filees-pair-gui", "share/applications/filees-gui.desktop", "share/filees/config.example.json", "share/icons/hicolor/scalable/apps/filees-gui.svg", "share/systemd/user/filees.service"} {
+	for _, name := range []string{"VERSION", "bin/filees", "bin/filees-gui", "bin/filees-pair-gui", "bin/filees-svn", "share/applications/filees-gui.desktop", "share/filees/config.example.json", "share/icons/hicolor/scalable/apps/filees-gui.svg", "share/systemd/user/filees.service"} {
 		data, err := os.ReadFile(filepath.Join(payload, filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)

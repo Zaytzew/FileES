@@ -1,15 +1,16 @@
 #!/bin/sh
-# Assembles the Windows client bundle: the layout clientupdate.DirectoryInstaller
-# requires, and the layout the MSI is built from.
+# Assembles a client bundle: the layout the matching clientupdate installer
+# requires, and (Windows only) the layout the MSI is built from.
 #
 # It exists because there was no way to build one without staging a release into
 # a FILEES-BIN working copy. Installing locally therefore meant assembling the
 # bundle by hand, which is how a layout ends up defined in somebody's memory and
 # then quietly disagreeing with the code that unpacks it.
 #
-# One producer, two consumers: prepare-client-release-windows.sh calls this and
-# then packs and signs, build-msi.ps1 takes the same directory. A second copy of
-# these six steps is exactly the drift the layout test exists to catch.
+# One producer, two consumers per platform: a prepare-client-release-*.sh calls
+# this and then packs and signs; Windows also has build-msi.ps1 take the same
+# directory. A second copy of these steps is exactly the drift the layout test
+# exists to catch (packaging/client_bundle_layout_test.go).
 #
 #   REVISION=834 packaging/build-client-bundle.sh [output-dir]
 #
@@ -30,6 +31,7 @@ die() {
 
 case "$PLATFORM" in
 	windows-amd64) goos=windows; goarch=amd64; daemon=filees.exe; gui=filees-gui-wails.exe ;;
+	linux-amd64) goos=linux; goarch=amd64; daemon=filees; gui=filees-gui ;;
 	*) die "unsupported platform: $PLATFORM" ;;
 esac
 
@@ -67,31 +69,72 @@ if [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || [ -n "${FILEES_RELEASE_KEY_ID:-}" ] ||
 	release_ldflags="-X main.injectedClientReleasePublicKeyB64=$release_pubkey_b64 -X main.injectedClientReleaseKeyID=$FILEES_RELEASE_KEY_ID -X main.injectedClientReleaseRepoURL=$FILEES_RELEASE_REPO_URL -X main.injectedClientReleaseChannel=$FILEES_RELEASE_CHANNEL"
 fi
 
-[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
-[ -d "$FILEES_NATIVE_RUNTIME" ] || die "native runtime directory not found: $FILEES_NATIVE_RUNTIME"
 # Do not recursively erase an arbitrary caller-supplied output path.
 [ ! -e "$out" ] || die "output already exists; choose a fresh bundle directory: $out"
-mkdir -p "$out/bin" "$out/autostart"
 
 cd "$root"
-# Embed through an overlay, never overwrite generated assets in the source WC.
-# The old four-file updater and MSI therefore receive the complete runtime in
-# the same daemon image. Runtime extraction uses a content-addressed cache.
-native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
-trap 'rm -rf "$native_build"' EXIT HUP INT TERM
-go run ./cmd/filees-native-package "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
-# Only the interface gets -tags production and -H=windowsgui: the tag is a Wails
-# convention that drops the dev server and devtools, and the daemon is a console
-# program that must keep its console for `filees status` and friends.
-GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
-	-ldflags "-X main.version=$stamp $release_ldflags" \
-	-o "$out/bin/$daemon" ./cmd/filees
-GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
-	-ldflags "-H=windowsgui -X main.version=$stamp" \
-	-o "$out/bin/$gui" ./cmd/filees-gui-wails
 
-cp "$root/packaging/windows/autostart-supervisor.ps1" "$out/autostart/start-filees.ps1"
-cp "$root/packaging/windows/autostart-launch.vbs" "$out/autostart/start-filees.vbs"
+case "$PLATFORM" in
+windows-amd64)
+	[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
+	[ -d "$FILEES_NATIVE_RUNTIME" ] || die "native runtime directory not found: $FILEES_NATIVE_RUNTIME"
+	mkdir -p "$out/bin" "$out/autostart"
+
+	# Embed through an overlay, never overwrite generated assets in the source WC.
+	# The old four-file updater and MSI therefore receive the complete runtime in
+	# the same daemon image. Runtime extraction uses a content-addressed cache.
+	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
+	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
+	go run ./cmd/filees-native-package "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
+	# Only the interface gets -tags production and -H=windowsgui: the tag is a Wails
+	# convention that drops the dev server and devtools, and the daemon is a console
+	# program that must keep its console for `filees status` and friends.
+	GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
+		-ldflags "-X main.version=$stamp $release_ldflags" \
+		-o "$out/bin/$daemon" ./cmd/filees
+	GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
+		-ldflags "-H=windowsgui -X main.version=$stamp" \
+		-o "$out/bin/$gui" ./cmd/filees-gui-wails
+
+	cp "$root/packaging/windows/autostart-supervisor.ps1" "$out/autostart/start-filees.ps1"
+	cp "$root/packaging/windows/autostart-launch.vbs" "$out/autostart/start-filees.vbs"
+	;;
+linux-amd64)
+	mkdir -p "$out/bin" "$out/share/icons/hicolor/scalable/apps" "$out/share/applications" \
+		"$out/share/systemd/user" "$out/share/filees"
+
+	# Unlike Windows, the native SVN helper is not embedded in the daemon
+	# image: it ships as its own file, and the daemon finds it through
+	# FILEES_NATIVE_SVN (set by install-user.sh in the systemd unit it
+	# generates). "Developer builds and non-Windows releases keep explicit
+	# helper selection" - internal/nativeruntime/payload_external.go.
+	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
+	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
+	DIST="$native_build" sh "$root/packaging/build-native-svn.sh" >/dev/null
+	cp "$native_build/filees-svn" "$out/bin/filees-svn"
+
+	GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
+		-ldflags "-X main.version=$stamp $release_ldflags" \
+		-o "$out/bin/$daemon" ./cmd/filees
+	# GTK4/WebKitGTK 6 is the default Wails Linux target; no build tag needed
+	# (packaging/build-pair.sh builds the same way). "production" drops the
+	# dev server and devtools, same as every other platform.
+	GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
+		-ldflags "-X main.version=$stamp" \
+		-o "$out/bin/$gui" ./cmd/filees-gui-wails
+
+	cp "$root/packaging/linux/install-user.sh" "$out/install-user.sh"
+	cp "$root/packaging/linux/uninstall-user.sh" "$out/uninstall-user.sh"
+	chmod 0755 "$out/install-user.sh" "$out/uninstall-user.sh"
+	cp "$root/packaging/linux/filees-gui.desktop" "$out/share/applications/filees-gui.desktop"
+	cp "$root/packaging/linux/filees.service" "$out/share/systemd/user/filees.service"
+	cp "$root/packaging/linux/config.example.json" "$out/share/filees/config.example.json"
+	# The static app/launcher icon is the neutral brand mark, not a tray status
+	# icon: it must not encode connection state, only identify the app.
+	cp "$root/branded-assets/filees-space-symbol-square.svg" "$out/share/icons/hicolor/scalable/apps/filees-gui.svg"
+	;;
+esac
+
 printf '%s\n' "$client_version" >"$out/VERSION"
 
 # SHA256SUMS is how a human tells one bundle from another after the fact. The
@@ -109,16 +152,18 @@ printf '%s\n' "$client_version" >"$out/VERSION"
 # packed, signed and published, and the first sign of trouble would be a client
 # refusing an update it was just handed.
 #
-# These are the literal paths clientupdate.RequiredBundleFiles returns, and
-# packaging's layout test checks that these two lists still say the same thing.
-for required in \
-	VERSION \
-	SHA256SUMS \
-	bin/filees.exe \
-	bin/filees-gui-wails.exe \
-	autostart/start-filees.ps1 \
-	autostart/start-filees.vbs
-do
+# Windows: the literal paths clientupdate.RequiredBundleFiles returns. Linux:
+# clientupdate.RequiredLinuxBundleFiles. packaging's layout test checks that
+# these lists and this script still say the same thing.
+case "$PLATFORM" in
+windows-amd64)
+	required_list="VERSION SHA256SUMS bin/filees.exe bin/filees-gui-wails.exe autostart/start-filees.ps1 autostart/start-filees.vbs"
+	;;
+linux-amd64)
+	required_list="install-user.sh SHA256SUMS VERSION bin/filees bin/filees-gui bin/filees-svn share/icons/hicolor/scalable/apps/filees-gui.svg share/applications/filees-gui.desktop share/systemd/user/filees.service share/filees/config.example.json"
+	;;
+esac
+for required in $required_list; do
 	[ -f "$out/$required" ] || die "bundle is missing $required after the build"
 done
 

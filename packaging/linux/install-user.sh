@@ -8,6 +8,7 @@ config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 daemon_bin="$prefix/bin/filees"
 gui_bin="$prefix/bin/filees-gui"
 pair_gui_bin="$prefix/bin/filees-pair-gui"
+native_svn_bin="$prefix/bin/filees-svn"
 desktop="$data_home/applications/filees-gui.desktop"
 icon="$data_home/icons/hicolor/scalable/apps/filees-gui.svg"
 config_dir="$config_home/filees"
@@ -43,7 +44,13 @@ fi
 mkdir -p "$(dirname -- "$daemon_bin")" "$(dirname -- "$desktop")" "$(dirname -- "$icon")" "$unit_dir"
 install -m 0755 "$bundle/bin/filees" "$daemon_bin"
 install -m 0755 "$bundle/bin/filees-gui" "$gui_bin"
-install -m 0755 "$bundle/bin/filees-pair-gui" "$pair_gui_bin"
+# filees-pair-gui belongs to a companion-secret realm auto-join flow that is
+# not built by any producer yet; installed only when a bundle happens to
+# carry it, so this script does not fail on a feature that does not exist.
+if [ -f "$bundle/bin/filees-pair-gui" ]; then
+	install -m 0755 "$bundle/bin/filees-pair-gui" "$pair_gui_bin"
+fi
+install -m 0755 "$bundle/bin/filees-svn" "$native_svn_bin"
 install -m 0644 "$bundle/share/icons/hicolor/scalable/apps/filees-gui.svg" "$icon"
 
 escaped_gui=$(escape_sed_replacement "$gui_bin")
@@ -53,7 +60,8 @@ chmod 0644 "$desktop"
 
 escaped_daemon=$(escape_sed_replacement "$daemon_bin")
 escaped_config=$(escape_sed_replacement "$config")
-sed "s|@FILEES_BIN@|$escaped_daemon|g; s|@CONFIG_PATH@|$escaped_config|g" \
+escaped_native_svn=$(escape_sed_replacement "$native_svn_bin")
+sed "s|@FILEES_BIN@|$escaped_daemon|g; s|@CONFIG_PATH@|$escaped_config|g; s|@NATIVE_SVN_BIN@|$escaped_native_svn|g" \
     "$bundle/share/systemd/user/filees.service" > "$unit"
 chmod 0644 "$unit"
 
@@ -77,6 +85,9 @@ fi
 printf 'FileES client installed\n'
 printf '  daemon: %s\n' "$daemon_bin"
 printf '  GUI:    %s\n' "$gui_bin"
-printf '  pairing helper: %s\n' "$pair_gui_bin"
+if [ -f "$pair_gui_bin" ]; then
+	printf '  pairing helper: %s\n' "$pair_gui_bin"
+fi
+printf '  native SVN helper: %s\n' "$native_svn_bin"
 printf '  config: %s\n' "$config"
 printf 'Enable now with: systemctl --user enable --now filees.service\n'

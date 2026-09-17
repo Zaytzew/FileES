@@ -93,6 +93,40 @@ func TestDemoUsedSurvivesRemovalOfTheServerDirectory(t *testing.T) {
 	}
 }
 
+func TestDemoIsOfferedOnlyToAnInstallationWithoutAnyActivation(t *testing.T) {
+	base := t.TempDir()
+	if offer, err := DemoActivationOffer(base); err != nil || offer != DemoOfferAvailable {
+		t.Fatalf("fresh installation offer=%q err=%v", offer, err)
+	}
+	// While the demo itself is active there is nothing to offer, but nothing
+	// is spent by that alone either.
+	if offer, err := demoOfferFor(base, []string{DemoServerID}); err != nil || offer != DemoOfferUnavailable {
+		t.Fatalf("active demo offer=%q err=%v", offer, err)
+	}
+	if state, _ := LoadDemoInstallation(base); state.Used {
+		t.Fatal("an active demo profile spent the offer by itself")
+	}
+	// The first activation of any other server ends the offer for good, even
+	// after that server is gone again.
+	if offer, err := demoOfferFor(base, []string{"atmprojekt"}); err != nil || offer != DemoOfferUsed {
+		t.Fatalf("other activation offer=%q err=%v", offer, err)
+	}
+	if offer, err := DemoActivationOffer(base); err != nil || offer != DemoOfferUsed {
+		t.Fatalf("offer after the other server left=%q err=%v", offer, err)
+	}
+	if state, _ := LoadDemoInstallation(base); state.UsedReason != "other_activation" {
+		t.Fatalf("state=%+v", state)
+	}
+	called := false
+	never := func(context.Context, ServerProfile, string, string, string) (onboarding.OnboardResponse, error) {
+		called = true
+		return onboarding.OnboardResponse{}, nil
+	}
+	if _, _, err := beginDemoWithSubmit(t.Context(), base, "late@example.test", never); !errors.Is(err, ErrDemoUsed) || called {
+		t.Fatalf("demo after another activation err=%v called=%v", err, called)
+	}
+}
+
 func TestDemoResponseIsJudgedStrictly(t *testing.T) {
 	request := onboarding.OnboardRequest{Schema: onboarding.DemoOnboardRequestSchema, Email: "r@example.test", InstallationUID: uuid.NewString(), OnboardingRequestID: uuid.NewString()}
 	answer := func(response onboarding.OnboardResponse) error {

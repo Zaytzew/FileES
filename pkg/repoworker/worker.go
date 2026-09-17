@@ -620,6 +620,10 @@ func (w *Worker) loadRepositoryDump(ctx context.Context, session Session, ticket
 	if w.DumpLoader == nil {
 		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_UNAVAILABLE", "repository dump loading is not configured on this worker")
 	}
+	if w.Demo {
+		// svnadmin load bypasses pre-commit, and with it the realm quota.
+		return w.failure(ticket, DemoPolicyCode, "a demo server does not load repository dumps")
+	}
 	var payload control.LoadRepositoryDumpPayload
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err

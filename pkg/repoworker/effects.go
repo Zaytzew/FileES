@@ -32,8 +32,11 @@ type ServerEffects struct {
 	DataAuthzFile                       string
 	DeletionArchiveRoot                 string
 	DeletionRetentionDays               int
-	Authority                           AuthorityPublisher
-	Now                                 func() time.Time
+	// RealmQuotaBytes, when positive, bounds every repository of a realm
+	// together (demo servers); see InstallRealmQuota.
+	RealmQuotaBytes int64
+	Authority       AuthorityPublisher
+	Now             func() time.Time
 }
 
 func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID string) error {
@@ -192,4 +195,19 @@ func validRepo(path string) bool {
 		}
 	}
 	return true
+}
+
+// MarkRealmQuota places a new repository under its realm's quota before the
+// repository is published to any client. It does nothing without a quota.
+func (e ServerEffects) MarkRealmQuota(_ context.Context, repoID, realmID string) error {
+	if e.RealmQuotaBytes <= 0 {
+		return nil
+	}
+	if e.LockGuardExecutable == "" || !filepath.IsAbs(e.RepositoriesRoot) {
+		return errors.New("realm quota requires the worker hook executable and repositories root")
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return errors.New("realm quota repo_id must be a UUID")
+	}
+	return InstallRealmQuota(filepath.Join(e.RepositoriesRoot, repoID), e.LockGuardExecutable, realmID, e.RealmQuotaBytes)
 }

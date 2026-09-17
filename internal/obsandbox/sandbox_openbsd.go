@@ -65,7 +65,7 @@ func apply(profile Profile, execPromises string) error {
 	if err := Validate(profile); err != nil {
 		return err
 	}
-	for _, path := range profile.Paths {
+	for _, path := range UnveilPaths(profile) {
 		if err := unix.Unveil(path.Name, path.Perms); err != nil {
 			return fmt.Errorf("sandbox %s: unveil %s=%q perms=%s: %w", profile.Name, path.Label, path.Name, path.Perms, err)
 		}

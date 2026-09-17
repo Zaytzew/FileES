@@ -30,7 +30,7 @@ type recoveryEntryFixture struct {
 func newRecoveryEntryFixture(t *testing.T) recoveryEntryFixture {
 	t.Helper()
 	svnadmin := requireSVN(t, "svnadmin")[0]
-	root := t.TempDir()
+	root := sandboxedTestRoot(t)
 	results := filepath.Join(root, "results")
 	repositories := filepath.Join(root, "repositories")
 	archives := filepath.Join(results, "deleted-repositories")

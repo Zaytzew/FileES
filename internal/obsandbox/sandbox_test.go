@@ -2,7 +2,10 @@
 
 package obsandbox
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestValidateRejectsRelativeAndConfigurableLookingProfiles(t *testing.T) {
 	valid := Profile{Name: "tool/action", Promises: "stdio rpath", Paths: []Path{{Label: "input", Name: "/srv/filees/input", Perms: "r"}}}
@@ -28,5 +31,21 @@ func TestValidateRejectsRelativeAndConfigurableLookingProfiles(t *testing.T) {
 func TestNarrowRejectsEmptyPromises(t *testing.T) {
 	if err := Narrow(""); err == nil {
 		t.Fatal("empty runtime promise set accepted")
+	}
+}
+
+func TestUnveilPathsMergesRepeatedPathByUnion(t *testing.T) {
+	profile := Profile{Name: "tool/action", Promises: "stdio rpath", Paths: []Path{
+		{Label: "authz-parent", Name: "/srv/filees", Perms: "rwc"},
+		{Label: "input", Name: "/srv/filees/input", Perms: "r"},
+		{Label: "wc-parent", Name: "/srv/filees/", Perms: "r"},
+		{Label: "binary", Name: "/srv/filees", Perms: "rx"},
+	}}
+	want := []Path{
+		{Label: "authz-parent+wc-parent+binary", Name: "/srv/filees", Perms: "rwxc"},
+		{Label: "input", Name: "/srv/filees/input", Perms: "r"},
+	}
+	if got := UnveilPaths(profile); !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnveilPaths = %+v, want %+v", got, want)
 	}
 }

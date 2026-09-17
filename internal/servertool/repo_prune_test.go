@@ -138,10 +138,8 @@ func writeBackendRecordFixture(t *testing.T, resultsRoot, operationID, realmID, 
 // FSFS content and are prunable; "fsfs_created" has a real, unpublished FSFS
 // directory behind it and must never be silently deleted with --apply.
 func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
-	if isolateSandboxingTest(t, "TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords") {
-		return
-	}
-	permitRepeatedSandbox(t)
+	// Several dispatcher calls: each runs in a process of its own, as it does
+	// for an operator, so every profile is exercised for real.
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	realmID := "8f14e45f-ceea-467e-adde-3fb5787cd831"
 	published := "11111111-1111-4111-8111-111111111111"
@@ -163,7 +161,7 @@ func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if code := RunAdmin([]string{"-config", configPath, "repo", "check-state"}, &stdout, &stderr); code != ExitOK {
+	if code := runAdminInvocation(t, []string{"-config", configPath, "repo", "check-state"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("check-state exit=%d stderr=%s", code, stderr.String())
 	}
 	var checkResult struct {
@@ -192,7 +190,7 @@ func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
 	// Dry run (no --apply): nothing on disk changes.
 	stdout.Reset()
 	stderr.Reset()
-	if code := RunAdmin([]string{"-config", configPath, "repo", "prune", "-older-than", "0s"}, &stdout, &stderr); code != ExitOK {
+	if code := runAdminInvocation(t, []string{"-config", configPath, "repo", "prune", "-older-than", "0s"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("prune dry-run exit=%d stderr=%s", code, stderr.String())
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"status":"dry_run"`)) {
@@ -207,7 +205,7 @@ func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
 	// Apply: only allocated and rolled_back are removed.
 	stdout.Reset()
 	stderr.Reset()
-	if code := RunAdmin([]string{"-config", configPath, "repo", "prune", "-older-than", "0s", "-apply"}, &stdout, &stderr); code != ExitOK {
+	if code := runAdminInvocation(t, []string{"-config", configPath, "repo", "prune", "-older-than", "0s", "-apply"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("prune --apply exit=%d stderr=%s", code, stderr.String())
 	}
 	for _, id := range []string{allocated, rolledBack} {
@@ -257,10 +255,8 @@ func TestRepoPruneRespectsOlderThan(t *testing.T) {
 // even one committed revision, and an ordinary deletion tombstone are all
 // preserved. Only a durable prune_pending marker may resume from deleted.
 func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T) {
-	if isolateSandboxingTest(t, "TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository") {
-		return
-	}
-	permitRepeatedSandbox(t)
+	// Several dispatcher calls: each runs in a process of its own, as it does
+	// for an operator, so every profile is exercised for real.
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
 	if err != nil {
@@ -323,7 +319,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 	writeBackendRecordFixture(t, resultsRoot, pruneRetry.operationID, realmID, pruneRetry.repoID, "prune_pending")
 
 	var stdout, stderr bytes.Buffer
-	if code := RunAdmin([]string{"-config", configPath, "repo", "check-state"}, &stdout, &stderr); code != ExitOK {
+	if code := runAdminInvocation(t, []string{"-config", configPath, "repo", "check-state"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("check-state exit=%d stderr=%s", code, stderr.String())
 	}
 	var check struct {
@@ -354,7 +350,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := RunAdmin([]string{"-config", configPath, "repo", "prune", "-older-than", "0s", "-apply"}, &stdout, &stderr); code != ExitOK {
+	if code := runAdminInvocation(t, []string{"-config", configPath, "repo", "prune", "-older-than", "0s", "-apply"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("prune --apply exit=%d stderr=%s", code, stderr.String())
 	}
 	for _, item := range []repositoryCase{ghost, pruneRetry} {

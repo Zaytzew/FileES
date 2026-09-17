@@ -3,6 +3,10 @@
 package servertool
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -47,7 +51,7 @@ func isolateSandboxingTest(t *testing.T, name string) bool {
 		return false
 	}
 	command := exec.Command(os.Args[0], "-test.run=^"+name+"$", "-test.v")
-	command.Env = append(os.Environ(), sandboxChildEnv+"=1")
+	command.Env = append(os.Environ(), sandboxChildEnv+"=1", sandboxedTestRootEnv+"="+t.TempDir())
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("sandboxed child %s: %v: %s", name, err, output)
@@ -131,6 +135,87 @@ func permitRepeatedSandbox(t *testing.T) {
 		sandboxApply, sandboxApplyForExec = realApply, realApplyForExec
 		sandboxPledgeForExec = realPledgeForExec
 	})
+}
+
+// sandboxedTestRootEnv carries a scratch directory owned by the parent of an
+// isolated child. See sandboxedTestRoot.
+const sandboxedTestRootEnv = "FILEES_SANDBOXED_TEST_ROOT"
+
+// sandboxedTestRoot returns a scratch directory which the sandboxed child
+// never has to remove.
+//
+// sandboxTempDir tolerates a failed removal, but only one refused by unveil,
+// which reports EACCES. A dispatcher pledged without cpath - the recovery
+// entry holds only "stdio rpath" - is not refused: the kernel kills it on the
+// unlink with SIGABRT. Measured on OpenBSD 7.9 on 2026-09-17 with ktrace:
+// every assertion passed and the child still died in t.TempDir's cleanup
+// ("PLDG unlink, cpath"), which the parent reported as "abort trap".
+//
+// So in the child the directory belongs to the parent, which removes it
+// after the child has exited. Elsewhere it is an ordinary t.TempDir.
+func sandboxedTestRoot(t *testing.T) string {
+	t.Helper()
+	if os.Getenv(sandboxChildEnv) != "" {
+		if root := os.Getenv(sandboxedTestRootEnv); root != "" {
+			return root
+		}
+	}
+	return t.TempDir()
+}
+
+// adminInvocationEnv carries the arguments of one filees-admin invocation to
+// TestAdminInvocationChild.
+const adminInvocationEnv = "FILEES_ADMIN_INVOCATION_ARGS"
+
+// runAdminInvocation runs one filees-admin invocation the way production does:
+// in a process of its own.
+//
+// permitRepeatedSandbox keeps later invocations from re-pledging, but it cannot
+// give them back the filesystem. Each invocation loads and validates its
+// config before its own unveil, so a later one does that under the table the
+// first one locked. Measured on OpenBSD 7.9 on 2026-09-17: `repo check-state`
+// unveils svn but not svnserve, and the following `repo prune` then failed
+// config validation with "lstat /usr/local/bin/svnserve: no such file or
+// directory" - a sequence an operator, starting each command afresh, cannot
+// produce. A test driving several dispatcher calls through here exercises
+// every profile for real instead of only the first.
+func runAdminInvocation(t *testing.T, args []string, stdout, stderr *bytes.Buffer) int {
+	t.Helper()
+	if runtime.GOOS != "openbsd" {
+		return RunAdmin(args, stdout, stderr)
+	}
+	encoded, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestAdminInvocationChild$")
+	command.Env = append(os.Environ(), adminInvocationEnv+"="+string(encoded))
+	command.Stdout, command.Stderr = stdout, stderr
+	err = command.Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.Exited() {
+		return exitErr.ExitCode()
+	}
+	if err != nil {
+		t.Fatalf("filees-admin %v child: %v: stderr=%s", args, err, stderr.String())
+	}
+	return ExitOK
+}
+
+// TestAdminInvocationChild is the process runAdminInvocation starts. Run
+// without its environment it does nothing. It exits directly so that neither
+// testing's own output nor any cleanup runs after the dispatcher's sandbox.
+func TestAdminInvocationChild(t *testing.T) {
+	raw := os.Getenv(adminInvocationEnv)
+	if raw == "" {
+		return
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		fmt.Fprintln(os.Stderr, "admin invocation arguments:", err)
+		os.Exit(ExitSoftware)
+	}
+	os.Exit(RunAdmin(args, os.Stdout, os.Stderr))
 }
 
 // sandboxTempDir returns a scratch directory for a test that sandboxes its own

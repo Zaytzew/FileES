@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,11 +26,24 @@ import (
 	"filees/public-shares/channel"
 )
 
+// s1StepEnv selects one step of TestS1FilesystemWorkflow in a child process.
+const (
+	s1StepEnv      = "FILEES_S1_STEP"
+	s1ConfigEnv    = "FILEES_S1_CONFIG"
+	s1RequestIDEnv = "FILEES_S1_REQUEST_ID"
+)
+
+// TestS1FilesystemWorkflow runs ticket create, take, a repeated take and mail
+// send against one real server.json. Natively every step is its own process,
+// as it is for an operator and for sshd: the steps load their config before
+// their own unveil, so run in one process a later step saw only the table the
+// earlier one had locked and failed with "lstat .../server.json: no such file
+// or directory" (OpenBSD 7.9, 2026-09-17).
 func TestS1FilesystemWorkflow(t *testing.T) {
-	if isolateSandboxingTest(t, "TestS1FilesystemWorkflow") {
+	if step := os.Getenv(s1StepEnv); step != "" {
+		runS1WorkflowStep(t, step, os.Getenv(s1ConfigEnv), os.Getenv(s1RequestIDEnv))
 		return
 	}
-	permitRepeatedSandbox(t)
 	root := filepath.Join(t.TempDir(), "service")
 	if err := onboarding.Initialize(root); err != nil {
 		t.Fatal(err)
@@ -62,45 +77,17 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var stdout, stderr bytes.Buffer
-	originalSubmit := smtpSubmit
-	t.Cleanup(func() { smtpSubmit = originalSubmit })
-	var submitted []smtpsubmit.Request
-	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
-		submitted = append(submitted, request)
-		return nil
-	}
-	code := RunAdmin([]string{"-config", configPath, "ticket", "create", "alice@example.test", "-ttl", "1h"}, &stdout, &stderr)
-	if code != ExitOK {
-		t.Fatalf("ticket create exit=%d stderr=%s", code, stderr.String())
-	}
-	if len(submitted) != 1 || submitted[0].Recipient != "alice@example.test" || !bytes.Contains(submitted[0].Message, []byte("FileES activation invitation")) {
-		t.Fatalf("ticket create did not deliver invitation: %+v", submitted)
-	}
-
 	requestID := uuid.NewString()
-	request, _ := json.Marshal(onboarding.OnboardRequest{Schema: onboarding.LegacyOnboardRequestSchema, Email: "alice@example.test", OnboardingRequestID: requestID})
-	stdout.Reset()
-	stderr.Reset()
-	code = RunOnboard([]string{"-config", configPath, "take"}, bytes.NewReader(request), &stdout, &stderr)
-	if code != ExitOK {
-		t.Fatalf("take exit=%d stderr=%s", code, stderr.String())
-	}
-	stdout.Reset()
-	stderr.Reset()
-	code = RunOnboard([]string{"-config", configPath, "take"}, bytes.NewReader(request), &stdout, &stderr)
-	if code != ExitOK {
-		t.Fatalf("idempotent take exit=%d stderr=%s", code, stderr.String())
-	}
-
-	stdout.Reset()
-	stderr.Reset()
-	code = RunMail([]string{"-config", configPath, "send"}, &stdout, &stderr)
-	if code != ExitOK || !strings.Contains(stdout.String(), `"status":"queued"`) {
-		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
-	}
-	if len(submitted) != 2 || submitted[1].Recipient != "alice@example.test" || !bytes.Contains(submitted[1].Message, []byte("FileES onboarding code")) {
-		t.Fatalf("unexpected SMTP requests: %+v", submitted)
+	for _, step := range []string{"ticket-create", "take", "take-again", "mail-send"} {
+		if runtime.GOOS != "openbsd" {
+			runS1WorkflowStep(t, step, configPath, requestID)
+			continue
+		}
+		command := exec.Command(os.Args[0], "-test.run=^TestS1FilesystemWorkflow$", "-test.v")
+		command.Env = append(os.Environ(), s1StepEnv+"="+step, s1ConfigEnv+"="+configPath, s1RequestIDEnv+"="+requestID)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("S1 step %s child: %v: %s", step, err, output)
+		}
 	}
 
 	config, err := serverconfig.LoadFor(configPath, 0)
@@ -117,6 +104,44 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 	}
 	if entries[0].DeliveryState != onboarding.DeliveryQueued || entries[0].DeliveryAddress != "" || entries[0].OTP != "" {
 		t.Fatalf("queued outbox retained delivery secret: %+v", entries[0])
+	}
+}
+
+func runS1WorkflowStep(t *testing.T, step, configPath, requestID string) {
+	t.Helper()
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	var submitted []smtpsubmit.Request
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submitted = append(submitted, request)
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	request, _ := json.Marshal(onboarding.OnboardRequest{Schema: onboarding.LegacyOnboardRequestSchema, Email: "alice@example.test", OnboardingRequestID: requestID})
+	switch step {
+	case "ticket-create":
+		code := RunAdmin([]string{"-config", configPath, "ticket", "create", "alice@example.test", "-ttl", "1h"}, &stdout, &stderr)
+		if code != ExitOK {
+			t.Fatalf("ticket create exit=%d stderr=%s", code, stderr.String())
+		}
+		if len(submitted) != 1 || submitted[0].Recipient != "alice@example.test" || !bytes.Contains(submitted[0].Message, []byte("FileES activation invitation")) {
+			t.Fatalf("ticket create did not deliver invitation: %+v", submitted)
+		}
+	case "take", "take-again":
+		code := RunOnboard([]string{"-config", configPath, "take"}, bytes.NewReader(request), &stdout, &stderr)
+		if code != ExitOK {
+			t.Fatalf("%s exit=%d stderr=%s", step, code, stderr.String())
+		}
+	case "mail-send":
+		code := RunMail([]string{"-config", configPath, "send"}, &stdout, &stderr)
+		if code != ExitOK || !strings.Contains(stdout.String(), `"status":"queued"`) {
+			t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+		}
+		if len(submitted) != 1 || submitted[0].Recipient != "alice@example.test" || !bytes.Contains(submitted[0].Message, []byte("FileES onboarding code")) {
+			t.Fatalf("unexpected SMTP requests: %+v", submitted)
+		}
+	default:
+		t.Fatalf("unknown S1 step %q", step)
 	}
 }
 

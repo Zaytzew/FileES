@@ -69,11 +69,11 @@
 <div class="manual-content">
 <h1 id="ch1">Rozdział 1: Mechanika i architektura</h1><div class="chapter-content">
 <h2 id="ch1-overview">1.1 Przegląd protokołu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Obowiązujący kontrakt architektoniczny oraz przetestowane fundamenty klienta i serwera.</span></div><div class="note"><strong>Reguła podręcznika:</strong> istotne wybory architektoniczne są zapisane wraz z odrzuconymi alternatywami i kosztem. To część specyfikacji, nie komentarz historyczny.</div>
-<p>FileES jest demonem synchronizacji plików, który utrzymuje lokalne katalogi robocze w zgodności ze zdalnym repozytorium SVN. SVN pełni rolę warstwy transportu i trwałego magazynu; użytkownik nie musi korzystać z pojęć kontroli wersji. Z jego perspektywy FileES ma po prostu utrzymywać pliki w synchronizacji.</p>
+<p>FileES jest demonem synchronizacji plików, który utrzymuje lokalne katalogi robocze w zgodności ze zdalnym repozytorium SVN. SVN pełni rolę warstwy transportu i trwałego magazynu; użytkownik nie musi korzystać z pojęć kontroli wersji. Z jego perspektywy FileES ma po prostu utrzymywać synchronizację plików.</p>
 <p>System jest zaprojektowany wokół następujących zasad:</p>
 <ul>
-<li><strong>Zbieżność, nie dziennikowanie.</strong> Okresowy skaner rejestruje stan końcowy między tyknięciami. Kilka operacji na systemie plików wykonanych między dwoma skanami może zostać ujętych w jednym zatwierdzeniu SVN.</li>
-<li><strong>Bez utraty danych.</strong> Stan oczekujących zatwierdzeń jest zapisywana atomowo na dysk po każdym zdarzeniu. Jeśli demon umrze między przyjęciem zatwierdzenia przez serwer a aktualizacją metadanych kopii roboczej, następny restart uzgadnia stan, odpytując status SVN i pomijając już przyjęte wpisy.</li>
+<li><strong>Zbieżność, nie dziennikowanie.</strong> Okresowy skaner rejestruje stan końcowy między kolejnymi cyklami skanowania. Kilka operacji na systemie plików wykonanych między dwoma skanami może zostać ujętych w jednym zatwierdzeniu SVN.</li>
+<li><strong>Bez utraty danych.</strong> Stan oczekujących zatwierdzeń jest zapisywany atomowo na dysk po każdym zdarzeniu. Jeśli demon umrze między przyjęciem zatwierdzenia przez serwer a aktualizacją metadanych kopii roboczej, następny restart uzgadnia stan, odpytując status SVN i pomijając już przyjęte wpisy.</li>
 <li><strong>HEAD wygrywa.</strong> Konflikty są rozwiązywane przez zachowanie wersji serwera. Lokalna wersja konfliktowa jest zachowywana w katalogu ze znacznikiem czasu <code>!kolizje/</code> zanim zostanie wywołane <code>svn resolve --accept theirs-full</code>.</li>
 <li><strong>Aktywacja inicjowana przez klienta.</strong> Tożsamość klienta (para kluczy Ed25519) jest wystawiana przez serwer przez odwrotny tunel SSH inicjowany przez klienta. Serwer nigdy nie przechowuje klucza prywatnego.</li>
 </ul><div class="decision">
@@ -82,7 +82,7 @@
 <div class="decision-label">Decyzja</div><div class="decision-value">Okresowy skaner rejestruje obserwowalny stan końcowy na granicach skanów.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">FileES synchronizuje zbieżność treści; nie musi odtwarzać każdego gestu użytkownika ani wywołania systemowego na systemie plików.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Użycie inotify/fsnotify jako źródła prawdy; utrzymywanie trwałego dziennika operacji.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Kilka operacji między skanami może zwinąć się do jednego zatwierdzenia albo do operacją pustą.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Kilka operacji między skanami może zwinąć się do jednego zatwierdzenia albo do pustej operacji.</div>
 </div>
 </div>
 <h3 id="system-topology">Topologia systemu</h3>
@@ -291,7 +291,7 @@
 <div class="figure-legend"><span class="authority">autorytatywny trwały stan</span><span class="derived">widok pochodny lub lokalny dla maszyny</span><span class="transient">trwały artefakt przebieg operacji, nie prawda domenowa</span></div>
 </figure>
 <h3 id="onboarding-lifecycle">Cykl aktywacji klienta</h3>
-<p>Zweryfikowany pion aktywacji dochodzi do <code>active</code>. Każda granica jest utrwalana przed następnym efektem zewnętrznym, co pozwala na wygaśnięcie albo odtwarzanie z bezpieczną odmową bez wnioskowania o ukrytym stanie procesu.</p>
+<p>Zweryfikowany proces aktywacji kończy się stanem <code>active</code>. Każda granica jest utrwalana przed następnym efektem zewnętrznym, co pozwala na wygaśnięcie albo odtwarzanie z bezpieczną odmową bez wnioskowania o ukrytym stanie procesu.</p>
 <figure class="system-figure">
 <figcaption><span class="figure-kicker">Wykres C</span>Stany aktywacji klienta widoczne po awarii aż do active</figcaption>
 <div class="diagram-scroll">
@@ -329,29 +329,29 @@
 </div>
 </figure>
 <div class="design-boundary"><strong>Reguła odczytu:</strong> węzeł diagramu opisuje właścicielstwo albo kontrakt, niekoniecznie proces, który pozostaje rezydentny. Na serwerze większość węzłów to krótkotrwałe polecenia nad plikami i systemowym <code>sshd</code>.</div>
-<h2 id="ch1-client-arch">1.2 Architektura klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Mechanika klienta, odzyskiwanie i granice IPC są pokryte testami integracyjnymi i chaosowymi.</span></div>
+<h2 id="ch1-client-arch">1.2 Architektura klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Mechanika klienta, odzyskiwanie i granice IPC zostały objęte testami integracyjnymi i chaosowymi.</span></div>
 <h3>Mapa modułów</h3>
 <div class="table-wrap"><table class="field-table">
 <tr><th>Obszar</th><th>Moduły</th><th>Odpowiedzialność</th></tr>
 <tr><td>Prezentacja pulpitu</td><td><code>cmd/filees-gui-wails</code>, <code>internal/gui/*</code></td><td>Okno Wails i zasobnik, model widoku, akcje, natywne dialogi, powiadomienia oraz katalog prezentacji w pięciu językach; bez właścicielstwa SVN ani silnika.</td></tr>
 <tr><td>Granica lokalna</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Protokół GUI/CLI do demona z bramkowaniem po uprawnieniach przez lokalne gniazdo domeny Uniksa (AF_UNIX, w tym Windows).</td></tr>
-<tr><td>Cykl życia klienta</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projekcja, trwały stan podłączenia, operacje create/attach/import oraz dynamiczne środowiska uruchomieniowe repozytoriów.</td></tr>
-<tr><td>Silnik repozytorium</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Skanowanie, update/publish, dzierżawy edycji i jedyna granica Subversion: CLI <code>svn</code> albo na Windows natywny program pomocniczy <code>filees-svn</code>.</td></tr>
-<tr><td>Język błędów i wydania</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Wspólny katalog kodów i komunikatów, klasyfikacja diagnostyki oraz marker wydania w <code>svn:log</code> z lokalnym lokalną skrzynką zdarzeń.</td></tr>
-<tr><td>Autorytet serwera</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Uwierzytelnione zlecenia, kanoniczne rekordy repozytorium/uprawnienie/polityki oraz procesy wykonawcze wymuszone polecenie. Nie ma rezydentnego demona serwera FileES.</td></tr>
+<tr><td>Cykl życia klienta</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projekcja, trwały stan podłączenia, operacje tworzenia, podłączania i importu oraz dynamiczne środowiska uruchomieniowe repozytoriów.</td></tr>
+<tr><td>Silnik repozytorium</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Skanowanie, aktualizacja i publikacja, dzierżawy edycji oraz jedyna granica Subversion: interfejs wiersza poleceń <code>svn</code> albo w systemie Windows natywny program pomocniczy <code>filees-svn</code>.</td></tr>
+<tr><td>Język błędów i wydania</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Wspólny katalog kodów i komunikatów, klasyfikacja diagnostyki oraz znacznik wydania w <code>svn:log</code> z lokalną skrzynką zdarzeń.</td></tr>
+<tr><td>Autorytet serwera</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Uwierzytelnione zlecenia, kanoniczne rekordy repozytorium, uprawnienia i polityki oraz procesy wykonawcze uruchamiane wymuszonym poleceniem. Nie ma rezydentnego demona serwera FileES.</td></tr>
 <tr><td>Aktywacja i widok usługowy</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Tożsamość instalacji, autoryzowane dołączenie do strefy i projekcja repozytorium usługowego specyficzna dla klienta.</td></tr>
-<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code> (pojedyncza wrzutka o innej treści na tej samej ścieżce zostaje odstawiona jako konflikt, a wchłaniany folder nadpisuje), publiczna dystrybucja odczytu oddzielona od poświadczeń zapisu pulpitu oraz mały program pomocniczy setuid, który naprawia wyłącznie właścicielstwo usługowej WC.</td></tr>
-<tr><td>Półki przyjęcia</td><td><code>public-shares/web</code>, <code>public-shares/channel</code>, <code>internal/uploadworker</code>, <code>pkg/ipcserver</code>, <code>cmd/filees</code></td><td>Zamknięta strona wysyłania, która zapisuje wyłącznie do kolejki przyjęcia; proces <code>upload-reap</code>, który skanuje i zatwierdza do repozytorium półki albo do drzewa odrzutów; na pulpicie lista zawartości półki i wybiórcze pobranie tylko do odczytu i na żądanie oraz umieszczenie w kopii roboczej rodzica bez nadpisywania. Pliki płyną tylko w jedną stronę: od wnoszącego przez HTTP na półkę i z półki do właściciela na jego żądanie.</td></tr>
+<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny: odczyt udziału i zapis wyłącznie pod <code>mobile-uploads/</code> (pojedyncze przesłanie innej treści na tej samej ścieżce jest odstawiane jako konflikt, a przy wchłanianiu obowiązuje nadpisanie folderu), publiczne udostępnianie do odczytu oddzielone od poświadczeń zapisu pulpitu oraz mały program pomocniczy setuid, który naprawia wyłącznie właścicielstwo usługowej kopii roboczej.</td></tr>
+<tr><td>Półki przyjęcia</td><td><code>public-shares/web</code>, <code>public-shares/channel</code>, <code>internal/uploadworker</code>, <code>pkg/ipcserver</code>, <code>cmd/filees</code></td><td>Zamknięta strona wysyłania, która zapisuje wyłącznie do kolejki przyjęcia; proces <code>upload-reap</code>, który skanuje i zatwierdza do repozytorium półki albo do drzewa odrzutów; na pulpicie lista zawartości półki i wybiórcze pobieranie wyłącznie na żądanie oraz umieszczenie w kopii roboczej rodzica bez nadpisywania. Przepływ plików jest jednokierunkowy: od nadawcy przez HTTP na półkę i z półki do właściciela na jego żądanie.</td></tr>
 <tr><td>Wydanie / instalacja</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Podpisane aktualizacje pulpitu, instalacja serwera sterowana manifestem i koperty wydań.</td></tr>
 </table></div>
 <p>Dla każdego skonfigurowanego repozytorium demon uruchamia niezależny potok:</p>
-<pre><code>Scanner (watcher) --events--&gt; Commit Service --svn--&gt; SVN server
+<pre><code>Skaner (watcher) --zdarzenia--&gt; Usługa zatwierdzania --svn--&gt; serwer SVN
                                      |
-                               HEAD Poller
+                            Odpytywanie HEAD
                                      |
-                              Reconciliation</code></pre>
+                               Uzgadnianie</code></pre>
 <h4>Skaner (<code>pkg/watcher</code>)</h4>
-<p>Okresowo obchodzi drzewo kopii roboczej i porównuje bieżący stan z manifestem zapisanym w <code>.filees/state/manifest.json</code>. Wykrywanie zmian używa mtime, rozmiaru i skrótu MD5. Pliki poniżej 64 MiB są hashowane w linii w ramach budżetu na skan; większe pliki są kolejkowane w trwałym kolejce MD5, przetwarzane po jednym przez proces w tle, który zawsze wybiera najmniejszy oczekujący plik. To umożliwia wykrywanie zmian nazw nawet dla dużych plików.</p>
+<p>Okresowo obchodzi drzewo kopii roboczej i porównuje bieżący stan z manifestem zapisanym w <code>.filees/state/manifest.json</code>. Wykrywanie zmian używa mtime, rozmiaru i skrótu MD5. Pliki poniżej 64 MiB otrzymują skrót w ramach bieżącego skanu i jego budżetu; większe pliki są kolejkowane w trwałej kolejce MD5, przetwarzane po jednym przez proces w tle, który zawsze wybiera najmniejszy oczekujący plik. To umożliwia wykrywanie zmian nazw nawet dla dużych plików.</p>
 <p>Zdarzenia usunięcia są łączone przez krótki czas przez 5 minut (równo z opóźnieniem nowego pliku), żeby plik usunięty i natychmiast utworzony ponownie nie wyprodukował fałszywego zatwierdzenia usunięcia. Podczas aktywnego zatwierdzenia (flaga <code>commit.busy</code>) skaner przełącza się w tryb lekki i obserwuje wyłącznie <code>.filees/tickets/</code>.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / okresowy skaner zamiast zależności od zdarzeń OS</div>
 <div class="decision-grid">
@@ -362,7 +362,7 @@
 </div>
 </div>
 <h4>Usługa zatwierdzenia (<code>pkg/commit</code>)</h4>
-<p>Scala zdarzenia skanera dla każdej ścieżki i przy każdym cyklu zatwierdzania tworzy partie ograniczone przez <code>max_batch_files</code> (domyślnie 100) oraz <code>max_batch_mib</code> (domyślnie 512 MiB). Pojedynczy plik większy niż limit MiB dostaje własną partię, żeby nie zagłodził kolejki. Jeśli suma bajtów oczekujących danych osiągnie <code>backlog_flush_mib</code> (domyślnie 1024 MiB) i przynajmniej jeden wpis jest poza oknem opóźnienia nowego pliku, wymuszane jest zatwierdzenie bez czekania na regularny interwał.</p>
+<p>Usługa scala zdarzenia skanera dla każdej ścieżki i przy każdym cyklu zatwierdzania tworzy partie ograniczone przez <code>max_batch_files</code> (domyślnie 100) oraz <code>max_batch_mib</code> (domyślnie 512 MiB). Pojedynczy plik większy od limitu MiB dostaje własną partię, żeby nie zagłodził kolejki. Jeśli suma bajtów oczekujących danych osiągnie <code>backlog_flush_mib</code> (domyślnie 1024 MiB) i przynajmniej jeden wpis jest poza oknem opóźnienia nowego pliku, wymuszane jest zatwierdzenie bez czekania na regularny interwał.</p>
 <p>Przed każdą operacją SVN każda ścieżka jest ponownie klasyfikowana przez <code>svn status --xml --verbose</code>, żeby potwierdzić jej rzeczywisty stan w kopii roboczej. Puste zatwierdzenia są zabronione.</p>
 <p>Reguły scalania zdarzeń:</p>
 <div class="table-wrap"><table>
@@ -372,26 +372,26 @@
 <tr><td><code>Deleted + Added</code></td><td><code>Added</code> (plik wrócił)</td></tr>
 <tr><td><code>Renamed</code> ze źródłem niewersjonowanym</td><td>Degradacja do <code>Added</code></td></tr>
 </table></div><div class="decision">
-<div class="decision-head">Uzasadnienie projektu / planner planuje; committer publikuje</div>
+<div class="decision-head">Uzasadnienie projektu / planista planuje, a proces zatwierdzający publikuje</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Wybór partii i publikacja pozostają osobnymi odpowiedzialnościami nawet wtedy, gdy obie rosną pod testami chaosowymi.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Planowanie odpowiada za porządek, rozmiar i reguły zagłodzenia. Publikacja odpowiada za efekty SVN, potwierdzenie i uzgadnianie.</div>
-<div class="decision-label">Odrzucono</div><div class="decision-value">Dzielenie według liczby linii; pozwolenie publisherowi wymyślać politykę partiowania; wyciąganie fragmentów bez skończonego kontraktu.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Planner i committer mogą pozostać duże, ponieważ obsługa awarii pogłębia ich odpowiedzialność, nie poszerzając jej.</div>
+<div class="decision-label">Odrzucono</div><div class="decision-value">Dzielenie według liczby linii; pozwolenie procesowi publikującemu na wymyślanie polityki partiowania; wyciąganie fragmentów bez skończonego kontraktu.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Planista i proces zatwierdzający mogą pozostać rozbudowane, ponieważ obsługa awarii pogłębia ich odpowiedzialność, nie poszerzając jej.</div>
 </div>
 </div>
-<h4>Odpytywacz HEAD i uzgadnianie</h4>
-<p>Co <code>poll_interval</code> (domyślnie 30 s) demon pobiera rewizję HEAD serwera. Jeśli HEAD przekracza rewizję lokalną, wywoływane jest <code>svn update</code>. Przed każdą aktualizacją uruchamiany jest pełny rekurencyjny status; wpis <code>missing</code> odkłada aktualizację, żeby lokalne usunięcia i źródła zmian nazw nie zostały odtworzone z serwera. Konflikty znalezione po aktualizacji są obsługiwane przez skopiowanie wersji lokalnej do <code>!kolizje/&lt;timestamp&gt;_lokalne/</code> z plikiem towarzyszącym <code>.meta</code>, następnie wywołanie <code>svn resolve --accept theirs-full</code> i wyemitowanie błędu <code>RECON-3002</code>.</p><div class="decision">
+<h4>Odpytywanie HEAD i uzgadnianie</h4>
+<p>W odstępach określonych przez wartość <code>poll_interval</code> (domyślnie 30 s) demon pobiera rewizję HEAD serwera. Jeśli HEAD jest nowszy od rewizji lokalnej, wywoływane jest <code>svn update</code>. Przed każdą aktualizacją uruchamiany jest pełny status rekurencyjny; wpis <code>missing</code> odkłada aktualizację, żeby lokalne usunięcia i źródła zmian nazw nie zostały odtworzone z serwera. Konflikty znalezione po aktualizacji są obsługiwane przez skopiowanie wersji lokalnej do <code>!kolizje/&lt;timestamp&gt;_lokalne/</code> z plikiem towarzyszącym <code>.meta</code>, następnie wywołanie <code>svn resolve --accept theirs-full</code> i zgłoszenie błędu <code>RECON-3002</code>.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / HEAD wygrywa bez cichej utraty lokalnej</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Wersja serwera rozstrzyga konflikt kopii roboczej, ale wersja lokalna jest najpierw kopiowana do <code>!kolizje/</code>.</div>
-<div class="decision-label">Dlaczego</div><div class="decision-value">Demon musi zbiegać bez interaktywnego blokowania, zachowując każdy konfliktowy ładunek lokalny do późniejszego przeglądu.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Demon musi osiągać zbieżność bez interaktywnego blokowania, zachowując każdą lokalną kopię konfliktową do późniejszego przeglądu.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Interaktywne dialogi merge w demonie; ciche odrzucenie którejkolwiek strony; pozostawienie kopii roboczej w konflikcie na czas nieokreślony.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Użytkownicy mogą musieć ręcznie przeglądać kopie konfliktów, a archiwum może się gromadzić.</div>
 </div>
 </div>
 <h4>Serwer IPC (<code>pkg/ipcserver</code>) i klient (<code>pkg/ipcclient</code>)</h4>
-<p>Demon udostępnia gniazdo domeny Uniksa pod <code>\$XDG_RUNTIME_DIR/filees.sock</code> (zapasowo: <code>~/.filees/daemon.sock</code>). Protokół to <code>filees.contract/v1</code> — wersjonowane JSON Lines, jeden obiekt na linię. Zwykłe żądania mają charakter żądanie–odpowiedź; <code>events.subscribe</code> przełącza połączenie na strumień zdarzeń wysyłanych przez serwer. Aktualnie zaimplementowane polecenia obejmują <code>system.hello</code>, <code>system.status</code>, <code>system.restart</code>, <code>system.shutdown</code>, polecenia podpisanej aktualizacji, aktywacji i parowania mobilnego, polecenia cyklu życia repozytorium (<code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.locate</code>, <code>repo.load_dump</code>, odłączenie i usunięcie, <code>repo.lifecycle_status</code>), polecenia uprawnień/uprawnień stref (<code>repo.grant_access</code>, <code>repo.revoke_access</code>, <code>realm.alias_claim</code>, <code>realm.grant_recipients</code>, <code>realm.set_visibility</code>, <code>realm.remove_begin</code>, <code>realm.remove_confirm</code>), <code>repo.activity</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>repo.reservation_list</code>, <code>repo.reservation_release</code>, <code>repo.publish</code>, <code>notice.list</code>, <code>notice.ack</code>, <code>error.list</code> oraz <code>events.subscribe</code>. Polecenia są ogłaszane indywidualnie jako uprawnienia; klient nie może wnioskować o dostępności z tej listy. <code>repo.pause</code>, <code>repo.sync_now</code> i decyzje konfliktów pozostają zadeklarowane w kontrakcie, ale niepodłączone.</p><div class="decision">
+<p>Demon udostępnia gniazdo domeny Uniksa pod <code>\$XDG_RUNTIME_DIR/filees.sock</code> (zapasowo: <code>~/.filees/daemon.sock</code>). Protokół to <code>filees.contract/v1</code> — wersjonowane wiersze JSON, jeden obiekt na linię. Zwykłe żądania mają charakter żądanie–odpowiedź; <code>events.subscribe</code> przełącza połączenie na strumień zdarzeń wysyłanych przez serwer. Aktualnie zaimplementowane polecenia obejmują <code>system.hello</code>, <code>system.status</code>, <code>system.restart</code>, <code>system.shutdown</code>, polecenia podpisanej aktualizacji, aktywacji i parowania mobilnego, polecenia cyklu życia repozytorium (<code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.locate</code>, <code>repo.load_dump</code>, odłączenie i usunięcie, <code>repo.lifecycle_status</code>), polecenia uprawnień repozytorium i uprawnień strefy (<code>repo.grant_access</code>, <code>repo.revoke_access</code>, <code>realm.alias_claim</code>, <code>realm.grant_recipients</code>, <code>realm.set_visibility</code>, <code>realm.remove_begin</code>, <code>realm.remove_confirm</code>), <code>repo.activity</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>repo.reservation_list</code>, <code>repo.reservation_release</code>, <code>repo.publish</code>, <code>notice.list</code>, <code>notice.ack</code>, <code>error.list</code> oraz <code>events.subscribe</code>. Polecenia są ogłaszane indywidualnie jako uprawnienia; klient nie może wnioskować o dostępności z tej listy. <code>repo.pause</code>, <code>repo.sync_now</code> i decyzje konfliktów pozostają zadeklarowane w kontrakcie, ale niepodłączone.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / zdarzenia unieważniają snapshoty</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Zdarzenia GUI są sygnałem do ponownego pobrania obrazów stanu należących do demona, nie drugą maszyną stanów.</div>
@@ -400,24 +400,24 @@
 <div class="decision-label">Koszt</div><div class="decision-value">GUI wykonuje dodatkowe odczyty statusu po zdarzeniach i pozostaje celowo zależne od kontraktu demona.</div>
 </div>
 </div>
-<h4>Bramki środowisko uruchomieniowe (<code>pkg/runtime</code>)</h4>
-<p><strong>HostGate</strong> ogranicza liczbę równoczesnych zatwierdzeń we wszystkich instancjach demona na komputerze (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jedno zatwierdzenie naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. Na Linux/POSIX plik właściciela niesie zarządzany przez OS <code>flock</code>, żeby recykling PID nie dawał fałszywego wyniku „blokada nadal trzymana”.</p>
-<h2 id="ch1-states">1.3 Stany operacji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przejścia aktywacji przez ścieżki aktywną, wygaśnięcia i cofnięcia są wdrożone i przetestowane.</span></div>
+<h4>Bramki środowiska uruchomieniowego (<code>pkg/runtime</code>)</h4>
+<p><strong>HostGate</strong> ogranicza liczbę równoczesnych zatwierdzeń we wszystkich instancjach demona na komputerze (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jedno zatwierdzenie naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. W systemach Linux/POSIX plik blokady wykorzystuje zarządzany przez system operacyjny mechanizm <code>flock</code>, żeby ponowne użycie PID nie dawało fałszywego wyniku „blokada nadal trzymana”.</p>
+<h2 id="ch1-states">1.3 Stany operacji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Ścieżki aktywacji, wygaśnięcia i cofnięcia są wdrożone i przetestowane.</span></div>
 <p>Operacje aktywacji klienta (z <code>pkg/onboarding/types.go</code>) przechodzą przez następujące stany:</p>
 <div class="table-wrap"><table>
 <tr><th>Stała stanu</th><th>Wartość łańcuchowa</th><th>Znaczenie</th></tr>
 <tr><td><code>OperationAwaitingTunnel</code></td><td><code>awaiting_tunnel</code></td><td>zlecenie przejęte; oczekiwanie na OTP i tunel odwrotny</td></tr>
-<tr><td><code>OperationTunnelAuthorized</code></td><td><code>tunnel_authorized</code></td><td>BSD Auth zwalidował OTP; przekierowanie jeszcze nie nawiązane</td></tr>
-<tr><td><code>OperationTunnelStarted</code></td><td><code>tunnel_started</code></td><td>filees-entry potwierdził port odwrotny; proces wykonawczy zaraz się uruchomi</td></tr>
-<tr><td><code>OperationHelperAnnounced</code></td><td><code>helper_announced</code></td><td>proces wykonawczy spiął program pomocniczy klienta</td></tr>
+<tr><td><code>OperationTunnelAuthorized</code></td><td><code>tunnel_authorized</code></td><td>BSD Auth zwalidował OTP; przekierowanie nie zostało jeszcze ustanowione</td></tr>
+<tr><td><code>OperationTunnelStarted</code></td><td><code>tunnel_started</code></td><td><code>filees-entry</code> potwierdził port odwrotny; proces wykonawczy zostanie uruchomiony</td></tr>
+<tr><td><code>OperationHelperAnnounced</code></td><td><code>helper_announced</code></td><td>Proces wykonawczy połączył się z programem pomocniczym klienta</td></tr>
 <tr><td><code>OperationIdentityGenerated</code></td><td><code>identity_generated</code></td><td>Para kluczy Ed25519 wygenerowana na kliencie; klucz publiczny zapisany w pakiecie</td></tr>
-<tr><td><code>OperationAccessStaged</code></td><td><code>access_staged</code></td><td>Klucz publiczny instalacji jest obecny w wygenerowanej autoryzacji dostęp SSH/SVN</td></tr>
-<tr><td><code>OperationPossessionProved</code></td><td><code>possession_verified</code></td><td>Systemowy sshd uwierzytelnił klucz instalacji, a wymuszone polecenie serwera zapisał pasujące pokwitowanie</td></tr>
+<tr><td><code>OperationAccessStaged</code></td><td><code>access_staged</code></td><td>Klucz publiczny instalacji jest obecny w wygenerowanej autoryzacji dostępu SSH/SVN</td></tr>
+<tr><td><code>OperationPossessionProved</code></td><td><code>possession_verified</code></td><td>Systemowy <code>sshd</code> uwierzytelnił klucz instalacji, a serwer, korzystając z wymuszonego polecenia, zapisał pasujące pokwitowanie</td></tr>
 <tr><td><code>OperationActive</code></td><td><code>active</code></td><td>Rekord klienta i pierwsza projekcja zostały zatwierdzone do repozytorium usługowego</td></tr>
 <tr><td><code>OperationOTPExhausted</code></td><td><code>otp_exhausted</code></td><td>Zbyt wiele błędnych prób OTP</td></tr>
 <tr><td><code>OperationExpired</code></td><td><code>expired</code></td><td>Upłynął TTL operacji</td></tr>
 </table></div>
-<p>Stany provisioningu repozytorium (z <code>pkg/provisioning</code>):</p>
+<p>Stany przygotowania repozytorium (z <code>pkg/provisioning</code>):</p>
 <pre><code>local_validated
   -&gt; storage_preflight_requested
   -&gt; storage_preflight_failed -&gt; storage_preflight_requested
@@ -429,8 +429,8 @@
   -&gt; initial_commit_failed -&gt; initial_commit_in_progress
   -&gt; initial_snapshot_published
   -&gt; active</code></pre>
-<p>Terminus <code>storage_preflight_failed</code> (np. odmowa procesu wykonawczego <code>STORAGE_INSUFFICIENT</code>, gdy fizyczny system plików nie ma miejsca) jest trwały, ale sam z siebie nie samonaprawia się: GUI odpytuje <code>repo.lifecycle_status</code> po <code>operation_id</code> i pokazuje wynik jako drugie powiadomienie, ponieważ repozytorium, które nigdy nie dochodzi do <code>active</code>, nigdy nie dostaje zarejestrowanego <code>repo_id</code> i jest więc niewidoczne dla <code>repo.list</code>/<code>error.list</code>.</p>
-<p>Między <code>repository_ready</code> a <code>active</code> projekcja serwera może już zawierać repozytorium, podczas gdy jego potencjalnie duży <code>INITIAL_COMMIT</code> nadal trwa. Demon nakłada trwałe lokalne zgłoszenie cyklu życia na tę projekcję: Ustawienia pokazują wybraną ścieżkę i <strong>trwa import początkowy</strong>, a nie fałszywe <strong>nie podłączone lokalnie</strong>. Wiersz pozostaje niemodyfikowalny i żadne środowisko uruchomieniowe kopii roboczej nie startuje, zanim początkowe zatwierdzenie się powiedzie.</p>
+<p>Stan końcowy <code>storage_preflight_failed</code> (np. odmowa procesu wykonawczego <code>STORAGE_INSUFFICIENT</code>, gdy fizyczny system plików nie ma miejsca) jest trwały, ale sam z siebie się nie naprawia: GUI odpytuje <code>repo.lifecycle_status</code> po <code>operation_id</code> i pokazuje wynik jako drugie powiadomienie, ponieważ repozytorium, które nigdy nie dochodzi do <code>active</code>, nie otrzymuje zarejestrowanego <code>repo_id</code> i pozostaje niewidoczne dla <code>repo.list</code>/<code>error.list</code>.</p>
+<p>Między <code>repository_ready</code> a <code>active</code> projekcja serwera może już zawierać repozytorium, podczas gdy jego potencjalnie duży <code>INITIAL_COMMIT</code> nadal trwa. Demon dodaje do tej projekcji trwałą lokalną informację o cyklu życia: Ustawienia pokazują wybraną ścieżkę i <strong>trwa import początkowy</strong>, a nie fałszywe <strong>nie podłączone lokalnie</strong>. Wiersz pozostaje niemodyfikowalny i żadne środowisko uruchomieniowe kopii roboczej nie startuje, zanim początkowe zatwierdzenie się powiedzie.</p>
 <h2 id="ch1-bundle">1.4 Układ pakietu i protokół systemu plików</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Atomowe przejęcie i zatwierdzenie oraz ścieżki odzyskiwania przetestowane natywnie na OpenBSD.</span></div>
 <p>Strona serwera używa protokołu opartego na systemie plików, bez ukrytej bazy danych i bez demona w tle. Pojedynczy zatwierdzony plik JSON <code>filees.onboarding-bundle/v4</code> jest atomowym rekordem operacji aktywacji klienta. Zawiera trzy podobiekty: <code>Operation</code>, <code>Outbox</code> (stan dostawy zachowany, OTP i adres zredagowane po terminalnej dostawie) oraz <code>Audit</code> (historia tylko-dopisująca). Jedno <code>rename(2)</code> publikuje wszystkie trzy atomowo.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / protokół systemu plików zamiast ukrytej usługi transakcyjnej</div>
@@ -441,40 +441,40 @@
 <div class="decision-label">Koszt</div><div class="decision-value">Efekty między zasobami nadal wymagają kroków idempotentnych i uzgadniania; trwałość systemu plików wymaga jawnego <code>fsync</code>.</div>
 </div>
 </div>
-<p>Układ katalogów po stronie serwera (root jest konfigurowalny, domyślnie <code>/var/filees/onboarding</code>):</p>
-<pre><code>/var/filees/onboarding/        mode 0700
-├── .toolchain.lock             mode 0600  (flock for command serialisation)
+<p>Układ katalogów po stronie serwera (katalog główny jest konfigurowalny, domyślnie <code>/var/filees/onboarding</code>):</p>
+<pre><code>/var/filees/onboarding/        tryb 0700
+├── .toolchain.lock             tryb 0600  (flock do szeregowania poleceń)
 ├── tickets/
-│   └── &lt;sha256(email)&gt;.json   mode 0600  (ticket named by email hash)
+│   └── &lt;sha256(email)&gt;.json   tryb 0600  (nazwa zgłoszenia to skrót adresu e-mail)
 ├── operations/
-│   ├── .claim-&lt;req_id&gt;.json   mode 0600  (transient claim; crash-visible)
-│   └── &lt;req_id&gt;.json          mode 0600  (committed bundle)
+│   ├── .claim-&lt;req_id&gt;.json   tryb 0600  (przejściowe przejęcie; widoczne po awarii)
+│   └── &lt;req_id&gt;.json          tryb 0600  (zatwierdzony pakiet)
 └── audit/
     └── &lt;time&gt;-&lt;obj&gt;-&lt;event&gt;.json</code></pre>
 <p>Katalog stanu po stronie klienta (wewnątrz każdej kopii roboczej):</p>
 <pre><code>&lt;wc&gt;/
-├── !kolizje/                          (conflict copies; scanner-ignored)
+├── !kolizje/                          (kopie konfliktowe; pomijane przez skaner)
 │   └── YYYY.MM.DD@HH.MM_lokalne/
-│       ├── &lt;relpath&gt;                  (local file before conflict)
+│       ├── &lt;relpath&gt;                  (lokalny plik sprzed konfliktu)
 │       └── &lt;relpath&gt;.meta             (JSON: orig_rel, timestamp, size)
 └── .filees/
     ├── state/
-    │   ├── manifest.json              (mtime, size, MD5 per file)
-    │   ├── commit.busy                (flag; TTL 10 min)
-    │   ├── head.rev                   (last committed/updated revision)
-    │   ├── client.uuid                (stable per-installation UUID)
+    │   ├── manifest.json              (mtime, rozmiar, MD5 dla każdego pliku)
+    │   ├── commit.busy                (flaga; TTL 10 min)
+    │   ├── head.rev                   (ostatnia zatwierdzona/zaktualizowana rewizja)
+    │   ├── client.uuid                (stały identyfikator UUID instalacji)
     │   ├── daemon.pid
-    │   └── md5.backlog.json           (large-file MD5 queue)
+    │   └── md5.backlog.json           (kolejka MD5 dużych plików)
     ├── commit_cache/
-    │   └── cache.json                 (staging map; survives restarts)
-    ├── tickets/                       (outgoing notification tickets)
+    │   └── cache.json                 (mapa przygotowania; przetrwa restart)
+    ├── tickets/                       (wychodzące zgłoszenia powiadomień)
     ├── logs/
-    │   └── errors.jsonl               (structured error log, JSON Lines)
-    └── locks/                         (HostGate and RepoMutex dirs)</code></pre>
+    │   └── errors.jsonl               (ustrukturyzowany dziennik błędów, wiersze JSON)
+    └── locks/                         (katalogi HostGate i RepoMutex)</code></pre>
 <h2 id="ch1-otp">1.5 Mechanizm OTP</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przechowywanie OTP, limity prób, redakcja i przekazanie przez BSD Auth są wdrożone.</span></div>
 <p>Hasło jednorazowe do autoryzacji tunelu ma 120 bitów entropii zakodowane jako Base32 w formacie <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. 40-bitowy prefiks to <em>lokator</em>, który identyfikuje pakiet operacji bez ujawniania ID operacji. Pełna wartość jest weryfikowana jako HMAC-SHA-256 względem prywatnego peppera po stronie serwera (minimum 256 bitów) przechowywanego pod ścieżką daną przez <code>otp_pepper_file</code> w <code>server.json</code>.</p>
-<p>Każda błędna próba atomowo zmniejsza licznik zapisany w pakiecie. Przy wygaśnięciu, wyczerpaniu OTP albo udanym użyciu hash i lokator są usuwane z pakietu. OTP w postaci jawnej istnieje tylko w oczekującym wpisie kolejki poczty wychodzącej aż do przyjęcia listu przez smarthost (<code>250</code> po DATA), po czym adres dostawy i OTP są atomowo redagowane.</p>
-<h2 id="ch1-ssh">1.6 Transport SSH: entry → proces wykonawczy → program pomocniczy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane do stanu aktywnego</span><span>Pełna ścieżka cofnięcia i ponownej aktywacji, systemowy sshd, forced commands i svnserve w trybie tunelu przeszły natywnie na OpenBSD.</span></div>
+<p>Każda błędna próba atomowo zmniejsza licznik zapisany w pakiecie. Przy wygaśnięciu, wyczerpaniu OTP albo udanym użyciu skrót i lokator są usuwane z pakietu. OTP w postaci jawnej istnieje tylko w oczekującym wpisie kolejki poczty wychodzącej aż do przyjęcia listu przez <code>smarthost</code> (<code>250</code> po DATA), po czym adres dostawy i OTP są atomowo redagowane.</p>
+<h2 id="ch1-ssh">1.6 Transport SSH: entry → proces wykonawczy → program pomocniczy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane do stanu aktywnego</span><span>Pełna ścieżka cofnięcia i ponownej aktywacji, systemowy sshd, wymuszone polecenia i svnserve w trybie tunelu przeszły natywnie na OpenBSD.</span></div>
 <p>FileES używa systemowego <code>sshd</code> jako jedynego punktu końcowego sieci. Na serwerze tworzone są trzy osobne konta protokołu:</p>
 <div class="table-wrap"><table>
 <tr><th>Konto</th><th>Metoda uwierzytelnienia</th><th>wymuszone polecenie</th><th>Przekierowanie</th></tr>
@@ -484,13 +484,13 @@
 <tr><td><code>_filees-data</code></td><td>Ten sam klucz per instalacja, serwowany przez <code>AuthorizedKeysCommand</code></td><td>Per klucz <code>filees-client-entry</code>, który serwuje <code>svnserve -t</code> zakorzenione w repozytoriach danych zamiast repozytorium usługowego</td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
 <tr><td><code>_filees-recovery</code></td><td>Klucz publiczny Ed25519 odtwarzania per operacja, rozwiązywany przez osobny program pomocniczy <code>filees-recovery-authorize</code></td><td><code>filees-recovery-entry serve &lt;operation_id&gt;</code></td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
 </table></div>
-<p>Ostatnie konto istnieje wyłącznie po to, żeby strefa, która usunęła swój udział FileES, mogła nadal pobrać własne archiwa. Jest opisane w <a href="administration.html#ch4-realm-removal">§4.8</a>; klucz, który przyjmuje, jest zdolnością (uprawnienie) związaną z dokładnie jedną operacją usunięcia i nie jest poświadczeniem klienta.</p><div class="decision">
+<p>Ostatnie konto istnieje wyłącznie po to, żeby strefa, która usunęła swój udział FileES, mogła nadal pobrać własne archiwa. Jest opisane w <a href="administration.html#ch4-realm-removal">§4.8</a>; klucz, który przyjmuje, jest zdolnością (uprawnieniem) związaną z dokładnie jedną operacją usunięcia i nie jest poświadczeniem klienta.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / systemowy sshd jako jedyny punkt końcowy sieci</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">OpenSSH zapewnia uwierzytelnianie, wymuszone polecenies, politykę przekierowań, limity i dojrzałą integrację z platformą.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">OpenSSH zapewnia uwierzytelnianie, wymuszone polecenia, politykę przekierowań, limity i dojrzałą integrację z platformą.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">FileES potrzebuje wąskiego, uwierzytelnionego wyzwalacza, nie ogólnego serwera aplikacyjnego.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Własny proces nasłuchujący TLS, API REST/gRPC, prywatny serwer SSH, usługa <code>inetd</code> albo długożyjący demon gniazda.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Bazowy OpenSSH nie potrafi wyrazić każdej dynamicznej polityki, więc rzadkie wdrożenia używają jednego stałego portu interfejsie lokalnym i serializacji.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Bazowy OpenSSH nie potrafi wyrazić każdej dynamicznej polityki, więc rzadkie wdrożenia używają jednego stałego portu na interfejsie lokalnym i serializacji.</div>
 </div>
 </div>
 <p>Przebieg aktywacji inicjowanej przez klienta:</p>
@@ -501,43 +501,43 @@
   -R 127.0.0.1:42000:127.0.0.1:&lt;local-helper-port&gt; \
   &lt;server&gt; "filees tunnel-v1"</code></pre>
     OTP jest podawane przez platformowy askpass (<code>SSH_ASKPASS_REQUIRE=force</code>; POSIX FIFO, potok nazwany w Windows). BSD Auth waliduje OTP, czytając styl <code>login_-filees</code>, i atomowo przesuwa pakiet do <code>tunnel_authorized</code>. <code>filees-entry</code> potwierdza, że <code>SSH_ORIGINAL_COMMAND</code> to dokładnie <code>filees tunnel-v1</code>, przejmuje uprawnienie tunelu (przesuwając do <code>tunnel_started</code>), następnie <code>exec</code>uje <code>filees-worker deploy</code>.</li>
-<li><strong>proces wykonawczy — generowanie tożsamości.</strong> <code>filees-worker</code> łączy się przez tunel odwrotny z programem pomocniczym po stronie klienta, używając spiętego klucza procesu wykonawczego Ed25519. Program pomocniczy przyjmuje wyłącznie <code>filees-deploy/v1</code>. Dla <code>generate_identity</code> klient generuje parę kluczy Ed25519 lokalnie; z powrotem do procesu wykonawczego wracają tylko klucz publiczny i odcisk. Klucz prywatny nigdy nie opuszcza maszyny klienta.</li>
-<li><strong>przygotowanie dostępu i dowód posiadania.</strong> proces wykonawczy ustawia ograniczoną linię w <code>/var/filees/activation/authorized_keys</code> oraz authz SVN tylko do odczytu. Następnie prosi ten sam program pomocniczy o wykonanie <code>prove_service_access</code>. Klient otwiera nowe połączenie SSH jako <code>_filees-client</code> z prywatnym kluczem instalacji i stałym poleceniem <code>svnserve -t</code>. Po uwierzytelnieniu klucza przez systemowy sshd <code>filees-client-entry</code> zapisuje pokwitowanie po stronie serwera i execuje skonfigurowany <code>svnserve</code>. Sama odpowiedź programu pomocniczego nigdy nie jest przyjmowana jako dowód.</li>
+<li><strong>proces wykonawczy — generowanie tożsamości.</strong> <code>filees-worker</code> łączy się przez tunel odwrotny z programem pomocniczym po stronie klienta, używając powiązanego klucza procesu wykonawczego Ed25519. Program pomocniczy przyjmuje wyłącznie <code>filees-deploy/v1</code>. Dla <code>generate_identity</code> klient generuje parę kluczy Ed25519 lokalnie; z powrotem do procesu wykonawczego wracają tylko klucz publiczny i odcisk. Klucz prywatny nigdy nie opuszcza maszyny klienta.</li>
+<li><strong>przygotowanie dostępu i dowód posiadania.</strong> Proces wykonawczy ustawia ograniczoną linię w <code>/var/filees/activation/authorized_keys</code> oraz reguły authz SVN tylko do odczytu. Następnie prosi ten sam program pomocniczy o wykonanie <code>prove_service_access</code>. Klient otwiera nowe połączenie SSH jako <code>_filees-client</code> z prywatnym kluczem instalacji i stałym poleceniem <code>svnserve -t</code>. Po uwierzytelnieniu klucza przez systemowy <code>sshd</code> <code>filees-client-entry</code> zapisuje pokwitowanie po stronie serwera i uruchamia skonfigurowany <code>svnserve</code> przez <code>exec</code>. Sama odpowiedź programu pomocniczego nigdy nie jest przyjmowana jako dowód.</li>
 <li><strong>Publikacja aktywacji.</strong> Po walidacji pokwitowania proces wykonawczy zatwierdza format usługowy, strefę, rekord klienta, pierwszy widok klienta i zdarzenie audytu w jednej rewizji SVN, następnie przesuwa operację do <code>active</code>. Aktywny klucz zachowuje dostęp tylko do odczytu wyłącznie do własnego poddrzewa klienta.</li>
 </ol>
-<p>program pomocniczy po stronie klienta to minimalny serwer SSH nasłuchujący wyłącznie na interfejsie lokalnym z efemerycznym kluczem serwera. Odmawia powłoki, PTY, podsystemów, żądań globalnych i każdego polecenia innego niż <code>filees-deploy/v1</code>. Odpowiedzi są ograniczone rozmiarem do 64 KiB przy użyciu <code>io.LimitReader</code> przed dekodowaniem.</p>
+<p>Program pomocniczy po stronie klienta to minimalny serwer SSH nasłuchujący wyłącznie na interfejsie lokalnym z efemerycznym kluczem serwera. Odmawia powłoki, PTY, podsystemów, żądań globalnych i każdego polecenia innego niż <code>filees-deploy/v1</code>. Odpowiedzi są ograniczone rozmiarem do 64 KiB przy użyciu <code>io.LimitReader</code> przed dekodowaniem.</p>
 <h4>Uwierzytelniona płaszczyzna sterowania</h4>
-<p>Gdy klient jest aktywny, dociera do serwera przez to samo konto <code>_filees-client</code> z <code>SSH_ORIGINAL_COMMAND</code> ustawionym na <code>filees control-v1</code>. <code>filees-client-entry</code> uruchamia wtedy <code>filees-worker repository-control &lt;client_id&gt;</code> i przekazuje jedną wersjonowaną ramkę zlecenia. Proces wykonawczy serializuje każde żądanie sterowania za pojedynczą blokadą pliku, więc żądania z różnych sesji nigdy się nie przeplatają.</p>
-<p>Tożsamość i autorytet zawsze pochodzą z sesji wymuszone polecenie, nigdy z ciała zlecenia: proces wykonawczy rozwiązuje <code>client_id</code> z wiązania polecenia przypisanym do klucza, a strefę z projekcji po stronie serwera. Aktualnie przyjmowana rodzina zleceń to:</p>
+<p>Gdy klient jest aktywny, komunikacja z serwerem odbywa się przez to samo konto <code>_filees-client</code> z <code>SSH_ORIGINAL_COMMAND</code> ustawionym na <code>filees control-v1</code>. <code>filees-client-entry</code> uruchamia wtedy <code>filees-worker repository-control &lt;client_id&gt;</code> i przekazuje jedną wersjonowaną ramkę zlecenia. Proces wykonawczy serializuje każde żądanie sterowania przy użyciu jednej blokady pliku, więc żądania z różnych sesji nigdy się nie przeplatają.</p>
+<p>Tożsamość i autorytet zawsze pochodzą z sesji oraz wymuszonego polecenia, nigdy z ciała zlecenia: proces wykonawczy rozwiązuje <code>client_id</code> z wiązania polecenia przypisanego do klucza, a strefę z projekcji po stronie serwera. Obsługiwane obecnie rodzaje zleceń to:</p>
 <div class="table-wrap"><table>
-<tr><th>zlecenie</th><th>Cel</th><th>Wymagany autorytet</th></tr>
+<tr><th>Zlecenie</th><th>Cel</th><th>Wymagany autorytet</th></tr>
 <tr><td><code>STORAGE_PREFLIGHT</code></td><td>Sprawdzenie pojemności przed importem</td><td>Klient tworzący repozytorium</td></tr>
 <tr><td><code>CREATE_REPOSITORY</code></td><td>Utworzenie repozytorium danych należącego do strefy sesji</td><td>Klient tworzący repozytorium</td></tr>
-<tr><td><code>INITIAL_COMMIT</code></td><td>Aktywacja świeżo zaimportowanego repozytorium</td><td>Strefa-właściciel tego repozytorium</td></tr>
-<tr><td><code>DELETE_REPOSITORY</code></td><td>Trwałe odłączenie posiadanego repozytorium</td><td>Strefa-właściciel tego repozytorium</td></tr>
+<tr><td><code>INITIAL_COMMIT</code></td><td>Aktywacja świeżo zaimportowanego repozytorium</td><td>Strefa będąca właścicielem tego repozytorium</td></tr>
+<tr><td><code>DELETE_REPOSITORY</code></td><td>Trwałe odłączenie posiadanego repozytorium</td><td>Strefa będąca właścicielem tego repozytorium</td></tr>
 <tr><td><code>MOBILE_PAIRING</code></td><td>Wystawienie tokenu parowania dla telefonu tej samej strefy</td><td>Dowolny aktywny klient strefy</td></tr>
 <tr><td><code>CLAIM_REALM_ALIAS</code></td><td>Zajęcie jednego niezmiennego aliasu strefy</td><td>Dowolny aktywny klient strefy</td></tr>
 <tr><td><code>RESOLVE_OWNER_LABELS</code></td><td>Mapowanie zaobserwowanych właścicieli blokad SVN na aliasy wyświetlane</td><td>Dowolny aktywny klient</td></tr>
 <tr><td><code>CLIENT_DEACTIVATE</code></td><td>Dezaktywacja tej jednej instalacji na serwerze</td><td>Sama uwierzytelniona instalacja</td></tr>
-<tr><td><code>REALM_REMOVE_REQUEST</code> / <code>REALM_REMOVE_CONFIRM</code></td><td>Usunięcie całego udziału FileES strefy, bramkowane OTP wysłanym pocztą</td><td>Dowolny aktywny klient strefy plus dowód OTP</td></tr>
+<tr><td><code>REALM_REMOVE_REQUEST</code> / <code>REALM_REMOVE_CONFIRM</code></td><td>Usunięcie całego udziału FileES strefy, chronione OTP wysłanym pocztą</td><td>Dowolny aktywny klient strefy plus dowód OTP</td></tr>
 </table></div>
-<p>każde zlecenie jest idempotentny względem <code>operation_id</code>: powtórzenie żądania odtwarza zapisany trwały wynik zamiast ponownie wykonywać efekt. Związanie tego samego <code>operation_id</code> z innym <code>request_id</code> jest odrzucane.</p>
+<p>Każde zlecenie jest idempotentne względem <code>operation_id</code>: powtórzenie żądania odtwarza zapisany trwały wynik zamiast ponownie wykonywać efekt. Związanie tego samego <code>operation_id</code> z innym <code>request_id</code> jest odrzucane.</p>
 <h2 id="ch1-sandbox">1.7 Model piaskownicy pledge / unveil</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Profile pledge/unveil per polecenie oraz granica exec między dyspozytorem a procesem wykonawczym przetestowane natywnie.</span></div>
 <p>Na OpenBSD każde narzędzie po stronie serwera wywołuje <code>pledge(2)</code> i <code>unveil(2)</code> z minimalnymi profilami dla każdego polecenia. Przepływ procesu to:</p>
-<pre><code>parse argv / verb
-  -&gt; pledge("stdio rpath wpath unveil")   # bootstrap
-  -&gt; load and canonicalise config
-  -&gt; read-only preflight of private layout  (before unveil lock)
-  -&gt; unveil(exact paths, exact perms)
-  -&gt; unveil(NULL, NULL)                   # lock
-  -&gt; pledge(runtime promises)             # reduce
-  -&gt; open prepared repo handle and execute</code></pre><div class="decision">
+<pre><code>parsowanie argumentów / czasownika
+  -&gt; pledge("stdio rpath wpath unveil")   # uruchomienie
+  -&gt; wczytanie i kanonikalizacja konfiguracji
+  -&gt; wstępne sprawdzenie prywatnego układu tylko do odczytu  (przed zablokowaniem unveil)
+  -&gt; unveil(dokładne ścieżki, dokładne uprawnienia)
+  -&gt; unveil(NULL, NULL)                   # zablokowanie
+  -&gt; pledge(obietnice uruchomieniowe)     # ograniczenie
+  -&gt; otwarcie przygotowanego uchwytu repozytorium i wykonanie</code></pre><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / jedno polecenie, jeden profil piaskownicy</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Każde krótkotrwałe narzędzie i czasownik dostaje wyłącznie swoje dokładne ścieżki i obietnice wywołań systemowych.</div>
-<div class="decision-label">Dlaczego</div><div class="decision-value">Kompromitacja albo błąd programistyczny powinny pozostać ograniczone funkcją, do której procesu uruchomiono.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Każde krótkotrwałe narzędzie i każde polecenie otrzymuje wyłącznie swoje dokładne ścieżki i obietnice wywołań systemowych.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Kompromitacja albo błąd programistyczny powinny pozostać ograniczone do funkcji, dla której uruchomiono proces.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Szeroki wspólny profil demona; konfigurowalne łańcuchy obietnic; nadawanie zdolności na hipotetyczną przyszłą pracę.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Profile wymagają testów natywnych i mogą ujawnić minima specyficzne dla środowisko uruchomieniowe, takie jak dostęp loadera albo startowy <code>setrlimit</code>.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Profile wymagają testów natywnych i mogą ujawnić minima specyficzne dla środowiska uruchomieniowego, takie jak dostęp programu ładującego albo początkowy <code>setrlimit</code>.</div>
 </div>
 </div>
 <p>Macierz obietnic i ścieżek dla każdego narzędzia:</p>
@@ -554,38 +554,38 @@
 <tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>stały obraz procesu wykonawczego i program ładujący środowiska uruchomieniowego</td></tr>
 <tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, klucz procesu wykonawczego, katalog główny aktywacji, WC/repozytorium usługowe i stały plik wykonywalny SVN</td></tr>
 <tr><td><code>filees-client-entry</code> (tryb SVN)</td><td><code>stdio rpath wpath cpath fattr flock dpath proc exec</code></td><td>katalog główny pokwitowań aktywacji, repozytorium usługowe, authz i stały plik wykonywalny svnserve; <code>dpath</code> wyłącznie do utworzenia prywatnego FIFO służącego do odwołania sesji</td></tr>
-<tr><td><code>filees-client-entry</code> (tryb sterowania)</td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec</code></td><td>jak wyżej plus katalog wyników repozytoriów, authz danych, WC usługowa, katalog główny aktywacji klienta, pepper OTP oraz stałe obrazy procesu wykonawczego i poczty</td></tr>
+<tr><td><code>filees-client-entry</code> (tryb sterowania)</td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec</code></td><td>jak wyżej oraz katalog wyników repozytoriów, authz danych, usługowa kopia robocza, katalog główny aktywacji klienta, pepper OTP oraz stałe obrazy procesu wykonawczego i poczty</td></tr>
 <tr><td><code>filees-worker repository-control</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec unveil</code></td><td>dziedziczy zablokowaną tablicę entry; nie ma własnej tablicy</td></tr>
 <tr><td><code>filees-recovery-entry authorize|serve</code></td><td><code>stdio rpath</code></td><td>konfiguracja serwera (r), katalog główny wyników repozytoriów (r), katalog główny archiwum usunięć (r) — tylko odczyt przez cały czas</td></tr>
 <tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>katalog główny aktywacji, WC/repozytorium usługowe i stały plik wykonywalny SVN</td></tr>
 <tr><td><code>filees-admin repo check-state/prune</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>wyniki i dane repozytoriów, data-authz, WC/repozytorium usługowe, dokładne pliki wykonywalne SVN i svnlook oraz <code>activation.root/.service-wc.lock</code>; apply zapisuje tylko przez wąską ścieżkę prune</td></tr>
 <tr><td><code>login_-filees</code> (styl BSD Auth)</td><td><code>stdio rpath wpath cpath flock</code></td><td>katalog główny operacji, plik peppera</td></tr>
 </table></div>
-<div class="note"><strong>Kluczowy niezmiennik:</strong> profile pledge i unveil są zamknięte w kodzie. Tylko dyspozytor, proces wykonawczy aktywacji, client entry i administracyjne revoke zachowują wąsko wymaganą granicę <code>proc exec</code> dla stałego pliku wykonywalnego; żadna obietnica ani ścieżka wykonywalna nie pochodzi z żądania sieciowego.</div>
+<div class="note"><strong>Kluczowy niezmiennik:</strong> profile pledge i unveil są zamknięte w kodzie. Tylko dyspozytor, proces wykonawczy aktywacji, <code>filees-client-entry</code> i polecenie administracyjnego odwołania zachowują wąsko wymaganą granicę <code>proc exec</code> dla stałego pliku wykonywalnego; żadna obietnica ani ścieżka wykonywalna nie pochodzi z żądania sieciowego.</div>
 <h4>Dwie dyscypliny exec</h4>
-<p>Tablica <code>unveil(2)</code> przeżywa <code>execve</code> i po zablokowaniu przez <code>unveil(NULL, NULL)</code> nigdy nie może być zastąpiona ani rozszerzona — nawet przez dziecko, które chce węższą. Dyspozytor musi więc z góry wybrać jedną z dwóch dyscyplin, a wybór określa, czym mogą być jego dzieci:</p>
+<p>Tablica <code>unveil(2)</code> przeżywa <code>execve</code> i po zablokowaniu przez <code>unveil(NULL, NULL)</code> nigdy nie może być zastąpiona ani rozszerzona — nawet przez dziecko, które chciałoby ją zawęzić. Dyspozytor musi więc z góry wybrać jedną z dwóch dyscyplin, a wybór określa, czym mogą być jego dzieci:</p>
 <div class="table-wrap"><table>
 <tr><th>Dyscyplina</th><th>Wywołanie</th><th>Konsekwencja dla dziecka</th></tr>
 <tr><td>Dziecko wstępnie odsłonięte</td><td><code>obsandbox.ApplyForExec</code></td><td>Rodzic buduje i blokuje tablicę; dziecko <em>nie</em> może samo wywołać <code>unveil</code> i zamiast tego otwiera przygotowane uchwyty (<code>onboarding.OpenPrepared</code>). Używane przez <code>filees-client-entry</code> → <code>filees-worker</code>.</td></tr>
 <tr><td>Dziecko z własną piaskownicą</td><td><code>obsandbox.PledgeForExec</code></td><td>Rodzic ogranicza wyłącznie obietnice i zostawia tablicę otwartą, żeby dziecko mogło zainstalować i zablokować własny, węższy profil. Używane przez <code>filees-bootstrap-entry</code> → <code>filees-onboard</code>, <code>filees-mail</code>.</td></tr>
 </table></div>
-<p>Zmieszanie obu — exec narzędzia z własną piaskownicą z dyspozytora, który już zablokował tablicę — kończy się na pierwszym wywołaniu <code>unveil</code> dziecka błędem <code>EPERM</code>, i to wyłącznie na OpenBSD, bo gdzie indziej piaskownica jest operacją pustą. Każdy nowy proces-dziecko po stronie serwera musi być sklasyfikowany względem tej tabeli zanim zostanie podłączony.</p>
-<p>plik wykonywalny <code>filees-entry</code> jest setuid na <code>_filees-state</code>. <code>filees-worker</code> ma tryb <code>0555</code> i dziedziczy efektywny UID przez <code>exec</code>. Ten podział jest wymagany, ponieważ OpenBSD odmawia wykonania obrazu setuid/setgid, gdy ustawione są <code>execpromises</code>.</p>
+<p>Połączenie obu trybów — uruchomienie narzędzia z własną piaskownicą przez dyspozytora, który zablokował już tablicę — kończy się przy pierwszym wywołaniu <code>unveil</code> dziecka błędem <code>EPERM</code>. Dzieje się tak wyłącznie na OpenBSD, ponieważ w innych systemach piaskownica jest operacją pustą. Każdy nowy proces-dziecko po stronie serwera musi zostać sklasyfikowany względem tej tabeli, zanim zostanie podłączony.</p>
+<p>Plik wykonywalny <code>filees-entry</code> ma ustawiony bit setuid i działa z UID konta <code>_filees-state</code>. <code>filees-worker</code> ma tryb <code>0555</code> i dziedziczy efektywny UID przez <code>exec</code>. Ten podział jest wymagany, ponieważ OpenBSD odmawia wykonania obrazu setuid/setgid, gdy ustawiono <code>execpromises</code>.</p>
 <h2 id="ch1-service-repo">1.8 Repozytorium usługowe</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Projekcja aktywacji klienta, ACL tylko do odczytu i kanoniczny magazyn uprawnień strefy są wdrożone i pokryte testami E2E na Linuksie i OpenBSD.</span></div>
 <p>Repozytorium usługowe (nazywane też repozytorium technicznym) jest prywatnym repozytorium SVN, które działa jako wersjonowana płaszczyzna sterowania. <em>Nie</em> przechowuje synchronizowanych plików użytkownika. Każdy monitorowany katalog ma własne, osobne repozytorium danych.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / repozytorium usługowe SVN jako wersjonowana płaszczyzna sterowania</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Kanoniczne rekordy nie-sekretne i wszystkie dotknięte projekcje klientów są publikowane w jednej rewizji SVN.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Kanoniczne niesekretne rekordy i wszystkie dotknięte projekcje klientów są publikowane w jednej rewizji SVN.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">System zyskuje atomową publikację, historię, pliki możliwe do inspekcji i deterministyczne przebudowy projekcji bez osobnej usługi bazy danych.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">SQL/Redis jako prawda domenowa; skrzynki zapisywalne przez klienta; przechowywanie pełnego stanu płaszczyzny sterowania wyłącznie w wygenerowanych plikach authz.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Efekty poza SVN tworzą trwałe sagi i potrzebują reconcilera; klienci otrzymują projekcje, a nie dowolne zapytania.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Skutki poza SVN tworzą trwałe sekwencje i wymagają uzgadniania stanu; klienci otrzymują projekcje, a nie dowolne zapytania.</div>
 </div>
 </div>
-<p>Zaimplementowany pion aktywacji przechowuje następujący nie-sekretny stan trwały:</p>
+<p>Zaimplementowany pion aktywacji przechowuje następujący niesekretny stan trwały:</p>
 <ul>
 <li>Strefy i ich niezmienne identyfikatory</li>
 <li>Instancje klientów, <code>client_id</code>, klucze publiczne, odciski</li>
-<li>Właścicielstwo repozytoriów i kanoniczne uprawnienia/uprawnienia strefa→repozytorium</li>
+<li>Właścicielstwo repozytoriów, kanoniczne uprawnienia repozytorium oraz uprawnienia strefy do repozytorium</li>
 <li>Widoki tylko do odczytu dla klienta</li>
 <li>Zdarzenia audytu aktywacji i odwołania</li>
 <li>Wersja formatu usługowego</li>
@@ -602,7 +602,7 @@
 └── clients/
     └── &lt;client_id&gt;/
         └── view.json</code></pre>
-<p>Menedżer aktywacji i uwierzytelniony proces wykonawczy repozytoriów są ograniczonymi pisarzami w tym pionie. Każdy aktywny klient ma dostęp SVN tylko do odczytu do własnego poddrzewa /clients/&lt;client_id&gt;/ i nie ma wglądu w admin/ ani innych klientów. jedno zatwierdzenie SVN publikuje rekord klienta, strefę jeśli nowa, projekcję i zdarzenie audytu atomowo. Klient dołączający do istniejącej strefy dziedziczy niezmienny alias tej strefy w pierwszym widoku. Właścicielstwo repozytoriów ( admin/repositories/ ) i kanoniczne uprawnienia/uprawnienia strefa→repozytorium ( admin/grants/ , zob. tożsamość i model uprawnień ) są zaimplementowane; każda zmiana uprawnienie/revoke i widoczności regeneruje view.json dotkniętych klientów oraz authz po stronie serwera w tej samej operacji procesu wykonawczego. Przebudowa uprawnień uzgadnia też kanoniczny alias strefy, a idempotentne pasujące zajęcie aliasu naprawia starsze widoki, które go pomijały. Szersza konsola administracyjna poza filees-admin (§4.1) pozostaje osobną, późniejszą koncepcją (signed-zlecenie V3, priorytet 8 w ).</p>
+<p>Menedżer aktywacji i uwierzytelniony proces wykonawczy repozytoriów są ograniczonymi procesami zapisującymi w tym pionie. Każdy aktywny klient ma dostęp SVN tylko do odczytu do własnego poddrzewa <code>/clients/&lt;client_id&gt;/</code> i nie ma wglądu w <code>admin/</code> ani w dane innych klientów. Jedno zatwierdzenie SVN publikuje atomowo rekord klienta, nową strefę, jeśli jest tworzona, projekcję i zdarzenie audytu. Klient dołączający do istniejącej strefy dziedziczy jej niezmienny alias w pierwszym widoku. Właścicielstwo repozytoriów (<code>admin/repositories/</code>) oraz kanoniczne uprawnienia repozytorium i uprawnienia strefy do repozytorium (<code>admin/grants/</code>; zob. tożsamość i model uprawnień) są zaimplementowane. Każda zmiana uprawnienia, jego odwołanie lub zmiana widoczności regeneruje <code>view.json</code> klientów, których dotyczy, oraz serwerowy plik authz w ramach tej samej operacji procesu wykonawczego. Przebudowa uprawnień uzgadnia także kanoniczny alias strefy, a odporne na powtórzenie zajęcie tego samego aliasu naprawia starsze widoki, które go pomijały. Szersza konsola administracyjna poza <code>filees-admin</code> (§4.1) pozostaje osobną, późniejszą koncepcją.</p>
 </div>
 <nav class="page-nav"><a href="administration.html">← część użytkowa: Administracja</a><a href="install.html">Instalacja →</a></nav>
 </div>

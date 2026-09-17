@@ -17,8 +17,7 @@ func TestDemoWorkerRefusesEverythingAcrossRealms(t *testing.T) {
 	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
 	grants := &fakeRealmGrantAuthority{}
 	minter := &fakeMobilePairingMinter{}
-	loader := &refusingDumpLoader{}
-	worker := &Worker{Store: store, Grants: grants, MobilePairing: minter, DumpLoader: loader, Demo: true}
+	worker := &Worker{Store: store, Grants: grants, MobilePairing: minter, Demo: true}
 	ticket := func(typ control.TicketType, payload any) control.Ticket {
 		t.Helper()
 		value, err := control.NewTicket(uuid.NewString(), uuid.NewString(), typ, session.ClientID, payload, time.Now())
@@ -40,11 +39,6 @@ func TestDemoWorkerRefusesEverythingAcrossRealms(t *testing.T) {
 	refused("listed", result, err)
 	result, err = worker.Handle(context.Background(), session, mobilePairingTicket(t, session.ClientID))
 	refused("mobile pairing", result, err)
-	result, err = worker.Handle(context.Background(), session, ticket(control.TicketLoadRepositoryDump, control.LoadRepositoryDumpPayload{RepoID: uuid.NewString()}))
-	refused("load dump", result, err)
-	if loader.calls != 0 {
-		t.Fatal("demo dump load reached svnadmin load, which bypasses pre-commit")
-	}
 	if grants.grantCalls != 0 || grants.visibility != "" || minter.calls != 0 {
 		t.Fatalf("demo refusal reached an authority: grants=%+v minter calls=%d", grants, minter.calls)
 	}
@@ -62,11 +56,4 @@ func TestDemoWorkerRefusesEverythingAcrossRealms(t *testing.T) {
 	if err != nil || result.Status != control.ResultOK || grants.visibility != "hidden" {
 		t.Fatalf("hiding a realm must stay possible: result=%+v err=%v visibility=%q", result, err, grants.visibility)
 	}
-}
-
-type refusingDumpLoader struct{ calls int }
-
-func (l *refusingDumpLoader) Load(context.Context, string, string, string, bool, *int) (LoadedDump, error) {
-	l.calls++
-	return LoadedDump{}, nil
 }

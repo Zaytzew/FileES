@@ -54,6 +54,17 @@ func SubmitInvitation(ctx context.Context, profile ServerProfile, invitationToke
 }
 
 func submitOnboarding(ctx context.Context, profile ServerProfile, request onboarding.OnboardRequest) (onboarding.OnboardResponse, error) {
+	response, err := exchangeOnboarding(ctx, profile, request)
+	if err != nil {
+		return onboarding.OnboardResponse{}, err
+	}
+	return acceptedOnboardResponse(request, response)
+}
+
+// exchangeOnboarding runs the bootstrap SSH command and decodes its frame. It
+// does not judge the answer: an invitation expects only "accepted", while a
+// demo request may also be refused with a reason.
+func exchangeOnboarding(ctx context.Context, profile ServerProfile, request onboarding.OnboardRequest) (onboarding.OnboardResponse, error) {
 	host, port := profile.hostAndPort()
 	address := net.JoinHostPort(host, port)
 	knownHostsPath := filepath.Clean(profile.KnownHostsPath)
@@ -114,6 +125,13 @@ func submitOnboarding(ctx context.Context, profile ServerProfile, request onboar
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response contains trailing JSON")
 	}
+	if response.Schema != onboarding.OnboardResponseSchema || response.OnboardingRequestID != request.OnboardingRequestID {
+		return onboarding.OnboardResponse{}, errors.New("bootstrap response does not match request")
+	}
+	return response, nil
+}
+
+func acceptedOnboardResponse(request onboarding.OnboardRequest, response onboarding.OnboardResponse) (onboarding.OnboardResponse, error) {
 	workerKey, _, options, rest, keyErr := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(response.WorkerPublicKey)))
 	if response.Schema != onboarding.OnboardResponseSchema || response.Status != "accepted" || response.OnboardingRequestID != request.OnboardingRequestID || response.AssignedReversePort == 0 || keyErr != nil || workerKey.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response does not match request")

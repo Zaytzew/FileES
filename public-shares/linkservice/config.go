@@ -59,6 +59,8 @@ type Config struct {
 	Bundle        BundleConfig    `json:"bundle,omitempty"`
 	IntakeRoot    string          `json:"intake_root,omitempty"`
 	MaxUploadSize int64           `json:"max_upload_size,omitempty"`
+	// Demo renders listings and forms but serves no file content either way.
+	Demo bool `json:"demo,omitempty"`
 }
 
 type Runtime struct {
@@ -226,7 +228,7 @@ func (r Runtime) Handler() http.Handler {
 	if r.Intake != nil {
 		maxUpload = r.Intake.MaxBytes
 	}
-	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1), Intake: r.Intake, MaxUploadBytes: maxUpload}
+	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1), Intake: r.Intake, MaxUploadBytes: maxUpload, Demo: r.Config.Demo}
 }
 
 func (r Runtime) ListenFastCGI() (net.Listener, func(), error) {

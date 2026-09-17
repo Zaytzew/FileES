@@ -28,6 +28,12 @@ import (
 const defaultMaxUploadBytes = 64 << 20
 
 func (h Handler) uploadEntry(w http.ResponseWriter, request *http.Request, alias, channelSlug string) {
+	if h.Demo && request.Method == http.MethodPost {
+		if media, _, err := mime.ParseMediaType(request.Header.Get("Content-Type")); err == nil && media == "multipart/form-data" {
+			h.demoRefusal(w)
+			return
+		}
+	}
 	if h.Intake == nil || h.Backend == nil {
 		h.notFound(w)
 		return

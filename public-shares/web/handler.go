@@ -72,6 +72,10 @@ type Handler struct {
 	Intake         *intake.Store
 	MaxUploadBytes int64
 	Now            func() time.Time
+	// Demo keeps listings and the upload form visible but never serves or
+	// accepts content: every download route and every file POST gets the demo
+	// 404 before the backend is asked anything.
+	Demo bool
 }
 
 type visit struct {
@@ -95,6 +99,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	alias, channelSlug := parts[0], parts[1]
+	if h.Demo && len(parts) > 2 {
+		h.demoRefusal(w)
+		return
+	}
 	if len(parts) == 2 {
 		h.entry(w, request, alias, channelSlug)
 		return
@@ -1262,13 +1270,21 @@ func (h Handler) downloadFailure(w http.ResponseWriter, err error) {
 }
 
 func (h Handler) notFound(w http.ResponseWriter) {
+	renderNotFound(w, notFoundTemplate)
+}
+
+func (h Handler) demoRefusal(w http.ResponseWriter) {
+	renderNotFound(w, demoRefusalTemplate)
+}
+
+func renderNotFound(w http.ResponseWriter, page *template.Template) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	digest := sha256.Sum256([]byte(notFoundCSS))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	w.WriteHeader(http.StatusNotFound)
-	_ = notFoundTemplate.Execute(w, struct {
+	_ = page.Execute(w, struct {
 		BrandSymbol template.HTML
 		CSS         template.CSS
 	}{BrandSymbol: brandSymbol, CSS: template.CSS(notFoundCSS)})
@@ -1447,6 +1463,35 @@ var notFoundTemplate = template.Must(template.New("not-found").Parse(`<!doctype 
 <a class="home" href="/" rel="nofollow">Strona główna</a>
 </section>
 <footer class="footer">Bezpieczne udostępnienie FileES</footer>
+</main>
+</body>
+</html>`))
+
+// The demo page is bilingual because its readers include store reviewers.
+var demoRefusalTemplate = template.Must(template.New("demo-refusal").Parse(`<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Serwer demonstracyjny · Demo server — filees:space</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main class="shell">
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div><span class="error-code" role="status">HTTP ERROR 404</span></header>
+<section class="card" aria-labelledby="demo-title">
+<h1 id="demo-title">To jest serwer demonstracyjny</h1>
+<p class="subtitle">Udostępnienia publiczne pokazują tu tylko listę plików. Pobieranie i przesyłanie plików jest wyłączone.</p>
+<p class="hint">Serwer demo nie służy do rozpowszechniania ani zbierania własnych materiałów.</p>
+</section>
+<section class="card" lang="en" aria-labelledby="demo-title-en">
+<h1 id="demo-title-en">This is a demo server</h1>
+<p class="subtitle">Public shares here show the file list only. Downloading and uploading files is switched off.</p>
+<p class="hint">The demo server is not for distributing or collecting your own material.</p>
+<a class="home" href="/" rel="nofollow">Strona główna · Home</a>
+</section>
+<footer class="footer">FileES demo</footer>
 </main>
 </body>
 </html>`))

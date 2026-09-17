@@ -99,7 +99,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
 # passing the live channel here therefore fails closed if publishing Windows
 # alone would strand an older Linux manifest under the new envelope.
 merge=""
-if [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
+# A platform already staged for this same release is the envelope to extend:
+# the live channel still names the previous release, and merging with it would
+# be refused rather than combine the two platforms of one release.
+if [ -f "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" ]; then
+	merge="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"
+elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
 fi
 

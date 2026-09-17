@@ -84,7 +84,12 @@ sh "$root/packaging/linux/build-appimage.sh" "$staging" "$installer" >/dev/null
 # Same reasoning as Windows: the channel envelope covers every platform at
 # once, so publishing Linux alone must not strand an older Windows manifest.
 merge=""
-if [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
+# A platform already staged for this same release is the envelope to extend:
+# the live channel still names the previous release, and merging with it would
+# be refused rather than combine the two platforms of one release.
+if [ -f "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" ]; then
+	merge="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"
+elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
 fi
 

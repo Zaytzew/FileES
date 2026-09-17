@@ -156,7 +156,14 @@ type Worker struct {
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
+	// Demo refuses everything that reaches across realms: grants, the realm
+	// directory and pairing another installation into the realm.
+	Demo bool
 }
+
+// DemoPolicyCode is the typed refusal of an operation a demo server does not
+// allow, so a client can say so instead of reporting a failure.
+const DemoPolicyCode = "DEMO_POLICY"
 
 func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
 	if err := session.Validate(); err != nil {
@@ -339,6 +346,9 @@ func (w *Worker) grantAccess(ctx context.Context, session Session, ticket contro
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err
 	}
+	if w.Demo {
+		return w.failure(ticket, DemoPolicyCode, "a demo server does not share repositories between realms")
+	}
 	record, err := w.Grants.Grant(ctx, session.RealmID, payload.RecipientRealmID, payload.RepoID, payload.Access)
 	if err != nil {
 		return w.failure(ticket, "REALM_GRANT_REJECTED", err.Error())
@@ -377,6 +387,9 @@ func (w *Worker) listGrantRecipients(ctx context.Context, session Session, ticke
 	if err := control.DecodePayload(ticket.Payload, &request); err != nil {
 		return w.failure(ticket, "REALM_GRANT_INVALID", err.Error())
 	}
+	if w.Demo {
+		return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ListGrantRecipientsResult{Recipients: []control.GrantRecipient{}}, w.now())
+	}
 	recipients, err := w.Grants.ListGrantRecipients(ctx, session.RealmID, request.RepoID)
 	if err != nil {
 		return w.failure(ticket, "REALM_DIRECTORY_UNAVAILABLE", "realm directory is unavailable")
@@ -414,6 +427,9 @@ func (w *Worker) setRealmDirectoryVisibility(ctx context.Context, session Sessio
 	var payload control.SetRealmDirectoryVisibilityPayload
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err
+	}
+	if w.Demo && payload.Visibility == "listed" {
+		return w.failure(ticket, DemoPolicyCode, "a demo server has no realm directory")
 	}
 	visibility, err := w.Grants.SetRealmDirectoryVisibility(ctx, session.RealmID, payload.Visibility)
 	if err != nil {
@@ -625,6 +641,9 @@ func (w *Worker) loadRepositoryDump(ctx context.Context, session Session, ticket
 func (w *Worker) mobilePairing(session Session, ticket control.Ticket) (control.Result, error) {
 	if w.MobilePairing == nil {
 		return w.failure(ticket, "MOBILE_PAIRING_UNAVAILABLE", "mobile pairing is not configured on this worker")
+	}
+	if w.Demo {
+		return w.failure(ticket, DemoPolicyCode, "a demo server allows one activation per realm")
 	}
 	grants := make([]MobilePairingRepoGrant, 0, len(session.Repositories))
 	for _, repo := range session.Repositories {

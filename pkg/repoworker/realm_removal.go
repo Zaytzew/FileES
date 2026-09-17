@@ -152,6 +152,46 @@ func (s RealmRemovalStore) BeginOperation(operationID, realmID string, scope Rea
 	})
 	return result, resultToken, err
 }
+
+// BeginPolicyRemoval records a removal the server's own policy decided - a
+// demo realm past its TTL - rather than one its owner asked for. There is no
+// OTP to wait for and no mail to send: the record starts at the confirmed
+// boundary, so the ordinary executor and `filees-operation recover` finish it
+// exactly like a confirmed request. Repeating it returns the existing record.
+func (s RealmRemovalStore) BeginPolicyRemoval(operationID, realmID string, scope RealmRemovalScope) (RealmRemovalRecord, error) {
+	if err := s.valid(); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return RealmRemovalRecord{}, errors.New("realm removal operation_id must be UUID")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return RealmRemovalRecord{}, errors.New("realm removal realm_id must be UUID")
+	}
+	if err := validateScope(scope); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	if err := os.MkdirAll(s.Root, 0700); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	var out RealmRemovalRecord
+	err := WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		if existing, err := s.load(operationID); err == nil {
+			if existing.RealmID != realmID {
+				return errors.New("realm removal operation conflicts with prior request")
+			}
+			out = existing
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		now := s.now()
+		out = RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: operationID, RealmID: realmID, Scope: scope, State: RealmRemovalDeleting, CreatedAt: now, ConfirmedAt: &now, ExpiresAt: now}
+		return atomicJSON(s.path(operationID), out)
+	})
+	return out, err
+}
+
 func (s RealmRemovalStore) Confirm(operationID, otp string) (RealmRemovalRecord, error) {
 	if err := s.valid(); err != nil {
 		return RealmRemovalRecord{}, err

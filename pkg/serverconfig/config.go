@@ -46,6 +46,45 @@ type File struct {
 	PublicShares         PublicSharesFile     `json:"public_shares,omitempty"`
 	Upload               UploadFile           `json:"upload,omitempty"`
 	OperatorBranding     OperatorBrandingFile `json:"operator_branding,omitempty"`
+	Demo                 *DemoFile            `json:"demo,omitempty"`
+}
+
+// DemoFile turns a server into a demonstration server. Its presence enables
+// the whole policy of implementation notes (not distributed): one
+// activation per realm, no access across realms, and realms deleted without
+// archives once RealmTTL has passed since their activation.
+type DemoFile struct {
+	RealmTTL string `json:"realm_ttl"`
+}
+
+// MaxDemoRealmTTL is the owner's ceiling for how long a demo realm may live.
+const MaxDemoRealmTTL = 120 * time.Minute
+
+// DemoPolicy is the resolved DemoFile; the zero value is an ordinary server.
+type DemoPolicy struct {
+	Enabled  bool
+	RealmTTL time.Duration
+}
+
+// Expired reports whether a realm activated at activatedAt is past its TTL.
+func (p DemoPolicy) Expired(activatedAt, now time.Time) bool {
+	return p.Enabled && !now.Before(activatedAt.Add(p.RealmTTL))
+}
+
+func resolveDemo(file File) (DemoPolicy, error) {
+	if file.Demo == nil {
+		return DemoPolicy{}, nil
+	}
+	ttl, err := time.ParseDuration(strings.TrimSpace(file.Demo.RealmTTL))
+	if err != nil || ttl < time.Minute || ttl > MaxDemoRealmTTL {
+		return DemoPolicy{}, fmt.Errorf("demo realm_ttl must be a duration from 1m to %s", MaxDemoRealmTTL)
+	}
+	// An expired demo realm is deleted to zero. A retention window would keep
+	// dumps nobody is ever offered, so it has to be stated as zero, not implied.
+	if file.Repositories.DeletionRetentionDays == nil || *file.Repositories.DeletionRetentionDays != 0 {
+		return DemoPolicy{}, errors.New("demo requires repositories deletion_retention_days set to 0")
+	}
+	return DemoPolicy{Enabled: true, RealmTTL: ttl}, nil
 }
 
 // OperatorBrandingFile is the server-wide identity used where a message
@@ -215,6 +254,7 @@ type Config struct {
 	PublicShareFrostKey  []byte
 	Upload               UploadFile
 	OperatorBranding     realmbranding.Branding
+	Demo                 DemoPolicy
 }
 
 type Secrets uint8
@@ -302,6 +342,11 @@ func load(path string, secrets Secrets) (Config, error) {
 		MobileEntryPath: file.Activation.MobileEntryPath,
 		SVNBinary:       file.Activation.SVNBinary, SVNServeBinary: file.Activation.SVNServeBinary,
 	}
+	demo, err := resolveDemo(file)
+	if err != nil {
+		return Config{}, err
+	}
+	activationConfig.SingleActivationPerRealm = demo.Enabled
 	if secrets&SecretActivation != 0 {
 		if _, err := activation.New(activationConfig, nil); err != nil {
 			return Config{}, err
@@ -454,6 +499,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		OperatorBranding: operatorBranding,
 		Activation:       activationConfig,
 		Repositories:     file.Repositories,
+		Demo:             demo,
 		Onboarding:       onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
 		SMTP:             smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
 	}

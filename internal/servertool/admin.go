@@ -54,10 +54,12 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|rotate | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|rotate | erasure complete | demo reap | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
+	case "demo reap":
+		return runAdminDemoReap(path, args[2:], stdout, stderr)
 	case "repo reap-passports":
 		return runAdminReapPassports(path, args[2:], stdout, stderr)
 	case "repo lock-guards":
@@ -91,6 +93,10 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
+		}
+		if config.Demo.Enabled && *joinRealmAlias != "" {
+			report(stderr, "filees-admin ticket create", errors.New("a demo server allows one activation per realm; --join-realm-alias is refused"))
+			return ExitUsage
 		}
 		realmID := ""
 		if *joinRealmAlias != "" {
@@ -283,6 +289,10 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
+		}
+		if config.Demo.Enabled {
+			report(stderr, "filees-admin repo transfer-owner", errors.New("a demo server does not move repositories between realms"))
+			return ExitUsage
 		}
 		r := config.Repositories
 		publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, Runner: repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}}

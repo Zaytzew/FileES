@@ -5,6 +5,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
@@ -178,6 +179,10 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	if err != nil {
 		report(stderr, "filees-client-entry activation", err)
 		return ExitConfig
+	}
+	if err := demoClientExpired(config.Demo, manager, args[0], args[1], time.Now()); err != nil {
+		report(stderr, "filees-client-entry demo", err)
+		return ExitUnavailable
 	}
 	if originalCommand == ClientSVNCommand || originalCommand == ClientWhaleCommand {
 		lease, err := manager.ClaimSession(args[0], args[1])

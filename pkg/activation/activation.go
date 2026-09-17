@@ -59,6 +59,10 @@ type Config struct {
 	MobileEntryPath string
 	SVNBinary       string
 	SVNServeBinary  string
+	// SingleActivationPerRealm is the demo server's rule: a realm admits
+	// exactly one installation, ever. Any record for the realm, revoked
+	// included, refuses a second one, so a realm never returns.
+	SingleActivationPerRealm bool
 }
 
 type Record struct {
@@ -207,6 +211,17 @@ func (m *Manager) Stage(grant onboarding.ActivationGrant) error {
 			return errors.New("activation realm is being removed")
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
+		}
+		if m.config.SingleActivationPerRealm {
+			records, err := m.recordsLocked()
+			if err != nil {
+				return err
+			}
+			for _, record := range records {
+				if record.RealmID == grant.RealmID {
+					return ErrRealmAlreadyActivated
+				}
+			}
 		}
 		now := m.now().UTC()
 		record := Record{
@@ -472,6 +487,56 @@ func (m *Manager) RevokeRealm(ctx context.Context, realmID, reason string) ([]st
 		revoked = append(revoked, clientID)
 	}
 	return revoked, nil
+}
+
+// ErrRealmAlreadyActivated is the demo refusal of a second installation.
+var ErrRealmAlreadyActivated = errors.New("this server allows one activation per realm")
+
+// RealmActivations returns, for every realm that has ever had an installation
+// activated, the earliest activation time. Revoked records count: a demo
+// realm's lifetime starts at its activation and nothing later resets it.
+func (m *Manager) RealmActivations() (map[string]time.Time, error) {
+	activations := map[string]time.Time{}
+	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		records, err := m.recordsLocked()
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			if record.ActivatedAt == nil {
+				continue
+			}
+			if first, ok := activations[record.RealmID]; !ok || record.ActivatedAt.Before(first) {
+				activations[record.RealmID] = record.ActivatedAt.UTC()
+			}
+		}
+		return nil
+	})
+	return activations, err
+}
+
+// ClientRealmActivatedAt resolves the realm of one credential and returns when
+// that realm was first activated, for the SSH entry that knows only the
+// operation and client it was invoked with.
+func (m *Manager) ClientRealmActivatedAt(operationID, clientID string) (time.Time, bool, error) {
+	record, err := readRecord(m.recordPath(operationID))
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	if record.ClientID != clientID {
+		return time.Time{}, false, errors.New("activation record does not belong to client")
+	}
+	return m.RealmActivatedAt(record.RealmID)
+}
+
+// RealmActivatedAt is RealmActivations for one realm.
+func (m *Manager) RealmActivatedAt(realmID string) (time.Time, bool, error) {
+	activations, err := m.RealmActivations()
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	at, ok := activations[realmID]
+	return at, ok, nil
 }
 
 // ActiveClientsInRealm returns the immutable client part of a realm-removal

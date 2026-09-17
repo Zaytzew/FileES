@@ -278,6 +278,9 @@ type Bundle struct {
 	Operation Operation       `json:"operation"`
 	Outbox    MailOutboxEntry `json:"outbox"`
 	Audit     []AuditEvent    `json:"audit"`
+	// DemoOrigin is present only on an operation a demo server started
+	// without an invitation; see TakeDemo.
+	DemoOrigin *DemoOrigin `json:"demo_origin,omitempty"`
 }
 
 type TakeReceipt struct {

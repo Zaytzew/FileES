@@ -71,6 +71,10 @@ type toolAccess struct {
 	svnAdminBinary        string
 	svnLookBinary         string
 	rotationArchiveRoot   string
+	// needDemoCapacity lets a demo onboarding statfs the repositories volume.
+	// It unveils the root read-only and only on a server with a demo section.
+	needDemoCapacity bool
+	capacityRoot     string
 }
 
 func (access toolAccess) promises() string {
@@ -131,6 +135,9 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	}
 	if access.needRotationArchive {
 		access.rotationArchiveRoot = config.Repositories.RotationArchiveRoot
+	}
+	if access.needDemoCapacity && config.Demo.Enabled && filepath.IsAbs(config.Repositories.Root) {
+		access.capacityRoot = config.Repositories.Root
 	}
 	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot, config.Repositories.DeletionArchiveRoot, publicShareStateRoot)
 	var sandboxErr error
@@ -250,6 +257,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		if access.needRepoInspection && access.svnLookBinary != "" {
 			paths = append(paths, obsandbox.Path{Label: "svnlook", Name: access.svnLookBinary, Perms: "rx"})
 		}
+	}
+	if access.capacityRoot != "" {
+		paths = append(paths, obsandbox.Path{Label: "demo-capacity", Name: access.capacityRoot, Perms: "r"})
 	}
 	if access.needLockGuards {
 		paths = append(paths, obsandbox.Path{Label: "lock-guard-worker", Name: repositoryWorkerPath, Perms: "rx"})

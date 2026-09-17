@@ -64,7 +64,18 @@ const MaxDemoRealmTTL = 120 * time.Minute
 type DemoPolicy struct {
 	Enabled  bool
 	RealmTTL time.Duration
+	// RealmQuota is the space every demo realm is entitled to.
+	RealmQuota int64
+	// AddressBlock is how long a client address stays refused after its demo
+	// realm expired; the installation itself is refused for good.
+	AddressBlock time.Duration
 }
+
+// The owner's fixed demo limits (implementation notes (not distributed)).
+const (
+	DemoRealmQuota   int64 = 1 << 30
+	DemoAddressBlock       = 24 * time.Hour
+)
 
 // Expired reports whether a realm activated at activatedAt is past its TTL.
 func (p DemoPolicy) Expired(activatedAt, now time.Time) bool {
@@ -84,7 +95,7 @@ func resolveDemo(file File) (DemoPolicy, error) {
 	if file.Repositories.DeletionRetentionDays == nil || *file.Repositories.DeletionRetentionDays != 0 {
 		return DemoPolicy{}, errors.New("demo requires repositories deletion_retention_days set to 0")
 	}
-	return DemoPolicy{Enabled: true, RealmTTL: ttl}, nil
+	return DemoPolicy{Enabled: true, RealmTTL: ttl, RealmQuota: DemoRealmQuota, AddressBlock: DemoAddressBlock}, nil
 }
 
 // OperatorBrandingFile is the server-wide identity used where a message

@@ -53,14 +53,14 @@
 <span><strong>Wersja</strong> 0.1.16</span>
 <span><strong>Data</strong> 2026-09-14</span>
 <span><strong>Serwer</strong> OpenBSD 7.9 · podpisany kanał wydań</span>
-<span><strong>Klient</strong> pulpit Linux i Windows · Android</span>
+<span><strong>Aplikacje</strong> pulpit Linux i Windows · Android</span>
 <span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
 </div>
 <div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu mówi po polsku, angielsku, francusku, niemiecku i hiszpańsku; nazwy protokołu i strony <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
 </section>
 <section aria-label="Legenda dojrzałości" class="maturity-legend">
-<div class="legend-item"><span class="status status-verified">Zweryfikowane</span><p>Działanie jest zaimplementowane i potwierdzone odpowiednimi testami natywnymi, integracyjnymi, regresyjnymi lub awaryjnymi albo odbiorem na żywym wdrożeniu. Oznaczenie często podaje zakres dowodu po słowie &mdash; <em>Zweryfikowane na OpenBSD</em>, <em>Zweryfikowane na żywo</em>, <em>Zweryfikowane między klientami</em> &mdash; i właśnie ten zakres mówi, skąd pochodzi dowód, a nie tylko że jakiś istnieje.</p></div>
-<div class="legend-item"><span class="status status-implemented">Zaimplementowane</span><p>Kod istnieje, ale pakietowanie dla którejś z platform docelowych albo późniejsza integracja pozostają niepełne.</p></div>
+<div class="legend-item"><span class="status status-verified">Zweryfikowane</span><p>Działanie jest zaimplementowane i potwierdzone odpowiednimi testami natywnymi, integracyjnymi, regresyjnymi lub awaryjnymi albo odbiorem w działającym wdrożeniu. Oznaczenie często podaje zakres dowodu po słowie &mdash; <em>Zweryfikowane na OpenBSD</em>, <em>Zweryfikowane na żywo</em>, <em>Zweryfikowane między klientami</em> &mdash; i właśnie ten zakres wskazuje źródło dowodu, a nie tylko fakt jego istnienia.</p></div>
+<div class="legend-item"><span class="status status-implemented">Zaimplementowane</span><p>Kod istnieje, ale pakietowanie dla jednej z platform docelowych albo późniejsza integracja pozostają niepełne.</p></div>
 <div class="legend-item"><span class="status status-designed">Zaprojektowane</span><p>Kontrakt i granice są zatwierdzone; implementacja jest niepełna albo świadomie odłożona. Żadna sekcja nie ma obecnie tego poziomu &mdash; pozostaje w legendzie, ponieważ rozróżnienie jest rzeczywiste, nie dlatego, że coś jest nim oznaczone.</p></div>
 <div class="legend-item"><span class="status status-planned">Planowane</span><p>Kierunek jest zapisany, ale nie należy do obecnego kontraktu operacyjnego.</p></div>
 </section>
@@ -74,7 +74,7 @@
 <li><a href="#user">Obsługa — instrukcje i zastosowanie</a></li>
 <li><a href="#tech">Technika — sposób działania</a></li>
 <li><a href="user-guide.html">Obsługa programu na komputerze</a></li>
-<li><a href="android.html">Klient Android</a></li>
+<li><a href="android.html">Aplikacja na Androida</a></li>
 <li><a href="administration.html">Administracja</a></li>
 <li><a href="public-shares.html">Udziały publiczne</a></li>
 <li><a href="architecture.html">Architektura, zlecenia i piaskownica</a></li>
@@ -95,14 +95,14 @@
 <a class="lang-card" href="#tech">
 <span class="lang-kicker">Technika</span>
 <strong>Architektura i kontrakty</strong>
-<p>Część techniczna opisuje protokoły, przebieg operacji, wymagania instalacyjne, zabezpieczenia pledge/unveil oraz polecenia systemowe.</p>
+<p>Część techniczna opisuje protokoły, przebieg operacji, wymagania instalacyjne, mechanizmy ochrony pledge/unveil oraz polecenia systemowe.</p>
 </a>
 </div>
 <h2 id="user">Obsługa</h2>
 <p>Tę część przeznaczono dla użytkownika programu na komputerze oraz administratora strefy. Opisujemy, co zrobić, jaki będzie skutek i kiedy dana funkcja jest potrzebna. Nazwy poleceń, plików i pól protokołu pozostają w oryginalnej postaci; pozostały tekst używa polskiej terminologii.</p>
 <ul>
-<li><a href="user-guide.html">instrukcja pulpitu</a> — instalacja klienta, pierwszy folder, Ustawienia, blokady, Dziennik.</li>
-<li><a href="android.html">Klient Android</a> — parowanie QR, przegląd udziałów, wysyłanie plików do <code>mobile-uploads/</code>.</li>
+<li><a href="user-guide.html">instrukcja pulpitu</a> — instalacja aplikacji klienckiej, pierwszy folder, Ustawienia, blokady, Dziennik.</li>
+<li><a href="android.html">Aplikacja na Androida</a> — parowanie QR, przegląd udziałów, wysyłanie plików do <code>mobile-uploads/</code>.</li>
 <li><a href="public-shares.html">Udziały publiczne</a> — udostępnij pliki komuś, kto nigdy nie zainstaluje FileES.</li>
 <li><a href="administration.html">Administracja</a> — zaproszenia, cofanie uprawnień, odzyskiwanie i zmiana generacji repozytorium.</li>
 </ul>
@@ -116,23 +116,23 @@
 <li><a href="man-pages.html">Polecenia systemowe</a> — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
 <h2>Stan na 2026-09-14</h2>
-<p>Każdy wiersz podaje swój dowód. <em>Zweryfikowane</em> znaczy, że ktoś widział działanie na prawdziwym systemie; <em>Zaimplementowane</em> znaczy, że istnieje kod z testami, a wiersz mówi, czego jeszcze nie oglądano.</p>
+<p>Każdy wiersz ma wskazany zakres dowodu. <em>Zweryfikowane</em> znaczy, że działanie potwierdzono na prawdziwym systemie; <em>Zaimplementowane</em> znaczy, że istnieje kod z testami, a opis stanu wskazuje, czego jeszcze nie odebrano.</p>
 <div class="table-wrap"><table>
 <tr><th>Obszar</th><th>Stan</th></tr>
 <tr><td>Demon pulpitu i zasobnik systemowy</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
 <tr><td>Języki GUI pulpitu</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-11 w prawdziwym oknie Wails: polski, angielski, francuski, niemiecki i hiszpański, wybierane w nagłówku okna albo automatycznie zgodnie z ustawieniami systemu; liczebniki i czas względny są dopasowane do wybranego języka bez ponownego uruchamiania GUI</td></tr>
-<tr><td>Klient Android</td><td><span class="status status-verified">Zweryfikowane na żywo</span> 2026-09-09 na <code>spot</code>: QR, przegląd, pobranie, 198 plików w jednym zatwierdzeniu. Nowsze kompilacje z przebudowanym ekranem głównym i interfejsem w języku telefonu (PL, EN, DE, FR, ES) są zbudowane, ale <em>jeszcze nie odebrane na urządzeniu</em></td></tr>
+<tr><td>Aplikacja na Androida</td><td><span class="status status-verified">Zweryfikowane na żywo</span> 2026-09-09 na <code>spot</code>: QR, przegląd, pobranie, 198 plików w jednym zatwierdzeniu. Nowsze kompilacje z przebudowanym ekranem głównym i interfejsem w języku telefonu (PL, EN, DE, FR, ES) są zbudowane, ale <em>jeszcze nie odebrane na urządzeniu</em></td></tr>
 <tr><td>Aktywacja i dołączenie do strefy</td><td><span class="status status-verified">Zweryfikowane</span> łącznie z OTP przez nazwany potok na Windows i wznowieniem przyjętej próby</td></tr>
-<tr><td>Wybiórcze podłączenie, odnalezienie, odłączenie, wczytanie zrzutu</td><td><span class="status status-verified">Zweryfikowane</span></td></tr>
-<tr><td>Uprawnienia strefy i widoczność</td><td><span class="status status-verified">Zweryfikowane</span> tylko właściciel; bez możliwości przekazania dalej</td></tr>
+<tr><td>Wybiórcze podłączenie, wyszukanie, odłączenie i załadowanie zrzutu</td><td><span class="status status-verified">Zweryfikowane</span></td></tr>
+<tr><td>Uprawnienia strefy i widoczność</td><td><span class="status status-verified">Zweryfikowane</span> tylko właściciel, bez możliwości dalszego przekazywania</td></tr>
 <tr><td>Polityka edycji repozytorium</td><td><span class="status status-verified">Zweryfikowane</span> odbiór na żywo 6/6 na dwóch klientach Windows</td></tr>
-<tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> punkt końcowy HTTPS na żywo, OTP, oznaczenia, ZIP; każda nowa wizyta zamraża jedną rewizję i pokazuje udostępniony folder w stanie z tej rewizji</td></tr>
-<tr><td><code>FILEES-BIN</code> / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> na produkcyjnym OpenBSD: hosty instalują się i aktualizują z podpisanego kanału <code>alpha</code>; ostatnia odnotowana aktualizacja, 2026-09-13, wniosła serwerową część półek przyjęcia</td></tr>
-<tr><td>MSI dla Windows i automatyczna aktualizacja</td><td><span class="status status-implemented">Zaimplementowane</span> jedno MSI instaluje razem demona, GUI i skrypty startowe; podpisana automatyczna aktualizacja pary została odebrana na wcześniejszych wydaniach. MSI nie ma podpisu Authenticode, a aktualizacji przez MSI na zainstalowanej parze jeszcze nie przećwiczono</td></tr>
-<tr><td>Serwer linuksowy</td><td><span class="status status-implemented">Zaimplementowane</span> kod serwera buduje się i przechodzi swój zestaw testów na Linuksie — zmierzone po raz pierwszy natywnie na Debianie 13 dnia 2026-09-09, po czym jedyne pozostałe porażki okazały się wadami niezwiązanymi z platformą. Instalacja, nadzór usługi, zrzucanie uprawnień i pakowanie są <em>jeszcze nie wdrożone</em>: nie ma linuksowego instalatora, a <code>pledge</code>/<code>unveil</code> nie istnieje poza OpenBSD, więc na Linuksie zamknięcie procesu jest obowiązkiem administratora</td></tr>
-<tr><td>Kanał przyjęcia — strona nadawcy</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-12 na hoście produkcyjnym: publiczne wysłanie, skan antywirusowy i zatwierdzenie do repozytorium dostawy. Wcześniej trzeba było poprawić trzy domyślne ustawienia pakietu; instalator nadal nie planuje zadania <code>upload-reap</code>, a bez niego pliki są przyjmowane, lecz nigdy nie są przetwarzane (zobacz <a href="install.html">Instalację</a>). <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
-<tr><td>Kanał przyjęcia — strona odbiorcy</td><td><span class="status status-implemented">Zaimplementowane</span> Półka przyjęcia pojawia się pod swoim repozytorium macierzystym, pokazuje odebrane pliki i pobiera wybrane na żądanie, tylko do odczytu, do nowego folderu o podanej nazwie. Następnie umieszcza plik w kopii roboczej rodzica bez nadpisywania czegokolwiek. Przetestowane łącznie z prawdziwym pobraniem wybiórczym na Windows; <em>jeszcze nie odebrane ręcznie w wydanym GUI</em> i jeszcze nie ma go w wydaniu pulpitu</td></tr>
-<tr><td>Bezpieczeństwo pamięci demona</td><td><span class="status status-implemented">Zaimplementowane</span> ramki IPC są czytane z małym buforem początkowym i ograniczonym czasem; przy trwałym braku pamięci demon przestaje przyjmować pracę, zapisuje kolejkę i prosi o ponowne uruchomienie, zamiast dać się zabić. Długiej obserwacji tego kodu jeszcze nie zakończono</td></tr>
+<tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> publiczny punkt HTTPS zweryfikowano na żywo, wraz z OTP, oznaczeniami i ZIP; każda nowa wizyta zamraża jedną rewizję i pokazuje udostępniony folder w stanie z tej rewizji</td></tr>
+<tr><td><code>FILEES-BIN</code> / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> na produkcyjnym OpenBSD: instalator działa poprawnie, a hosty aktualizują się z podpisanego kanału <code>alpha</code>; ostatnia odnotowana aktualizacja, 2026-09-13, wniosła serwerową część półek przyjęcia</td></tr>
+<tr><td>MSI dla Windows i automatyczna aktualizacja</td><td><span class="status status-implemented">Zaimplementowane</span> jedno MSI instaluje razem demona, GUI i skrypty startowe; podpisana automatyczna aktualizacja pary została odebrana na wcześniejszych wydaniach. MSI nie ma podpisu Authenticode, a aktualizacji MSI na już zainstalowanej parze jeszcze nie przećwiczono</td></tr>
+<tr><td>Serwer linuksowy</td><td><span class="status status-implemented">Zaimplementowane</span> kod serwera buduje się poprawnie, a testy przechodzą na Linuksie — zmierzono to po raz pierwszy natywnie na Debianie 13 dnia 2026-09-09; jedyne pozostałe porażki okazały się wadami niezwiązanymi z platformą. Instalacja, nadzór usługi, ograniczenie uprawnień i pakietowanie są <em>jeszcze nie wdrożone</em>: nie ma linuksowego instalatora, a mechanizmy <code>pledge</code>/<code>unveil</code> nie występują poza OpenBSD, więc na Linuksie izolacja procesu pozostaje obowiązkiem administratora</td></tr>
+<tr><td>Kanał przyjęcia — strona nadawcy</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-12 na hoście produkcyjnym: wysłanie z publicznej strony, skan antywirusowy i zatwierdzenie do repozytorium półki. Wcześniej trzeba było poprawić trzy domyślne ustawienia pakietu; instalator nadal nie planuje zadania <code>upload-reap</code>, a bez niego pliki są przyjmowane, lecz nigdy nie są przetwarzane (zobacz <a href="install.html">Instalację</a>). <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
+<tr><td>Kanał przyjęcia — strona odbiorcy</td><td><span class="status status-implemented">Zaimplementowane</span> Półka przyjęcia pojawia się pod swoim repozytorium macierzystym i pokazuje odebrane pliki. Aplikacja umożliwia pobranie wybranych plików na żądanie, tylko do odczytu, do nowego folderu wskazanego przez użytkownika, a następnie umieszcza je w kopii roboczej rodzica bez nadpisywania czegokolwiek. Przetestowano to łącznie z prawdziwym pobraniem wybiórczym na Windows; <em>nie odebrano jeszcze ręcznie w wydanym GUI</em> i funkcja nie weszła jeszcze do wydania pulpitu</td></tr>
+<tr><td>Bezpieczeństwo pamięci demona</td><td><span class="status status-implemented">Zaimplementowane</span> ramki IPC są czytane z małym buforem początkowym i ograniczonym czasem; przy trwałym braku pamięci demon odmawia nowych operacji, zapisuje kolejkę i żąda ponownego uruchomienia. Długotrwałej obserwacji tego kodu jeszcze nie przeprowadzono</td></tr>
 </table></div>
 </div>
 </div>

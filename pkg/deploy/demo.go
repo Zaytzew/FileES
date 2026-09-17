@@ -177,7 +177,9 @@ func beginDemoWithSubmit(ctx context.Context, baseRoot, email string, submit dem
 	if err != nil {
 		return OnboardPassport{}, ServerProfile{}, err
 	}
-	if state.Used {
+	if offer, err := DemoActivationOffer(baseRoot); err != nil {
+		return OnboardPassport{}, ServerProfile{}, err
+	} else if state.Used || offer == DemoOfferUsed {
 		return OnboardPassport{}, ServerProfile{}, ErrDemoUsed
 	}
 	canonical, err := onboarding.CanonicalEmail(email)
@@ -233,4 +235,50 @@ func pinKnownHost(path, line string) error {
 		return err
 	}
 	return writeBytesAtomic(path, []byte(want), 0o600)
+}
+
+// Demo offer states reported to the interface.
+const (
+	DemoOfferAvailable   = "available"
+	DemoOfferUnavailable = "unavailable"
+	DemoOfferUsed        = "used"
+)
+
+// DemoActivationOffer decides whether the interface offers the demo server.
+// It is offered only to an installation with no activation at all. The first
+// activation of any other server ends the offer for good, and so does the
+// demo's own activation; while the demo itself is active the offer is merely
+// unavailable, since its end is already recorded.
+func DemoActivationOffer(baseRoot string) (string, error) {
+	state, err := LoadDemoInstallation(baseRoot)
+	if err != nil {
+		return "", err
+	}
+	if state.Used {
+		return DemoOfferUsed, nil
+	}
+	profiles, err := clientprofile.List(baseRoot)
+	if err != nil {
+		return "", err
+	}
+	servers := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		servers = append(servers, profile.ServerID)
+	}
+	return demoOfferFor(baseRoot, servers)
+}
+
+func demoOfferFor(baseRoot string, activatedServers []string) (string, error) {
+	for _, server := range activatedServers {
+		if server != DemoServerID {
+			if err := MarkDemoUsed(baseRoot, "other_activation"); err != nil {
+				return "", err
+			}
+			return DemoOfferUsed, nil
+		}
+	}
+	if len(activatedServers) > 0 {
+		return DemoOfferUnavailable, nil
+	}
+	return DemoOfferAvailable, nil
 }

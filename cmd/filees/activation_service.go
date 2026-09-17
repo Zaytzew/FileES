@@ -212,22 +212,21 @@ func beginDemoActivation(ctx context.Context, payload contract.ActivationBeginPa
 // reached the server. A failure to record it is logged, never fatal: the
 // server refuses the installation again regardless.
 func markDemoActivated(stateRoot string, passport deploy.OnboardPassport) {
+	reason := "activated"
 	if passport.ServerID != deploy.DemoServerID {
-		return
+		// The first activation of any other server ends the demo offer.
+		reason = "other_activation"
 	}
-	if err := deploy.MarkDemoUsed(stateRoot, "activated"); err != nil {
+	if err := deploy.MarkDemoUsed(stateRoot, reason); err != nil {
 		talk.With("activation:"+passport.ServerID).Warnf("demo state: %v", err)
 	}
 }
 
 // demoActivationState is the daemon's status source for the demo button.
 func demoActivationState() string {
-	state, err := deploy.LoadDemoInstallation(clientprofile.DefaultRoot())
+	offer, err := deploy.DemoActivationOffer(clientprofile.DefaultRoot())
 	if err != nil {
 		return ""
 	}
-	if state.Used {
-		return "used"
-	}
-	return "available"
+	return offer
 }

@@ -43,7 +43,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
 	pathOwners := repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy}
 	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, PublicShareStateRoot: config.PublicShares.EffectiveStateRoot(r.ResultsRoot), Runner: runner, RepositoryHead: pathOwners.Head}
-	effects := repoworker.ServerEffects{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root, DataAuthzFile: r.DataAuthzFile, DeletionArchiveRoot: archiveRoot, DeletionRetentionDays: r.EffectiveDeletionRetentionDays(), Authority: publisher}
+	effects := repoworker.ServerEffects{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root, DataAuthzFile: r.DataAuthzFile, DeletionArchiveRoot: archiveRoot, DeletionRetentionDays: r.EffectiveDeletionRetentionDays(), Authority: publisher, RealmQuotaBytes: config.Demo.RealmQuota}
 	effects.LockGuardExecutable = repositoryWorkerPath
 	backend := &repoworker.DurableBackend{Root: filepath.Join(r.ResultsRoot, "backend"), URLPrefix: r.URLPrefix, Effects: effects}
 	store, err := repoworker.NewFileStore(filepath.Join(r.ResultsRoot, "results"))

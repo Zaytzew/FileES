@@ -180,6 +180,15 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 		}
 	}
 	if r.Stage == "fsfs_created" {
+		// A quota realm's repository is placed under its quota before any
+		// client learns it exists, so no commit can precede the hook.
+		if marker, ok := b.Effects.(interface {
+			MarkRealmQuota(context.Context, string, string) error
+		}); ok {
+			if e = marker.MarkRealmQuota(ctx, r.RepoID, r.RealmID); e != nil {
+				return Repository{}, fmt.Errorf("realm quota: %w", e)
+			}
+		}
 		if e = b.Effects.PublishAuthority(ctx, r.RepoID, r.RealmID, r.Name, r.URL, r.Purpose); e != nil {
 			publishErr := e
 			r.Stage = "rollback_pending"

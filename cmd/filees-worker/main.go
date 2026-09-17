@@ -10,6 +10,9 @@ func main() {
 	if handled, code := servertool.RunLockGuardMode(os.Args[0], os.Args[1:], os.Stdout, os.Stderr); handled {
 		os.Exit(code)
 	}
+	if handled, code := servertool.RunRealmQuotaMode(os.Args[0], os.Args[1:], os.Stderr); handled {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "passport-reap":

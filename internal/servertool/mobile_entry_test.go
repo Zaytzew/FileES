@@ -193,6 +193,15 @@ func TestMobileEntryReportsExecFailureForProofAndFinish(t *testing.T) {
 }
 
 func TestMobileEntryRejectsMissingConfig(t *testing.T) {
+	// The bootstrap pledge happens before the config is read, so even this
+	// refusal narrows the process for good. Unisolated, it left the shared
+	// `go test` process without "inet" and TestS4WorkerResumesEveryDurable-
+	// ActivationBoundary, dozens of tests later, died on socket(2) with
+	// SIGABRT, taking every later test in the package with it (ktrace,
+	// OpenBSD 7.9, 2026-09-17).
+	if isolateSandboxingTest(t, "TestMobileEntryRejectsMissingConfig") {
+		return
+	}
 	var stdout, stderr bytes.Buffer
 	code := runMobileEntry(filepath.Join(t.TempDir(), "missing.json"), t.TempDir(), []string{"op-1", "device-1"}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitConfig {

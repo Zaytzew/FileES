@@ -28,11 +28,18 @@ import (
 )
 
 func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
-	if runtime.GOOS == "openbsd" && os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
-		command := exec.Command(os.Args[0], "-test.run=^TestClientEntrySeparatesProofFromForcedSVNCommand$")
-		command.Env = append(os.Environ(), "FILEES_CLIENT_ENTRY_NATIVE=1", "FILEES_CLIENT_ENTRY_ROOT="+t.TempDir())
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("native client entry child: %v: %s", err, output)
+	// Natively each forced command runs in a child of its own, one invocation
+	// per process as sshd starts them. Two in one process cannot work: the
+	// proof invocation locks an unveil table without server.json, so the next
+	// invocation could not even load its config.
+	native := os.Getenv("FILEES_CLIENT_ENTRY_NATIVE")
+	if runtime.GOOS == "openbsd" && native == "" {
+		for _, invocation := range []string{"proof", "svn"} {
+			command := exec.Command(os.Args[0], "-test.run=^TestClientEntrySeparatesProofFromForcedSVNCommand$")
+			command.Env = append(os.Environ(), "FILEES_CLIENT_ENTRY_NATIVE="+invocation, "FILEES_CLIENT_ENTRY_ROOT="+t.TempDir())
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("native client entry %s child: %v: %s", invocation, err, output)
+			}
 		}
 		return
 	}
@@ -129,8 +136,10 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || called {
-		t.Fatalf("proof entry code=%d called-svn=%v stderr=%s", code, called, stderr.String())
+	if native != "svn" {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || called {
+			t.Fatalf("proof entry code=%d called-svn=%v stderr=%s", code, called, stderr.String())
+		}
 	}
 	getenv = func(name string) string {
 		if name == "SSH_ORIGINAL_COMMAND" {
@@ -138,8 +147,10 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || !called {
-		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
+	if native != "proof" {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || !called {
+			t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
+		}
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
 		supervisorCode = 23

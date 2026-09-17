@@ -1624,6 +1624,9 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	if source := s.detachmentSource(); source != nil {
 		result.Detachments = source.List()
 	}
+	if source := s.demoActivationSource(); source != nil {
+		result.DemoActivation = source()
+	}
 	if service := s.realmRemovalService(); service != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

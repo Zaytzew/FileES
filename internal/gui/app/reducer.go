@@ -415,6 +415,7 @@ func (s appState) viewModel() ViewModel {
 			CanDownload: now.Before(downloadUntil),
 		})
 	}
+	vm.DemoActivation = s.system.DemoActivation
 	if update := s.system.Update; update != nil {
 		vm.Update = &UpdateViewModel{
 			State: update.State, Channel: update.Channel, CurrentVersion: update.CurrentVersion,

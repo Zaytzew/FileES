@@ -65,9 +65,9 @@
 <div class="manual-content">
 <h1 id="ch4">Administracja</h1>
 <div class="chapter-content">
-<p>Ten rozdział opisuje typowe zadania administratora: zapraszanie nowych użytkowników, odwoływanie instalacji, dokańczanie operacji przerwanych awarią, odtwarzanie oraz zmianę generacji repozytorium. Szczegółowe formaty danych, kody wyjścia i maszyny stanów opisuje <a href="operations.html">Eksploatacja</a>. Czynności dostępne z programu na komputerze opisuje <a href="user-guide.html#ch2-gui">przewodnik użytkownika</a>.</p>
-<p>Na OpenBSD polecenia administracyjne uruchamiaj jako użytkownik _filees-state, na przykład przez doas -u _filees-state. Zlecenie utworzone przez użytkownika root pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z set-id celowo nie odczyta.</p>
-<h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Zlecenia, wgląd w operację i fail-closed cofnięcie klienta istnieją.</span></div>
+<p>Ten rozdział opisuje typowe zadania administratora: zapraszanie nowych użytkowników, odwoływanie instalacji, domykanie operacji przerwanych awarią, odtwarzanie oraz zmianę generacji repozytorium. Szczegółowe formaty danych, kody wyjścia i maszyny stanów opisuje <a href="operations.html">Eksploatacja</a>. Czynności dostępne z programu na komputerze opisuje <a href="user-guide.html#ch2-gui">przewodnik użytkownika</a>.</p>
+<p>Na OpenBSD polecenia administracyjne uruchamiaj jako użytkownik <code>_filees-state</code>, na przykład przez <code>doas -u _filees-state</code>. Zlecenie utworzone przez użytkownika root pozostawi plik należący do roota, którego program aktywacyjny działający z bitem set-id celowo nie odczyta.</p>
+<h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Dostępne są zlecenia, inspekcja operacji i bezpieczne w razie błędu odwołanie klienta.</span></div>
 <pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
 filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
@@ -87,29 +87,29 @@ filees-admin share delete --channel-id &lt;channel_uuid&gt;</code></pre>
 <ul>
 <li>Bez <code>--join-realm-alias</code> zaproszenie otwiera <strong>nową</strong> strefę. Nowy pulpit raz pyta o niezmienny alias.</li>
 <li>Z flagą zaproszenie dołącza do <strong>istniejącej</strong> strefy. Osoba dołączająca nie wybiera tej strefy i nie zmienia jej nazwy.</li>
-<li>ticket resend służy do ponowienia wysyłki pierwszej wiadomości po błędzie dostawy. Nie zmienia odbiorcy ani czasu ważności.</li>
-<li>Zlecenia z błędnymi parametrami nie edytuj. Odwołaj je i utwórz nowe.</li>
-<li>client revoke odwołuje jedną instalację. Uprawnienia i foldery należące do strefy pozostają bez zmian.</li>
-<li>client revoke-realm odwołuje wszystkie instalacje należące do danej strefy.</li>
-<li>repo transfer-owner zmienia właściciela repozytorium. Uprawnienia nadane wcześniej przez poprzedniego właściciela pozostają bez zmian.</li>
+<li><code>ticket resend</code> służy do ponowienia wysyłki pierwszej wiadomości po błędzie dostawy. Nie zmienia odbiorcy ani czasu ważności.</li>
+<li>Nie edytuj zleceń z błędnymi parametrami. Odwołaj je i utwórz nowe.</li>
+<li><code>client revoke</code> odwołuje jedną instalację. Uprawnienia i foldery należące do strefy pozostają bez zmian.</li>
+<li><code>client revoke-realm</code> odwołuje wszystkie instalacje należące do danej strefy.</li>
+<li><code>repo transfer-owner</code> zmienia właściciela repozytorium. Uprawnienia nadane wcześniej przez poprzedniego właściciela pozostają bez zmian.</li>
 </ul>
-<p>Tworzenie folderu, nadawanie uprawnień, opublikowanie udziału, wczytanie zrzutu i usunięcie udziału FileES to akcje właściciela na pulpicie. Administracja ma dla dwóch z nich własne, węższe czasowniki: <code>share list</code> i <code>share delete</code> pozwalają obejrzeć i wycofać opublikowany kanał od strony serwera, czego pulpit właściciela nie zrobi dla cudzej strefy. Kody wyjścia, nazwy plików zleceń i sekwencja odwołania są w <a href="operations.html#ops-admin">Eksploatacji</a>. Flagi i przykłady: <a href="man-pages.html">filees-admin(8)</a>.</p>
+<p>Tworzenie folderu, nadawanie uprawnień, publikacja udziału, wczytanie zrzutu i usunięcie udziału FileES to akcje właściciela dostępne na pulpicie. Administracyjne CLI ma dla dwóch z nich osobne, węższe polecenia: <code>share list</code> i <code>share delete</code> pozwalają obejrzeć i wycofać opublikowany kanał od strony serwera, czego pulpit właściciela nie zrobi dla cudzej strefy. Kody wyjścia, nazwy plików zleceń i sekwencja odwołania są w <a href="operations.html#ops-admin">Eksploatacji</a>. Flagi i przykłady: <a href="man-pages.html">filees-admin(8)</a>.</p>
 <h3>Porzucona próba utworzenia repozytorium</h3>
 <p>Gdy przerwany pierwszy import pozostawi w projekcji dodatkowy, zdalny folder, najpierw wykonaj wyłącznie inspekcję. Polecenia uruchamiaj jako <code>_filees-state</code>:</p>
 <pre><code>doas -u _filees-state filees-admin repo check-state --realm-id &lt;realm_uuid&gt;
 
-# dry-run — niczego nie zmienia:
+# próba bez zmian — niczego nie zmienia:
 doas -u _filees-state filees-admin repo prune \
   --realm-id &lt;realm_uuid&gt; --older-than 1h
 
 # zastosuj dopiero po sprawdzeniu would_remove i needs_attention:
 doas -u _filees-state filees-admin repo prune \
   --realm-id &lt;realm_uuid&gt; --older-than 1h --apply</code></pre>
-<p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak stagingu oraz nieobecny FSFS albo dokładnie r0. Aktywne repozytorium, repozytorium od r1 wzwyż i zwykły tombstone usunięcia nie zostaną automatycznie usunięte. Przed skutkiem narzędzie wstrzymuje publikację zmian i ponownie sprawdza HEAD. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
-<h2 id="ch4-operation">4.2 Po awarii</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odzyskiwanie jest idempotentne i bezpieczne przy powtórzeniu.</span></div>
+<p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak obszaru przygotowania oraz brak repozytorium FSFS albo dokładnie rewizję r0. Aktywne repozytorium, repozytorium od rewizji r1 wzwyż i zwykły znacznik usunięcia (tombstone) nie zostaną automatycznie usunięte. Przed usunięciem narzędzie wstrzymuje publikację zmian i ponownie sprawdza <code>HEAD</code>. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
+<h2 id="ch4-operation">4.2 Po awarii</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Procedura odzyskiwania jest odporna na powtórzenie i bezpieczna przy ponownym uruchomieniu.</span></div>
 <pre><code>doas -u _filees-state filees-operation recover
 doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
-<p>Po nieoczekiwanym zatrzymaniu uruchom filees-operation recover. Polecenie domyka przerwane zaproszenia, wygasza niedokończone aktywacje po upływie czasu ważności i wznawia potwierdzone usuwanie strefy, którego klient nie może już dokończyć. Aktywne instalacje nie są wygaszane. Operację można bezpiecznie powtarzać. Format plików przejęcia opisuje część „Eksploatacja”.</p>
+<p>Po nieoczekiwanym zatrzymaniu uruchom <code>filees-operation recover</code>. Polecenie domyka przerwane zaproszenia, wygasza niedokończone aktywacje po upływie czasu ważności i wznawia potwierdzone usuwanie strefy, którego klient nie może już dokończyć. Aktywne instalacje nie są wygaszane. Operację można bezpiecznie powtarzać. Format plików operacji opisuje część „Eksploatacja”.</p>
 <h2 id="ch4-audit">4.3 Gdzie patrzeć</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Na komputerze użytkownika: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
 <p>Na serwerze dziennik aktywacji klienta to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
@@ -122,21 +122,21 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 <h2 id="ch4-recovery">4.5 Odtwarzanie i przeniesienie składowania</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <h4>Przerwane zaproszenie albo usunięcie strefy</h4>
 <p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Jeśli serwer został nieoczekiwanie zatrzymany po wysłaniu OTP usunięcia strefy, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy operację.</p>
-<h4>Zamknięcie żądania wymazania danych</h4>
-<p>Po usunięciu strefy właściciel mógł poprosić o wymazanie danych. Serwer nie twierdzi, że sam czyści kopie zapasowe. Gdy sprawdzisz retencję:</p>
+<h4>Zakończenie żądania usunięcia danych</h4>
+<p>Po usunięciu strefy właściciel mógł poprosić o usunięcie danych. Serwer nie twierdzi, że sam czyści kopie zapasowe. Po sprawdzeniu retencji:</p>
 <pre><code>doas -u _filees-state filees-admin erasure complete \
   --operation-id &lt;realm_removal_uuid&gt;
 
-# rekordy muszą zostać z polityki albo z prawa:
+# rekordy muszą pozostać ze względu na politykę albo przepisy prawa:
 doas -u _filees-state filees-admin erasure complete \
   --operation-id &lt;realm_removal_uuid&gt; --partially-retained</code></pre>
 <p>Okno pokazywane na pulpicie pochodzi z <code>repositories.data_erasure_max_days</code> (domyślnie 90).</p>
 <h4>Przeniesienie korzenia składowania repozytoriów danych</h4>
 <p><code>repositories.root</code> jest wybranym przez administratora korzeniem FSFS; <code>/var/filees/repositories</code> to tylko domyślna wartość. To przeniesienie utrzymaniowe, nie zmiana ustawienia na żywo.</p>
 <ol>
-<li>Zaplanuj wyłączne okno serwisowe. Zatrzymaj wszystkie instalacje FileES, które mogą zapisywać do tych repozytoriów, i nie twórz ani nie usuwaj repozytoriów. Poczekaj, aż zakończą się procesy svnserve -t, filees-worker i filees-client-entry związane z tą instalacją.</li>
+<li>Zaplanuj wyłączne okno serwisowe. Zatrzymaj wszystkie instalacje FileES, które mogą zapisywać do tych repozytoriów, i nie twórz ani nie usuwaj repozytoriów. Poczekaj, aż zakończą się procesy <code>svnserve -t</code>, <code>filees-worker</code> i <code>filees-client-entry</code> związane z tą instalacją.</li>
 <li>Zweryfikuj źródło: <code>svnadmin verify</code> na każdym bezpośrednim dziecku. Błędy najpierw napraw.</li>
-<li>Utwórz katalog docelowy zapisywalny wyłącznie dla _filees-state. Dane skopiuj jako użytkownik root, a następnie zweryfikuj kopię:</li>
+<li>Utwórz katalog docelowy zapisywalny wyłącznie dla <code>_filees-state</code>. Dane skopiuj jako użytkownik root, a następnie zweryfikuj kopię:</li>
 </ol>
 <pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
 doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
@@ -154,32 +154,32 @@ for repo in /srv/filees/repositories/*; do
 done</code></pre>
 <ol start="4">
 <li>W <code>/etc/filees/server.json</code> zmień wyłącznie <code>repositories.root</code>.</li>
-<li>Zanim ponownie zezwolisz na zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; proces wykonawczy czyta plik przy żądaniu. Okno i tak jest potrzebne, żeby nic nie wylądowało w starym korzeniu.</li>
-<li>Stary korzeń zostaw tylko do odczytu, aż skończą się kopie i odbiór. Wycofanie to stara ścieżka, dopóki okno jeszcze trwa.</li>
+<li>Zanim ponownie zezwolisz na zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; proces wykonawczy odczytuje plik przy żądaniu. Okno serwisowe jest jednak potrzebne, żeby nic nie trafiło do starego korzenia.</li>
+<li>Stary korzeń zostaw tylko do odczytu, aż zakończą się kopie i odbiór. Nie usuwaj go, dopóki trwa to okno; w razie problemu pozostaje możliwe wycofanie zmiany.</li>
 </ol>
-<div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie przenoś systemu plików, gdy klienci są podłączeni.</strong> Najpierw kopiuj i weryfikuj, potem jedno przełączenie konfiguracji.</div>
+<div class="warn"><strong>Nigdy nie scalaj dwóch aktywnych korzeni i nie przenoś systemu plików, gdy klienci są podłączeni.</strong> Najpierw kopiuj i weryfikuj, potem jedno przełączenie konfiguracji.</div>
 <h4>Na komputerze użytkownika po twardym zatrzymaniu</h4>
-<p>Po ponownym uruchomieniu demon sam uzgadnia stan. Jeżeli folder został przeniesiony, użyj polecenia Wskaż kopię, zamiast pobierać nową kopię roboczą. Pliki w !kolizje/ są zachowanymi lokalnymi wersjami z konfliktów, w których przyjęto wersję serwera; trzeba je przejrzeć ręcznie. Format plików przejęcia i sposób odbudowy projekcji opisuje część „Eksploatacja”.</p>
+<p>Po ponownym uruchomieniu demon sam uzgadnia stan. Jeżeli folder został przeniesiony, użyj polecenia <strong>Wskaż kopię</strong>, zamiast pobierać nową kopię roboczą. Pliki w <code>!kolizje/</code> są zachowanymi lokalnymi wersjami z konfliktów, w których przyjęto wersję serwera; trzeba je przejrzeć ręcznie. Format plików operacji i sposób odbudowy projekcji opisuje część „Eksploatacja”.</p>
 <h2 id="ch4-monitoring">4.6 Codzienne sprawdzenia</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <div class="table-wrap"><table>
 <tr><th>Zajrzyj tu</th><th>Czego się dowiesz</th></tr>
-<tr><td><code>filees status</code></td><td>Każdy folder, czy jest sieć, czekająca praca, rewizja lokalna i HEAD</td></tr>
+<tr><td><code>filees status</code></td><td>Stan każdego folderu: łączność, oczekujące zmiany, rewizja lokalna i <code>HEAD</code></td></tr>
 <tr><td><code>filees log N</code></td><td>Ostatnie N strukturalnych błędów</td></tr>
-<tr><td>GUI <strong>Dziennik</strong></td><td>Ten sam zrzut, od najnowszego, w zasobniku albo w pełnym oknie</td></tr>
+<tr><td>GUI <strong>Dziennik</strong></td><td>Ta sama lista od najnowszego wpisu, w zasobniku albo w pełnym oknie</td></tr>
 </table></div>
 <p>Ścieżki serwera i <code>make verify</code> są w <a href="operations.html#ops-monitoring">Eksploatacji</a>.</p>
 <h2 id="ch4-rotate">4.7 Kiedy rotować repozytorium</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji; bez harmonogramu.</span></div>
-<p>Głębokość wyłącznie dołączającego repozytorium FileES sama z siebie go nie spowalnia. Rotuj, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchomienie jest decyzją, nie zegarem. Istniejące kopie robocze nie przeżywają zmiany generacji; każda instalacja pulpitu musi podłączyć się od nowa.</p>
+<p>Sama głębokość historii repozytorium, do którego FileES tylko dopisuje, nie spowalnia jego pracy. Zmieniaj generację, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchamiaj tę operację na żądanie, nie według zegara. Istniejące kopie robocze przestają obowiązywać po zmianie generacji; każda instalacja pulpitu musi podłączyć się od nowa.</p>
 <pre><code>filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
-<p>Najpierw próba bez zmian. Zamiana, odmowa przy blokadach i wycofanie są w <a href="operations.html#ops-rotate">Eksploatacji</a> i <a href="man-pages.html">filees-rotate(8)</a>.</p>
+<p>Najpierw wykonaj próbę bez zmian. Podmiana, odmowa przy aktywnych blokadach i wycofanie są opisane w <a href="operations.html#ops-rotate">Eksploatacji</a> i <a href="man-pages.html">filees-rotate(8)</a>.</p>
 <h2 id="ch4-realm-removal">4.8 Usunięcie udziału FileES</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
-<p>Usunięcie udziału FileES nie jest dezaktywacją jednego komputera. Operacja odbiera wszystkie uprawnienia strefy, usuwa jej własne repozytoria i odwołuje wszystkie instalacje. Program kolejno wymaga potwierdzenia ostrzeżenia, adresu do powiadomień, katalogu na pakiet .fkr oraz kodu OTP. Pakiet .fkr jest zapisywany przed krokiem nieodwracalnym; trzeba go zachować, ponieważ bez niego nie można pobrać archiwów odzyskiwania.</p>
+<p>Usunięcie udziału FileES nie jest dezaktywacją jednego komputera. Operacja odbiera wszystkie uprawnienia strefy, usuwa jej własne repozytoria i odwołuje wszystkie instalacje. Program kolejno wymaga potwierdzenia ostrzeżenia, podania adresu do powiadomień, wyboru katalogu na pakiet <code>.fkr</code> oraz wpisania kodu OTP. Pakiet <code>.fkr</code> jest zapisywany przed krokiem nieodwracalnym; trzeba go zachować, ponieważ bez niego nie można pobrać archiwów odzyskiwania.</p>
 <p>Na maszynie, na której nie ma już FileES:</p>
 <pre><code>filees recovery download --kit FILE.fkr --output DIR</code></pre>
-<p>Dodatnia retencja przewiduje jeden zrzut na każde własne repozytorium. Retencja zero nie zapisuje zrzutu i nie wolno go obiecywać. Stany, dwa okna czasu i protokół <code>list</code>/<code>get</code> są w <a href="operations.html#ops-realm-removal">Eksploatacji</a>.</p>
-<div class="note"><strong>To nie to samo co §4.5.</strong> §4.5 to przerwana robota albo przeniesienie składowania na żywym serwerze. Ta sekcja to pobranie danych po tym, jak strefa zdecydowała odejść.</div>
+<p>Retencja większa od zera przewiduje jeden zrzut na każde własne repozytorium. Retencja równa zero nie zapisuje zrzutu i nie wolno go obiecywać. Stany, dwa okna czasu i protokół <code>list</code>/<code>get</code> są w <a href="operations.html#ops-realm-removal">Eksploatacji</a>.</p>
+<div class="note"><strong>To nie to samo co §4.5.</strong> §4.5 opisuje przerwaną operację albo przeniesienie składowania na działającym serwerze. Ta sekcja dotyczy pobrania danych po tym, jak strefa zdecydowała się odejść.</div>
 </div>
 <nav class="page-nav">
 <a href="public-shares.html">← Udziały</a>

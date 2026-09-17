@@ -202,6 +202,7 @@ func runDaemon() {
 	// depends on it, and a client that refuses to start because it cannot
 	// write a chronology is a worse outcome than a missing chronology.
 	ipc.SetDetachmentSource(detachmentSource{store: detachmentStore})
+	ipc.SetDemoActivationSource(demoActivationState)
 	repos, err = reconcileConfiguredRepositoryLifecycle(lifecycleStore, repos)
 	if err != nil {
 		lg.Errorf("repository lifecycle migration: %v", err)

@@ -80,6 +80,20 @@ type ActivationTarget struct {
 	Address  string
 }
 
+// DemoActivator is an Activator that can also start the invitation-less
+// activation of the compiled-in demo server. It is separate so an Activator
+// without a demo keeps satisfying the base contract.
+type DemoActivator interface {
+	BeginDemo(ctx context.Context, email string) (ActivationTarget, DemoRefusal, error)
+}
+
+// DemoRefusal is the demo server's answer when it will not send an OTP;
+// RetryAfterMinutes is zero when the refusal is final.
+type DemoRefusal struct {
+	Code              string
+	RetryAfterMinutes int
+}
+
 type ActivationResult struct {
 	RealmID    string
 	RealmAlias string
@@ -499,6 +513,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		}
 	case tray.IntentActivate:
 		c.startActivation(ctx)
+	case tray.IntentActivateDemo:
+		c.startDemoActivation(ctx)
 	case tray.IntentSetRealmAlias:
 		c.startRealmAlias(ctx, intent.ServerID)
 	case tray.IntentServerInfo:
@@ -3619,6 +3635,55 @@ func (c *Controller) offerLocalPinSetup(ctx context.Context) {
 // structured IPC error stringifies as "[ACTIVATION-1001] activation.begin_failed",
 // so this path was showing wire identifiers and skipping both the catalogue
 // sentence and the reason the daemon sends.
+// startDemoActivation activates the compiled-in demo server: the only thing
+// asked is where to mail the OTP, and from there it is the ordinary OTP step.
+func (c *Controller) startDemoActivation(ctx context.Context) {
+	demo, ok := c.cfg.Activator.(DemoActivator)
+	if c.cfg.Prompter == nil || !ok || !c.beginOperation("activate") {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("activate")
+		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.demoEmail", Title: "Serwer demonstracyjny FileES", Text: "Podaj adres e-mail, na który wyślemy kod OTP. Konto na serwerze demonstracyjnym działa przez ograniczony czas, a potem jest usuwane razem z danymi.", Placeholder: "adres@example.com"})
+		if err != nil || email.Cancelled || strings.TrimSpace(email.Value) == "" {
+			c.activationFailure(ctx, err)
+			return
+		}
+		target, refusal, err := demo.BeginDemo(ctx, strings.TrimSpace(email.Value))
+		if err != nil {
+			c.activationFailure(ctx, err)
+			return
+		}
+		if refusal.Code != "" {
+			c.demoRefused(ctx, refusal)
+			return
+		}
+		result, ok := c.finishActivationWithOTP(ctx, target)
+		if !ok {
+			return
+		}
+		c.activationComplete(ctx, target, result)
+	}()
+}
+
+// demoRefused says why the demo server sent no OTP and, unless the refusal is
+// final, when to try again.
+func (c *Controller) demoRefused(ctx context.Context, refusal DemoRefusal) {
+	minutes := strconv.Itoa(refusal.RetryAfterMinutes)
+	key, text := "info.demoRefused.used", "Ta instalacja FileES już korzystała z serwera demonstracyjnego."
+	switch refusal.Code {
+	case "demo_capacity":
+		key, text = "info.demoRefused.capacity", "Serwer demonstracyjny jest teraz pełny. Spróbuj ponownie za "+minutes+" min."
+	case "demo_address_cooling_down":
+		key, text = "info.demoRefused.address", "Z tej sieci niedawno korzystano z serwera demonstracyjnego. Spróbuj ponownie za "+minutes+" min."
+	case "demo_request_pending":
+		key, text = "info.demoRefused.pending", "Prośba o aktywację już czeka na kod OTP. Sprawdź pocztę albo spróbuj ponownie za "+minutes+" min."
+	}
+	_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: key, PresentationArgs: map[string]string{"minutes": minutes}, Title: "Serwer demonstracyjny FileES", Text: text})
+}
+
 func (c *Controller) activationFailure(ctx context.Context, err error) {
 	if err == nil || ctx.Err() != nil {
 		return

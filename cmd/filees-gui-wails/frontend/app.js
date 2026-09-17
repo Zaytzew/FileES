@@ -976,6 +976,7 @@ function render(snapshot) {
   versionBadge.textContent = clientVersion || "—";
   versionBadge.title = clientVersion ? `Wersja klienta FileES ${clientVersion}` : "Wersja klienta FileES jest nieznana";
   renderVersionDialog(snapshot);
+  $("#activate-demo").hidden = !snapshot.demo_activation_available;
   const pairButton = $("#pair-mobile");
   const capabilities = new Set(snapshot.capabilities || []);
   pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
@@ -1196,6 +1197,7 @@ Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 Events.On("filees:open-announcement", openNewestUnreadAnnouncement);
 $("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#pair-mobile").addEventListener("click", (event) => triggerAction(event.currentTarget));
+$("#activate-demo").addEventListener("click", (event) => triggerAction(event.currentTarget));
 function updateThemeToggle() {
   const preference = document.documentElement.dataset.themePreference || "system";
   document.querySelectorAll("[data-theme-preference]").forEach((button) => {

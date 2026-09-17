@@ -431,7 +431,7 @@ test("public share renderer translates chrome but preserves names and permission
 test("marked text forms have reviewed fixed text and never translate defaults", () => {
   const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"(input\.[^"]+)"([\s\S]*?)\}/g)];
-  assert.equal(forms.length, 14);
+  assert.equal(forms.length, 15);
   for (const [, prefix, body] of forms) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"]]) {
       const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")`));

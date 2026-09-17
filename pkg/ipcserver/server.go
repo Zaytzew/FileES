@@ -61,6 +61,7 @@ type Server struct {
 	whales               WhaleService
 	activity             ActivitySource
 	detachments          DetachmentSource
+	demoActivation       func() string
 	lifecycleFn          SystemLifecycleService
 
 	connsMu  sync.Mutex
@@ -261,6 +262,20 @@ func (s *Server) detachmentSource() DetachmentSource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.detachments
+}
+
+// SetDemoActivationSource reports whether this installation may still activate
+// the demo server. The daemon owns that installation-wide record.
+func (s *Server) SetDemoActivationSource(source func() string) {
+	s.mu.Lock()
+	s.demoActivation = source
+	s.mu.Unlock()
+}
+
+func (s *Server) demoActivationSource() func() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.demoActivation
 }
 
 // PublicShareSource answers the cached, cross-repo aggregate of every public

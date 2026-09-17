@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
+	"filees/pkg/onboarding"
 	"filees/pkg/talk"
 )
 
@@ -25,6 +27,9 @@ func (service daemonActivationService) Begin(ctx context.Context, payload contra
 	profile := deploy.ServerProfile{ID: payload.ServerID, Address: payload.ServerAddress, KnownHostsPath: payload.KnownHostsPath}
 	var passport deploy.OnboardPassport
 	var err error
+	if payload.Demo {
+		return beginDemoActivation(ctx, payload)
+	}
 	if strings.TrimSpace(payload.Invitation) != "" {
 		passport, profile, err = deploy.BeginInvitation(ctx, payload.StateRoot, payload.Invitation)
 	} else {
@@ -51,6 +56,7 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 	if err := deploy.RunActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: remotePort}, otp); err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
+	markDemoActivated(payload.StateRoot, passport)
 	return service.finalize(ctx, payload, passport)
 }
 
@@ -79,6 +85,7 @@ func (service daemonActivationService) Resume(ctx context.Context, payload contr
 	if err := deploy.ResumeActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: remotePort}); err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
+	markDemoActivated(payload.StateRoot, passport)
 	finish := contract.ActivationFinishPayload{ServerID: payload.ServerID, ServerAddress: payload.ServerAddress, KnownHostsPath: payload.KnownHostsPath, StateRoot: payload.StateRoot, RemotePort: remotePort}
 	return service.finalize(ctx, finish, passport)
 }
@@ -183,4 +190,44 @@ func withProjectedRealm(status contract.ActivationStatus, profile clientprofile.
 		status.ClientRole = role
 	}
 	return status
+}
+
+// beginDemoActivation answers a demo refusal as a result, not a failure: the
+// interface has to say when to try again, and a refusal is the server working.
+func beginDemoActivation(ctx context.Context, payload contract.ActivationBeginPayload) (contract.ActivationCommandResult, error) {
+	passport, _, err := deploy.BeginDemo(ctx, payload.StateRoot, payload.Email)
+	var refused *deploy.DemoRefusedError
+	switch {
+	case errors.As(err, &refused):
+		return contract.ActivationCommandResult{ServerID: deploy.DemoServerID, State: "demo_refused", DemoRefusal: refused.Code, RetryAfterMinutes: refused.RetryAfterMinutes}, nil
+	case errors.Is(err, deploy.ErrDemoUsed):
+		return contract.ActivationCommandResult{ServerID: deploy.DemoServerID, State: "demo_refused", DemoRefusal: onboarding.DemoRefusedInstallation}, nil
+	case err != nil:
+		return contract.ActivationCommandResult{}, err
+	}
+	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: "otp_required"}, nil
+}
+
+// markDemoActivated spends this installation's demo once its activation has
+// reached the server. A failure to record it is logged, never fatal: the
+// server refuses the installation again regardless.
+func markDemoActivated(stateRoot string, passport deploy.OnboardPassport) {
+	if passport.ServerID != deploy.DemoServerID {
+		return
+	}
+	if err := deploy.MarkDemoUsed(stateRoot, "activated"); err != nil {
+		talk.With("activation:"+passport.ServerID).Warnf("demo state: %v", err)
+	}
+}
+
+// demoActivationState is the daemon's status source for the demo button.
+func demoActivationState() string {
+	state, err := deploy.LoadDemoInstallation(clientprofile.DefaultRoot())
+	if err != nil {
+		return ""
+	}
+	if state.Used {
+		return "used"
+	}
+	return "available"
 }

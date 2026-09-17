@@ -273,6 +273,9 @@ type SystemStatusResult struct {
 	LockReleaseRequests []LockReleaseRequest `json:"lock_release_requests,omitempty"`
 	Recoveries          []RecoveryStatus     `json:"recoveries,omitempty"`
 	Update              *UpdateStatus        `json:"update,omitempty"`
+	// DemoActivation is "available" while this installation may still activate
+	// the demo server and "used" once it has; empty when unknown.
+	DemoActivation string `json:"demo_activation,omitempty"`
 }
 
 // MemorySafetyStatus is a daemon decision, not a renderer memory heuristic.
@@ -437,6 +440,9 @@ type ActivationBeginPayload struct {
 	StateRoot      string `json:"state_root"`
 	Invitation     string `json:"invitation,omitempty"`
 	Email          string `json:"email"`
+	// Demo starts the invitation-less activation of the compiled-in demo
+	// server for Email; ServerID, ServerAddress and KnownHostsPath are ignored.
+	Demo bool `json:"demo,omitempty"`
 }
 
 type ActivationFinishPayload struct {
@@ -581,6 +587,10 @@ type ActivationCommandResult struct {
 	State      string `json:"state"`
 	RealmID    string `json:"realm_id,omitempty"`
 	RealmAlias string `json:"realm_alias,omitempty"`
+	// DemoRefusal carries the demo server's refusal code when State is
+	// "demo_refused"; RetryAfterMinutes is zero when the refusal is final.
+	DemoRefusal       string `json:"demo_refusal,omitempty"`
+	RetryAfterMinutes int    `json:"retry_after_minutes,omitempty"`
 }
 
 // MobilePairingBeginPayload is the payload for CmdMobilePairingBegin.

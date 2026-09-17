@@ -14,6 +14,7 @@ const (
 	IntentAcceptLockRelease  IntentKind = "accept_lock_release"
 	IntentReconnect          IntentKind = "reconnect"
 	IntentActivate           IntentKind = "activate"
+	IntentActivateDemo       IntentKind = "activate_demo"
 	IntentSetRealmAlias      IntentKind = "set_realm_alias"
 	IntentServerInfo         IntentKind = "server_info"
 	IntentSettings           IntentKind = "settings"

@@ -322,6 +322,15 @@ type ViewModel struct {
 	PendingActions      []PendingAction
 	Update              *UpdateViewModel
 	Icon                IconState
+	// DemoActivation mirrors the daemon: "available" while this installation
+	// may still activate the demo server, "used" after it has.
+	DemoActivation string
+}
+
+// CanActivateDemo offers the demo server only while its one activation is
+// unspent; the daemon and the server refuse again regardless.
+func (vm ViewModel) CanActivateDemo() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapActivationBegin) && vm.DemoActivation == "available"
 }
 
 func (vm ViewModel) CanPlanUpdate() bool {

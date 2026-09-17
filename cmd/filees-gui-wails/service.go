@@ -77,6 +77,8 @@ type Snapshot struct {
 	ClientVersion       string                            `json:"client_version"`
 	Projection          FreshnessProjection               `json:"projection"`
 	ReservationStatus   ReservationAvailabilityProjection `json:"reservation_status"`
+	// DemoActivationAvailable shows the one-shot demo server button.
+	DemoActivationAvailable bool `json:"demo_activation_available"`
 }
 
 // FreshnessProjection is the single presentation verdict for the daemon and
@@ -680,6 +682,8 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	switch request.Kind {
 	case string(tray.IntentActivate):
 		return tray.Intent{Kind: tray.IntentActivate}, true
+	case string(tray.IntentActivateDemo):
+		return tray.Intent{Kind: tray.IntentActivateDemo}, vm.CanActivateDemo()
 	case string(tray.IntentPairMobileDevice):
 		if !vm.CanPairMobile() || len(vm.Servers) == 0 {
 			return tray.Intent{}, false
@@ -918,27 +922,28 @@ func projectViewModel(vm guiapp.ViewModel, texts journal.Texts) Snapshot {
 
 func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts) Snapshot {
 	result := Snapshot{
-		trayCauses:          vm.IconCauses(),
-		Connected:           vm.Connected,
-		Stale:               vm.Stale,
-		DaemonState:         vm.DaemonState,
-		MemorySafety:        vm.MemorySafety,
-		UptimeSec:           vm.UptimeSec,
-		IconState:           string(vm.Icon),
-		Capabilities:        make([]string, 0, len(vm.Capabilities)),
-		Servers:             make([]ServerProjection, 0, len(vm.Servers)),
-		Repositories:        make([]RepoProjection, 0, len(vm.Repos)),
-		Reservations:        make([]ReservationProjection, 0, len(vm.Reservations)),
-		LockReleaseRequests: make([]LockReleaseProjection, 0, len(vm.LockReleaseRequests)),
-		Errors:              make([]ErrorProjection, 0, len(vm.Errors)),
-		Activity:            make([]ActivityProjection, 0, len(vm.Activity)),
-		Journal:             []JournalProjection{},
-		PendingActions:      make([]PendingActionProjection, 0, len(vm.PendingActions)),
-		Notices:             make([]NoticeProjection, 0, len(vm.Notices)),
-		Detachments:         make([]DetachmentProjection, 0, len(vm.Detachments)),
-		ClientVersion:       clientVersion(),
-		Projection:          projectFreshness(vm),
-		ReservationStatus:   projectReservationAvailability(vm),
+		trayCauses:              vm.IconCauses(),
+		Connected:               vm.Connected,
+		Stale:                   vm.Stale,
+		DaemonState:             vm.DaemonState,
+		MemorySafety:            vm.MemorySafety,
+		UptimeSec:               vm.UptimeSec,
+		IconState:               string(vm.Icon),
+		Capabilities:            make([]string, 0, len(vm.Capabilities)),
+		Servers:                 make([]ServerProjection, 0, len(vm.Servers)),
+		Repositories:            make([]RepoProjection, 0, len(vm.Repos)),
+		Reservations:            make([]ReservationProjection, 0, len(vm.Reservations)),
+		LockReleaseRequests:     make([]LockReleaseProjection, 0, len(vm.LockReleaseRequests)),
+		Errors:                  make([]ErrorProjection, 0, len(vm.Errors)),
+		Activity:                make([]ActivityProjection, 0, len(vm.Activity)),
+		Journal:                 []JournalProjection{},
+		PendingActions:          make([]PendingActionProjection, 0, len(vm.PendingActions)),
+		Notices:                 make([]NoticeProjection, 0, len(vm.Notices)),
+		Detachments:             make([]DetachmentProjection, 0, len(vm.Detachments)),
+		ClientVersion:           clientVersion(),
+		Projection:              projectFreshness(vm),
+		ReservationStatus:       projectReservationAvailability(vm),
+		DemoActivationAvailable: vm.CanActivateDemo(),
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)

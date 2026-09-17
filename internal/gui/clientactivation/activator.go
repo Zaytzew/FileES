@@ -200,3 +200,33 @@ func (activator *Activator) validate(serverID, address string) error {
 // because the daemon now answers first with a real cause, and the only job left
 // for this number is to not expire before it does.
 const activationStepDeadline = 30 * time.Minute
+
+// BeginDemo asks the daemon to request an OTP from the compiled-in demo
+// server. A refusal is an answer, returned beside a nil error.
+func (activator *Activator) BeginDemo(parent context.Context, email string) (actions.ActivationTarget, actions.DemoRefusal, error) {
+	if err := activator.validate("", ""); err != nil {
+		return actions.ActivationTarget{}, actions.DemoRefusal{}, err
+	}
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	result, err := activator.client.ActivationBegin(ctx, contract.ActivationBeginPayload{StateRoot: activator.root, Email: email, Demo: true})
+	activator.reportFailure("begin-demo", err)
+	if err != nil {
+		return actions.ActivationTarget{}, actions.DemoRefusal{}, err
+	}
+	if result == nil {
+		return actions.ActivationTarget{}, actions.DemoRefusal{}, errors.New("daemon returned an empty activation result")
+	}
+	if result.State == "demo_refused" {
+		return actions.ActivationTarget{}, actions.DemoRefusal{Code: result.DemoRefusal, RetryAfterMinutes: result.RetryAfterMinutes}, nil
+	}
+	if result.State != "otp_required" || result.ServerID == "" {
+		return actions.ActivationTarget{}, actions.DemoRefusal{}, errors.New("daemon returned an unexpected demo activation state")
+	}
+	return actions.ActivationTarget{ServerID: result.ServerID, Address: demoServerAddress}, actions.DemoRefusal{}, nil
+}
+
+// demoServerAddress matches deploy.DemoServerAddress. The interface may not
+// import the engine; the daemon checks the passport against its own constant,
+// so a drift here fails the OTP step loudly rather than reaching elsewhere.
+const demoServerAddress = "demo.filees.space:22"

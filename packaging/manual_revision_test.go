@@ -1,7 +1,4 @@
-// Package manual holds the public HTML manual. It carries no Go code; this
-// test exists so the pages cannot start lying about which revision they came
-// from.
-package manual
+package packaging_test
 
 import (
 	"io/fs"
@@ -12,6 +9,16 @@ import (
 	"strings"
 	"testing"
 )
+
+// The guards for manual/ live here, not in manual/ itself.
+//
+// manual/ is the image of the manual's htdocs: on the server the document root
+// is that working copy. These tests sat in manual/manual_revision_test.go from
+// r1073, so every deployment carried a Go file into the web root, and
+// TestManualHtdocsFitsStaticAllowlist (metadata_test.go, built only off
+// Windows) failed on it — noticed by the Linux session on 2026-09-17 after
+// Windows runs had never compiled that check.
+var manualRoot = filepath.Join("..", "manual")
 
 // handWrittenStamp matches a revision number typed into the page by a human.
 //
@@ -32,7 +39,7 @@ const revisionMeta = `name="filees-source-revision"`
 func manualPages(t *testing.T) []string {
 	t.Helper()
 	var pages []string
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(manualRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -50,9 +57,9 @@ func manualPages(t *testing.T) []string {
 	return pages
 }
 
-// TestPagesCarryNoHandWrittenRevision is the whole point: a number a human
-// typed is a claim that ages, and nothing was checking it.
-func TestPagesCarryNoHandWrittenRevision(t *testing.T) {
+// TestManualPagesCarryNoHandWrittenRevision is the whole point: a number a
+// human typed is a claim that ages, and nothing was checking it.
+func TestManualPagesCarryNoHandWrittenRevision(t *testing.T) {
 	for _, page := range manualPages(t) {
 		raw, err := os.ReadFile(page)
 		if err != nil {
@@ -65,13 +72,14 @@ func TestPagesCarryNoHandWrittenRevision(t *testing.T) {
 	}
 }
 
-// TestPagesDeclareTheirSourceRevision keeps the machine-readable value present.
+// TestManualPagesDeclareTheirSourceRevision keeps the machine-readable value
+// present.
 //
 // It is deliberately not rendered: the visible footer names the edition date
 // and nothing more, because a revision shown to a reader is a promise about
 // freshness that a static page cannot keep on its own. The meta is for
 // whoever audits the deployed tree.
-func TestPagesDeclareTheirSourceRevision(t *testing.T) {
+func TestManualPagesDeclareTheirSourceRevision(t *testing.T) {
 	for _, page := range manualPages(t) {
 		raw, err := os.ReadFile(page)
 		if err != nil {
@@ -83,12 +91,12 @@ func TestPagesDeclareTheirSourceRevision(t *testing.T) {
 	}
 }
 
-// TestIndexMaturityLegendsStayStructurallyEquivalent protects the shared
+// TestManualIndexMaturityLegendsStayStructurallyEquivalent protects the shared
 // four-column layout. A plain paragraph in either edition becomes the first
 // grid cell and collapses the entire legend into one narrow column.
-func TestIndexMaturityLegendsStayStructurallyEquivalent(t *testing.T) {
+func TestManualIndexMaturityLegendsStayStructurallyEquivalent(t *testing.T) {
 	for _, page := range []string{"assets/en/index.html", "assets/pl/index.html"} {
-		raw, err := os.ReadFile(page)
+		raw, err := os.ReadFile(filepath.Join(manualRoot, page))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,15 +106,15 @@ func TestIndexMaturityLegendsStayStructurallyEquivalent(t *testing.T) {
 	}
 }
 
-// TestKeywordSubstitutionIsEnabled catches the failure that would make the
-// meta useless without making it look broken: the property missing, so the
+// TestManualKeywordSubstitutionIsEnabled catches the failure that would make
+// the meta useless without making it look broken: the property missing, so the
 // page ships the literal text $Rev$ instead of a number.
-func TestKeywordSubstitutionIsEnabled(t *testing.T) {
+func TestManualKeywordSubstitutionIsEnabled(t *testing.T) {
 	svn, err := exec.LookPath("svn")
 	if err != nil {
 		t.Skip("svn not in PATH; keyword property cannot be read here")
 	}
-	if err := exec.Command(svn, "info", "--non-interactive", ".").Run(); err != nil {
+	if err := exec.Command(svn, "info", "--non-interactive", manualRoot).Run(); err != nil {
 		t.Skip("not a working copy; keyword property cannot be read here")
 	}
 	for _, page := range manualPages(t) {

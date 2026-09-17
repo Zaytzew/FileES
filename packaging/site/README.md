@@ -47,7 +47,7 @@ On the build machine, from the source working copy:
 
 ```sh
 node packaging/site/stage.mjs
-scp -r dist/site-publisher acme@filees.space:~/
+scp -r dist/site-publisher ADMIN@WEB-SERVER:~/
 ```
 
 On the server:

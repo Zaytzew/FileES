@@ -19,6 +19,44 @@ func mustRequest(t *testing.T, op Operation, payload any) Request {
 	return req
 }
 
+func TestRequestDesktopJoinRejectsMissingEmailAndInviteBlob(t *testing.T) {
+	if _, err := NewRequest(rid(), OpRequestDesktopJoin, RequestDesktopJoinPayload{}); err == nil {
+		t.Fatal("empty email must fail")
+	}
+	for _, email := range []string{"not-an-email", "a@b@c.test", " a@b.test", "a@", "@b.test", strings.Repeat("a", 253) + "@b"} {
+		if _, err := NewRequest(rid(), OpRequestDesktopJoin, RequestDesktopJoinPayload{Email: email}); err == nil {
+			t.Fatalf("email %q must fail", email)
+		}
+	}
+	ok, err := NewSuccess(rid(), OpRequestDesktopJoin, RequestDesktopJoinResult{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(mustJSON(t, ok.Result)), "invite") || strings.Contains(string(mustJSON(t, ok.Result)), "token") {
+		t.Fatalf("join result must not carry an invite: %s", ok.Result)
+	}
+}
+
+func TestRequestDesktopJoinRejectsInviteFieldsOnTheWire(t *testing.T) {
+	id := rid()
+	req := []byte(`{"schema":"filees.mobile/v1","request_id":"` + id + `","operation":"REQUEST_DESKTOP_JOIN","payload":{"email":"desk@example.test","invite":"nope"}}`)
+	if _, err := ParseRequest(req); err == nil {
+		t.Fatal("unknown invite field on the request must fail")
+	}
+	resp := []byte(`{"schema":"filees.mobile/v1","request_id":"` + id + `","operation":"REQUEST_DESKTOP_JOIN","status":"ok","result":{"invite":"secret"}}`)
+	if _, err := ParseResponse(resp); err == nil {
+		t.Fatal("invite field on the result must fail")
+	}
+}
+
+func mustJSON(t *testing.T, raw json.RawMessage) []byte {
+	t.Helper()
+	if len(raw) == 0 {
+		return []byte("{}")
+	}
+	return raw
+}
+
 func TestRequestRoundTripAllOperations(t *testing.T) {
 	cases := []struct {
 		op      Operation
@@ -31,6 +69,7 @@ func TestRequestRoundTripAllOperations(t *testing.T) {
 		{OpUploadObject, UploadObjectPayload{RepoID: "repo-1", ParentPath: "photos", Filename: "IMG_0013.jpg", Size: 5123401, Sha256: strings.Repeat("a", 64), ContentType: "image/jpeg"}},
 		{OpUploadTree, UploadTreePayload{RepoID: "repo-1", ParentPath: "mobile-uploads", FileCount: 12, Size: 4096, Sha256: strings.Repeat("a", 64)}},
 		{OpOperationStatus, OperationStatusPayload{TargetRequestID: rid()}},
+		{OpRequestDesktopJoin, RequestDesktopJoinPayload{Email: "desk@example.test"}},
 	}
 	for _, c := range cases {
 		req := mustRequest(t, c.op, c.payload)

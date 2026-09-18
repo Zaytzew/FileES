@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filees/internal/mobileworker"
@@ -288,5 +289,42 @@ func TestSaveManifestRejectsRollback(t *testing.T) {
 		if ok != tc.wantOK {
 			t.Fatalf("gen=%d rev=%d: ok=%v want %v", tc.gen, tc.rev, ok, tc.wantOK)
 		}
+	}
+}
+
+type recordingJoiner struct {
+	clientID string
+	email    string
+}
+
+func (j *recordingJoiner) RequestDesktopJoin(_ context.Context, clientID, email string) error {
+	j.clientID = clientID
+	j.email = email
+	return nil
+}
+
+func TestRequestDesktopJoinUnsupportedWithoutJoiner(t *testing.T) {
+	c := newClient(t, "", "rw")
+	err := c.RequestDesktopJoin(context.Background(), "desk@example.test")
+	if err == nil || !strings.Contains(err.Error(), "op.unsupported") {
+		t.Fatalf("want op.unsupported, got %v", err)
+	}
+}
+
+func TestRequestDesktopJoinCallsJoinerAndHidesInvite(t *testing.T) {
+	j := &recordingJoiner{}
+	auth := fakeAuth{gen: 7, access: "rw"}
+	d := mobileworker.Dispatcher{
+		Browser:  mobileworker.Browser{Authority: auth, Reader: mobileworker.SVNReader{}},
+		Appender: mobileworker.Appender{Authority: auth, Reader: mobileworker.SVNReader{}, Committer: mobileworker.SVNAppender{}, Ledger: mobileworker.Ledger{Dir: t.TempDir()}},
+		Joiner:   j,
+		ClientID: "client-1",
+	}
+	c := Client{Transport: dispatcherTransport{d: d}, Store: Store{Root: t.TempDir()}}
+	if err := c.RequestDesktopJoin(context.Background(), "desk@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if j.clientID != "client-1" || j.email != "desk@example.test" {
+		t.Fatalf("joiner got clientID=%q email=%q", j.clientID, j.email)
 	}
 }

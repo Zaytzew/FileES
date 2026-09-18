@@ -171,4 +171,21 @@
     <string name="home_state_initializing">iniciando</string>
     <string name="home_access_rw">escritura</string>
     <string name="home_access_r">lectura</string>
+
+    <string name="settings_join">Nuevo equipo</string>
+    <string name="settings_join_copy">Pida al servidor que envíe una invitación normal por correo a esta dirección. El teléfono no muestra el ticket: péguelo en el equipo nuevo como siempre.</string>
+    <string name="hint_join_email">Dirección de correo</string>
+    <string name="action_request_desktop_join">Pedir invitación</string>
+    <string name="join_sending">Solicitando…</string>
+    <string name="join_pin_title">Confirme el PIN del teléfono</string>
+    <string name="join_pin_description">Sin bloqueo de pantalla, la solicitud no se envía.</string>
+    <string name="join_success_title">Solicitado</string>
+    <string name="join_success">El servidor enviará la invitación a %1$s. Abra el correo en el equipo nuevo y péguela allí.</string>
+    <string name="join_error_title">No se envió</string>
+    <string name="join_error_email">Indique una dirección de correo sencilla.</string>
+    <string name="join_error_unpaired">Empareje primero el teléfono con esta zona.</string>
+    <string name="join_error_no_lock">Configure un bloqueo de pantalla (PIN, patrón o contraseña). Sin él, la solicitud no se envía.</string>
+    <string name="join_error_cancelled">Cancelado. Sin PIN, la solicitud no se envía.</string>
+    <string name="join_error_unsupported">El servidor aún no acepta esta solicitud. No es un fallo del teléfono.</string>
+    <string name="error_op_unsupported">El servidor no conoce esta operación móvil.</string>
 </resources>

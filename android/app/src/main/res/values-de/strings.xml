@@ -171,4 +171,21 @@
     <string name="home_state_initializing">startet</string>
     <string name="home_access_rw">Schreiben</string>
     <string name="home_access_r">Lesen</string>
+
+    <string name="settings_join">Neuer Rechner</string>
+    <string name="settings_join_copy">Bitten Sie den Server, eine normale Einladung per E-Mail an diese Adresse zu schicken. Das Telefon zeigt das Ticket nicht — fügen Sie es auf dem neuen Rechner wie gewohnt ein.</string>
+    <string name="hint_join_email">E-Mail-Adresse</string>
+    <string name="action_request_desktop_join">Einladung anfordern</string>
+    <string name="join_sending">Anforderung…</string>
+    <string name="join_pin_title">Telefon-PIN bestätigen</string>
+    <string name="join_pin_description">Ohne Displaysperre geht die Anforderung nicht.</string>
+    <string name="join_success_title">Angefordert</string>
+    <string name="join_success">Der Server sendet die Einladung an %1$s. Öffnen Sie die Post auf dem neuen Rechner und fügen Sie sie dort ein.</string>
+    <string name="join_error_title">Nicht angefordert</string>
+    <string name="join_error_email">Geben Sie eine gewöhnliche E-Mail-Adresse ein.</string>
+    <string name="join_error_unpaired">Koppeln Sie das Telefon zuerst mit diesem Bereich.</string>
+    <string name="join_error_no_lock">Richten Sie eine Displaysperre ein (PIN, Muster oder Passwort). Ohne sie geht die Anforderung nicht.</string>
+    <string name="join_error_cancelled">Abgebrochen. Ohne PIN geht die Anforderung nicht.</string>
+    <string name="join_error_unsupported">Der Server nimmt diese Anforderung noch nicht an. Das ist kein Fehler des Telefons.</string>
+    <string name="error_op_unsupported">Der Server kennt diese mobile Operation nicht.</string>
 </resources>

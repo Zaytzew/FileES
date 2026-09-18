@@ -196,6 +196,23 @@ func (c Client) ListRepositories(ctx context.Context) (*v1.ListRepositoriesResul
 	return &res, nil
 }
 
+// RequestDesktopJoin asks the server to issue a normal join invitation to
+// email. The response must not contain the invite; mail delivers it.
+func (c Client) RequestDesktopJoin(ctx context.Context, email string) error {
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpRequestDesktopJoin, v1.RequestDesktopJoinPayload{Email: email})
+	if err != nil {
+		return err
+	}
+	resp, _, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+	if resp.Status != v1.StatusOK {
+		return respError(resp)
+	}
+	return nil
+}
+
 // UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT).
 // Today's live worker does not implement this operation; the phone still
 // fires it so a packed folder is one SSH session instead of N.

@@ -182,4 +182,21 @@
     <string name="home_state_initializing">uruchamianie</string>
     <string name="home_access_rw">zapis</string>
     <string name="home_access_r">odczyt</string>
+
+    <string name="settings_join">Nowy komputer</string>
+    <string name="settings_join_copy">Zgłoś zapotrzebowanie na zwykłe zaproszenie. Serwer wyśle je pocztą na ten adres. Telefon biletu nie pokaże — wklejasz je na nowym komputerze jak zawsze.</string>
+    <string name="hint_join_email">Adres e-mail</string>
+    <string name="action_request_desktop_join">Poproś o zaproszenie</string>
+    <string name="join_sending">Zgłaszanie…</string>
+    <string name="join_pin_title">Potwierdź PIN telefonu</string>
+    <string name="join_pin_description">Bez blokady ekranu zgłoszenie nie idzie.</string>
+    <string name="join_success_title">Zgłoszono</string>
+    <string name="join_success">Serwer wyśle zaproszenie na %1$s. Otwórz pocztę na nowym komputerze i wklej je tam.</string>
+    <string name="join_error_title">Nie zgłoszono</string>
+    <string name="join_error_email">Podaj zwykły adres e-mail.</string>
+    <string name="join_error_unpaired">Najpierw sparuj telefon z tą strefą.</string>
+    <string name="join_error_no_lock">Ustaw blokadę ekranu (PIN, wzór albo hasło). Bez niej zgłoszenie nie idzie.</string>
+    <string name="join_error_cancelled">Anulowano. Bez PIN-u zgłoszenie nie idzie.</string>
+    <string name="join_error_unsupported">Serwer jeszcze nie przyjmuje tego zgłoszenia. To nie jest błąd telefonu.</string>
+    <string name="error_op_unsupported">Serwer nie zna tej operacji mobilnej.</string>
 </resources>

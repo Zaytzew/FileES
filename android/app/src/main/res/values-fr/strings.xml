@@ -171,4 +171,21 @@
     <string name="home_state_initializing">démarrage</string>
     <string name="home_access_rw">écriture</string>
     <string name="home_access_r">lecture</string>
+
+    <string name="settings_join">Nouvel ordinateur</string>
+    <string name="settings_join_copy">Demandez au serveur d’envoyer une invitation normale par courrier à cette adresse. Le téléphone n’affiche pas le billet — collez-le sur le nouvel ordinateur comme d’habitude.</string>
+    <string name="hint_join_email">Adresse e-mail</string>
+    <string name="action_request_desktop_join">Demander une invitation</string>
+    <string name="join_sending">Demande…</string>
+    <string name="join_pin_title">Confirmer le code PIN du téléphone</string>
+    <string name="join_pin_description">Sans verrouillage d’écran, la demande ne part pas.</string>
+    <string name="join_success_title">Demandé</string>
+    <string name="join_success">Le serveur enverra l’invitation à %1$s. Ouvrez le courrier sur le nouvel ordinateur et collez-la.</string>
+    <string name="join_error_title">Demande non envoyée</string>
+    <string name="join_error_email">Saisissez une adresse e-mail simple.</string>
+    <string name="join_error_unpaired">Associez d’abord le téléphone à cette zone.</string>
+    <string name="join_error_no_lock">Définissez un verrouillage d’écran (PIN, schéma ou mot de passe). Sans lui, la demande ne part pas.</string>
+    <string name="join_error_cancelled">Annulé. Sans PIN, la demande ne part pas.</string>
+    <string name="join_error_unsupported">Le serveur n’accepte pas encore cette demande. Ce n’est pas une faute du téléphone.</string>
+    <string name="error_op_unsupported">Le serveur ne connaît pas cette opération mobile.</string>
 </resources>

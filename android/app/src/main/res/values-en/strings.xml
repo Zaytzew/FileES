@@ -177,4 +177,21 @@
     <string name="home_state_initializing">starting</string>
     <string name="home_access_rw">write</string>
     <string name="home_access_r">read</string>
+
+    <string name="settings_join">New computer</string>
+    <string name="settings_join_copy">Ask the server to send a normal invitation by mail to this address. The phone will not show the ticket — paste it on the new computer as usual.</string>
+    <string name="hint_join_email">Email address</string>
+    <string name="action_request_desktop_join">Request invitation</string>
+    <string name="join_sending">Sending request…</string>
+    <string name="join_pin_title">Confirm the phone PIN</string>
+    <string name="join_pin_description">The request will not go without the screen lock.</string>
+    <string name="join_success_title">Requested</string>
+    <string name="join_success">The server will send the invitation to %1$s. Open mail on the new computer and paste it there.</string>
+    <string name="join_error_title">Request not sent</string>
+    <string name="join_error_email">Enter a plain mailbox address.</string>
+    <string name="join_error_unpaired">Pair the phone with this realm first.</string>
+    <string name="join_error_no_lock">Set a screen lock (PIN, pattern or password). The request will not go without it.</string>
+    <string name="join_error_cancelled">Cancelled. The request will not go without the PIN.</string>
+    <string name="join_error_unsupported">The server does not accept this request yet. That is not a phone fault.</string>
+    <string name="error_op_unsupported">The server does not know this mobile operation.</string>
 </resources>

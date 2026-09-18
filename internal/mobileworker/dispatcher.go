@@ -19,7 +19,14 @@ import (
 type Dispatcher struct {
 	Browser  Browser
 	Appender Appender
+	Joiner   JoinRequester
 	ClientID string
+}
+
+// JoinRequester accepts an authenticated demand for a desktop join ticket.
+// The worker must not return the invitation blob to the phone.
+type JoinRequester interface {
+	RequestDesktopJoin(ctx context.Context, clientID, email string) error
 }
 
 // Serve processes one operation. A malformed frame or request returns a Go error
@@ -103,6 +110,18 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		var p v1.OperationStatusPayload
 		_ = json.Unmarshal(req.Payload, &p)
 		return d.writeOK(out, req, d.status(p.TargetRequestID), nil)
+
+	case v1.OpRequestDesktopJoin:
+		if d.Joiner == nil {
+			body := v1.ErrorBody{Code: "op.unsupported", Message: "operation not supported"}
+			return d.writeErrorBody(out, req, body)
+		}
+		var p v1.RequestDesktopJoinPayload
+		_ = json.Unmarshal(req.Payload, &p)
+		if err := d.Joiner.RequestDesktopJoin(ctx, d.ClientID, p.Email); err != nil {
+			return d.writeError(out, req, err)
+		}
+		return d.writeOK(out, req, v1.RequestDesktopJoinResult{}, nil)
 
 	default:
 		body := v1.ErrorBody{Code: "op.unsupported", Message: "operation not supported"}

@@ -40,18 +40,19 @@ const (
 type Operation string
 
 const (
-	OpRefreshManifest  Operation = "REFRESH_MANIFEST"
-	OpListRepositories Operation = "LIST_REPOSITORIES"
-	OpListDirectory    Operation = "LIST_DIRECTORY"
-	OpReadObject       Operation = "READ_OBJECT"
-	OpUploadObject     Operation = "UPLOAD_OBJECT" // append-only, unique
-	OpUploadTree       Operation = "UPLOAD_TREE"   // zip-on-wire folder ingest
-	OpOperationStatus  Operation = "GET_OPERATION_STATUS"
+	OpRefreshManifest    Operation = "REFRESH_MANIFEST"
+	OpListRepositories   Operation = "LIST_REPOSITORIES"
+	OpListDirectory      Operation = "LIST_DIRECTORY"
+	OpReadObject         Operation = "READ_OBJECT"
+	OpUploadObject       Operation = "UPLOAD_OBJECT" // append-only, unique
+	OpUploadTree         Operation = "UPLOAD_TREE"   // zip-on-wire folder ingest
+	OpOperationStatus    Operation = "GET_OPERATION_STATUS"
+	OpRequestDesktopJoin Operation = "REQUEST_DESKTOP_JOIN"
 )
 
 func (o Operation) valid() bool {
 	switch o {
-	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpUploadTree, OpOperationStatus:
+	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpUploadTree, OpOperationStatus, OpRequestDesktopJoin:
 		return true
 	}
 	return false
@@ -249,6 +250,17 @@ type OperationStatusPayload struct {
 	TargetRequestID string `json:"target_request_id"`
 }
 
+// RequestDesktopJoinPayload is an authenticated demand that the server
+// issue a normal join invitation to Email. The phone never receives the
+// invite blob; mail + BeginInvitation stay the desktop path.
+type RequestDesktopJoinPayload struct {
+	Email string `json:"email"`
+}
+
+// RequestDesktopJoinResult acknowledges the demand. It must not carry an
+// invitation token or wire blob.
+type RequestDesktopJoinResult struct{}
+
 type OperationStatusResult struct {
 	State    OpState `json:"state"`
 	Revision int64   `json:"revision,omitempty"`
@@ -434,7 +446,12 @@ func (r Request) Validate() error {
 		if err := decodeStrict(r.Payload, &p); err != nil {
 			return fmt.Errorf("%s payload: %w", r.Operation, err)
 		}
-		if err := validateUUID("target_request_id", p.TargetRequestID); err != nil {
+	case OpRequestDesktopJoin:
+		var p RequestDesktopJoinPayload
+		if err := decodeStrict(r.Payload, &p); err != nil {
+			return fmt.Errorf("%s payload: %w", r.Operation, err)
+		}
+		if err := validateJoinEmail(p.Email); err != nil {
 			return err
 		}
 	}
@@ -551,6 +568,25 @@ func (r Response) validateResult() error {
 		if !validOpState(res.State) {
 			return fmt.Errorf("invalid operation state %q", res.State)
 		}
+	case OpRequestDesktopJoin:
+		var res RequestDesktopJoinResult
+		if err := decodeStrict(r.Result, &res); err != nil {
+			return fmt.Errorf("%s result: %w", r.Operation, err)
+		}
+	}
+	return nil
+}
+
+func validateJoinEmail(value string) error {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, " \t\r\n") || utf8.RuneCountInString(value) > 254 {
+		return errors.New("email must be a plain mailbox address")
+	}
+	if strings.Count(value, "@") != 1 {
+		return errors.New("email must be a plain mailbox address")
+	}
+	at := strings.IndexByte(value, '@')
+	if at < 1 || at == len(value)-1 {
+		return errors.New("email must be a plain mailbox address")
 	}
 	return nil
 }

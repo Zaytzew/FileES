@@ -69,11 +69,18 @@ func main() {
 	activationRoot := flags.String("activation-state", clientprofile.DefaultRoot(), "katalog stanu aktywacji klienta")
 	showVersion := flags.Bool("version", false, "pokaż wersję i zakończ")
 	devtools := flags.Bool("devtools", false, "włącz narzędzia deweloperskie WebView")
+	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
 	}
 	if *showVersion {
 		fmt.Fprintln(os.Stdout, clientVersion())
+		return
+	}
+	// The installer's last step, and no interface: answered before the
+	// single-instance lock, so enabling autostart never depends on whether a
+	// client happens to be running.
+	if runAutostartMode(*autostart, *socket) {
 		return
 	}
 

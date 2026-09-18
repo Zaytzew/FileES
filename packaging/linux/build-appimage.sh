@@ -89,6 +89,19 @@ config="${XDG_CONFIG_HOME:-$HOME/.config}/filees/config.json"
 
 if [ ! -f "$config" ]; then
 	ENABLE_DAEMON=1 ENABLE_AUTOSTART=1 RESTART_DAEMON=0 sh "$inner/install-user.sh"
+else
+	# A newer AppImage upgrades the installation, as a newer MSI does; an older
+	# one never takes it back. Without this, running a newer AppImage on a
+	# machine that already had FileES only started the old installed client -
+	# and a version too old to update itself could never be left behind.
+	# The existing config and the user's autostart choice stay as they are;
+	# the running daemon is restarted onto the new binary.
+	bundled=$(sed -n '1p' "$inner/VERSION")
+	installed=$("$prefix/bin/filees" version 2>/dev/null | sed 's/+r/./') || installed=""
+	if [ "$installed" != "$bundled" ] &&
+		[ "$(printf '%s\n%s\n' "$installed" "$bundled" | sort -V | tail -n 1)" = "$bundled" ]; then
+		ENABLE_DAEMON=1 ENABLE_AUTOSTART=0 RESTART_DAEMON=1 sh "$inner/install-user.sh"
+	fi
 fi
 
 exec "$prefix/bin/filees-gui" "$@"

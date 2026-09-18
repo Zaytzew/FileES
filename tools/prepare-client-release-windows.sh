@@ -98,12 +98,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
 # another platform only when it already belongs to this exact release identity;
 # passing the live channel here therefore fails closed if publishing Windows
 # alone would strand an older Linux manifest under the new envelope.
-merge=""
 # A platform already staged for this same release is the envelope to extend:
 # the live channel still names the previous release, and merging with it would
-# be refused rather than combine the two platforms of one release.
-if [ -f "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" ]; then
-	merge="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"
+# be refused rather than combine the two platforms of one release. The producer
+# never overwrites an envelope, so the second platform writes a fresh one from
+# a copy of the candidate and replaces it only after that succeeded.
+candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"
+merge=""
+channel_out="$candidate"
+scratch=""
+if [ -f "$candidate" ]; then
+	scratch=$(mktemp -d "${TMPDIR:-/tmp}/filees-envelope.XXXXXX")
+	cp "$candidate" "$scratch/merge.json"
+	merge="$scratch/merge.json"
+	channel_out="$scratch/channel.v2.json"
 elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
 fi
@@ -119,8 +127,13 @@ go run ./cmd/filees-client-release \
 	-security-epoch "$SECURITY_EPOCH" \
 	-key-id "$KEY_ID" \
 	-release-root "$release_root" \
-	-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" \
+	-channel-out "$channel_out" \
 	${merge:+-merge-channel "$merge"}
+
+if [ -n "$scratch" ]; then
+	mv "$channel_out" "$candidate"
+	rm -rf "$scratch"
+fi
 
 trap - EXIT HUP INT TERM
 

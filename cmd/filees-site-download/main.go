@@ -101,9 +101,9 @@ func run(args []string) error {
 		return err
 	}
 	if result.Changed {
-		fmt.Printf("published %s (%s, %s, sha256 %s)\n", result.Installer, result.Version, result.ReleaseID, result.SHA256)
+		fmt.Printf("published %s (%s, %s)\n", strings.Join(result.Installers, ", "), result.Version, result.ReleaseID)
 	} else if !*quiet {
-		fmt.Printf("up to date: %s (%s, %s)\n", result.Installer, result.Version, result.ReleaseID)
+		fmt.Printf("up to date: %s (%s, %s)\n", strings.Join(result.Installers, ", "), result.Version, result.ReleaseID)
 	}
 	return nil
 }
@@ -124,10 +124,27 @@ func loadConfig(configPath string) (Config, error) {
 	if !strings.HasPrefix(config.Repo, "svn://") && !strings.HasPrefix(config.Repo, "https://") && !strings.HasPrefix(config.Repo, "file://") {
 		return Config{}, fmt.Errorf("%s: repo must be an svn://, https:// or file:// URL", configPath)
 	}
-	for name, value := range map[string]string{"channel": config.Channel, "component": config.Component, "platform": config.Platform, "key_id": config.KeyID} {
+	for name, value := range map[string]string{"channel": config.Channel, "component": config.Component, "key_id": config.KeyID} {
 		if !identifier.MatchString(value) {
 			return Config{}, fmt.Errorf("%s: %s %q is not a plain identifier", configPath, name, value)
 		}
+	}
+	platforms := config.platforms()
+	if len(platforms) == 0 {
+		return Config{}, fmt.Errorf("%s: name a platform or a list of platforms", configPath)
+	}
+	if config.Platform != "" && len(config.Platforms) > 0 {
+		return Config{}, fmt.Errorf("%s: platform and platforms are two ways to say the same thing; keep one", configPath)
+	}
+	seen := map[string]bool{}
+	for _, platform := range platforms {
+		if !identifier.MatchString(platform) {
+			return Config{}, fmt.Errorf("%s: platform %q is not a plain identifier", configPath, platform)
+		}
+		if seen[platform] {
+			return Config{}, fmt.Errorf("%s: platform %q is listed twice", configPath, platform)
+		}
+		seen[platform] = true
 	}
 	return config, nil
 }

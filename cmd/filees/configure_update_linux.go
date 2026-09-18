@@ -16,7 +16,17 @@ import (
 	"filees/pkg/ipcserver"
 )
 
-func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, _ bool, currentVersion string) error {
+func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string) error {
+	// Same rule as Windows: no update section means the channel this build was
+	// released on. Only a config that names update explicitly - including one
+	// that switches it off - overrides that.
+	if update == nil && !explicitlyConfigured {
+		var err error
+		update, err = distributionClientUpdateConfig()
+		if err != nil {
+			return err
+		}
+	}
 	if update == nil {
 		return nil
 	}
@@ -49,6 +59,9 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, _
 	if configHome == "" {
 		configHome = filepath.Join(home, ".config")
 	}
+	// The svn CLI, not the bundled helper: on Linux the helper serves
+	// record-move only and refuses cat, and the daemon runs every other SVN
+	// operation through the CLI anyway.
 	fetcher := svnfetch.SVN{Program: update.SVNProgram, RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
 	if update.SSH != nil {
 		fetcher.SSHIdentityFile, fetcher.SSHKnownHosts = update.SSH.IdentityFile, update.SSH.KnownHosts

@@ -4,11 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	v1 "filees/pkg/mobile/v1"
 	"github.com/google/uuid"
 )
+
+type recordingJoiner struct {
+	clientID string
+	email    string
+	err      error
+}
+
+func (j *recordingJoiner) RequestDesktopJoin(_ context.Context, clientID, email string) error {
+	j.clientID = clientID
+	j.email = email
+	return j.err
+}
 
 func newDispatcher(t *testing.T, repo, access string) Dispatcher {
 	t.Helper()
@@ -165,5 +178,54 @@ func TestDispatchListDirectoryUsesPayload(t *testing.T) {
 	}
 	if len(entries) < 3 {
 		t.Fatalf("payload entries = %+v", entries)
+	}
+}
+
+func TestDispatchRequestDesktopJoinUnsupportedWithoutJoiner(t *testing.T) {
+	d := newDispatcher(t, "", "rw")
+	frame := frameRequest(t, uuid.NewString(), v1.OpRequestDesktopJoin, v1.RequestDesktopJoinPayload{Email: "desk@example.test"}, nil)
+	resp, payload := serve(t, d, frame)
+	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "op.unsupported" {
+		t.Fatalf("expected op.unsupported, got %+v", resp)
+	}
+	if len(payload) != 0 {
+		t.Fatalf("join must not carry a body payload: %q", payload)
+	}
+	if strings.Contains(strings.ToLower(string(resp.Result)), "invite") || strings.Contains(strings.ToLower(string(resp.Result)), "token") {
+		t.Fatalf("error result must not carry an invite: %s", resp.Result)
+	}
+}
+
+func TestDispatchRequestDesktopJoinCallsJoiner(t *testing.T) {
+	j := &recordingJoiner{}
+	d := newDispatcher(t, "", "rw")
+	d.Joiner = j
+	frame := frameRequest(t, uuid.NewString(), v1.OpRequestDesktopJoin, v1.RequestDesktopJoinPayload{Email: "desk@example.test"}, nil)
+	resp, payload := serve(t, d, frame)
+	if resp.Status != v1.StatusOK {
+		t.Fatalf("status = %s error = %+v", resp.Status, resp.Error)
+	}
+	if j.clientID != "client-1" || j.email != "desk@example.test" {
+		t.Fatalf("joiner got clientID=%q email=%q", j.clientID, j.email)
+	}
+	if len(payload) != 0 {
+		t.Fatalf("join must not carry a body payload: %q", payload)
+	}
+	if strings.Contains(strings.ToLower(string(resp.Result)), "invite") || strings.Contains(strings.ToLower(string(resp.Result)), "token") {
+		t.Fatalf("join result must not carry an invite: %s", resp.Result)
+	}
+}
+
+func TestDispatchRequestDesktopJoinJoinerDenied(t *testing.T) {
+	j := &recordingJoiner{err: ErrAccessDenied}
+	d := newDispatcher(t, "", "rw")
+	d.Joiner = j
+	frame := frameRequest(t, uuid.NewString(), v1.OpRequestDesktopJoin, v1.RequestDesktopJoinPayload{Email: "guest@example.test"}, nil)
+	resp, payload := serve(t, d, frame)
+	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "access.denied" {
+		t.Fatalf("expected access.denied, got %+v", resp)
+	}
+	if len(payload) != 0 {
+		t.Fatalf("denied join must not carry a body payload: %q", payload)
 	}
 }

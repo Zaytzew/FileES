@@ -48,8 +48,8 @@ private fun AppCompatActivity.explainTransport(raw: String): String {
             getString(R.string.error_unreachable)
         "host key mismatch" in text -> getString(R.string.error_host_key)
         "missing port" in text -> getString(R.string.error_missing_port)
-        "op.unsupported" in text || "not supported" in text || "not ingested" in text ||
-            "upload_tree" in text -> getString(R.string.error_tree_unsupported)
+        "upload_tree" in text || "not ingested" in text -> getString(R.string.error_tree_unsupported)
+        "op.unsupported" in text || "not supported" in text -> getString(R.string.error_op_unsupported)
         else -> getString(R.string.error_generic)
     }
 }

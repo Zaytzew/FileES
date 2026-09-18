@@ -84,6 +84,15 @@ func (c *Client) ListRepositoriesJSON() (string, error) {
 	return string(raw), nil
 }
 
+// RequestDesktopJoin asks the server to mail a normal desktop invitation to
+// email. The phone never receives the invite blob; mail + BeginInvitation
+// stay the desktop path.
+func (c *Client) RequestDesktopJoin(email string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+	return c.inner.RequestDesktopJoin(ctx, email)
+}
+
 // RefreshJSON fetches (or confirms unchanged) the manifest for repoID and
 // returns it as JSON, or "" if nothing has ever been cached and the server
 // reports no manifest either.

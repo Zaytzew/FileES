@@ -1,6 +1,7 @@
 package net.filees.mobile
 
 import android.Manifest
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -30,6 +31,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var watched: WatchedFolders
     private var uploadRepos: List<RealmShare> = emptyList()
+    private var mobile: Client? = null
+    private var pendingJoinEmail = ""
+    private var joinInFlight = false
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let { pairFromPayload(it) }
@@ -49,6 +53,15 @@ class SettingsActivity : AppCompatActivity() {
     // holds gigabytes. Now it always scans first and asks.
     private val addWatchLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) confirmAndAddWatch(uri)
+    }
+    private val confirmDeviceLock = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            sendJoinRequest(pendingJoinEmail)
+            return@registerForActivityResult
+        }
+        joinInFlight = false
+        binding.buttonRequestDesktopJoin.isEnabled = true
+        joinAlert(getString(R.string.join_error_cancelled))
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -79,6 +92,7 @@ class SettingsActivity : AppCompatActivity() {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         }
+        binding.buttonRequestDesktopJoin.setOnClickListener { confirmJoinThenSend() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)
@@ -92,6 +106,7 @@ class SettingsActivity : AppCompatActivity() {
                     FileesSession.MOBILE_USER,
                     hostKey,
                 )
+                mobile = client
                 binding.textDevicePublicKey.text = client.publicKey()
                 loadUploadRepos(client)
             } catch (_: Exception) {
@@ -108,6 +123,109 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun bindLanguage() {
         binding.textLanguage.text = FileesLocale.displayName(this, FileesLocale.preference(this))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun confirmJoinThenSend() {
+        if (joinInFlight) return
+        val email = binding.editJoinEmail.text?.toString()?.trim().orEmpty()
+        if (!looksLikeJoinEmail(email)) {
+            joinAlert(getString(R.string.join_error_email))
+            return
+        }
+        if (mobile == null) {
+            joinAlert(getString(R.string.join_error_unpaired))
+            return
+        }
+        val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        if (!km.isDeviceSecure) {
+            joinAlert(getString(R.string.join_error_no_lock))
+            return
+        }
+        val intent = km.createConfirmDeviceCredentialIntent(
+            getString(R.string.join_pin_title),
+            getString(R.string.join_pin_description),
+        )
+        if (intent == null) {
+            joinAlert(getString(R.string.join_error_no_lock))
+            return
+        }
+        pendingJoinEmail = email
+        joinInFlight = true
+        binding.buttonRequestDesktopJoin.isEnabled = false
+        confirmDeviceLock.launch(intent)
+    }
+
+    private fun sendJoinRequest(email: String) {
+        val client = mobile
+        if (client == null) {
+            joinInFlight = false
+            binding.buttonRequestDesktopJoin.isEnabled = true
+            joinAlert(getString(R.string.join_error_unpaired))
+            return
+        }
+        binding.buttonRequestDesktopJoin.setText(R.string.join_sending)
+        Thread {
+            try {
+                client.requestDesktopJoin(email)
+                runOnUiThread {
+                    joinFinished()
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.join_success_title)
+                        .setMessage(getString(R.string.join_success, email))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    joinFinished()
+                    joinAlert(joinErrorMessage(e))
+                }
+            }
+        }.start()
+    }
+
+    private fun joinFinished() {
+        joinInFlight = false
+        binding.buttonRequestDesktopJoin.isEnabled = true
+        binding.buttonRequestDesktopJoin.setText(R.string.action_request_desktop_join)
+    }
+
+    private fun joinErrorMessage(err: Exception): String {
+        val raw = err.message.orEmpty()
+        val text = raw.lowercase()
+        if ("op.unsupported" in text || "operation not supported" in text) {
+            return getString(R.string.join_error_unsupported)
+        }
+        if ("email must be" in text) {
+            return getString(R.string.join_error_email)
+        }
+        val catalog = try {
+            val lang = resources.configuration.locales[0].language
+            Androidbind.explainIn(raw, lang)
+        } catch (_: Exception) {
+            try {
+                Androidbind.explain(raw)
+            } catch (_: Exception) {
+                ""
+            }
+        }
+        return catalog.ifBlank { getString(R.string.error_generic) }
+    }
+
+    private fun joinAlert(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.join_error_title)
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun looksLikeJoinEmail(value: String): Boolean {
+        if (value.isEmpty() || value.length > 254) return false
+        if (value.any { it.isWhitespace() }) return false
+        val at = value.indexOf('@')
+        return at in 1 until value.lastIndex && at == value.lastIndexOf('@')
     }
 
     private fun pickLanguage() {

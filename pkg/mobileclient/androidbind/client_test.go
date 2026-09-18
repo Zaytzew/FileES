@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filees/internal/mobileworker"
@@ -328,5 +329,65 @@ func TestNewClientPersistsIdentityAcrossInstances(t *testing.T) {
 func TestNewClientRejectsEmptyStoreDir(t *testing.T) {
 	if _, err := NewClient("", "addr:0", "u", "ssh-ed25519 AAAA"); err == nil {
 		t.Fatal("expected error for empty store_dir")
+	}
+}
+
+type recordingJoiner struct {
+	clientID string
+	email    string
+}
+
+func (j *recordingJoiner) RequestDesktopJoin(_ context.Context, clientID, email string) error {
+	j.clientID = clientID
+	j.email = email
+	return nil
+}
+
+func TestRequestDesktopJoinUnsupportedWithoutJoiner(t *testing.T) {
+	hostSigner := generateEd25519(t)
+	storeDir := t.TempDir()
+	probe, err := NewClient(storeDir, "unused:0", "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(probe.PublicKey()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := startDispatcherServer(t, hostSigner, clientPub, newDispatcher(""))
+	client, err := NewClient(storeDir, addr, "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.RequestDesktopJoin("desk@example.test")
+	if err == nil || !strings.Contains(err.Error(), "op.unsupported") {
+		t.Fatalf("want op.unsupported, got %v", err)
+	}
+}
+
+func TestRequestDesktopJoinCallsJoiner(t *testing.T) {
+	hostSigner := generateEd25519(t)
+	storeDir := t.TempDir()
+	probe, err := NewClient(storeDir, "unused:0", "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(probe.PublicKey()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := &recordingJoiner{}
+	d := newDispatcher("")
+	d.Joiner = j
+	addr := startDispatcherServer(t, hostSigner, clientPub, d)
+	client, err := NewClient(storeDir, addr, "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RequestDesktopJoin("desk@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if j.clientID != "client-1" || j.email != "desk@example.test" {
+		t.Fatalf("joiner got clientID=%q email=%q", j.clientID, j.email)
 	}
 }

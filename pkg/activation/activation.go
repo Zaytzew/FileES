@@ -63,6 +63,11 @@ type Config struct {
 	// exactly one installation, ever. Any record for the realm, revoked
 	// included, refuses a second one, so a realm never returns.
 	SingleActivationPerRealm bool
+	// DemoRealmTTL, when positive, makes every activation publish
+	// clients/<id>/demo.json announcing when the realm ends (activated_at plus
+	// this TTL), so the client can count down to the removal the demo reaper
+	// performs at exactly that instant.
+	DemoRealmTTL time.Duration
 }
 
 type Record struct {
@@ -853,6 +858,16 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 		}
 	}
 	paths := []string{formatPath, realmPath, clientPath, viewPath, auditPath}
+	if m.config.DemoRealmTTL > 0 {
+		// Same commit as the first view: the client never sees its realm
+		// without also seeing when it ends.
+		demoPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, clientview.DemoFileName)
+		demo := clientview.Demo{Schema: clientview.DemoSchema, ExpiresAt: activatedAt.Add(m.config.DemoRealmTTL).UTC()}
+		if err := atomicWriteJSON(demoPath, demo, 0o600); err != nil {
+			return 0, err
+		}
+		paths = append(paths, demoPath)
+	}
 	args := append([]string{"add", "--force", "--parents", "--non-interactive", "--no-auth-cache"}, paths...)
 	if output, err := m.runner.Output(ctx, m.config.SVNBinary, args...); err != nil {
 		m.rollbackServicePaths(paths...)

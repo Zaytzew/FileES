@@ -14,7 +14,6 @@ import (
 	"filees/internal/clientupdate"
 	"filees/internal/releaseenvelope"
 	"filees/internal/serverinstall/svnfetch"
-	"filees/pkg/clientprofile"
 	"filees/pkg/config"
 	"filees/pkg/ipcserver"
 )
@@ -115,26 +114,6 @@ func windowsClientSelfUpdateAllowed(packaged bool, mode string) (bool, error) {
 		return false, fmt.Errorf("unknown Windows client update mode %q", mode)
 	}
 	return true, nil
-}
-
-// distributionClientUpdateConfig turns immutable build metadata into an
-// opt-out update service. Both values are required together: a half-configured
-// release must fail at startup rather than silently claiming to auto-update.
-func distributionClientUpdateConfig() (*config.UpdateConfig, error) {
-	repoURL := strings.TrimSpace(injectedClientReleaseRepoURL)
-	channel := strings.TrimSpace(injectedClientReleaseChannel)
-	if repoURL == "" && channel == "" {
-		return nil, nil
-	}
-	if repoURL == "" || channel == "" {
-		return nil, errors.New("client update distribution defaults require both repository URL and channel")
-	}
-	root := filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "update")
-	update, err := config.NewUpdateConfig(repoURL, channel, config.DesktopUpdateComponent, runtime.GOOS+"-"+runtime.GOARCH, filepath.Join(root, "state.json"), filepath.Join(root, "stage"), "svn")
-	if err != nil {
-		return nil, fmt.Errorf("invalid client update distribution defaults: %w", err)
-	}
-	return &update, nil
 }
 
 // clientInstallDirectory is where this daemon is running from.

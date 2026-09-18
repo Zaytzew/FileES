@@ -7,4 +7,12 @@ rc_bg=YES
 
 . /etc/rc.d/rc.subr
 
+# /etc/rc empties /var/run at every boot, and the daemon runs unprivileged, so
+# it cannot recreate its own socket directory: after a reboot it failed with
+# "mkdir /var/run/filees: permission denied", taking filees_links down with it.
+# Same owner, group and mode as the installer creates.
+rc_pre() {
+	install -d -o _filees-state -g _filees-public -m 750 /var/run/filees
+}
+
 rc_cmd $1

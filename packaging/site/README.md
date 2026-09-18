@@ -1,9 +1,10 @@
 # filees.space: automatic download page
 
-`https://filees.space/download/` offers the Windows installer of whatever
-release the signed channel `alpha.v2` currently promotes. Nobody uploads MSI
-files any more: signing and promoting a release is the publication, and the
-site follows within 15 minutes.
+`https://filees.space/download/` offers the installers of whatever release the
+signed channel `alpha.v2` currently promotes — one per platform named in
+`download.json`, today the Windows MSI and the Linux AppImage, always from the
+same release. Nobody uploads installer files any more: signing and promoting a
+release is the publication, and the site follows within 15 minutes.
 
 ## How it works
 
@@ -18,10 +19,14 @@ site follows within 15 minutes.
 2. refuses a channel that points at an older release than the one it last
    published (sequence and security epoch, remembered in
    `/var/lib/filees-site/state.json`);
-3. fetches the installer only when the page is not already current, and checks
-   its size and SHA-256 against the signed manifest;
-4. writes the installer, `SHA256SUMS` and the page from `download.html` into a
-   new directory and swaps it in with renames.
+3. resolves every platform of that one release, fetches an installer only when
+   the page is not already current, and checks its size and SHA-256 against the
+   signed manifest of its platform;
+4. writes the installers, a `SHA256SUMS` line for each and the page from
+   `download.html` into a new directory and swaps it in with renames.
+
+A platform missing from the release stops the run, so the page never offers one
+platform from a new release and another from an old one.
 
 Any error leaves the previous page untouched and is logged. The trust anchor is
 `landing/release-key.pub` in the site sources, never a key read from the
@@ -34,7 +39,7 @@ Layout on the server:
 |---|---|---|
 | `/usr/local/bin/filees-site-download` | root | the program |
 | `/usr/local/share/filees-site/` | root | `download.json`, `release-key.pub`, `download.html` |
-| `/var/lib/filees-site/site/download/` | filees-site | the published page and installer |
+| `/var/lib/filees-site/site/download/` | filees-site | the published page and installers |
 | `/var/lib/filees-site/state.json` | filees-site | last published release |
 | `/var/www/filees.space/download` | root | symlink to the published directory |
 | `/etc/cron.d/filees-site-download` | root | every 15 minutes, `flock`-guarded |
@@ -74,6 +79,11 @@ Nginx follows symlinks unless `disable_symlinks` is set for the site.
   without notes gets a page without the highlighted box.
 - **Page text:** edit `landing/download/index.html`, commit, stage and install
   again.
+- **New platform:** add it to `platforms` in `landing/download.json`, give the
+  page its `{{<PLATFORM>_FILE}}`, `{{<PLATFORM>_SHA256}}` and
+  `{{<PLATFORM>_SIZE_PL|EN}}` placeholders (the platform upper-cased, `-` as
+  `_`), teach `installerNamePatterns` in `publish.go` what its installer is
+  called, then stage and install again.
 
 ## Remove
 

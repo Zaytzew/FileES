@@ -97,7 +97,15 @@ if [ -f "$candidate" ]; then
 	cp "$candidate" "$scratch/merge.json"
 	merge="$scratch/merge.json"
 	channel_out="$scratch/channel.v2.json"
-elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
+elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ] &&
+	grep -q "\"release_id\"[[:space:]]*:[[:space:]]*\"$RELEASE_ID\"" "$FILEES_BIN_WC/channels/$CHANNEL.v2.json"; then
+	# Only a live channel that already names this very release is something
+	# to extend - that is a resumed release, not a previous one. Merging a
+	# channel that names an older release used to work only because the
+	# channel then carried a single platform, which this release replaced.
+	# Once a release covers two platforms, the same merge strands the other
+	# platform's manifest under a new identity and the producer refuses, so
+	# the first platform of a new release starts a fresh envelope.
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
 fi
 

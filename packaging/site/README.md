@@ -46,7 +46,7 @@ Layout on the server:
 
 The service user can write only its own directory, never the web root.
 
-## Install or update (once, and after changing the program or its files)
+## Install (once)
 
 On the build machine, from the source working copy:
 
@@ -69,6 +69,26 @@ publication and installs the cron entry. Running it again is safe.
 
 Check: `https://filees.space/download/` and `journalctl -t filees-site-download`.
 Nginx follows symlinks unless `disable_symlinks` is set for the site.
+
+## Update an installation that already runs
+
+The script is for the first time only: the service user, the web-root symlink
+and the cron entry are already there, and the cron line - flags and paths -
+has not changed since. Staging produces the three files that do change, and
+installing them over the old ones is the whole update:
+
+```sh
+sudo install -m 0755 -o root -g root site-publisher/filees-site-download /usr/local/bin/
+sudo install -m 0644 -o root -g root site-publisher/download.json site-publisher/download.html /usr/local/share/filees-site/
+```
+
+Cron publishes within fifteen minutes; to see it immediately, run the publish
+command from the cron entry by hand as `filees-site`.
+
+A `state.json` written by an older version stays readable: it is parsed
+without `DisallowUnknownFields`, the guard against going back to an older
+release reads only `release_id`, `sequence` and `security_epoch`, and the
+first publication rewrites the file in the current shape.
 
 ## Everyday use
 

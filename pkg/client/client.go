@@ -1027,6 +1027,12 @@ func IsNetworkError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if IsIdentityRefused(err) {
+		// The server answered and refused this client's key. Treating that as
+		// a network fault put the commit service "offline", queuing changes
+		// locally forever for a server that will never take them.
+		return false
+	}
 	msg := strings.ToLower(err.Error())
 	for _, needle := range []string{
 		"unable to connect",
@@ -1046,4 +1052,12 @@ func IsNetworkError(err error) bool {
 		}
 	}
 	return false
+}
+
+// IsIdentityRefused reports that the server's sshd refused this client's key:
+// OpenSSH's "Permission denied (publickey)", which svn follows with E170013
+// "Unable to connect". It is what a client sees after its activation was
+// revoked or its realm removed - a permanent answer, not an outage.
+func IsIdentityRefused(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "permission denied (publickey")
 }

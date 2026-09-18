@@ -99,6 +99,12 @@ func Classify(err error) Entry {
 		return entryFrom(errcat.KeyMobileOpNotOnServer, msg)
 	case containsAny(low, sessionEndedNeedles):
 		return entryFrom(errcat.KeySessionEnded, msg)
+	case containsAny(low, identityRefusedNeedles):
+		// Before the network needles on purpose: svn reports a refused key as
+		// "Permission denied (publickey)" followed by E170013 "Unable to
+		// connect", and the second half used to win - a permanent refusal
+		// (activation revoked, realm removed) was shown as a passing outage.
+		return entryFrom(errcat.KeyAuthFailed, msg)
 	case containsAny(low, connDroppedNeedles):
 		return entryFrom(errcat.KeyConnectionDropped, msg)
 	case containsAny(low, netNeedles):
@@ -155,6 +161,12 @@ var (
 	// of just silently dropping the connection.
 	sessionEndedNeedles = []string{
 		"filees-session-ended",
+	}
+	// identityRefusedNeedles matches OpenSSH refusing the client's key, e.g.
+	// "Permission denied (publickey)." or "(publickey,password)". The server
+	// was reached and answered; nothing about it is a network condition.
+	identityRefusedNeedles = []string{
+		"permission denied (publickey",
 	}
 	authNeedles = []string{
 		"authorization failed", "authentication failed",

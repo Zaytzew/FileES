@@ -383,6 +383,10 @@ type ActivationStatus struct {
 	// SessionTimeoutMin is how long one send or fetch may run on this
 	// server, in minutes. Zero means the default (30).
 	SessionTimeoutMin int `json:"session_timeout_min,omitempty"`
+	// DemoExpiresAt (RFC 3339) is set only for a realm on a demo server: the
+	// instant the server removes it. Presentation counts down to it; after it
+	// the server is gone for this client, not unreachable.
+	DemoExpiresAt string `json:"demo_expires_at,omitempty"`
 
 	// The next five describe the projection lane for this server, and only
 	// that lane. They answer "how old is what we are showing", which nothing

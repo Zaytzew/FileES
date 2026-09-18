@@ -119,6 +119,9 @@ type ServerProjection struct {
 	PendingRequiredRepos  int    `json:"pending_required_repos"`
 	ReservationCount      int    `json:"reservation_count"`
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
+	// DemoExpiresAt drives the DEMO badge and its countdown; after it passes
+	// the card says the demo ended instead of showing an unreachable server.
+	DemoExpiresAt string `json:"demo_expires_at,omitempty"`
 }
 
 type RepoProjection struct {
@@ -964,6 +967,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			PendingRequiredRepos:  server.PendingRequiredRepos,
 			ReservationCount:      server.ReservationCount,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
+			DemoExpiresAt:         server.DemoExpiresAt,
 		})
 	}
 	serversByID := make(map[string]guiapp.ServerViewModel, len(vm.Servers))

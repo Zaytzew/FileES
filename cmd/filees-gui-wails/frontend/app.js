@@ -195,6 +195,23 @@ function dateTime(value) {
   return t("time.stateAt", { time: date.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
 }
 
+// A realm on a demo server ends at demo_expires_at, when the server removes it
+// with everything in it. Until then the card counts down; after it the card
+// says the demo ended - the server refuses this client from then on, and
+// "server unavailable" would suggest waiting for something that never returns.
+function demoPresentation(server, now = Date.now()) {
+  const expires = Date.parse(server?.demo_expires_at || "");
+  if (!Number.isFinite(expires)) return null;
+  const at = new Date(expires).toLocaleString(getLocale(), { dateStyle: "short", timeStyle: "short" });
+  const left = expires - now;
+  if (left <= 0) {
+    return { ended: true, text: `${t("server.demo.badge")} · ${t("server.demo.ended")}`, title: t("server.demo.endedDetail") };
+  }
+  const minutes = Math.max(1, Math.ceil(left / 60000));
+  const time = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+  return { ended: false, text: `${t("server.demo.badge")} · ${t("server.demo.left", { time })}`, title: t("server.demo.expiresAt", { time: at }) };
+}
+
 function shortDateTime(value) {
   if (!value) return "czas nieznany";
   const date = new Date(value);
@@ -561,9 +578,10 @@ function renderRepositories(snapshot) {
     const owned = attached.filter((repo) => repo.ownership === "owned");
     const guest = attached.filter((repo) => repo.ownership === "guest");
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
-    const context = server.realm_alias || server.address || server.id;
+    const demo = demoPresentation(server);
+    const context = demo?.ended ? demo.title : (server.realm_alias || server.address || server.id);
     const expanded = expandedServers.has(server.id);
-    const health = serverHealthPresentation(server.health);
+    const health = demo?.ended ? { className: "health-unavailable", label: demo.text } : serverHealthPresentation(server.health);
     const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
       || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
@@ -573,6 +591,7 @@ function renderRepositories(snapshot) {
         <div class="server-identity"><span class="server-mark ${health.className}" role="img" aria-label="${escapeHTML(health.label)}" title="${escapeHTML(health.label)}"></span><div>
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
+            ${demo ? `<span class="demo-badge ${demo.ended ? "is-ended" : ""}" title="${escapeHTML(demo.title)}">${escapeHTML(demo.text)}</span>` : ""}
             <button class="server-settings" type="button" data-action="settings" title="${escapeHTML(t("server.settings"))}" aria-label="${escapeHTML(t("server.settingsName", { name: server.display_name || server.id }))}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
             </button>
@@ -966,6 +985,14 @@ function renderJournal(snapshot) {
     <div class="journal-copy"><strong>${escapeHTML(journalSummary(item))}</strong>${journalDetails(item) ? `<p>${escapeHTML(journalDetails(item))}</p>` : ""}${item.diagnostics ? `<pre class="journal-diagnostics">${escapeHTML(item.diagnostics)}</pre>` : ""}</div>
   </article>`).join("") : `<p class="muted">${escapeHTML(t("journal.noEntries"))}</p>`);
 }
+
+// The countdown moves without a new snapshot; refresh only the server cards,
+// and only while one of them is a demo realm.
+setInterval(() => {
+  if ((currentSnapshot?.servers || []).some((server) => server.demo_expires_at)) {
+    renderRepositories(currentSnapshot);
+  }
+}, 20000);
 
 function render(snapshot) {
   if (!snapshot) return;

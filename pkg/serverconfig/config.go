@@ -358,6 +358,9 @@ func load(path string, secrets Secrets) (Config, error) {
 		return Config{}, err
 	}
 	activationConfig.SingleActivationPerRealm = demo.Enabled
+	if demo.Enabled {
+		activationConfig.DemoRealmTTL = demo.RealmTTL
+	}
 	if secrets&SecretActivation != 0 {
 		if _, err := activation.New(activationConfig, nil); err != nil {
 			return Config{}, err

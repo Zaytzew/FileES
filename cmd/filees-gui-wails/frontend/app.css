@@ -168,6 +168,8 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .server-mark.health-refreshing,.server-mark.health-unverified { background:var(--amber); box-shadow:0 0 19px rgba(244,199,109,.3); }
 .server-mark.health-unavailable { background:var(--red); box-shadow:0 0 19px rgba(255,123,132,.38); animation:server-alert 1.6s ease-in-out infinite; }
 .server-title-line { min-width:0; display:flex; align-items:center; gap:9px; }
+.demo-badge { flex:0 0 auto; padding:3px 8px; border:1px solid color-mix(in srgb,var(--realm-accent) 45%,transparent); border-radius:999px; color:color-mix(in srgb,var(--realm-accent) 80%,white); background:color-mix(in srgb,var(--realm-accent) 12%,transparent); font-size:11px; font-weight:800; letter-spacing:.02em; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.demo-badge.is-ended { border-color:rgba(154,167,232,.3); color:var(--muted); background:transparent; }
 .server-identity h3 { margin:0; font-size:17px; letter-spacing:-.02em; }
 .server-identity p { max-width:520px; margin:6px 0 0; overflow:hidden; color:var(--muted); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .server-total { flex:0 0 auto; padding:7px 10px; border:1px solid color-mix(in srgb,var(--realm-accent) 28%,transparent); border-radius:999px; color:color-mix(in srgb,var(--realm-accent) 78%,white); background:color-mix(in srgb,var(--realm-accent) 9%,transparent); font-size:11px; font-weight:800; }

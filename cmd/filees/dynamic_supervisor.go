@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,8 @@ type projectionUpdate struct {
 	serverID, displayName, address, clientID string
 	sshPort                                  int
 	view                                     clientview.View
+	// demoExpiresAt is the demo server's announcement, read beside the view.
+	demoExpiresAt string
 }
 
 type repositoryDeletionUpdate struct {
@@ -441,7 +444,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if projectRealmAlias != nil {
 			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
-		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute), DemoExpiresAt: demoExpiresAt(syncConfig)}))
 		svn := client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort, SSHHostName: address})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
@@ -483,7 +486,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		runtime.Go(ctx, func() {
 			for view := range views {
 				select {
-				case updates <- projectionUpdate{serverID: serverID, displayName: displayNameNow(), address: address, clientID: clientID, sshPort: sshPort, view: view}:
+				case updates <- projectionUpdate{serverID: serverID, displayName: displayNameNow(), address: address, clientID: clientID, sshPort: sshPort, view: view, demoExpiresAt: demoExpiresAt(syncConfig)}:
 				case <-ctx.Done():
 					return
 				}
@@ -604,7 +607,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if projectRealmAlias != nil {
 				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
 			}
-			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)}))
+			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes), DemoExpiresAt: update.demoExpiresAt}))
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil {
 				if ctx.Err() == nil {
 					talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
@@ -728,4 +731,25 @@ func sessionTimeoutMinutes(serverID string, runtimes map[reposupervisor.Key]repo
 		return int(timeout / time.Minute)
 	}
 	return int(clientprofile.DefaultSessionTimeout / time.Minute)
+}
+
+// demoExpiresAt reads the demo server's announcement from the service
+// projection: clients/<id>/demo.json, checked out next to view.json. Empty for
+// every server without a demo policy, and for an unreadable file - the
+// countdown is presentation, never a reason to stop synchronising.
+//
+// Read from the working copy rather than carried in the view on purpose: once
+// the realm is removed the projection can no longer be updated, and the file
+// already on disk is what lets the interface say the demo ended instead of
+// showing an unreachable server.
+func demoExpiresAt(sync clientview.SyncConfig) string {
+	if strings.TrimSpace(sync.WorkingCopy) == "" {
+		return ""
+	}
+	dir := filepath.Dir(filepath.Clean(strings.TrimSpace(sync.RelativeViewPath)))
+	demo, found, err := clientview.LoadDemo(filepath.Join(sync.WorkingCopy, dir, clientview.DemoFileName))
+	if err != nil || !found {
+		return ""
+	}
+	return demo.ExpiresAt.Format(time.RFC3339)
 }

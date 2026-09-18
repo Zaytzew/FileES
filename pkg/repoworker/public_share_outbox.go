@@ -90,6 +90,13 @@ func (o PublicShareOutbox) Claim(now time.Time, lease time.Duration) (PublicShar
 	if !filepath.IsAbs(o.Root) || lease <= 0 {
 		return PublicShareMailJob{}, false, errors.New("public share outbox claim is incomplete")
 	}
+	// The outbox is created by the first queued message. Until then there is
+	// nothing to claim - not an error: on a server where nobody had shared
+	// anything yet, every delivery run reported "open outbox/.lock: no such
+	// file or directory" (seen on spot, 2026-09-18).
+	if _, err := os.Stat(o.Root); errors.Is(err, os.ErrNotExist) {
+		return PublicShareMailJob{}, false, nil
+	}
 	var claimed PublicShareMailJob
 	found := false
 	err := WithFileLock(filepath.Join(o.Root, ".lock"), func() error {

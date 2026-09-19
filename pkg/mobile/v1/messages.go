@@ -446,6 +446,9 @@ func (r Request) Validate() error {
 		if err := decodeStrict(r.Payload, &p); err != nil {
 			return fmt.Errorf("%s payload: %w", r.Operation, err)
 		}
+		if err := validateUUID("target_request_id", p.TargetRequestID); err != nil {
+			return err
+		}
 	case OpRequestDesktopJoin:
 		var p RequestDesktopJoinPayload
 		if err := decodeStrict(r.Payload, &p); err != nil {

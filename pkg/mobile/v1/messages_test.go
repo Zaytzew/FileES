@@ -101,6 +101,30 @@ func TestRequestRejectsBadUUID(t *testing.T) {
 	}
 }
 
+func TestOperationStatusRejectsInvalidTargetRequestID(t *testing.T) {
+	for _, target := range []string{"", "not-a-uuid", "../outside", "../../clients/view", "/tmp/outside", `..\outside`} {
+		t.Run(target, func(t *testing.T) {
+			id := rid()
+			payload := OperationStatusPayload{TargetRequestID: target}
+			if _, err := NewRequest(id, OpOperationStatus, payload); err == nil {
+				t.Error("NewRequest accepted an invalid target_request_id")
+			}
+			// A hostile peer can bypass NewRequest and send its own JSON.
+			rawPayload, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(Request{Schema: Schema, RequestID: id, Operation: OpOperationStatus, Payload: rawPayload})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseRequest(raw); err == nil {
+				t.Error("ParseRequest accepted an invalid target_request_id")
+			}
+		})
+	}
+}
+
 func TestUploadRejectsPathTraversal(t *testing.T) {
 	bad := []UploadObjectPayload{
 		{RepoID: "r", ParentPath: "../etc", Filename: "x", Size: 1, Sha256: strings.Repeat("a", 64)},

@@ -24,6 +24,7 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	guiBlobs             GUIBlobService
 	memorySafety         *contract.MemorySafetyStatus
 	operationAdmission   runtime.Admission
 	requestAdmission     runtime.Admission
@@ -318,6 +319,9 @@ func (s *Server) updateService() UpdateService {
 
 func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
+	if s.guiBlobService() != nil {
+		caps = append(caps, contract.CapGUIBlob)
+	}
 	if s.realmGrantService() != nil {
 		caps = append(caps, contract.CapRealmGrantRecipients, contract.CapRealmSetVisibility, contract.CapRepoGrantAccess, contract.CapRepoRevokeAccess)
 	}

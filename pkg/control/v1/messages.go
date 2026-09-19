@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/guiblob"
 	"filees/pkg/realmalias"
 	"filees/pkg/realmbranding"
 	publicmanifest "filees/public-shares/manifest"
@@ -66,6 +67,8 @@ const (
 	TicketRevokeAccess           TicketType = "REVOKE_ACCESS"
 	TicketListGrantRecipients    TicketType = "LIST_GRANT_RECIPIENTS"
 	TicketSetRealmVisibility     TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
+	TicketGetGUIBlob             TicketType = "GET_GUI_BLOB"
+	TicketSetGUIBlob             TicketType = "SET_GUI_BLOB"
 	TicketGetRealmPublicBranding TicketType = "GET_REALM_PUBLIC_BRANDING"
 	TicketSetRealmPublicBranding TicketType = "SET_REALM_PUBLIC_BRANDING"
 	TicketListPublicShares       TicketType = "LIST_PUBLIC_SHARES"
@@ -698,6 +701,19 @@ func (t Ticket) Validate() error {
 		if p.Visibility != "hidden" && p.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
 		}
+	case TicketGetGUIBlob:
+		var p struct{}
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return err
+		}
+	case TicketSetGUIBlob:
+		var p guiblob.Write
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return err
+		}
+		if err := p.Validate(); err != nil {
+			return err
+		}
 	case TicketGetRealmPublicBranding:
 		var p struct{}
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -939,7 +955,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketArmPassportAcquisition && r.Type != TicketSettlePassportAcquisition && r.Type != TicketExpirePassportPath && r.Type != TicketCancelPassportPreparation && r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketListShelf && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
+	if r.Type != TicketGetGUIBlob && r.Type != TicketSetGUIBlob && r.Type != TicketArmPassportAcquisition && r.Type != TicketSettlePassportAcquisition && r.Type != TicketExpirePassportPath && r.Type != TicketCancelPassportPreparation && r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketListShelf && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -1106,6 +1122,14 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.Visibility != "hidden" && result.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
+		}
+	case TicketGetGUIBlob, TicketSetGUIBlob:
+		var state guiblob.State
+		if err := decodeStrict(r.Result, &state); err != nil {
+			return err
+		}
+		if err := state.Validate(); err != nil {
+			return err
 		}
 	case TicketGetRealmPublicBranding, TicketSetRealmPublicBranding:
 		var result RealmPublicBrandingResult

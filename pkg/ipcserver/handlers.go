@@ -63,6 +63,10 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleRealmGrantRecipients(req)
 	case contract.CmdRealmSetVisibility:
 		return s.handleRealmSetVisibility(req)
+	case contract.CmdGUIBlobGet:
+		return s.handleGUIBlob(req, false)
+	case contract.CmdGUIBlobSet:
+		return s.handleGUIBlob(req, true)
 	case contract.CmdRealmPublicBrandingGet:
 		return s.handleRealmPublicBranding(req, false)
 	case contract.CmdRealmPublicBrandingSet:

@@ -89,7 +89,8 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		SnapshotScope: publisher.SnapshotRealmScope,
 		ActiveClients: activationManager.ActiveClientsInRealm,
 		Execute: realmRemovalExecutor{
-			Store: realmRemovalStore, Backend: backend, Recovery: recoveryPublisher,
+			GUIBlobs: repoworker.GUIBlobStore{Root: filepath.Join(r.ResultsRoot, "gui-blobs")},
+			Store:    realmRemovalStore, Backend: backend, Recovery: recoveryPublisher,
 			Publisher: publisher, Activation: activationManager, Erasure: erasureStore, PublicShares: publicShareChannels,
 			ErasureMaxDays: r.EffectiveDataErasureMaxDays(),
 		}.Execute,
@@ -114,7 +115,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	if publicShareChannels != nil {
 		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}, TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot)}
 	}
-	worker := &repoworker.Worker{Backend: backend, GenericDelete: publisher, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, LockProjector: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader, Demo: config.Demo.Enabled}
+	worker := &repoworker.Worker{GUIBlobs: &repoworker.GUIBlobStore{Root: filepath.Join(r.ResultsRoot, "gui-blobs")}, Backend: backend, GenericDelete: publisher, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, LockProjector: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader, Demo: config.Demo.Enabled}
 	worker.PassportPreparations = &repoworker.PassportPreparations{
 		Root: filepath.Join(r.ResultsRoot, "passport-preparations"),
 		Authority: repoworker.PassportReplacementAuthority{

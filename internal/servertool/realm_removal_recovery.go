@@ -59,7 +59,8 @@ func newRealmRemovalRuntime(config serverconfig.Config) (realmRemovalRuntime, er
 		publicShareChannels = &channel.Store{Root: config.PublicShares.EffectiveStateRoot(r.ResultsRoot)}
 	}
 	executor := realmRemovalExecutor{
-		Store: store, Backend: backend, Recovery: recovery, Publisher: publisher, Activation: manager,
+		GUIBlobs: repoworker.GUIBlobStore{Root: filepath.Join(r.ResultsRoot, "gui-blobs")},
+		Store:    store, Backend: backend, Recovery: recovery, Publisher: publisher, Activation: manager,
 		Erasure:        repoworker.DataErasureStore{Root: filepath.Join(r.ResultsRoot, "data-erasure")},
 		PublicShares:   publicShareChannels,
 		ErasureMaxDays: r.EffectiveDataErasureMaxDays(),

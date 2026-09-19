@@ -2,6 +2,7 @@ package contracttests
 
 import (
 	"encoding/json"
+	"filees/pkg/guiblob"
 	"strings"
 	"testing"
 
@@ -217,6 +218,7 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapRepoLifecycleRepair:    true,
 		contract.CapRepoPublish:            true,
 		contract.CapRepoIntentResolution:   true,
+		contract.CapRepoCommitRecovery:     true,
 		contract.CapNoticeList:             true,
 		contract.CapNoticeAck:              true,
 		// Always on: the language packs are compiled into the daemon and
@@ -263,5 +265,29 @@ func TestDemoExpiredDetachmentWireKeepsCauseAndLocalPaths(t *testing.T) {
 	}
 	if string(encoded) != string(raw) {
 		t.Fatalf("wire changed: %s", encoded)
+	}
+}
+
+func TestGUIBlobOpaquePayloadContract(t *testing.T) {
+	data := `{"schema":"filees.gui.drawers/v1","drawers":[],"repos":{}}`
+	raw, err := json.Marshal(contract.GUIBlobSetPayload{ServerID: "office", Write: guiblob.Write{Expected: "v", Data: data}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 3 || string(fields["expected"]) != `"v"` {
+		t.Fatalf("wire shape: %s", raw)
+	}
+	var decoded contract.GUIBlobSetPayload
+	if err = contract.DecodePayload(raw, &decoded); err != nil || decoded.Data != data {
+		t.Fatal(decoded, err)
+	}
+	for _, capability := range contract.AllCapabilities {
+		if capability == contract.CapGUIBlob {
+			t.Fatal("optional service advertised unconditionally")
+		}
 	}
 }

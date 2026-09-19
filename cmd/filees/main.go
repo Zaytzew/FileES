@@ -239,6 +239,7 @@ func runDaemon() {
 	ipc.SetRealmAliasService(realmAliases)
 	ipc.SetRealmGrantService(realmAliases)
 	ipc.SetRealmPublicBrandingService(realmAliases)
+	ipc.SetGUIBlobService(realmAliases)
 	ipc.SetEditingPolicyService(realmAliases)
 	ipc.SetPublicShareService(refreshingPublicShareService{delegate: realmAliases, changed: func(serverID string) {
 		select {

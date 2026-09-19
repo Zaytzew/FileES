@@ -194,4 +194,25 @@
     <string name="join_error_cancelled">Cancelled. The request will not go without the PIN.</string>
     <string name="join_error_unsupported">The server does not accept this request yet. That is not a phone fault.</string>
     <string name="error_op_unsupported">The server does not know this mobile operation.</string>
+
+    <string name="settings_about">About</string>
+    <string name="action_about">Version information</string>
+    <string name="action_close">Close</string>
+    <string name="about_eyebrow">FileES Android</string>
+    <string name="about_title">Version information</string>
+    <string name="about_client">Client version</string>
+    <string name="about_channel">Update channel</string>
+    <string name="about_release">Distribution release</string>
+    <string name="about_unknown">unknown</string>
+    <string name="about_channel_apk">not applicable (APK)</string>
+    <string name="about_status_apk">The phone does not use the desktop update channel. You install a new version as an APK.</string>
+    <string name="about_provider_title">Software provider</string>
+    <string name="about_provider_copy">FileES is a software brand developed and supplied by ATM Projekt.</string>
+    <string name="about_provider_address">ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze\nkontakt@atmprojekt.pl</string>
+    <string name="about_provider_logo">ATM Projekt</string>
+    <string name="about_license_title">License and liability</string>
+    <string name="about_license_copyright">Copyright © 2026 ATM Projekt.</string>
+    <string name="about_license_summary">FileES is available under the BSD 2-Clause license. The software is provided “as is”, without express or implied warranties; liability is excluded to the extent permitted by law.</string>
+    <string name="about_license_full">Full BSD 2-Clause license</string>
+    <string name="about_license_hide">Hide the license text</string>
 </resources>

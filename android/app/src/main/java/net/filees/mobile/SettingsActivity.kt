@@ -93,6 +93,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         binding.buttonRequestDesktopJoin.setOnClickListener { confirmJoinThenSend() }
+        binding.buttonAbout.setOnClickListener { showAbout() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)
@@ -119,6 +120,36 @@ class SettingsActivity : AppCompatActivity() {
         renderUploadTarget()
         bindLanguage()
         binding.buttonChangeLanguage.setOnClickListener { pickLanguage() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun appVersionName(): String {
+        return try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            info.versionName?.takeIf { it.isNotBlank() } ?: getString(R.string.about_unknown)
+        } catch (_: Exception) {
+            getString(R.string.about_unknown)
+        }
+    }
+
+    private fun showAbout() {
+        val view = layoutInflater.inflate(R.layout.dialog_about, null)
+        val version = appVersionName()
+        view.findViewById<TextView>(R.id.textAboutClient).text = version
+        view.findViewById<TextView>(R.id.textAboutChannel).text = getString(R.string.about_channel_apk)
+        view.findViewById<TextView>(R.id.textAboutRelease).text = version
+        view.findViewById<TextView>(R.id.textAboutStatus).text = getString(R.string.about_status_apk)
+        val licenseBody = view.findViewById<TextView>(R.id.textAboutLicenseFull)
+        val licenseToggle = view.findViewById<MaterialButton>(R.id.buttonAboutLicense)
+        licenseToggle.setOnClickListener {
+            val show = licenseBody.visibility != View.VISIBLE
+            licenseBody.visibility = if (show) View.VISIBLE else View.GONE
+            licenseToggle.setText(if (show) R.string.about_license_hide else R.string.about_license_full)
+        }
+        AlertDialog.Builder(this)
+            .setView(view)
+            .setPositiveButton(R.string.action_close, null)
+            .show()
     }
 
     private fun bindLanguage() {

@@ -188,4 +188,25 @@
     <string name="join_error_cancelled">Annulé. Sans PIN, la demande ne part pas.</string>
     <string name="join_error_unsupported">Le serveur n’accepte pas encore cette demande. Ce n’est pas une faute du téléphone.</string>
     <string name="error_op_unsupported">Le serveur ne connaît pas cette opération mobile.</string>
+
+    <string name="settings_about">À propos</string>
+    <string name="action_about">Informations sur la version</string>
+    <string name="action_close">Fermer</string>
+    <string name="about_eyebrow">FileES Android</string>
+    <string name="about_title">Informations sur la version</string>
+    <string name="about_client">Version du client</string>
+    <string name="about_channel">Canal de mise à jour</string>
+    <string name="about_release">Version de distribution</string>
+    <string name="about_unknown">inconnue</string>
+    <string name="about_channel_apk">sans objet (APK)</string>
+    <string name="about_status_apk">Le téléphone n’utilise pas le canal de mise à jour du bureau. Vous installez une nouvelle version en APK.</string>
+    <string name="about_provider_title">Fournisseur responsable</string>
+    <string name="about_provider_copy">FileES est une marque logicielle développée et fournie par ATM Projekt.</string>
+    <string name="about_provider_address">ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze\nkontakt@atmprojekt.pl</string>
+    <string name="about_provider_logo">ATM Projekt</string>
+    <string name="about_license_title">Licence et responsabilité</string>
+    <string name="about_license_copyright">Copyright © 2026 ATM Projekt.</string>
+    <string name="about_license_summary">FileES est fourni sous licence BSD 2-Clause. Le logiciel est fourni « en l’état », sans garantie expresse ou implicite ; la responsabilité est exclue dans la mesure permise par la loi.</string>
+    <string name="about_license_full">Texte intégral de la licence BSD 2-Clause</string>
+    <string name="about_license_hide">Masquer le texte de la licence</string>
 </resources>

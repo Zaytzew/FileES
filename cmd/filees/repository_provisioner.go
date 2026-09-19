@@ -106,6 +106,11 @@ func (p *daemonProvisioner) AddProfile(profile clientprofile.Profile) {
 func (p *daemonProvisioner) RemoveProfile(serverID string) {
 	p.mu.Lock()
 	delete(p.profiles, serverID)
+	for _, work := range p.running {
+		if work.serverID == serverID {
+			work.cancel()
+		}
+	}
 	p.mu.Unlock()
 }
 

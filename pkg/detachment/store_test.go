@@ -265,3 +265,33 @@ func TestNameFallsBackToTheServerID(t *testing.T) {
 		t.Fatalf("Name() = %q", got)
 	}
 }
+
+func TestDemoExpiryHidesNoticeButKeepsRestartFence(t *testing.T) {
+	store, path := openTemp(t)
+	at := time.Now().UTC()
+	if err := store.Record(Record{ServerID: "demo", Cause: CauseDemoExpired, At: at, WorkingCopies: []string{"/local/demo"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.ListAt(at); len(got) != 1 || got[0].Cause != CauseDemoExpired {
+		t.Fatalf("notice = %+v", got)
+	}
+	if got := store.ListAt(at.Add(Visibility)); len(got) != 0 {
+		t.Fatalf("expired notice = %+v", got)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Current("demo") {
+		t.Fatal("hiding the notice removed the restart fence")
+	}
+	if got := reopened.ListAt(at); len(got) != 0 {
+		t.Fatal("clock rollback restored a hidden notice")
+	}
+	if _, err := reopened.Reattached("demo", at.Add(Visibility)); err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Current("demo") {
+		t.Fatal("explicit reactivation did not release the fence")
+	}
+}

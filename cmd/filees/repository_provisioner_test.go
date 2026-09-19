@@ -1264,3 +1264,27 @@ func (stub *fixedInfoAttachmentSVN) GetInfo(context.Context, string) (string, er
 func (stub *fixedInfoAttachmentSVN) Status(ctx context.Context, root string, paths []string) ([]client.StatusEntry, error) {
 	return stub.attachmentSVNStub.Status(ctx, root, paths)
 }
+
+func TestRemovingProfileCancelsOnlyItsInFlightProvisioning(t *testing.T) {
+	demoCtx, cancelDemo := context.WithCancel(context.Background())
+	defer cancelDemo()
+	otherCtx, cancelOther := context.WithCancel(context.Background())
+	defer cancelOther()
+	p := &daemonProvisioner{
+		profiles: map[string]clientprofile.Profile{"demo": {ServerID: "demo"}, "ordinary": {ServerID: "ordinary"}},
+		running: map[string]provisionerOperation{
+			"demo-attach":  {serverID: "demo", cancel: cancelDemo},
+			"other-attach": {serverID: "ordinary", cancel: cancelOther},
+		},
+	}
+	p.RemoveProfile("demo")
+	if demoCtx.Err() == nil {
+		t.Fatal("demo provisioning continued after profile removal")
+	}
+	if otherCtx.Err() != nil {
+		t.Fatal("unrelated provisioning was cancelled")
+	}
+	if _, ok := p.Profile("demo"); ok {
+		t.Fatal("new operations can still obtain the demo profile")
+	}
+}

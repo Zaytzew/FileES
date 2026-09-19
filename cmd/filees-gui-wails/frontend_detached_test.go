@@ -148,3 +148,20 @@ func TestTheDetachedPanelComputesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestExpiredDemoDoesNotOfferReactivation(t *testing.T) {
+	snapshot := detachedSnapshot(t, []guiapp.DetachmentViewModel{{
+		ServerID: "demo", DisplayName: "FileES Demo", Cause: "demo_expired", At: "2026-09-03T18:10:00Z",
+		WorkingCopies: []string{"/home/user/demo"},
+	}})
+	if len(snapshot.Detachments) != 1 {
+		t.Fatalf("detachments: %+v", snapshot.Detachments)
+	}
+	got := snapshot.Detachments[0]
+	if got.NeedsReactivation || got.Cause != "demo_expired" || !strings.Contains(got.Summary, "Demo zakończone") {
+		t.Fatalf("expired demo presented as revocation: %+v", got)
+	}
+	if len(got.WorkingCopies) != 1 || got.WorkingCopies[0] != "/home/user/demo" {
+		t.Fatalf("lost local files: %+v", got)
+	}
+}

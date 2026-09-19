@@ -298,10 +298,9 @@ type Detachment struct {
 	ServerID    string `json:"server_id"`
 	DisplayName string `json:"display_name,omitempty"`
 	Address     string `json:"address,omitempty"`
-	// Cause is "self" when the owner detached here, "revoked" when the server
-	// refused this client. They reach the same end state by opposite routes
-	// and need opposite cures - one is finished, the other needs the client
-	// activated again - so the reader must never be told the wrong one.
+	// Cause is "self", "revoked", or "demo_expired". The last means the
+	// announced demo deadline passed and the server refused the credential;
+	// it must not offer reactivation of the one-use demo.
 	Cause string `json:"cause"`
 	// At is RFC3339. For "revoked" it is when the daemon first noticed, never
 	// when the decision was made on the server, and the wording that reaches

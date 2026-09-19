@@ -938,11 +938,13 @@ function renderDetached(snapshot) {
     const folders = paths.length
       ? `<ul class="detached-paths">${paths.map((path) => `<li title="${escapeHTML(path)}">${escapeHTML(path)}</li>`).join("")}</ul>`
       : "";
-    const note = item.needs_reactivation
-      ? `<p class="detached-note">${escapeHTML(t("detached.reactivate"))}</p>`
-      : "";
+    const note = item.cause === "demo_expired"
+      ? `<p class="detached-note">${escapeHTML(t("journal.demoExpiredDetail"))}</p>`
+      : item.needs_reactivation
+        ? `<p class="detached-note">${escapeHTML(t("detached.reactivate"))}</p>`
+        : "";
     return `<article class="detached-row">
-      <div class="detached-head"><strong>${escapeHTML(t(item.needs_reactivation ? "detached.remote" : "detached.self", {name: item.name || item.server_id}))}</strong>
+      <div class="detached-head"><strong>${escapeHTML(t(item.cause === "demo_expired" ? "detached.demoExpired" : (item.needs_reactivation ? "detached.remote" : "detached.self"), {name: item.name || item.server_id}))}</strong>
       <time datetime="${escapeHTML(item.timestamp || item.exact_time)}">${escapeHTML(journalTime(item))}</time></div>
       ${note}${folders}
     </article>`;

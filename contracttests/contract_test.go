@@ -247,3 +247,21 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoExpiredDetachmentWireKeepsCauseAndLocalPaths(t *testing.T) {
+	raw := []byte(`{"server_id":"demo","cause":"demo_expired","at":"2026-09-19T12:00:00Z","working_copies":["/local/demo"]}`)
+	var got contract.Detachment
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Cause != "demo_expired" || len(got.WorkingCopies) != 1 || got.WorkingCopies[0] != "/local/demo" || got.ReattachedAt != "" {
+		t.Fatalf("demo detachment lost semantics: %+v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != string(raw) {
+		t.Fatalf("wire changed: %s", encoded)
+	}
+}

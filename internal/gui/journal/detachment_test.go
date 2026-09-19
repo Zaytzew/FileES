@@ -130,3 +130,20 @@ func TestADetachmentEntryNamesTheServerEvenWithoutADisplayName(t *testing.T) {
 		t.Errorf("summary = %q", entries[0].Summary)
 	}
 }
+
+func TestExpiredDemoJournalPreservesFilesWithoutReactivationAdvice(t *testing.T) {
+	now := time.Now().UTC()
+	entries := detachmentEntries(t, app.ViewModel{Detachments: []app.DetachmentViewModel{{
+		ServerID: "demo", Cause: "demo_expired", At: now.Format(time.RFC3339), WorkingCopies: []string{"/local/demo"},
+	}}}, now)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	got := entries[0]
+	if !strings.Contains(got.Summary, "Demo zakończone") || strings.Contains(got.Details, "ponowna aktywacja") {
+		t.Fatalf("wrong demo advice: %+v", got)
+	}
+	if !strings.Contains(got.Details, "lokalne pliki") {
+		t.Fatalf("missing file preservation: %+v", got)
+	}
+}

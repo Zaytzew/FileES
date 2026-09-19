@@ -241,8 +241,8 @@ type NoticeViewModel struct {
 // self-detachment removes the client profile that produced the activation.
 type DetachmentViewModel struct {
 	ServerID, DisplayName, Address string
-	// Cause is "self" or "revoked". Presentation must keep them apart: one is
-	// finished business, the other needs the client activated again.
+	// Cause is "self", "revoked", or "demo_expired". An expired demo
+	// cannot be reactivated by this installation.
 	Cause string
 	// ReattachedAt is set once the client is one of this server's own again.
 	ReattachedAt string
@@ -254,6 +254,10 @@ type DetachmentViewModel struct {
 
 // SelfDetached reports whether the owner did this himself.
 func (d DetachmentViewModel) SelfDetached() bool { return d.Cause == "self" }
+
+func (d DetachmentViewModel) DemoExpired() bool { return d.Cause == "demo_expired" }
+
+func (d DetachmentViewModel) NeedsReactivation() bool { return d.Cause == "revoked" }
 
 // Current reports whether this detachment still describes how things stand.
 //

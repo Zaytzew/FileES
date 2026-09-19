@@ -292,9 +292,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			return
 		}
 		profile, _ := reservationRefreshes.Profile(serverID)
+		noticedAt := time.Now()
 		_, _ = detachments.RecordFirstNoticed(detachment.Record{
 			ServerID: serverID, DisplayName: profile.DisplayName, Address: profile.Address,
-			Cause: detachment.CauseRevoked, At: time.Now(),
+			Cause: refusedProfileCause(profile, noticedAt), At: noticedAt,
 			WorkingCopies: workingCopiesOf(lifecycle, serverID),
 		})
 		if forgetProfile != nil {
@@ -591,6 +592,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 			cancel()
 		case profile := <-timeoutEvents:
+			if reservationRefreshes.Paused(profile.ServerID) {
+				continue
+			}
 			reservationRefreshes.UpdateProfile(profile)
 			stampSessionTimeout(runtimes, profile.ServerID, profile.SVNTimeout())
 			if view, ok := currentViews[profile.ServerID]; ok {
@@ -600,6 +604,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				reservationRefreshes.Schedule(profile.ServerID)
 			}
 		case update := <-updates:
+			if reservationRefreshes.Paused(update.serverID) {
+				continue
+			}
 			currentViews[update.serverID] = update.view
 			freshness.Synced(update.serverID, update.view)
 			ready, pendingRequired := repositoryReadiness(update.serverID, update.view, runtimes)
@@ -617,11 +624,17 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			reservationRefreshes.UpdateView(update.serverID, update.view)
 			shareRefreshes.Schedule(update.serverID, update.view)
 		case synced := <-syncs:
+			if reservationRefreshes.Paused(synced.serverID) {
+				continue
+			}
 			// A newer generation is reconciled by the updates lane. For the
 			// generation already held here, recompute only daemon-owned overlays
 			// without inventing a new server generation.
 			syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, runtimes, lifecycle)
 		case serverID := <-publicShareEvents:
+			if reservationRefreshes.Paused(serverID) {
+				continue
+			}
 			if view, ok := currentViews[serverID]; ok {
 				shareRefreshes.Schedule(serverID, view)
 			}
@@ -674,6 +687,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 					runtimes[key] = old
 				}
 				attachment.Result <- err
+				continue
+			}
+			if reservationRefreshes.Paused(repo.ServerID) {
 				continue
 			}
 			if _, exists := runtimes[key]; exists {

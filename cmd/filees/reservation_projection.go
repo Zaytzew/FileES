@@ -444,6 +444,11 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	lg := talk.With("reservation-projection:" + serverID)
 	switch {
 	case failed == 0 && fetched > 0:
+		// A success already in flight cannot undo a refusal observed by the
+		// other lane. Only explicit activation resumes a paused profile.
+		if coordinator.Paused(serverID) {
+			return
+		}
 		if coordinator.onDetached != nil {
 			coordinator.onDetached(serverID, false)
 		}
@@ -497,7 +502,7 @@ func (coordinator *reservationProjectionCoordinator) pauseDetached(serverID stri
 		coordinator.results[key] = cached
 	}
 	coordinator.mu.Unlock()
-	if coordinator.onDetached != nil {
+	if first && coordinator.onDetached != nil {
 		coordinator.onDetached(serverID, true)
 	}
 	if first {
@@ -520,7 +525,7 @@ func isDetachedClient(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "proof does not match one live staged or active client")
+	return client.IsIdentityRefused(err) || strings.Contains(strings.ToLower(err.Error()), "proof does not match one live staged or active client")
 }
 
 // markDetached records the state and reports whether this is the first time,

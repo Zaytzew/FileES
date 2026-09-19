@@ -1,9 +1,12 @@
 package main
 
 import (
+	"filees/pkg/clientprofile"
+	"filees/pkg/detachment"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/pkg/clientview"
 )
@@ -33,5 +36,23 @@ func TestDemoExpiryIsReadBesideTheView(t *testing.T) {
 	}
 	if got := demoExpiresAt(clientview.SyncConfig{}); got != "" {
 		t.Fatalf("no working copy produced %q", got)
+	}
+}
+
+func TestDemoRefusalCauseRequiresAnAnnouncedDeadline(t *testing.T) {
+	wc := t.TempDir()
+	profile := clientprofile.Profile{ServerID: "demo", ServiceWC: wc, RelativeViewPath: "view.json"}
+	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	if got := refusedProfileCause(profile, now); got != detachment.CauseRevoked {
+		t.Fatalf("server name alone inferred demo expiry: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(wc, clientview.DemoFileName), []byte(`{"schema":"filees.client-demo/v1","expires_at":"2026-09-19T12:00:00Z"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := refusedProfileCause(profile, now.Add(-time.Second)); got != detachment.CauseRevoked {
+		t.Fatalf("early refusal labelled expiry: %s", got)
+	}
+	if got := refusedProfileCause(profile, now); got != detachment.CauseDemoExpired {
+		t.Fatalf("refusal at the deadline: %s", got)
 	}
 }

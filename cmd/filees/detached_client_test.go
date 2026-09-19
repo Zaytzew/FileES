@@ -36,6 +36,13 @@ func TestARevokedClientIsRecognisedAsTerminal(t *testing.T) {
 	}
 }
 
+func TestSSHKeyRefusalEndsTheSameClientRelationship(t *testing.T) {
+	refusal := errors.New("svn: E170013: Unable to connect to a repository: Permission denied (publickey).")
+	if !isDetachedClient(refusal) {
+		t.Fatal("SSH key refusal must stop the same transports as a refused FileES proof")
+	}
+}
+
 // Said once. Repeating a terminal fact every cycle is what buried it.
 func TestTheDetachmentIsAnnouncedOnce(t *testing.T) {
 	coordinator := &reservationProjectionCoordinator{}
@@ -64,58 +71,72 @@ func TestReactivationClearsTheState(t *testing.T) {
 	}
 }
 
-type countingDetachedFetcher struct{ calls atomic.Int32 }
+type countingDetachedFetcher struct {
+	calls   atomic.Int32
+	refusal error
+}
 
 func (fetcher *countingDetachedFetcher) Fetch(context.Context, string) (reservationv1.Result, error) {
 	fetcher.calls.Add(1)
+	if fetcher.refusal != nil {
+		return reservationv1.Result{}, fetcher.refusal
+	}
 	return reservationv1.Result{}, errors.New("filees-client-entry proof: proof does not match one live staged or active client")
 }
 
 func TestDetachedCredentialStopsPeriodicTransportUntilActivation(t *testing.T) {
-	coordinator := newReservationProjectionCoordinator(t.Context(), nil)
-	t.Cleanup(coordinator.Close)
-	fetcher := &countingDetachedFetcher{}
-	coordinator.newClient = func(clientprofile.Profile) (reservationFetcher, error) { return fetcher, nil }
-	profile := clientprofile.Profile{ServerID: "manual", PollInterval: 10 * time.Millisecond}
-	view := clientview.View{Repositories: []clientview.Repository{
-		{RepoID: "one", State: "active"},
-		{RepoID: "two", State: "active"},
-	}}
-	coordinator.UpdateProfile(profile)
-	coordinator.UpdateView("manual", view)
+	for name, refusal := range map[string]error{
+		"proof":   nil,
+		"ssh-key": errors.New("Permission denied (publickey). svn: E170013: Unable to connect"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			coordinator := newReservationProjectionCoordinator(t.Context(), nil)
+			t.Cleanup(coordinator.Close)
+			fetcher := &countingDetachedFetcher{refusal: refusal}
+			coordinator.newClient = func(clientprofile.Profile) (reservationFetcher, error) { return fetcher, nil }
+			profile := clientprofile.Profile{ServerID: "manual", PollInterval: 10 * time.Millisecond}
+			view := clientview.View{Repositories: []clientview.Repository{
+				{RepoID: "one", State: "active"},
+				{RepoID: "two", State: "active"},
+			}}
+			coordinator.UpdateProfile(profile)
+			coordinator.UpdateView("manual", view)
 
-	deadline := time.Now().Add(time.Second)
-	for fetcher.calls.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if got := fetcher.calls.Load(); got != 1 {
-		t.Fatalf("one proof refusal must stop the whole server cycle, calls=%d", got)
-	}
-	coordinator.mu.RLock()
-	for _, repoID := range []string{"one", "two"} {
-		state := coordinator.results[reposupervisor.Key{ServerID: "manual", RepoID: repoID}]
-		if !state.detached || state.offline {
+			deadline := time.Now().Add(time.Second)
+			for fetcher.calls.Load() == 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if got := fetcher.calls.Load(); got != 1 {
+				t.Fatalf("one proof refusal must stop the whole server cycle, calls=%d", got)
+			}
+			coordinator.mu.RLock()
+			for _, repoID := range []string{"one", "two"} {
+				state := coordinator.results[reposupervisor.Key{ServerID: "manual", RepoID: repoID}]
+				if !state.detached || state.offline {
+					coordinator.mu.RUnlock()
+					t.Fatalf("repository %s did not inherit the server detachment: %+v", repoID, state)
+				}
+			}
 			coordinator.mu.RUnlock()
-			t.Fatalf("repository %s did not inherit the server detachment: %+v", repoID, state)
-		}
-	}
-	coordinator.mu.RUnlock()
-	time.Sleep(60 * time.Millisecond)
-	if got := fetcher.calls.Load(); got != 1 {
-		t.Fatalf("periodic ticks reopened transport for a detached credential, calls=%d", got)
+			time.Sleep(60 * time.Millisecond)
+			if got := fetcher.calls.Load(); got != 1 {
+				t.Fatalf("periodic ticks reopened transport for a detached credential, calls=%d", got)
+			}
+
+			if !coordinator.Resume("manual") {
+				t.Fatal("an explicit activation must resume the paused transport")
+			}
+			coordinator.Schedule("manual")
+			deadline = time.Now().Add(time.Second)
+			for fetcher.calls.Load() < 2 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if got := fetcher.calls.Load(); got != 2 {
+				t.Fatalf("replacement activation did not get one validation attempt, calls=%d", got)
+			}
+		})
 	}
 
-	if !coordinator.Resume("manual") {
-		t.Fatal("an explicit activation must resume the paused transport")
-	}
-	coordinator.Schedule("manual")
-	deadline = time.Now().Add(time.Second)
-	for fetcher.calls.Load() < 2 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if got := fetcher.calls.Load(); got != 2 {
-		t.Fatalf("replacement activation did not get one validation attempt, calls=%d", got)
-	}
 }
 
 // Offline and detached are different facts and must stay different fields.
@@ -170,5 +191,22 @@ func TestTheServiceUpdaterCanReleaseALock(t *testing.T) {
 	}
 	if _, ok := updater.(clientview.Updater); !ok {
 		t.Fatal("serviceProjectionUpdater must still satisfy clientview.Updater")
+	}
+}
+
+func TestTwoRefusalLanesRecordOneDetachment(t *testing.T) {
+	coordinator := newReservationProjectionCoordinator(t.Context(), nil)
+	defer coordinator.Close()
+	calls := 0
+	coordinator.onDetached = func(_ string, detached bool) {
+		if detached {
+			calls++
+		}
+	}
+	refusal := errors.New("Permission denied (publickey).")
+	coordinator.detectDetached("demo", refusal)
+	coordinator.detectDetached("demo", refusal)
+	if calls != 1 {
+		t.Fatalf("one refusal was recorded %d times", calls)
 	}
 }

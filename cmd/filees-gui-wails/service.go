@@ -1112,13 +1112,15 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			continue
 		}
 		summary := fmt.Sprintf("Odłączono od „%s”", item.Name())
-		if !item.SelfDetached() {
+		if item.DemoExpired() {
+			summary = fmt.Sprintf("Demo zakończone · %s", item.Name())
+		} else if !item.SelfDetached() {
 			summary = fmt.Sprintf("„%s” odłączył tego klienta", item.Name())
 		}
 		result.Detachments = append(result.Detachments, DetachmentProjection{
 			ServerID: item.ServerID, Name: item.Name(), Address: item.Address, Cause: item.Cause, Timestamp: item.At,
 			RelativeTime: journal.RelativeTimestamp(item.At, now, texts), ExactTime: journal.ExactTimestamp(item.At),
-			Summary: summary, NeedsReactivation: !item.SelfDetached(), WorkingCopies: item.WorkingCopies,
+			Summary: summary, NeedsReactivation: item.NeedsReactivation(), WorkingCopies: item.WorkingCopies,
 		})
 	}
 	result.PublicSharesKnown = vm.PublicSharesKnown

@@ -60,6 +60,9 @@ const (
 	// there. The moment is when we first noticed, never when it was decided,
 	// and the wording that reaches the reader must not pretend otherwise.
 	CauseRevoked Cause = "revoked"
+	// CauseDemoExpired: the announced demo deadline passed and the server
+	// refused the credential. This installation cannot activate demo again.
+	CauseDemoExpired Cause = "demo_expired"
 )
 
 type Record struct {
@@ -76,6 +79,9 @@ type Record struct {
 	// detachment the files are still on this disk, and where they are is the
 	// only question left that has a useful answer.
 	WorkingCopies []string `json:"working_copies,omitempty"`
+	// Hidden removes an expired notice from presentation without removing the
+	// durable fence that prevents old local repositories restarting.
+	Hidden bool `json:"hidden,omitempty"`
 	// ReattachedAt is set when the client became one of this server's own
 	// again, and the record is kept rather than deleted.
 	//
@@ -201,7 +207,7 @@ func (s *Store) Record(rec Record) error {
 	if strings.TrimSpace(rec.ServerID) == "" {
 		return errors.New("detachment record needs a server id")
 	}
-	if rec.Cause != CauseSelf && rec.Cause != CauseRevoked {
+	if rec.Cause != CauseSelf && rec.Cause != CauseRevoked && rec.Cause != CauseDemoExpired {
 		return errors.New("detachment record needs a known cause")
 	}
 	s.mu.Lock()
@@ -317,20 +323,27 @@ func (s *Store) Current(serverID string) bool {
 
 func (s *Store) listLocked(now time.Time) []Record {
 	kept := make([]Record, 0, len(s.records))
+	out := make([]Record, 0, len(s.records))
+	changed := false
 	for _, rec := range s.records {
-		if now.Sub(rec.At) < Visibility {
-			kept = append(kept, rec)
+		if !rec.Hidden && now.Sub(rec.At) >= Visibility {
+			rec.Hidden = true
+			changed = true
+		}
+		if rec.Hidden && !rec.Current() {
+			changed = true
+			continue
+		}
+		kept = append(kept, rec)
+		if !rec.Hidden {
+			out = append(out, rec)
 		}
 	}
-	if len(kept) != len(s.records) {
-		s.records = append(s.records[:0:0], kept...)
-		// A failed prune must not cost the caller its answer: the records are
-		// correct in memory either way, and the file is rewritten on the next
-		// write. Reporting an error from a read would make every consumer
-		// handle a fault that changes nothing they can see.
+	if changed {
+		s.records = kept
+		// The notice expires, but a current detachment remains a restart fence.
 		_ = s.persistLocked()
 	}
-	out := append([]Record(nil), kept...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].At.Equal(out[j].At) {
 			return out[i].At.After(out[j].At)

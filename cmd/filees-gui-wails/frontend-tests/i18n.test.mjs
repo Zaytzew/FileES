@@ -876,3 +876,26 @@ test("journal builds no Polish sentence outside the interface catalogue", () => 
   }
   assert.deepEqual(stray, [], `unkeyed Polish in journal.go: ${JSON.stringify(stray)}`);
 });
+
+
+test("expired demo renders retained local paths without reactivation advice", () => {
+  const app = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const source = app.slice(app.indexOf("function renderDetached("), app.indexOf("\nfunction ", app.indexOf("function renderDetached(") + 1));
+  for (const locale of Object.keys(catalogues)) {
+    const elements = new Map();
+    const $ = key => { if (!elements.has(key)) elements.set(key, {}); return elements.get(key); };
+    const text = (key, params) => translate(catalogues, locale, key, params);
+    runInNewContext(source + "\nrenderDetached(snapshot);", {
+      $, t: text, journalTime: () => "12:00",
+      escapeHTML: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+      replaceHTMLIfChanged: (node, html) => { node.html = html; },
+      snapshot: {detachments: [{cause: "demo_expired", name: "FileES Demo", needs_reactivation: false, working_copies: ["/local/<project>"], timestamp: "2026-09-19T12:00:00Z"}]},
+    });
+    const html = $("#detached").html;
+    assert.ok(html.includes(text("detached.demoExpired", {name: "FileES Demo"})), locale);
+    assert.ok(html.includes(text("journal.demoExpiredDetail")), locale);
+    assert.ok(!html.includes(text("detached.reactivate")), locale);
+    assert.ok(html.includes("/local/&lt;project>"), locale);
+    assert.equal($("#detached-card").hidden, false);
+  }
+});

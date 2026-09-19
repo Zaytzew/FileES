@@ -246,7 +246,11 @@ func detachmentEntry(record app.DetachmentViewModel, texts Texts) Entry {
 		time:      when,
 	}
 	detailKey := "journal.detachedSelfDetail"
-	if record.SelfDetached() {
+	if record.DemoExpired() {
+		detailKey = "journal.demoExpiredDetail"
+		entry.Summary = fmt.Sprintf(texts.chrome("journal.demoExpired", "Demo zakończone · %s"), record.Name())
+		entry.Details = texts.chrome(detailKey, "Okres demo minął, a serwer odmówił dostępu. Synchronizacja została zatrzymana; lokalne pliki pozostały na dysku.")
+	} else if record.SelfDetached() {
 		entry.Summary = fmt.Sprintf(texts.chrome("journal.detachedSelf", "Odłączono od serwera „%s”"), record.Name())
 		entry.Details = texts.chrome(detailKey, "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty.")
 	} else {

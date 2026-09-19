@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"filees/pkg/clientprofile"
+	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/detachment"
 	"filees/pkg/localrepo"
@@ -69,4 +70,15 @@ func workingCopiesOf(store *localrepo.Store, serverID string) []string {
 		paths = append(paths, path)
 	}
 	return paths
+}
+
+// refusedProfileCause is called only after an actual server identity refusal.
+// The deadline alone is presentation, never a reason to remove credentials.
+func refusedProfileCause(profile clientprofile.Profile, now time.Time) detachment.Cause {
+	expires := demoExpiresAt(clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath})
+	deadline, err := time.Parse(time.RFC3339, expires)
+	if err == nil && !now.Before(deadline) {
+		return detachment.CauseDemoExpired
+	}
+	return detachment.CauseRevoked
 }

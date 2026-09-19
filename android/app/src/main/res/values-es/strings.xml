@@ -188,4 +188,25 @@
     <string name="join_error_cancelled">Cancelado. Sin PIN, la solicitud no se envía.</string>
     <string name="join_error_unsupported">El servidor aún no acepta esta solicitud. No es un fallo del teléfono.</string>
     <string name="error_op_unsupported">El servidor no conoce esta operación móvil.</string>
+
+    <string name="settings_about">Acerca de</string>
+    <string name="action_about">Información de la versión</string>
+    <string name="action_close">Cerrar</string>
+    <string name="about_eyebrow">FileES Android</string>
+    <string name="about_title">Información de la versión</string>
+    <string name="about_client">Versión del cliente</string>
+    <string name="about_channel">Canal de actualizaciones</string>
+    <string name="about_release">Versión distribuida</string>
+    <string name="about_unknown">desconocida</string>
+    <string name="about_channel_apk">no aplica (APK)</string>
+    <string name="about_status_apk">El teléfono no usa el canal de actualizaciones del escritorio. Instala una versión nueva como APK.</string>
+    <string name="about_provider_title">Proveedor responsable</string>
+    <string name="about_provider_copy">FileES es una marca de software desarrollada y suministrada por ATM Projekt.</string>
+    <string name="about_provider_address">ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze\nkontakt@atmprojekt.pl</string>
+    <string name="about_provider_logo">ATM Projekt</string>
+    <string name="about_license_title">Licencia y responsabilidad</string>
+    <string name="about_license_copyright">Copyright © 2026 ATM Projekt.</string>
+    <string name="about_license_summary">FileES se ofrece bajo la licencia BSD 2-Clause. El software se entrega «tal cual», sin garantías expresas ni implícitas; la responsabilidad queda excluida en la medida permitida por la ley.</string>
+    <string name="about_license_full">Texto completo de la licencia BSD 2-Clause</string>
+    <string name="about_license_hide">Ocultar el texto de la licencia</string>
 </resources>

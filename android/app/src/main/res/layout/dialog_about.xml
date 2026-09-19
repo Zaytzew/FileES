@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:overScrollMode="ifContentScrolls">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/filees_gutter">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/about_eyebrow"
+            android:textAppearance="@style/TextAppearance.Filees.Eyebrow" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/about_title"
+            android:textAppearance="@style/TextAppearance.Filees.Heading" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_filees_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/filees_panel_inset">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/about_client"
+                android:textAppearance="@style/TextAppearance.Filees.Eyebrow" />
+
+            <TextView
+                android:id="@+id/textAboutClient"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textIsSelectable="true"
+                android:textAppearance="@style/TextAppearance.Filees.Name" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_filees_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/filees_panel_inset">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/about_channel"
+                android:textAppearance="@style/TextAppearance.Filees.Eyebrow" />
+
+            <TextView
+                android:id="@+id/textAboutChannel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="@style/TextAppearance.Filees.Name" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_filees_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/filees_panel_inset">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/about_release"
+                android:textAppearance="@style/TextAppearance.Filees.Eyebrow" />
+
+            <TextView
+                android:id="@+id/textAboutRelease"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textIsSelectable="true"
+                android:textAppearance="@style/TextAppearance.Filees.Name" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/textAboutStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textAppearance="@style/TextAppearance.Filees.Body" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_filees_panel"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="@dimen/filees_panel_inset">
+
+            <ImageView
+                android:layout_width="96dp"
+                android:layout_height="54dp"
+                android:background="@color/filees_white"
+                android:contentDescription="@string/about_provider_logo"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/atm_projekt" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/about_provider_title"
+                    android:textAppearance="@style/TextAppearance.Filees.Name" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/about_provider_copy"
+                    android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:autoLink="email"
+                    android:linksClickable="true"
+                    android:text="@string/about_provider_address"
+                    android:textAppearance="@style/TextAppearance.Filees.Meta" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/about_license_title"
+            android:textAppearance="@style/TextAppearance.Filees.Name" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/about_license_copyright"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/about_license_summary"
+            android:textAppearance="@style/TextAppearance.Filees.Body" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonAboutLicense"
+            style="@style/Widget.Filees.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/about_license_full" />
+
+        <TextView
+            android:id="@+id/textAboutLicenseFull"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace"
+            android:text="@string/about_license_bsd"
+            android:textAppearance="@style/TextAppearance.Filees.Meta"
+            android:textIsSelectable="true"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

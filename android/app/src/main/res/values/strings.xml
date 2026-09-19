@@ -199,4 +199,26 @@
     <string name="join_error_cancelled">Anulowano. Bez PIN-u zgłoszenie nie idzie.</string>
     <string name="join_error_unsupported">Serwer jeszcze nie przyjmuje tego zgłoszenia. To nie jest błąd telefonu.</string>
     <string name="error_op_unsupported">Serwer nie zna tej operacji mobilnej.</string>
+
+    <string name="settings_about">O aplikacji</string>
+    <string name="action_about">Informacje o wersji</string>
+    <string name="action_close">Zamknij</string>
+    <string name="about_eyebrow">FileES Android</string>
+    <string name="about_title">Informacje o wersji</string>
+    <string name="about_client">Wersja klienta</string>
+    <string name="about_channel">Kanał aktualizacji</string>
+    <string name="about_release">Wydanie dystrybucyjne</string>
+    <string name="about_unknown">nieznana</string>
+    <string name="about_channel_apk">nie dotyczy (APK)</string>
+    <string name="about_status_apk">Telefon nie korzysta z kanału aktualizacji desktopu. Nową wersję instalujesz APK-iem.</string>
+    <string name="about_provider_title">Odpowiedzialny dostawca</string>
+    <string name="about_provider_copy">FileES jest marką handlową oprogramowania rozwijanego i dostarczanego przez ATM Projekt.</string>
+    <string name="about_provider_address">ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze\nkontakt@atmprojekt.pl</string>
+    <string name="about_provider_logo">ATM Projekt</string>
+    <string name="about_license_title">Licencja i odpowiedzialność</string>
+    <string name="about_license_copyright">Copyright © 2026 ATM Projekt.</string>
+    <string name="about_license_summary">FileES jest udostępniany na licencji BSD 2-Clause. Oprogramowanie jest dostarczane „tak jak jest”, bez gwarancji wyraźnych ani dorozumianych; odpowiedzialność jest wyłączona w zakresie dopuszczonym przez prawo.</string>
+    <string name="about_license_full">Pełna treść licencji BSD 2-Clause</string>
+    <string name="about_license_hide">Ukryj treść licencji</string>
+    <string name="about_license_bsd" translatable="false">Copyright (c) 2026, ATM Projekt\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</string>
 </resources>

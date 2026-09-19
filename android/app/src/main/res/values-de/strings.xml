@@ -188,4 +188,25 @@
     <string name="join_error_cancelled">Abgebrochen. Ohne PIN geht die Anforderung nicht.</string>
     <string name="join_error_unsupported">Der Server nimmt diese Anforderung noch nicht an. Das ist kein Fehler des Telefons.</string>
     <string name="error_op_unsupported">Der Server kennt diese mobile Operation nicht.</string>
+
+    <string name="settings_about">Über die App</string>
+    <string name="action_about">Versionsinformationen</string>
+    <string name="action_close">Schließen</string>
+    <string name="about_eyebrow">FileES Android</string>
+    <string name="about_title">Versionsinformationen</string>
+    <string name="about_client">Clientversion</string>
+    <string name="about_channel">Update-Kanal</string>
+    <string name="about_release">Distributionsversion</string>
+    <string name="about_unknown">unbekannt</string>
+    <string name="about_channel_apk">entfällt (APK)</string>
+    <string name="about_status_apk">Das Telefon nutzt nicht den Desktop-Update-Kanal. Eine neue Version installieren Sie als APK.</string>
+    <string name="about_provider_title">Verantwortlicher Anbieter</string>
+    <string name="about_provider_copy">FileES ist eine Softwaremarke, die von ATM Projekt entwickelt und bereitgestellt wird.</string>
+    <string name="about_provider_address">ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze\nkontakt@atmprojekt.pl</string>
+    <string name="about_provider_logo">ATM Projekt</string>
+    <string name="about_license_title">Lizenz und Haftung</string>
+    <string name="about_license_copyright">Copyright © 2026 ATM Projekt.</string>
+    <string name="about_license_summary">FileES wird unter der BSD-2-Clause-Lizenz bereitgestellt. Die Software wird „wie besehen“ ohne ausdrückliche oder stillschweigende Garantie geliefert; die Haftung ist im gesetzlich zulässigen Umfang ausgeschlossen.</string>
+    <string name="about_license_full">Vollständiger Text der BSD-2-Clause-Lizenz</string>
+    <string name="about_license_hide">Lizenztext ausblenden</string>
 </resources>

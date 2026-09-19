@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/activation"
 	control "filees/pkg/control/v1"
+	"filees/pkg/guiblob"
 	"filees/pkg/repoworker"
 	"github.com/google/uuid"
 )
@@ -324,13 +325,20 @@ func TestRealmRemovalExecutorPersistsErasureOnlyAfterOTPAndActiveDeletion(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	blobs := repoworker.GUIBlobStore{Root: filepath.Join(root, "gui-blobs")}
+	if _, err := blobs.Exchange(t.Context(), realm, &guiblob.Write{Data: "private drawer names"}); err != nil {
+		t.Fatal(err)
+	}
 	executor := realmRemovalExecutor{
 		Store: store, Backend: &fakeRealmDeleteBackend{}, Recovery: &fakeRealmRecoveryPublisher{},
 		Publisher: &fakeRealmGrantPublisher{}, Activation: &fakeRealmRevoker{},
-		Erasure: erasure, ErasureMaxDays: 90,
+		GUIBlobs: blobs, Erasure: erasure, ErasureMaxDays: 90,
 	}
 	if err := executor.Execute(context.Background(), record); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(blobs.Root, realm+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("realm GUI state survived erasure", err)
 	}
 	request, err := erasure.Load(record.OperationID)
 	if err != nil || request.State != repoworker.DataErasureAwaitingBackupRetention ||

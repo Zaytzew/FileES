@@ -265,6 +265,7 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
   const escapeHTML = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
   const render = runInNewContext(`${extract("repoAction")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
     t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
+    repoSection: () => "active", readRepoView: () => ({}), drawerPicker: () => "",
     repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "",
   });
   const repo = { id: 'id"<raw>', display_name: "Projekt <DWG>", local_path: "E:/Żółć", display_state: "active", can_lock: true };

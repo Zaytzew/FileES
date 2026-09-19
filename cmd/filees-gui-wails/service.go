@@ -31,6 +31,7 @@ type snapshotEmitter interface {
 // internal/gui/app reconstructs the authoritative presentation from IPC and
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
+	guiBlobs             guiBlobClient
 	presentationLanguage atomic.Pointer[nativeLanguage]
 	domainCatalogue      atomic.Pointer[domainCatalogues]
 	mu                   sync.RWMutex
@@ -107,6 +108,8 @@ type ReservationAvailabilityProjection struct {
 }
 
 type ServerProjection struct {
+	RealmID               string `json:"-"`
+	GUIScope              string `json:"gui_scope,omitempty"`
 	ID                    string `json:"id"`
 	DisplayName           string `json:"display_name"`
 	Address               string `json:"address"`
@@ -382,6 +385,9 @@ func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionm
 			PublicShares:        []DashboardPublicShareProjection{},
 			ClientVersion:       clientVersion(),
 		},
+	}
+	if blobs, ok := client.(guiBlobClient); ok {
+		service.guiBlobs = blobs
 	}
 	if branding, ok := client.(realmBrandingClient); ok {
 		service.branding = branding
@@ -961,7 +967,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 	for _, server := range vm.Servers {
 		result.Servers = append(result.Servers, ServerProjection{
 			ID: server.ID, DisplayName: server.DisplayName, Address: server.Address,
-			ClientRole: server.ClientRole, RealmAlias: server.RealmAlias,
+			ClientRole: server.ClientRole, RealmAlias: server.RealmAlias, RealmID: server.RealmID, GUIScope: guiScope(server.ID, server.RealmID),
 			Health:          projectServerHealth(vm, server),
 			RepositoryCount: len(server.Repos), RepositoriesReady: server.RepositoriesReady,
 			PendingRequiredRepos:  server.PendingRequiredRepos,

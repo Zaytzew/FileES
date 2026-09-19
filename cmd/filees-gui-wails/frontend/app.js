@@ -1,10 +1,11 @@
-import { Events, Window } from "/wails/runtime.js";
+import { Events, Window, Call } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
 import { initializeLanguageMenu } from "./language-menu.js";
 import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
+import { parseDrawers, groupDrawers, commitDrawerChange } from "./drawer-layout.js";
 
 initializeTheme();
 initializeLanguage();
@@ -450,6 +451,92 @@ function renderUnportable(repo) {
   return `<div class="repo-unportable"><strong>${escapeHTML(t("name.excluded", { count: names.length }))}</strong><ul>${items}</ul></div>`;
 }
 
+// Cached presentation is scoped to the realm as well as the local server profile.
+const drawerStates = new Map();
+const drawerDrafts = new Map();
+function drawerKey(server) { return JSON.stringify([server.id,server.gui_scope]); }
+function drawerState(server) {
+  const key = drawerKey(server);
+  if (!drawerStates.has(key)) {
+    const entry = {state:{scope:server.gui_scope,version:"",data:""}, ready:false, busy:false, fetching:false, next:0};
+    try {
+      const saved = JSON.parse(localStorage.getItem("filees.drawers.v1:"+key) || "null");
+      if (saved?.scope === server.gui_scope) { parseDrawers(saved.data); entry.state=saved; }
+    } catch { /* unreadable cache must not become a new write */ }
+    drawerStates.set(key,entry);
+  }
+  return drawerStates.get(key);
+}
+function drawerServer(id) { return currentSnapshot?.servers?.find(server=>server.id===id); }
+function drawerEnabled(server) { return Boolean(server?.gui_scope && currentSnapshot?.connected && currentSnapshot?.capabilities?.includes("realm.gui_blob.v1")); }
+function rememberDrawers(server,entry,state) {
+  if (state.scope !== server.gui_scope) throw Error("drawers.changed");
+  parseDrawers(state.data);
+  entry.state=state; entry.ready=true;
+  try { localStorage.setItem("filees.drawers.v1:"+drawerKey(server),JSON.stringify(state)); } catch { /* server is authoritative */ }
+}
+function refreshDrawers(server) {
+  if (!drawerEnabled(server)) return;
+  const entry=drawerState(server);
+  if (entry.busy || entry.fetching || entry.next>Date.now()) return;
+  entry.fetching=true; entry.next=Date.now()+30000;
+  Call.ByName("filees/cmd/filees-gui-wails.GUIService.GetGUIBlob",server.id).then(state=>{
+    if (drawerServer(server.id)?.gui_scope !== server.gui_scope) return;
+    rememberDrawers(server,entry,state);
+  }).catch(()=>{ entry.ready=false; }).finally(()=>{
+    entry.fetching=false;
+    if (currentSnapshot) { renderRepositories(currentSnapshot); scheduleWindowFit(); }
+  });
+}
+function drawerPicker(repo) {
+  if (repo.server_deleted || ["upload_shelf","upload_trash"].includes(repo.purpose)) return "";
+  const server=drawerServer(repo.server_id); if (!server?.gui_scope) return "";
+  const entry=drawerState(server), layout=parseDrawers(entry.state.data);
+  if (!layout.drawers.length) return "";
+  const selected=Object.hasOwn(layout.repos,repo.id) ? layout.repos[repo.id] : "";
+  return `<select class="drawer-picker" data-drawer-repo="${escapeHTML(repo.id)}" aria-label="${escapeHTML(t("drawers.move"))}" title="${escapeHTML(t("drawers.move"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>
+    <option value="">${escapeHTML(t("drawers.none"))}</option>${layout.drawers.map(d=>`<option value="${escapeHTML(d.id)}" ${selected===d.id?"selected":""}>${escapeHTML(d.name)}</option>`).join("")}</select>`;
+}
+function drawerToolbar(server) {
+  if (!server.gui_scope || !currentSnapshot?.capabilities?.includes("realm.gui_blob.v1")) return "";
+  const entry=drawerState(server), key=JSON.stringify([server.id,server.gui_scope,"drawer-tools"]);
+  return `<details class="drawer-organizer" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(t("drawers.organize"))}</summary>
+    <form data-drawer-create><label>${escapeHTML(t("drawers.name"))}<input name="drawer-name" maxlength="80" required value="${escapeHTML(drawerDrafts.get(drawerKey(server))||"")}" autocomplete="off"></label>
+    <button type="submit" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>${escapeHTML(t("drawers.create"))}</button>
+    ${!entry.ready?`<span role="status">${escapeHTML(t(entry.fetching?"drawers.loading":"drawers.unavailable"))}</span>`:""}</form></details>`;
+}
+function renderDrawers(server,repos) {
+  if (!server.gui_scope) return null;
+  const entry=drawerState(server), layout=parseDrawers(entry.state.data);
+  if (!layout.drawers.length) return null;
+  const {groups,loose}=groupDrawers(repos,layout);
+  return groups.map(drawer=>{
+    const key=JSON.stringify([server.id,server.gui_scope,"drawer",drawer.id]);
+    return `<section class="repo-drawer"><header class="drawer-heading"><h4>${escapeHTML(drawer.name)} <small>(${drawer.repos.length})</small></h4>
+      <button type="button" data-drawer-delete="${escapeHTML(drawer.id)}" title="${escapeHTML(t("drawers.deleteHint"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>${escapeHTML(t("drawers.delete"))}</button></header>
+      ${drawer.repos.length?renderRepoGroup("",drawer.repos,"drawer-content",false,key):`<p class="drawer-empty">${escapeHTML(t("drawers.empty"))}</p>`}</section>`;
+  }).join("")+renderRepoGroup("",loose,"drawer-loose",false,JSON.stringify([server.id,server.gui_scope,"loose"]));
+}
+async function modifyDrawers(serverID,action) {
+  const server=drawerServer(serverID); if (!drawerEnabled(server)) return;
+  const entry=drawerState(server);
+  if (!entry.ready || entry.busy || entry.fetching) return;
+  entry.busy=true;
+  renderRepositories(currentSnapshot);
+  try {
+    const state=await commitDrawerChange(entry.state,action,(version,data)=>Call.ByName("filees/cmd/filees-gui-wails.GUIService.SetGUIBlob",serverID,version,data));
+    if (drawerServer(serverID)?.gui_scope !== server.gui_scope) return;
+    rememberDrawers(server,entry,state);
+    if (action.type==="create") drawerDrafts.delete(drawerKey(server));
+  } catch(error) {
+    entry.next=0;
+    showToast({title:t("drawers.organize"),message:t(["drawers.invalid","drawers.changed"].includes(error?.message)?error.message:"drawers.failed")});
+  } finally {
+    entry.busy=false;
+    renderRepositories(currentSnapshot); scheduleWindowFit();
+  }
+}
+
 function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
@@ -491,7 +578,7 @@ function renderRepo(repo) {
   return `<article class="repo-row ${repo.intent_resolution_required || recoveryRequired ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title">
       ${open}
-      <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small></div>
+      <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
     </div>
     <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>
@@ -503,10 +590,10 @@ function renderRepo(repo) {
 }
 
 const expandedIdleGroups = new Set();
-function renderRepoGroup(label, repos, className = "", nested = false) {
+function renderRepoGroup(label, repos, className = "", nested = false, scope = "") {
   if (!repos.length) return "";
   repos = [...repos].sort(repoOrder);
-  if (!nested && ["owned", "guest", "unclassified"].includes(className)) {
+  if (!nested && ["owned", "guest", "unclassified", "drawer-content", "drawer-loose"].includes(className)) {
     const prefs = readRepoView();
     const groups = {active:[],inactive:[],archived:[]};
     for (const repo of repos) {
@@ -515,15 +602,15 @@ function renderRepoGroup(label, repos, className = "", nested = false) {
     }
     const fold = (kind, title) => {
       const items = groups[kind]; if (!items.length) return "";
-      const key = JSON.stringify([repos[0].server_id,className,kind]);
-      return `<details class="idle-group" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(title)} (${items.length})</summary>${renderRepoGroup(label,items,className,true)}</details>`;
+      const key = JSON.stringify([repos[0].server_id,className,scope,kind]);
+      return `<details class="idle-group" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(title)} (${items.length})</summary>${renderRepoGroup(label,items,className,true,scope)}</details>`;
     };
-    return renderRepoGroup(label,groups.active,className,true)
+    return renderRepoGroup(label,groups.active,className,true,scope)
       + fold("inactive",t("folders.inactiveAfter", { days: prefs.inactive }))
       + fold("archived",t("folders.archived"));
   }
   return `<section class="realm-group ${escapeHTML(className)}">
-    <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
+    ${label ? `<div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>` : ""}
     <div class="repo-list">${repos.map(repo => {
       const shelves = shelvesFor(repo, currentSnapshot?.repositories || []);
       const shelfKey = JSON.stringify([repo.server_id, repo.id, "shelves"]);
@@ -562,6 +649,7 @@ function renderRepositories(snapshot) {
     expandedServers.add(server.id);
   });
   const html = servers.map((server) => {
+    refreshDrawers(server);
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
     const isShelf = (repo) => repo.purpose === "upload_shelf";
     const isTrash = (repo) => repo.purpose === "upload_trash";
@@ -578,6 +666,7 @@ function renderRepositories(snapshot) {
     const owned = attached.filter((repo) => repo.ownership === "owned");
     const guest = attached.filter((repo) => repo.ownership === "guest");
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
+    const organized = renderDrawers(server,rest);
     const demo = demoPresentation(server);
     const context = demo?.ended ? demo.title : (server.realm_alias || server.address || server.id);
     const expanded = expandedServers.has(server.id);
@@ -601,14 +690,14 @@ function renderRepositories(snapshot) {
         <div class="server-summary"><span class="server-total">${escapeHTML(tn("count.folders", serverRepos.length))}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
       </header>
       <div id="server-folders-${escapeHTML(server.id)}" class="server-folders" ${expanded ? "" : "hidden"}>
-        ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>${escapeHTML(t("repo.columnFolder"))}</span><span class="column-queue">${escapeHTML(t("repo.queue"))}</span><span>${escapeHTML(t("repo.actions"))}</span><span>${escapeHTML(t("repo.size"))}</span></div>
-          ${renderRepoGroup(t("repo.groupOwned"), owned, "owned")}
-          ${renderRepoGroup(t("repo.groupGuest"), guest, "guest")}
+        ${drawerToolbar(server)}
+        ${serverRepos.length || organized ? `<div class="repo-columns" aria-hidden="true"><span>${escapeHTML(t("repo.columnFolder"))}</span><span class="column-queue">${escapeHTML(t("repo.queue"))}</span><span>${escapeHTML(t("repo.actions"))}</span><span>${escapeHTML(t("repo.size"))}</span></div>
+          ${organized ?? (renderRepoGroup(t("repo.groupOwned"), owned, "owned") + renderRepoGroup(t("repo.groupGuest"), guest, "guest"))}
           ${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf")}
           ${renderRepoGroup(t("repo.groupQuarantine"), trash, "upload-trash")}
-          ${renderRepoGroup(t("repo.groupOther"), unclassified, "unclassified")}
+          ${organized === null ? renderRepoGroup(t("repo.groupOther"), unclassified, "unclassified") : ""}
           ${renderRepoGroup(t("repo.groupDeleted"), deleted, "deleted")}
-          ${renderRepoGroup(t("repo.groupRemote"), remote, "remote")}` : `<p class="server-empty">${escapeHTML(t("server.empty"))}</p>`}
+          ${organized === null ? renderRepoGroup(t("repo.groupRemote"), remote, "remote") : ""}` : `<p class="server-empty">${escapeHTML(t("server.empty"))}</p>`}
       </div>
     </article>`;
   }).join("");
@@ -1293,7 +1382,23 @@ document.addEventListener("keydown", (event) => {
   }
   if (!$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
 });
+$("#repositories").addEventListener("input",event=>{
+  if (event.target.name!=="drawer-name") return;
+  const server=drawerServer(event.target.closest("[data-server-id]")?.dataset.serverId);
+  if (server) drawerDrafts.set(drawerKey(server),event.target.value);
+});
+$("#repositories").addEventListener("submit",event=>{
+  if (!event.target.matches("[data-drawer-create]")) return;
+  event.preventDefault();
+  modifyDrawers(event.target.closest("[data-server-id]").dataset.serverId,{type:"create",id:crypto.randomUUID(),name:event.target.elements["drawer-name"].value});
+});
+$("#repositories").addEventListener("change",event=>{
+  if (!event.target.matches("[data-drawer-repo]")) return;
+  modifyDrawers(event.target.closest("[data-server-id]").dataset.serverId,{type:"assign",repo:event.target.dataset.drawerRepo,id:event.target.value});
+});
 $("#repositories").addEventListener("click", (event) => {
+  const remove=event.target.closest("[data-drawer-delete]");
+  if (remove) { event.preventDefault(); modifyDrawers(remove.closest("[data-server-id]").dataset.serverId,{type:"delete",id:remove.dataset.drawerDelete}); return; }
   const info = event.target.closest("[data-copy-info]");
   if (info) { openDeletedCopyInfo(info); return; }
   const toggle = event.target.closest("[data-toggle-server]");

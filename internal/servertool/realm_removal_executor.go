@@ -20,6 +20,7 @@ type realmRemovalExecutor struct {
 	Activation     realmRemovalRevoker
 	Erasure        realmRemovalErasure
 	PublicShares   realmPublicShareEraser
+	GUIBlobs       interface{ DeleteRealm(string) error }
 	ErasureMaxDays int
 }
 
@@ -86,6 +87,11 @@ func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.Rea
 	if record.State == repoworker.RealmRemovalRevokingClients {
 		if _, err := e.Activation.RevokeRealmRemoval(ctx, record.RealmID, record.OperationID, record.Scope.ClientIDs, "realm removal confirmed"); err != nil {
 			return err
+		}
+		if e.GUIBlobs != nil {
+			if err := e.GUIBlobs.DeleteRealm(record.RealmID); err != nil {
+				return err
+			}
 		}
 		if record.Request.ErasureRequested {
 			if e.PublicShares != nil {

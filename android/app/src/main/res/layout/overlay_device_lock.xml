@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/filees_navy"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="@dimen/filees_gutter">
+
+    <ImageView
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/filees_wordmark_height"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/wordmark_white" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/device_lock_title"
+        android:textAppearance="@style/TextAppearance.Filees.Heading"
+        android:textColor="@color/filees_white" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="@string/device_lock_copy"
+        android:textAppearance="@style/TextAppearance.Filees.Body"
+        android:textColor="@color/filees_white" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonDeviceUnlock"
+        style="@style/Widget.Filees.Button.OutlinedButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/device_lock_unlock" />
+</LinearLayout>

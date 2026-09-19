@@ -215,4 +215,9 @@
     <string name="about_license_summary">FileES is available under the BSD 2-Clause license. The software is provided “as is”, without express or implied warranties; liability is excluded to the extent permitted by law.</string>
     <string name="about_license_full">Full BSD 2-Clause license</string>
     <string name="about_license_hide">Hide the license text</string>
+    <string name="device_lock_title">FileES is locked</string>
+    <string name="device_lock_copy">This is this phone’s lock, not a sign-in to the realm. The SSH key and pairing stay as they were.</string>
+    <string name="device_lock_unlock">Unlock</string>
+    <string name="device_lock_prompt_title">Unlock FileES</string>
+    <string name="device_lock_prompt_subtitle">This phone’s screen lock or biometrics.</string>
 </resources>

@@ -15,6 +15,7 @@ class FileesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         TreeZip.sweep(cacheDir)
+        FileesDeviceGate.install(this)
         createWatchNotificationChannel()
         FileesWatchScheduler.ensure(this)
     }

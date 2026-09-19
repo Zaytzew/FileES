@@ -11,8 +11,8 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 36
-        versionName = "0.1.16+r1390"
+        versionCode = 37
+        versionName = "0.1.16+r1391"
     }
 
     buildTypes {
@@ -47,6 +47,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
 
     // QR scanning for mobile pairing (concept doc §4.2). Deliberately ZXing,
     // not ML Kit: no Google Play Services dependency, works on any device

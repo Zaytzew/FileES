@@ -223,9 +223,9 @@ func (c *Catalogue) value(key, name string, details map[string]string) (string, 
 		if err != nil {
 			return "", false
 		}
-		// Local wall-clock time, matching what the hand-written sentence
-		// showed before the catalogue existed.
-		return parsed.Local().Format("15:04"), true
+		// A deadline must identify the day and reader's UTC offset, also
+		// across midnight and the repeated hour at the end of daylight saving.
+		return parsed.Local().Format("2006-01-02 15:04 UTC-07:00"), true
 	case errcat.ParamBytes:
 		size, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {

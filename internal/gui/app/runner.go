@@ -434,7 +434,7 @@ func (a *App) loop(ctx context.Context) {
 				// tear down an otherwise healthy GUI session.
 				if result, err := a.cfg.Client.PublicShareListAll(sesCtx); err == nil {
 					publicShares = result.Shares
-					publicSharesKnown = true
+					publicSharesKnown = len(result.Shares) > 0 || !result.Stale
 				}
 			}
 			if sesCtx.Err() == nil {

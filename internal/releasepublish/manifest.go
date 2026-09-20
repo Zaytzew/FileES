@@ -127,6 +127,22 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 			Owner: owner, Group: group, SHA256: digest,
 		})
 	}
+	// Every built binary must have an explicit install policy. Otherwise a new
+	// command silently disappears from a successfully signed manifest.
+	covered := make(map[string]bool, len(result.Files))
+	for _, file := range result.Files {
+		covered[file.Source] = true
+	}
+	binaries, err := os.ReadDir(filepath.Join(root, "bin"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	for _, entry := range binaries {
+		source := "bin/" + entry.Name()
+		if !entry.Type().IsRegular() || !covered[source] {
+			return nil, fmt.Errorf("payload binary %s has no regular, explicit install policy", source)
+		}
+	}
 	sort.Slice(result.Files, func(i, j int) bool {
 		if result.Files[i].Source == result.Files[j].Source {
 			return result.Files[i].Target < result.Files[j].Target

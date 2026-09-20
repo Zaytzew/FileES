@@ -750,6 +750,8 @@ type PublicShareChannelPayload struct {
 }
 
 type PublicShareSummary struct {
+	ObservedAt        string              `json:"observed_at,omitempty"`
+	Stale             bool                `json:"stale,omitempty"`
 	ChannelID         string              `json:"channel_id"`
 	ServerID          string              `json:"server_id,omitempty"`
 	RepoID            string              `json:"repo_id"`
@@ -766,7 +768,10 @@ type PublicShareSummary struct {
 }
 
 type PublicShareListResult struct {
-	Shares []PublicShareSummary `json:"shares"`
+	AsOf       string               `json:"as_of,omitempty"`
+	Generation uint64               `json:"generation,omitempty"`
+	Stale      bool                 `json:"stale,omitempty"`
+	Shares     []PublicShareSummary `json:"shares"`
 }
 
 type PublicShareResult struct {

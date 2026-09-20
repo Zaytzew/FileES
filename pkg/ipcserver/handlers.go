@@ -830,7 +830,12 @@ func (s *Server) handlePublicShareListAll(req contract.Request) contract.Respons
 	if source == nil {
 		return contract.ErrResponse(req.RequestID, "SHARE-0002", "ERROR", "RETRY", "public_share.list_all_unavailable", nil)
 	}
-	return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: source.List()})
+	if snapshot, ok := source.(interface {
+		Snapshot() contract.PublicShareListResult
+	}); ok {
+		return contract.OKResponse(req.RequestID, snapshot.Snapshot())
+	}
+	return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: source.List(), Stale: true})
 }
 
 func (s *Server) handleUploadChannel(req contract.Request, action string) contract.Response {

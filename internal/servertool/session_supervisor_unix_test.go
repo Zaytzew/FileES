@@ -36,6 +36,7 @@ func TestSessionSupervisorTerminatesChildOnRevoke(t *testing.T) {
 	t.Cleanup(func() { startSessionChild = originalStarter })
 	startSessionChild = sessionSupervisorTestChild
 
+	ready := make(sessionReadyWriter, 1)
 	input, keepInputOpen := io.Pipe()
 	defer keepInputOpen.Close()
 	type result struct {
@@ -44,10 +45,14 @@ func TestSessionSupervisorTerminatesChildOnRevoke(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, io.Discard)
+		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, ready, io.Discard)
 		done <- result{exitCode: exitCode, err: err}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-ready:
+	case <-time.After(4 * time.Second):
+		t.Fatal("child gate did not open")
+	}
 	if _, err := manager.Revoke(context.Background(), grant.ClientID, "supervisor FIFO test"); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +85,7 @@ func TestSessionSupervisorReportsRevokeOnStderr(t *testing.T) {
 	t.Cleanup(func() { startSessionChild = originalStarter })
 	startSessionChild = sessionSupervisorTestChild
 
+	ready := make(sessionReadyWriter, 1)
 	input, keepInputOpen := io.Pipe()
 	defer keepInputOpen.Close()
 	var stderr bytes.Buffer
@@ -89,10 +95,14 @@ func TestSessionSupervisorReportsRevokeOnStderr(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, &stderr)
+		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, ready, &stderr)
 		done <- result{exitCode: exitCode, err: err}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-ready:
+	case <-time.After(4 * time.Second):
+		t.Fatal("child gate did not open")
+	}
 	if _, err := manager.Revoke(context.Background(), grant.ClientID, "supervisor stderr marker test"); err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +129,7 @@ func TestWhaleSessionSupervisorUsesSameRevokeFence(t *testing.T) {
 	t.Cleanup(func() { startWhaleSessionChild = originalStarter })
 	startWhaleSessionChild = sessionSupervisorTestChild
 
+	ready := make(sessionReadyWriter, 1)
 	input, keepInputOpen := io.Pipe()
 	defer keepInputOpen.Close()
 	type result struct {
@@ -127,10 +138,14 @@ func TestWhaleSessionSupervisorUsesSameRevokeFence(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		exitCode, err := runWhaleSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, io.Discard)
+		exitCode, err := runWhaleSessionSupervisor(config, grant.ClientID, manager, lease, input, ready, io.Discard)
 		done <- result{exitCode: exitCode, err: err}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-ready:
+	case <-time.After(4 * time.Second):
+		t.Fatal("child gate did not open")
+	}
 	if _, err := manager.Revoke(context.Background(), grant.ClientID, "Whale supervisor FIFO test"); err != nil {
 		t.Fatal(err)
 	}
@@ -233,11 +248,25 @@ func TestWhaleSessionChildRejectsUntrustedArgumentsBeforeGate(t *testing.T) {
 	}
 }
 
+// Signal only after the real supervisor has approved the lease and opened
+// its gate. A fixed delay revoked too early under race instrumentation.
+type sessionReadyWriter chan struct{}
+
+func (w sessionReadyWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "READY") {
+		select {
+		case w <- struct{}{}:
+		default:
+		}
+	}
+	return len(p), nil
+}
+
 func sessionSupervisorTestChild(_ serverconfig.Config, _ string, _ string, _ string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
 	if _, err := os.Stat("/bin/sleep"); err != nil {
 		return nil, err
 	}
-	command := exec.Command("/bin/sleep", "600")
+	command := exec.Command("/bin/sh", "-c", "/bin/cat <&3 >/dev/null; printf READY; exec /bin/sleep 600")
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	command.ExtraFiles = []*os.File{gate}
 	command.Env = []string{}

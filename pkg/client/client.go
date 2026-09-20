@@ -1054,10 +1054,14 @@ func IsNetworkError(err error) bool {
 	return false
 }
 
-// IsIdentityRefused reports that the server's sshd refused this client's key:
-// OpenSSH's "Permission denied (publickey)", which svn follows with E170013
-// "Unable to connect". It is what a client sees after its activation was
-// revoked or its realm removed - a permanent answer, not an outage.
+// IsIdentityRefused recognises the server refusing this client's key or
+// activation proof. SVN wraps both permanent refusals in transport errors;
+// they must not be treated as an outage just because E170013 follows them.
 func IsIdentityRefused(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "permission denied (publickey")
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "permission denied (publickey") ||
+		strings.Contains(msg, "proof does not match one live staged or active client")
 }

@@ -233,3 +233,36 @@ func TestNoShippedPluralYet(t *testing.T) {
 		}
 	}
 }
+
+func TestReservationDeadlineIncludesDateAndReaderOffset(t *testing.T) {
+	original := time.Local
+	t.Cleanup(func() { time.Local = original })
+	for _, tc := range []struct {
+		name   string
+		offset int
+		want   string
+	}{
+		{"east-next-day", 2 * 60 * 60, "2026-09-21 01:30 UTC+02:00"},
+		{"west-half-hour", -(3*60 + 30) * 60, "2026-09-20 20:00 UTC-03:30"},
+		{"utc", 0, "2026-09-20 23:30 UTC+00:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			time.Local = time.FixedZone(tc.name, tc.offset)
+			for _, locale := range []string{"pl", "en"} {
+				catalogue := fromPacks(t, locale)
+				got := catalogue.Render("LOCK-2001", "lock.held_by_other", map[string]string{
+					"path": "plan.dwg", "holder": "anna", "until": "2026-09-20T23:30:00Z",
+				})
+				if !strings.Contains(got, tc.want) {
+					t.Fatalf("%s: %q lacks %q", locale, got, tc.want)
+				}
+				bad := catalogue.Render("LOCK-2001", "lock.held_by_other", map[string]string{
+					"path": "plan.dwg", "holder": "anna", "until": "invalid-deadline",
+				})
+				if strings.Contains(bad, "invalid-deadline") || !strings.Contains(bad, "anna") {
+					t.Fatalf("invalid deadline broke fallback: %q", bad)
+				}
+			}
+		})
+	}
+}

@@ -50,6 +50,15 @@ func main() {
 		DumpDepth:     *dumpDepth,
 	}
 
+	if !*dryRun {
+		if _, found, err := svnrotate.Recover(cfg.RepoPath, cfg.ArchiveDir, ""); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		} else if found {
+			fmt.Println("filees-rotate: interrupted generation recovered")
+			return
+		}
+	}
 	reason := "forced"
 	if !*force {
 		rotate, why, err := svnrotate.ShouldRotate(cfg, os.Stdout)

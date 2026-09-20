@@ -1,7 +1,6 @@
 package svnrotate
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,8 +44,8 @@ func (c *LoadConfig) Validate() error {
 // carrier commit and, if requested, already run through the ignore-policy
 // filter and/or bounded to keep_last_revisions
 // (LOAD_REPOSITORY_DUMP_CONCEPT.md §5.3, §5.4). LoadGeneration itself does
-// none of that preparation; it only builds, verifies and atomically installs
-// the result, reusing the exact staging/verify/swap/archive/rollback
+// none of that preparation; it only builds, verifies and installs
+// the result, reusing the staging/verify/journaled-swap/archive/recovery
 // discipline as Rotate (SVN_ROTATOR_CONCEPT_V2.md) — this is the "użycie
 // rotatora" required by implementation notes (not distributed) Etap 3, not a
 // parallel reimplementation.
@@ -60,6 +59,9 @@ func (c *LoadConfig) Validate() error {
 func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Writer) (meta Meta, err error) {
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(logw, "filees-load-dump: "+format+"\n", a...)
+	}
+	if recovered, found, err := Recover(cfg.RepoPath, cfg.ArchiveDir, reason); found || err != nil {
+		return recovered, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return Meta{}, err
@@ -79,6 +81,9 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 		return Meta{}, err
 	}
 	defer release()
+	if recovered, found, err := recoverSwap(cfg.RepoPath, cfg.ArchiveDir, reason); found || err != nil {
+		return recovered, err
+	}
 
 	head, err := headRev(cfg.RepoPath)
 	if err != nil {
@@ -116,7 +121,12 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 	if err != nil {
 		return Meta{}, err
 	}
-	defer os.RemoveAll(workDir)
+	prepared := false
+	defer func() {
+		if !prepared {
+			_ = os.RemoveAll(workDir)
+		}
+	}()
 
 	tag := archiveTag()
 	manifestWork := filepath.Join(workDir, tag+".log.xml")
@@ -160,7 +170,7 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 		return Meta{}, err
 	}
 
-	// 6. The swap, identical to Rotate's: archive target must not exist — a
+	// 6. Prepare a durable swap, identical to Rotate's: archive target must not exist — a
 	// tag collision is an error, never an overwrite.
 	archiveRepo := filepath.Join(cfg.ArchiveDir, tag+".svn")
 	if _, err := os.Lstat(archiveRepo); err == nil {
@@ -178,48 +188,18 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 			return Meta{}, fmt.Errorf("prepare new generation: %w", err)
 		}
 	}
-	logf("switching generations")
-	if err := os.Rename(cfg.RepoPath, archiveRepo); err != nil {
-		return Meta{}, fmt.Errorf("archive rename: %w", err)
+	transaction, err := prepareSwap(cfg.RepoPath, cfg.ArchiveDir, workDir, result, tag+".log.xml")
+	if _, journalErr := os.Lstat(swapPath(cfg.RepoPath, cfg.ArchiveDir)); journalErr == nil {
+		prepared = true
+		blockActive = false
 	}
-	if err := os.Rename(newRepo, cfg.RepoPath); err != nil {
-		installErr := fmt.Errorf("install rename: %w", err)
-		if rerr := os.Rename(archiveRepo, cfg.RepoPath); rerr != nil {
-			return Meta{}, errors.Join(installErr, fmt.Errorf(
-				"ROLLBACK FAILED, hot repo is at %s: %w", archiveRepo, rerr))
-		}
-		return Meta{}, installErr
-	}
-	blockActive = false
-	if err := fsyncDir(filepath.Dir(cfg.RepoPath)); err != nil {
-		return Meta{}, err
-	}
-	if err := fsyncDir(cfg.ArchiveDir); err != nil {
-		return Meta{}, err
-	}
-
-	// 7. Archive artifacts: manifest, meta, FROZEN marker — same discipline
-	// as Rotate, minus the optional bounded dump (LOAD_REPOSITORY_DUMP has
-	// its own keep_last_revisions bound, applied upstream to the stream
-	// that already went into the new generation, so there is nothing
-	// further to bound here).
-	if err := os.Rename(manifestWork, filepath.Join(cfg.ArchiveDir, tag+".log.xml")); err != nil {
-		return Meta{}, fmt.Errorf("manifest into archive: %w", err)
-	}
-	metaData, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return Meta{}, err
 	}
-	if err := writeFileExcl(filepath.Join(cfg.ArchiveDir, tag+".meta.json"),
-		append(metaData, '\n'), 0o640); err != nil {
-		return Meta{}, fmt.Errorf("meta.json: %w", err)
-	}
-	frozen := fmt.Sprintf("Frozen FileES repository generation.\nTag: %s\nUUID: %s\nHead: r%d\nCommits are permanently blocked by hooks/pre-commit.\n",
-		tag, oldUUID, head)
-	if err := writeFileExcl(filepath.Join(archiveRepo, "FROZEN"), []byte(frozen), 0o444); err != nil {
-		return Meta{}, fmt.Errorf("FROZEN marker: %w", err)
-	}
-	if err := fsyncDir(cfg.ArchiveDir); err != nil {
+	prepared = true
+	blockActive = false // recovery now owns the fence and staging directory
+	swapCheckpoint("prepared")
+	if err := transaction.finish(cfg.ArchiveDir); err != nil {
 		return Meta{}, err
 	}
 

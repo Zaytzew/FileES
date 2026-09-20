@@ -74,6 +74,9 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 		return LoadedDump{}, err
 	}
 
+	if _, _, err := svnrotate.Recover(repoPath, s.ArchiveDir, operationID); err != nil {
+		return LoadedDump{}, fmt.Errorf("LOAD_REPOSITORY_DUMP recovery: %w", err)
+	}
 	if loaded, found, err := s.replayLoad(ctx, repoPath, realmID, repoID, operationID, applyIgnorePolicy, keepLastRevisions); found || err != nil {
 		return loaded, err
 	}

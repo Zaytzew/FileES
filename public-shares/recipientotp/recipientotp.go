@@ -224,7 +224,7 @@ func (s Service) store(current state) error {
 	}
 	name := temporary.Name()
 	defer os.Remove(name)
-	if err := temporary.Chmod(0600); err == nil {
+	if err = temporary.Chmod(0600); err == nil {
 		_, err = temporary.Write(append(raw, '\n'))
 	}
 	if err == nil {

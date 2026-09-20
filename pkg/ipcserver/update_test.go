@@ -95,3 +95,13 @@ func containsCapability(capabilities []string, wanted string) bool {
 	}
 	return false
 }
+
+func TestHelloReportsConfiguredDaemonBuild(t *testing.T) {
+	server := New("")
+	server.SetVersion("0.1.16+r1414-test")
+	var hello contract.HelloResult
+	decodeIPCResult(t, server.dispatch(updateRequest(contract.CmdSystemHello)), &hello)
+	if hello.DaemonVersion != "0.1.16+r1414-test" {
+		t.Fatalf("hello build: %q", hello.DaemonVersion)
+	}
+}

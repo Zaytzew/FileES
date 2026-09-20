@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"filees/internal/nativeruntime"
 	"fmt"
 	"net/url"
 	"os"
@@ -101,6 +102,11 @@ func (c *execClient) RecordMove(ctx context.Context, wc, old, dst string) (strin
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, "record-move", "--wc", wc, old, dst)
+	releaseRuntime, pinErr := nativeruntime.PinCommand(cmd)
+	if pinErr != nil {
+		return "", pinErr
+	}
+	defer releaseRuntime()
 	cmd.Dir = wc
 	cmd.Env = svnProcessEnvironment(os.Environ(), "")
 	var stdout, stderr nativeOutput

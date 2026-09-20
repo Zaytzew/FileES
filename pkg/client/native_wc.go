@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/internal/nativeruntime"
 	"fmt"
 	"os"
 	"os/exec"
@@ -55,6 +56,11 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
+	releaseRuntime, pinErr := nativeruntime.PinCommand(cmd)
+	if pinErr != nil {
+		return nil, pinErr
+	}
+	defer releaseRuntime()
 	cmd.Dir = dir
 	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
 	stdout := nativeOutput{max: nativeListingLimit}

@@ -71,7 +71,7 @@ func main() {
 	}
 	// Version/help and IPC-only commands remain available for diagnosing a
 	// damaged runtime. Any daemon startup prepares native code before clients.
-	if len(os.Args) == 1 || os.Args[1] == "daemon" || os.Args[1] == "native-runtime" {
+	if len(os.Args) == 1 || os.Args[1] == "daemon" || os.Args[1] == "native-runtime" || os.Args[1] == "native-exec" {
 		if err := prepareNativeSVN(); err != nil {
 			fmt.Fprintln(os.Stderr, "filees native runtime:", err)
 			os.Exit(1)
@@ -79,6 +79,8 @@ func main() {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "native-exec":
+			os.Exit(runNativeHelper(os.Args[2:]))
 		case "native-runtime":
 			fmt.Fprintln(os.Stdout, nativeSVNPath())
 			return
@@ -169,8 +171,10 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	ipc.SetVersion(version)
 	lifetime := &runtime.Lifetime{Admission: ipc.OperationAdmission()}
 	ctx = runtime.WithLifetime(ctx, lifetime)
+	runtime.Go(ctx, func() { maintainNativeSVN(ctx, func(err error) { lg.Warnf("native runtime cleanup: %v", err) }) })
 	whaleManager, err := whaleclient.NewManager(whaleclient.DefaultRoot(), profiles)
 	if err != nil {
 		lg.Errorf("Whale actor: %v", err)

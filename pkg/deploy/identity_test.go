@@ -119,3 +119,17 @@ func fileMode(t *testing.T, path string) os.FileMode {
 	}
 	return info.Mode().Perm()
 }
+
+// Retained aliases must see erased bytes, not a replaced local slice header.
+func TestZeroErasesSharedSecretBackingMemory(t *testing.T) {
+	secret := []byte("temporary OTP")
+	alias := secret[:]
+	zero(secret)
+	for i, b := range alias {
+		if b != 0 {
+			t.Fatalf("secret byte %d survived", i)
+		}
+	}
+	zero(nil)
+	zero(secret[:0])
+}

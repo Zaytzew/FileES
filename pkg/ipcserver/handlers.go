@@ -1609,7 +1609,7 @@ func (s *Server) handleActivationResume(req contract.Request) contract.Response 
 // handleHello implements system.hello — capability negotiation (§12).
 func (s *Server) handleHello(req contract.Request) contract.Response {
 	return contract.OKResponse(req.RequestID, contract.HelloResult{
-		DaemonVersion:    "0.1.0",
+		DaemonVersion:    s.version(),
 		ProtocolVersions: []string{contract.Protocol},
 		Capabilities:     s.capabilities(),
 	})

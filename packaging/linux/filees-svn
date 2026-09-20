@@ -3,6 +3,4 @@
 # runtime; the service itself uses its extracted helper directly.
 set -eu
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-helper=$(FILEES_NATIVE_SVN= "$dir/filees" native-runtime)
-case "$helper" in /*) ;; *) printf 'Bundled native SVN runtime unavailable\n' >&2; exit 1 ;; esac
-exec "$helper" "$@"
+FILEES_NATIVE_SVN= exec "$dir/filees" native-exec "$@"

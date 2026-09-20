@@ -24,6 +24,7 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	daemonVersion        string
 	guiBlobs             GUIBlobService
 	memorySafety         *contract.MemorySafetyStatus
 	operationAdmission   runtime.Admission
@@ -624,6 +625,22 @@ func (s *Server) activationService() ActivationService {
 }
 
 // New creates a Server that will listen on sockPath.
+// SetVersion is called before serving IPC and reports the running binary's build.
+func (s *Server) SetVersion(version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.daemonVersion = version
+}
+
+func (s *Server) version() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.daemonVersion == "" {
+		return "dev"
+	}
+	return s.daemonVersion
+}
+
 func New(sockPath string) *Server {
 	return &Server{
 		sockPath:            sockPath,

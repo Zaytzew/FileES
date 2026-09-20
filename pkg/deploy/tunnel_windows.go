@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,9 @@ import (
 // Linux counterpart names a FIFO path (askpassFIFOEnv); the two are separate
 // because the objects are, not because the contract differs.
 const askpassPipeEnv = "FILEES_ASKPASS_PIPE"
+
+// The pipe server is the tunnel owner, not OpenSSH (the immediate parent).
+const askpassServerPIDEnv = "FILEES_ASKPASS_PIPE_SERVER_PID"
 
 // otpPipePrefix is fixed so the askpass child can reject any name that did
 // not come from here. Windows keeps named pipes in one machine-wide
@@ -96,13 +100,14 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
 	cmd.Stderr = diagnostic
 	cmd.Stdout = nil
-	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, connectKeyEnv, connectRequestIDEnv)
+	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, askpassServerPIDEnv, connectKeyEnv, connectRequestIDEnv)
 	// No DISPLAY: SSH_ASKPASS_REQUIRE=force is enough on Windows OpenSSH,
 	// verified against 9.5p2 before this port was planned.
 	cmd.Env = append(cmd.Env,
 		"SSH_ASKPASS="+executable,
 		"SSH_ASKPASS_REQUIRE=force",
 		askpassPipeEnv+"="+name,
+		askpassServerPIDEnv+"="+strconv.Itoa(os.Getpid()),
 	)
 	runErr := cmd.Run()
 	closePipe()
@@ -148,7 +153,7 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 	cmd.Stdin = bytes.NewReader(frame)
 	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
 	cmd.Stderr = diagnostic
-	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, connectKeyEnv, connectRequestIDEnv)
+	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, askpassServerPIDEnv, connectKeyEnv, connectRequestIDEnv)
 	cmd.Env = append(cmd.Env,
 		"SSH_ASKPASS="+executable,
 		"SSH_ASKPASS_REQUIRE=force",
@@ -245,6 +250,10 @@ func RunAskpass() error {
 	if _, err := hex.DecodeString(name[len(otpPipePrefix):]); err != nil {
 		return errors.New("askpass pipe name is not a FileES bootstrap name")
 	}
+	expectedPID, err := strconv.ParseUint(os.Getenv(askpassServerPIDEnv), 10, 32)
+	if err != nil || expectedPID == 0 {
+		return errors.New("askpass pipe server PID is not configured")
+	}
 	wide, err := windows.UTF16PtrFromString(name)
 	if err != nil {
 		return err
@@ -254,6 +263,13 @@ func RunAskpass() error {
 		return err
 	}
 	defer windows.CloseHandle(handle)
+	var serverPID uint32
+	if err := windows.GetNamedPipeServerProcessId(handle, &serverPID); err != nil {
+		return err
+	}
+	if serverPID != uint32(expectedPID) {
+		return errors.New("askpass pipe server is not the tunnel owner")
+	}
 
 	secret := make([]byte, 1025)
 	defer zero(secret)

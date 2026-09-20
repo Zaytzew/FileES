@@ -617,12 +617,8 @@ func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket c
 // ID) — consistent with LOAD_REPOSITORY_DUMP_CONCEPT.md §5.2/§8: a missing
 // toolchain capability or a failed precondition never gets a silent retry.
 //
-// [KNOWN GAP] True resumability for a crash between a successful swap and
-// this function's Store.Save call is not yet implemented: a retry of the
-// same operation_id would re-run the §4 precondition, which the repository
-// no longer satisfies once loaded, and would fail — even though the load
-// itself already succeeded. The generation is still recoverable from
-// ArchiveDir by an operator; nothing is silently destroyed.
+// The loader's generation receipt survives a successful swap followed by worker
+// death before Store.Save. A retry reconstructs the result without another load.
 func (w *Worker) loadRepositoryDump(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
 	if w.DumpLoader == nil {
 		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_UNAVAILABLE", "repository dump loading is not configured on this worker")

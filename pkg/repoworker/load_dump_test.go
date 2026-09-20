@@ -3,6 +3,7 @@ package repoworker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"filees/internal/svnrotate"
 	"filees/internal/svnurl"
@@ -465,5 +466,96 @@ func TestRevisionRangeScansDumpHeaders(t *testing.T) {
 	low, high, err := revisionRange(d.Bytes())
 	if err != nil || low != 5 || high != 7 {
 		t.Fatalf("revisionRange = (%d,%d,%v), want (5,7,nil)", low, high, err)
+	}
+}
+
+// This process dies after the real loader returns, before the worker's durable
+// result write. The parent retries with a new worker, service and result store.
+type crashDumpResultStore struct{ ResultStore }
+
+func (s crashDumpResultStore) Save(control.Result) error { os.Exit(73); return nil }
+
+func TestDumpLoadReplayAfterWorkerDeath(t *testing.T) {
+	if root := os.Getenv("FILEES_DUMP_CRASH_TEST_ROOT"); root != "" {
+		raw, err := os.ReadFile(filepath.Join(root, "ticket.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ticket control.Ticket
+		if err := json.Unmarshal(raw, &ticket); err != nil {
+			t.Fatal(err)
+		}
+		store, err := NewFileStore(filepath.Join(root, "results"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc := testDumpLoadService(root, filepath.Join(root, "service"), filepath.Join(root, "repos"))
+		w := Worker{Store: crashDumpResultStore{store}, DumpLoader: svc}
+		_, err = w.Handle(t.Context(), Session{ClientID: ticket.ClientID, RealmID: os.Getenv("FILEES_DUMP_CRASH_TEST_REALM"), CanCreateRepositories: true}, ticket)
+		t.Fatalf("worker failed before crash: %v", err)
+	}
+	if !svnrotate.Supported() {
+		t.Skip("requires Unix rotator")
+	}
+	requireLoadDumpTools(t)
+	root := t.TempDir()
+	realm, repoID := uuid.NewString(), uuid.NewString()
+	dump := realDumpBytes(t, root, map[string]string{"a.txt": "preserved\n", "b.txt": "second\n"})
+	buildCarrierRepo(t, root, filepath.Join(root, "service"), repoID, realm, dump, "carrier.dump")
+	session := Session{ClientID: "client-a", RealmID: realm, CanCreateRepositories: true}
+	ticket := loadDumpTicket(t, session.ClientID, repoID, false)
+	if err := atomicJSON(filepath.Join(root, "ticket.json"), ticket); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestDumpLoadReplayAfterWorkerDeath$")
+	child.Env = append(os.Environ(), "FILEES_DUMP_CRASH_TEST_ROOT="+root, "FILEES_DUMP_CRASH_TEST_REALM="+realm)
+	out, err := child.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 73 {
+		t.Fatalf("crash child: %v\n%s", err, out)
+	}
+	store, err := NewFileStore(filepath.Join(root, "results"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := store.Load(ticket.OperationID, ticket.Type); err != nil || ok {
+		t.Fatalf("result unexpectedly saved: %t %v", ok, err)
+	}
+	svc := testDumpLoadService(root, filepath.Join(root, "service"), filepath.Join(root, "repos"))
+	repoPath := filepath.Join(root, "repos", repoID)
+	before, err := exec.Command("svnlook", "uuid", repoPath).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Worker{Store: store, DumpLoader: svc}).Handle(t.Context(), session, ticket)
+	if err != nil || result.Status != control.ResultOK {
+		t.Fatalf("replay: %+v %v", result, err)
+	}
+	after, err := exec.Command("svnlook", "uuid", repoPath).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	archives, err := filepath.Glob(filepath.Join(root, "archive", "*.svn"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || len(archives) != 1 {
+		t.Fatalf("replayed swap: %s -> %s archives=%d", before, after, len(archives))
+	}
+	var loaded control.LoadRepositoryDumpResult
+	if err := control.DecodeResultPayload(result.Result, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.NewUUID != strings.TrimSpace(string(before)) || loaded.SourceRevisionRange != "r1:r1" || loaded.ToolVersions["svnadmin"] == "" {
+		t.Fatalf("lost result: %+v", loaded)
+	}
+	if _, err := svc.Load(t.Context(), uuid.NewString(), repoID, ticket.OperationID, false, nil); err == nil {
+		t.Fatal("foreign realm replayed load")
+	}
+	if _, err := svc.Load(t.Context(), realm, repoID, ticket.OperationID, true, nil); err == nil {
+		t.Fatal("changed payload replayed load")
+	}
+	if _, err := svc.Load(t.Context(), realm, repoID, uuid.NewString(), false, nil); err == nil {
+		t.Fatal("another operation replayed load")
 	}
 }

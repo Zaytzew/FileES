@@ -3,6 +3,7 @@ package svnrotate
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -162,5 +163,43 @@ func TestLoadGenerationRejectsActiveLocksUnlessBroken(t *testing.T) {
 	cfg.BreakLocks = true
 	if _, err := LoadGeneration(cfg, bytes.NewReader(dump), "test locks broken", io.Discard); err != nil {
 		t.Fatalf("BreakLocks=true still rejected: %v", err)
+	}
+}
+
+func TestLoadGenerationPrepareFailureLeavesCarrier(t *testing.T) {
+	if !rotationSupported() {
+		t.Skip("requires Unix rotator")
+	}
+	requireSVNTools(t)
+	root := t.TempDir()
+	carrier := buildTestRepo(t, root, "carrier payload\n")
+	before, err := repoUUID(carrier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testLoadConfig(carrier, filepath.Join(root, "archive"))
+	cfg.Prepare = func(staging string, meta Meta) error {
+		if staging == carrier || meta.OldUUID != before || meta.NewUUID == before {
+			t.Fatalf("unsafe staging: %s %+v", staging, meta)
+		}
+		return errors.New("receipt disk failure")
+	}
+	if _, err := LoadGeneration(cfg, bytes.NewReader(testDump("new\n", "newer\n")), "test receipt failure", io.Discard); err == nil {
+		t.Fatal("prepare failure ignored")
+	}
+	after, err := repoUUID(carrier)
+	if err != nil || after != before {
+		t.Fatalf("carrier replaced: %s %v", after, err)
+	}
+	archives, err := filepath.Glob(filepath.Join(cfg.ArchiveDir, "*.svn"))
+	if err != nil || len(archives) != 0 {
+		t.Fatalf("carrier archived on failure: %v %v", archives, err)
+	}
+	hook, err := os.ReadFile(filepath.Join(carrier, "hooks", "pre-commit"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(hook), "rotation in progress") {
+		t.Fatal("carrier left blocked")
 	}
 }

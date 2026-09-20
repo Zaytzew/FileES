@@ -248,9 +248,6 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketRequestLockRelease || ticket.Type == control.TicketDismissLockRelease || ticket.Type == control.TicketAcceptLockRelease {
 		return w.lockRelease(ctx, session, ticket)
 	}
-	if ticket.Type == control.TicketClientDeactivate {
-		return w.detachClient(ctx, session, ticket)
-	}
 	if w.Store == nil {
 		return control.Result{}, errors.New("repository result store is required")
 	}
@@ -261,6 +258,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 			return control.Result{}, errors.New("operation already bound to another request")
 		}
 		return result, nil
+	}
+	if ticket.Type == control.TicketClientDeactivate {
+		return w.detachClient(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketRealmRemoveRequest {
 		return w.requestRealmRemoval(ctx, session, ticket)
@@ -539,7 +539,11 @@ func (w *Worker) detachClient(ctx context.Context, session Session, ticket contr
 	if err != nil {
 		return w.retryable(ticket, "CLIENT_DETACH_RETRY", err.Error())
 	}
-	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ClientDeactivateResult{ServiceRevision: revision}, w.now())
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ClientDeactivateResult{ServiceRevision: revision}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
 }
 
 func (w *Worker) claimRealmAlias(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

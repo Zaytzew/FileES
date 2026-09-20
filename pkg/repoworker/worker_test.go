@@ -174,7 +174,11 @@ func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	detacher := &fakeClientDetacher{revision: 19}
-	result, err := (&Worker{ClientDetacher: detacher}).Handle(context.Background(), session, ticket)
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Worker{ClientDetacher: detacher, Store: store}).Handle(context.Background(), session, ticket)
 	if err != nil || result.Status != control.ResultOK {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -184,6 +188,12 @@ func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 	var payload control.ClientDeactivateResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.ServiceRevision != 19 {
 		t.Fatalf("payload=%+v err=%v", payload, err)
+	}
+	// A new worker replays the durable response without revoking again.
+	detacher.err = errors.New("must not revoke twice")
+	replayed, err := (&Worker{ClientDetacher: detacher, Store: store}).Handle(context.Background(), session, ticket)
+	if err != nil || replayed.Status != control.ResultOK || replayed.CompletedAt != result.CompletedAt {
+		t.Fatalf("detach replay: %+v %v", replayed, err)
 	}
 }
 

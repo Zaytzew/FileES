@@ -28,6 +28,10 @@ const (
 	MaxResponseBytes = 64 << 10
 )
 
+// ErrIdentityRefused means the pinned SSH server rejected our sole public key.
+// Transport failure or a failed host pin is never this terminal condition.
+var ErrIdentityRefused = errors.New("control identity refused by pinned server")
+
 type Config struct {
 	Address, IdentityFile, KnownHosts string
 	Port                              int
@@ -98,9 +102,17 @@ func (c *Client) Exchange(ctx context.Context, ticket control.Ticket) (control.R
 	}
 	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
 	defer stop()
-	sshConfig := &ssh.ClientConfig{User: ServiceUser, Auth: []ssh.AuthMethod{ssh.PublicKeys(c.signer)}, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, HostKeyCallback: c.hostKeys, Timeout: c.timeout}
+	hostVerified := false
+	sshConfig := &ssh.ClientConfig{User: ServiceUser, Auth: []ssh.AuthMethod{ssh.PublicKeys(c.signer)}, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, HostKeyCallback: func(host string, remote net.Addr, key ssh.PublicKey) error {
+		err := c.hostKeys(host, remote, key)
+		hostVerified = err == nil
+		return err
+	}, Timeout: c.timeout}
 	clientConnection, channels, requests, err := ssh.NewClientConn(connection, c.address, sshConfig)
 	if err != nil {
+		if hostVerified && strings.Contains(err.Error(), "ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain") {
+			return control.Result{}, fmt.Errorf("%w: %v", ErrIdentityRefused, err)
+		}
 		return control.Result{}, fmt.Errorf("repository control SSH handshake: %w", err)
 	}
 	sshClient := ssh.NewClient(clientConnection, channels, requests)

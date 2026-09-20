@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
-	contract "filees/pkg/contract/v1"
 	"fmt"
 	"strings"
 	"time"
@@ -21,10 +20,19 @@ type IntentResolutionPath struct {
 	Path, Operation string
 	Size            int64
 }
+
+// CommitRecoveryPlan contains only the daemon proof displayed by the dialog.
+// The daemon remains responsible for validating and applying the decision.
+type CommitRecoveryPlan struct {
+	PlanID, RepoID, TransactionID, Choice string
+	FirstRevision, HeadRevision           int64
+	Paths                                 []string
+}
+
 type IntentResolver interface {
 	PlanIntents(context.Context, string) (*IntentResolutionPlan, error)
 	ApplyIntents(context.Context, string, string, string) error
-	PlanCommitRecovery(context.Context, string) (*contract.CommitRecoveryPlan, error)
+	PlanCommitRecovery(context.Context, string) (*CommitRecoveryPlan, error)
 	ApplyCommitRecovery(context.Context, string, string, string) error
 }
 

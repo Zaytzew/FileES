@@ -15,14 +15,14 @@ import (
 
 type fakeIntentResolver struct{ calls chan string }
 
-func (f *fakeIntentResolver) PlanCommitRecovery(context.Context, string) (*contract.CommitRecoveryPlan, error) {
+func (f *fakeIntentResolver) PlanCommitRecovery(context.Context, string) (*actions.CommitRecoveryPlan, error) {
 	return nil, errors.New("unused")
 }
 
 type fakeCommitRecoveryResolver struct{ calls chan string }
 
-func (f *fakeCommitRecoveryResolver) PlanCommitRecovery(_ context.Context, repoID string) (*contract.CommitRecoveryPlan, error) {
-	return &contract.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryRetryQueue, FirstRevision: 44, HeadRevision: 43, Paths: []string{"old/folder", "new/file.pdf"}}, nil
+func (f *fakeCommitRecoveryResolver) PlanCommitRecovery(_ context.Context, repoID string) (*actions.CommitRecoveryPlan, error) {
+	return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryRetryQueue, FirstRevision: 44, HeadRevision: 43, Paths: []string{"old/folder", "new/file.pdf"}}, nil
 }
 func (f *fakeCommitRecoveryResolver) ApplyCommitRecovery(_ context.Context, repoID, planID, choice string) error {
 	f.calls <- repoID + ":" + planID + ":" + choice

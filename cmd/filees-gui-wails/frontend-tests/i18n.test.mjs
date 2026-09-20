@@ -701,6 +701,16 @@ test("preference changes synchronize, survive denied storage and do not touch in
   setLanguagePreference("system");
   navigator.languages = ["zz-ZZ"]; listeners.get("languagechange")();
   assert.equal(getLocale(), "en");
+  window.__fileesSystemLanguages = ["pl-PL"];
+  listeners.get("filees:system-languages")();
+  assert.equal(getLocale(), "pl"); // Native locale beats English/unknown WebView.
+  setLanguagePreference("de");
+  window.__fileesSystemLanguages = ["fr-FR"];
+  listeners.get("filees:system-languages")();
+  assert.equal(getLocale(), "de"); // Never override an explicit selection.
+  setLanguagePreference("system");
+  assert.equal(getLocale(), "fr");
+  delete window.__fileesSystemLanguages;
   assert.deepEqual(input, { value: "unsaved DWG name", selectionStart: 3, disabled: true });
   assert.equal(document.activeElement, input);
 });

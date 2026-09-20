@@ -1,5 +1,5 @@
 // Package nativeruntime installs the immutable native SVN payload embedded in
-// a Windows daemon. It does not download code or select the newest runtime.
+// a desktop daemon. It does not download code or select the newest runtime.
 package nativeruntime
 
 import (
@@ -20,9 +20,11 @@ import (
 )
 
 const Executable = "filees-svn.exe"
+const LinuxExecutable = "filees-svn"
 const maxPayload = 256 << 20
 
 var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+var linuxLibrary = regexp.MustCompile(`^lib[A-Za-z0-9_-]+(?:[.][A-Za-z0-9_-]+)*[.]so(?:[.][0-9]+)*$`)
 var deviceName = regexp.MustCompile(`^(COM|LPT)[0-9]$`)
 
 var requiredNotices = []string{
@@ -46,11 +48,11 @@ func validName(name string) bool {
 		return parts[0] == "notices" && safeName.MatchString(parts[1]) && !strings.Contains(parts[1], "..")
 	}
 	return len(parts) == 1 && safeName.MatchString(name) && !strings.Contains(name, "..") &&
-		(name == Executable || strings.HasSuffix(name, ".dll"))
+		(name == Executable || name == LinuxExecutable || strings.HasSuffix(name, ".dll") || linuxLibrary.MatchString(name))
 }
 
 // Pack creates a deterministic archive from an explicitly assembled runtime.
-// PE dependency resolution belongs to the Windows packager, not the daemon.
+// Dependency resolution belongs to the platform packager, not the daemon.
 func Pack(root string) ([]byte, error) {
 	if err := plainPath(root); err != nil {
 		return nil, err
@@ -158,7 +160,7 @@ func unpack(payload []byte) (map[string][]byte, error) {
 		}
 		files[f.Name] = data
 	}
-	for _, name := range []string{Executable, "notices/FileES-LICENSE.txt", "notices/DEPENDENCIES.json"} {
+	for _, name := range []string{"notices/FileES-LICENSE.txt", "notices/DEPENDENCIES.json"} {
 		if len(files[name]) == 0 {
 			return nil, fmt.Errorf("native runtime missing %s", name)
 		}
@@ -166,7 +168,11 @@ func unpack(payload []byte) (map[string][]byte, error) {
 	if err := checkInventory(files); err != nil {
 		return nil, err
 	}
-	for _, name := range requiredNotices {
+	notices := requiredNotices
+	if len(files[LinuxExecutable]) != 0 {
+		notices = []string{"FileES-LICENSE.txt", "RUNTIME-NOTICE.txt", "LIBRARY-LICENSES.txt"}
+	}
+	for _, name := range notices {
 		if len(files["notices/"+name]) == 0 {
 			return nil, fmt.Errorf("native runtime missing notice %s", name)
 		}
@@ -187,7 +193,7 @@ type inventoryFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-// The build's measured dependency list must match all PE files byte for byte.
+// The build's measured dependency list must match all executable/library files byte for byte.
 // This prevents an accidentally shortened stage from becoming a valid bundle.
 // The list is not an independent trust root: it is inside the signed daemon.
 func checkInventory(files map[string][]byte) error {
@@ -200,11 +206,27 @@ func checkInventory(files map[string][]byte) error {
 	if err := d.Decode(new(any)); err != io.EOF {
 		return errors.New("trailing native runtime inventory data")
 	}
-	if list.Schema != "filees.native-runtime/v1" || list.Platform != "windows-amd64" || len(list.Files) < 2 {
+	if list.Schema != "filees.native-runtime/v1" || (list.Platform != "windows-amd64" && list.Platform != "linux-amd64") || len(list.Files) < 2 {
 		return errors.New("invalid native runtime inventory identity")
+	}
+	executable := Executable
+	if list.Platform == "linux-amd64" {
+		executable = LinuxExecutable
+	}
+	if len(files[executable]) == 0 {
+		return fmt.Errorf("native runtime missing %s", executable)
 	}
 	seen := make(map[string]bool)
 	for _, item := range list.Files {
+		valid := item.Name == executable
+		if list.Platform == "linux-amd64" {
+			valid = valid || linuxLibrary.MatchString(item.Name)
+		} else {
+			valid = valid || strings.HasSuffix(item.Name, ".dll")
+		}
+		if !valid {
+			return fmt.Errorf("native runtime platform mismatch: %s", item.Name)
+		}
 		data, ok := files[item.Name]
 		if !ok || strings.Contains(item.Name, "/") || seen[item.Name] || ID(data) != item.SHA256 {
 			return fmt.Errorf("native runtime inventory mismatch: %s", item.Name)
@@ -233,12 +255,16 @@ func Ensure(cache string, payload []byte) (string, error) {
 	if err := plainPath(cache); err != nil {
 		return "", err
 	}
+	executable := Executable
+	if len(files[LinuxExecutable]) != 0 {
+		executable = LinuxExecutable
+	}
 	root := filepath.Join(cache, ID(payload))
 	if _, err := os.Lstat(root); err == nil {
 		if err := verify(root, files); err != nil {
 			return "", err
 		}
-		return filepath.Join(root, Executable), nil
+		return filepath.Join(root, executable), nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
@@ -279,7 +305,7 @@ func Ensure(cache string, payload []byte) (string, error) {
 	if err := verify(root, files); err != nil {
 		return "", err
 	}
-	return filepath.Join(root, Executable), nil
+	return filepath.Join(root, executable), nil
 }
 
 func plainPath(path string) error {

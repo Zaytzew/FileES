@@ -59,10 +59,9 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 	if configHome == "" {
 		configHome = filepath.Join(home, ".config")
 	}
-	// The svn CLI, not the bundled helper: on Linux the helper serves
-	// record-move only and refuses cat, and the daemon runs every other SVN
-	// operation through the CLI anyway.
-	fetcher := svnfetch.SVN{Program: update.SVNProgram, RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
+	// The release-pinned helper handles updates too; an explicit developer
+	// build without a runtime may still use its configured CLI.
+	fetcher := svnfetch.SVN{Program: update.SVNProgram, NativeProgram: nativeSVNPath(), RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
 	if update.SSH != nil {
 		fetcher.SSHIdentityFile, fetcher.SSHKnownHosts = update.SSH.IdentityFile, update.SSH.KnownHosts
 		fetcher.SSHPort, fetcher.SSHHostName = update.SSH.Port, update.SSH.HostName

@@ -196,3 +196,69 @@ func TestInventoryRejectsShortenedAndMixedStages(t *testing.T) {
 		})
 	}
 }
+
+func TestLinuxClosureAndPlatformIsolation(t *testing.T) {
+	for _, variant := range []string{"valid", "missing-library", "wrong-platform", "mixed-dll", "missing-licenses"} {
+		t.Run(variant, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Mkdir(filepath.Join(root, "notices"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			files := map[string][]byte{LinuxExecutable: []byte("ELF helper"), "libsvn_client-1.so.0": []byte("ELF lib")}
+			list := inventory{Schema: "filees.native-runtime/v1", Platform: "linux-amd64"}
+			for name, data := range files {
+				list.Files = append(list.Files, inventoryFile{name, ID(data)})
+			}
+			if variant == "wrong-platform" {
+				list.Platform = "windows-amd64"
+			}
+			if variant == "missing-library" {
+				delete(files, "libsvn_client-1.so.0")
+			}
+			if variant == "mixed-dll" {
+				files["foreign.dll"] = []byte("dll")
+				list.Files = append(list.Files, inventoryFile{"foreign.dll", ID(files["foreign.dll"])})
+			}
+			raw, err := json.Marshal(list)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files["notices/DEPENDENCIES.json"] = raw
+			for _, name := range []string{"FileES-LICENSE.txt", "RUNTIME-NOTICE.txt", "LIBRARY-LICENSES.txt"} {
+				files["notices/"+name] = []byte("license")
+			}
+			if variant == "missing-licenses" {
+				delete(files, "notices/LIBRARY-LICENSES.txt")
+			}
+			for name, data := range files {
+				if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload, err := Pack(root)
+			if variant != "valid" {
+				if err == nil {
+					t.Fatal("accepted invalid closure")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			cache := filepath.Join(t.TempDir(), "cache")
+			helper, err := Ensure(cache, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if filepath.Base(helper) != LinuxExecutable {
+				t.Fatal(helper)
+			}
+			if err := os.Remove(filepath.Join(filepath.Dir(helper), "libsvn_client-1.so.0")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Ensure(cache, payload); err == nil {
+				t.Fatal("accepted damaged library closure")
+			}
+		})
+	}
+}

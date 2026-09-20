@@ -16,8 +16,8 @@ func TestCommitTransactionRejectsInvalidID(t *testing.T) {
 }
 
 func TestNativeTransactionRejectsDuplicateMarkers(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("native public routing is Windows-only; CLI covered by real OpenBSD integration")
+	if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+		t.Skip("native public routing is desktop-only; CLI covered by real OpenBSD integration")
 	}
 	id := "a3ce6e63-d90a-45f9-a921-868d6c0c930e"
 	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"entries":[{"revision":2,"revprops":{"filees:commit-id":"`+id+`"}},{"revision":3,"revprops":{"filees:commit-id":"`+id+`"}}]}`)

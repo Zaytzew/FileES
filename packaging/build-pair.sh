@@ -70,13 +70,20 @@ go test -count=1 ./internal/domaincatalog
 
 # -buildvcs=false matches every other build path here: the repository is SVN,
 # so Go's own stamping has nothing to read and only slows the build down.
-go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$daemon" ./cmd/filees
+if [ "${FILEES_BUILD_NATIVE_SVN:-0}" = 1 ]; then
+	[ "$(uname -s)" = Linux ] || { echo "native dev pair requires Linux" >&2; exit 1; }
+	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-dev.XXXXXX")
+	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
+	DIST="$native_build" sh "$root/packaging/build-native-svn.sh"
+	python3 "$root/packaging/linux/stage-native-runtime.py" "$root" "$native_build/filees-svn" "$native_build/runtime"
+	go run ./cmd/filees-native-package "$root" "$native_build/runtime" "$native_build/packed"
+	go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$daemon" ./cmd/filees
+	cp "$root/packaging/linux/filees-svn" "$dist/filees-svn"
+	chmod 0755 "$dist/filees-svn"
+else
+	go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$daemon" ./cmd/filees
+fi
 go build -tags production -trimpath -buildvcs=false -ldflags "$gui_ldflags" -o "$dist/$gui" ./cmd/filees-gui-wails
 
 echo "$dist/$daemon"
 echo "$dist/$gui"
-
-# Linux alpha opt-in; other platforms keep their existing build dependencies.
-if [ "${FILEES_BUILD_NATIVE_SVN:-0}" = 1 ]; then
-	DIST="$dist" sh "$root/packaging/build-native-svn.sh"
-fi

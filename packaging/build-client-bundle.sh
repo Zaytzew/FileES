@@ -103,17 +103,15 @@ linux-amd64)
 	mkdir -p "$out/bin" "$out/share/icons/hicolor/scalable/apps" "$out/share/applications" \
 		"$out/share/systemd/user" "$out/share/filees"
 
-	# Unlike Windows, the native SVN helper is not embedded in the daemon
-	# image: it ships as its own file, and the daemon finds it through
-	# FILEES_NATIVE_SVN (set by install-user.sh in the systemd unit it
-	# generates). "Developer builds and non-Windows releases keep explicit
-	# helper selection" - internal/nativeruntime/payload_external.go.
+	# Keep the complete runtime in the daemon, also across self-update.
 	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
 	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
 	DIST="$native_build" sh "$root/packaging/build-native-svn.sh" >/dev/null
-	cp "$native_build/filees-svn" "$out/bin/filees-svn"
-
-	GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
+	python3 "$root/packaging/linux/stage-native-runtime.py" "$root" "$native_build/filees-svn" "$native_build/runtime" >/dev/null
+	go run ./cmd/filees-native-package "$root" "$native_build/runtime" "$native_build/packed" >/dev/null
+	cp "$root/packaging/linux/filees-svn" "$out/bin/filees-svn"
+	chmod 0755 "$out/bin/filees-svn"
+	GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
 		-ldflags "-X main.version=$stamp $release_ldflags" \
 		-o "$out/bin/$daemon" ./cmd/filees
 	# GTK4/WebKitGTK 6 is the default Wails Linux target; no build tag needed

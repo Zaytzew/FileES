@@ -259,9 +259,9 @@ func TestNativeRAPinsAndCancellation(t *testing.T) {
 		t.Fatal(e)
 	}
 }
-func TestNativeRAWindowsDispatchNoFallback(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("Windows routing only")
+func TestNativeRADesktopDispatchNoFallback(t *testing.T) {
+	if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+		t.Skip("Desktop native routing only")
 	}
 	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"revision":2,"conflicts":[],"changes":[]}`)
 	if _, e := c.Checkout(t.Context(), "file:///lab", filepath.Join(t.TempDir(), "new")); e != nil {

@@ -170,7 +170,7 @@ func main() {
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true},
 	})
 	darkTheme := systemPrefersDark(host.Env.IsDarkMode())
-	themeJS := systemThemeScript(darkTheme)
+	themeJS := systemThemeScript(darkTheme) + systemLanguageScript(systemLanguages())
 	themeBackground := systemThemeBackground(darkTheme)
 	gui.attachEmitter(host.Event)
 	settings.attachEmitter(host.Event)

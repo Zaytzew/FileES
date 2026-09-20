@@ -1,6 +1,6 @@
-//go:build !windows || !native_svn_bundle
+//go:build (!windows && !linux) || !native_svn_bundle
 
 package nativeruntime
 
-// Developer builds and non-Windows releases keep explicit helper selection.
+// Untagged developer builds and other platforms keep explicit helper selection.
 var Payload []byte

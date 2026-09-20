@@ -94,10 +94,27 @@ durability claim follows from process-kill tests. Evidence:
 `implementation notes (not distributed)`; the preceding conditional
 manual-cleanup result remains in `implementation notes (not distributed)`.
 
-Linux daemon still uses the helper only for `record-move`; every other
-operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
-also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
-resolve) and the supported RA variants described above through the helper.
+Linux and Windows now route all supported WC-local and RA operations through
+`filees-svn` when selected. Distribution builds embed the helper and its complete
+private library closure in the daemon (`native_svn_bundle`); an untagged developer
+build can select it explicitly with `FILEES_NATIVE_SVN`. A native client refuses
+CLI routing gaps. Linux self-update uses the same adapter as ordinary WC/history.
+
+Linux packaging uses `packaging/linux/stage-native-runtime.py` after CMake:
+DT_RPATH=$ORIGIN, measured transitive ELF dependencies, RPM/dpkg license texts,
+source and binary hashes. glibc/loader and OpenSSH remain host dependencies.
+Build releases on the oldest supported Linux image: copying libraries does not
+make a Fedora-built ELF compatible with older glibc. The cache is immutable,
+content-addressed and verified on startup. `bin/filees-svn` is a compatibility
+entrypoint resolving the runtime from its sibling daemon; the service directly
+uses the extracted helper. No global LD_LIBRARY_PATH is needed or exported to SSH.
+
+Developer pair (no release archive, signature or publication):
+`FILEES_BUILD_NATIVE_SVN=1 DIST=/absolute/new/dev-dir sh packaging/build-pair.sh`.
+Linux native commands own a private process group; cancellation kills helper and
+SSH descendants, with the existing bounded pipe drain. This does not prove a
+remote mutation was rolled back: the commit intent/recovery contract still applies.
+Evidence and scope: `implementation notes (not distributed)`.
 
 `commit`, `lock` and `unlock` change server state, and three things about them
 are deliberate.

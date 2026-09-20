@@ -60,8 +60,7 @@ chmod 0644 "$desktop"
 
 escaped_daemon=$(escape_sed_replacement "$daemon_bin")
 escaped_config=$(escape_sed_replacement "$config")
-escaped_native_svn=$(escape_sed_replacement "$native_svn_bin")
-sed "s|@FILEES_BIN@|$escaped_daemon|g; s|@CONFIG_PATH@|$escaped_config|g; s|@NATIVE_SVN_BIN@|$escaped_native_svn|g" \
+sed "s|@FILEES_BIN@|$escaped_daemon|g; s|@CONFIG_PATH@|$escaped_config|g" \
     "$bundle/share/systemd/user/filees.service" > "$unit"
 chmod 0644 "$unit"
 
@@ -88,6 +87,6 @@ printf '  GUI:    %s\n' "$gui_bin"
 if [ -f "$pair_gui_bin" ]; then
 	printf '  pairing helper: %s\n' "$pair_gui_bin"
 fi
-printf '  native SVN helper: %s\n' "$native_svn_bin"
+printf '  native SVN entrypoint (runtime embedded in daemon): %s\n' "$native_svn_bin"
 printf '  config: %s\n' "$config"
 printf 'Enable now with: systemctl --user enable --now filees.service\n'

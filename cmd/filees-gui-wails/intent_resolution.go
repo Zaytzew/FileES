@@ -14,8 +14,19 @@ type intentResolutionClient interface {
 	RepoCommitRecoveryApply(context.Context, string, string, string) (*contract.CommitRecoveryApplyResult, error)
 }
 
-func (a intentResolverAdapter) PlanCommitRecovery(ctx context.Context, repoID string) (*contract.CommitRecoveryPlan, error) {
-	return a.client.RepoCommitRecoveryPlan(ctx, repoID)
+func (a intentResolverAdapter) PlanCommitRecovery(ctx context.Context, repoID string) (*actions.CommitRecoveryPlan, error) {
+	plan, err := a.client.RepoCommitRecoveryPlan(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil || plan.RepoID != repoID {
+		return nil, errors.New("invalid commit recovery plan response")
+	}
+	return &actions.CommitRecoveryPlan{
+		PlanID: plan.PlanID, RepoID: plan.RepoID, TransactionID: plan.TransactionID,
+		Choice: plan.Choice, FirstRevision: plan.FirstRevision, HeadRevision: plan.HeadRevision,
+		Paths: append([]string(nil), plan.Paths...),
+	}, nil
 }
 
 func (a intentResolverAdapter) ApplyCommitRecovery(ctx context.Context, repoID, planID, choice string) error {

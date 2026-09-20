@@ -22,6 +22,12 @@ if(MSVC)
 else()
   target_compile_options(filees-svn PRIVATE -Wall -Wextra -Werror)
 endif()
+# DT_RPATH applies to the transitive private library closure too. Do not export
+# LD_LIBRARY_PATH: the helper may launch the host's SSH client.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_target_properties(filees-svn PROPERTIES BUILD_WITH_INSTALL_RPATH YES INSTALL_RPATH "$ORIGIN")
+  target_link_options(filees-svn PRIVATE -Wl,--disable-new-dtags)
+endif()
 if(MINGW)
   target_link_options(filees-svn PRIVATE -municode)
 endif()

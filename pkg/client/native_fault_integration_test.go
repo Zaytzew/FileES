@@ -109,9 +109,9 @@ func TestNativeCommitLostReplyCharacterization(t *testing.T) {
 				t.Fatal(err)
 			}
 			commit := func(c *execClient) (int64, error) {
-				// Public dispatch is Windows-only by contract. OpenBSD tests
+				// Public dispatch uses native on desktop platforms. OpenBSD tests
 				// the same native adapter directly, without changing that policy.
-				if runtime.GOOS == "windows" {
+				if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
 					_, rev, err := c.CommitWithRevision(t.Context(), wc, url, []string{path}, "fault acceptance", false)
 					return rev, err
 				}

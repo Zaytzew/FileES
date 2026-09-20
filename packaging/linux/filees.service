@@ -11,7 +11,6 @@ RestartSec=5s
 TimeoutStopSec=15min
 UMask=0077
 Environment=FILEES_LOG=info
-Environment=FILEES_NATIVE_SVN="@NATIVE_SVN_BIN@"
 
 [Install]
 WantedBy=default.target

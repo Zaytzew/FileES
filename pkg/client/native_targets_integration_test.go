@@ -1,4 +1,4 @@
-//go:build native_svn_probe && windows
+//go:build native_svn_probe && (windows || linux)
 
 package client
 

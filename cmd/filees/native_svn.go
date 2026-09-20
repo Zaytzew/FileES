@@ -22,15 +22,15 @@ var bundledNativeSVN = sync.OnceValues(func() (string, error) {
 })
 
 func prepareNativeSVN() error {
-	if runtime.GOOS != "windows" || len(nativeruntime.Payload) == 0 || os.Getenv("FILEES_NATIVE_SVN") != "" {
+	if (runtime.GOOS != "windows" && runtime.GOOS != "linux") || len(nativeruntime.Payload) == 0 || os.Getenv("FILEES_NATIVE_SVN") != "" {
 		return nil
 	}
 	_, err := bundledNativeSVN()
 	return err
 }
 
-// Linux retains record-move only. Windows bundle builds use all native WC/RA
-// operations by default; untagged developer builds retain explicit opt-in.
+// Desktop bundle builds use all native WC/RA operations by default;
+// untagged developer builds retain explicit opt-in.
 func nativeSVNPath() string {
 	if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		return ""
@@ -38,7 +38,7 @@ func nativeSVNPath() string {
 	if path := os.Getenv("FILEES_NATIVE_SVN"); path != "" {
 		return path
 	}
-	if runtime.GOOS == "windows" && len(nativeruntime.Payload) != 0 {
+	if len(nativeruntime.Payload) != 0 {
 		path, err := bundledNativeSVN()
 		if err != nil {
 			// main reports this before constructing clients. A caller bypassing

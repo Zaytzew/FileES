@@ -81,7 +81,8 @@ function storedPreference() {
 
 function applyPreference(value) {
   preference = normalizePreference(value);
-  locale = resolveLocale(preference, navigator.languages?.length ? navigator.languages : [navigator.language]);
+  const native = window.__fileesSystemLanguages;
+  locale = resolveLocale(preference, Array.isArray(native) && native.length ? native : (navigator.languages?.length ? navigator.languages : [navigator.language]));
   document.documentElement.lang = locale;
   document.documentElement.dataset.languagePreference = preference;
   applyTranslations();
@@ -115,6 +116,9 @@ export function initializeLanguage() {
     selector.addEventListener("change", () => setLanguagePreference(selector.value));
   }
   applyPreference(storedPreference());
+  window.addEventListener("filees:system-languages", () => {
+    if (preference === "system") applyPreference(preference);
+  });
   window.addEventListener("languagechange", () => {
     if (preference === "system") applyPreference(preference);
   });

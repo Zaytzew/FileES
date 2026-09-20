@@ -19,7 +19,7 @@ type Fetcher interface {
 
 type SVN struct {
 	Program string
-	// NativeProgram is an explicit Windows opt-in; errors never retry on CLI.
+	// NativeProgram selects the desktop native runtime; errors never retry on CLI.
 	NativeProgram                               string
 	RepoURL                                     string
 	Timeout                                     time.Duration

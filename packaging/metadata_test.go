@@ -324,8 +324,8 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 			t.Fatalf("installed artifact %s: %v", path, err)
 		}
 	}
-	if unit, err := os.ReadFile(filepath.Join(configHome, "systemd", "user", "filees.service")); err != nil || !strings.Contains(string(unit), "FILEES_NATIVE_SVN=\""+filepath.Join(prefix, "bin", "filees-svn")+"\"") {
-		t.Fatalf("installed unit does not point FILEES_NATIVE_SVN at the installed helper: %q err=%v", unit, err)
+	if unit, err := os.ReadFile(filepath.Join(configHome, "systemd", "user", "filees.service")); err != nil || strings.Contains(string(unit), "FILEES_NATIVE_SVN=") {
+		t.Fatalf("installed unit overrides the embedded native runtime: %q err=%v", unit, err)
 	}
 	runScript(t, filepath.Join(bundle, "uninstall-user.sh"), env)
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees")); !os.IsNotExist(err) {

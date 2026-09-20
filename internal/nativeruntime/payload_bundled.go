@@ -1,4 +1,4 @@
-//go:build windows && native_svn_bundle
+//go:build (windows || linux) && native_svn_bundle
 
 package nativeruntime
 

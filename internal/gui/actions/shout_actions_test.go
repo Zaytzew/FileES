@@ -2,7 +2,9 @@ package actions_test
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +20,10 @@ type fakeShouts struct {
 	rev int64
 	err error
 	ch  chan publishCall
+}
+
+func (f *fakeShouts) BeginDraft(ctx context.Context, _ string) (context.Context, func(), error) {
+	return ctx, func() {}, nil
 }
 
 type publishCall struct{ repoID, comment string }
@@ -113,5 +119,101 @@ func TestControllerPublishRejectsInvalidCommentWithPolishModal(t *testing.T) {
 	}
 	if len(snapshot.Notifications) != 1 || snapshot.Notifications[0].Urgency != platform.UrgencyCritical {
 		t.Fatalf("notifications=%#v", snapshot.Notifications)
+	}
+}
+
+type draftPublisher struct {
+	acquired  chan struct{}
+	released  chan struct{}
+	beginErr  error
+	published chan bool
+}
+type draftTestKey struct{}
+
+func (p *draftPublisher) BeginDraft(ctx context.Context, _ string) (context.Context, func(), error) {
+	if p.beginErr != nil {
+		return nil, nil, p.beginErr
+	}
+	close(p.acquired)
+	var once sync.Once
+	return context.WithValue(ctx, draftTestKey{}, true), func() { once.Do(func() { close(p.released) }) }, nil
+}
+func (p *draftPublisher) Publish(ctx context.Context, _, _ string) (int64, error) {
+	protected, _ := ctx.Value(draftTestKey{}).(bool)
+	select {
+	case <-p.released:
+		protected = false
+	default:
+	}
+	p.published <- protected
+	return 7, nil
+}
+func TestShoutEditorOwnsPauseThroughSendAndReleasesOnEveryExit(t *testing.T) {
+	for _, mode := range []string{"send", "cancel", "prompt-error", "gui-close", "begin-error"} {
+		t.Run(mode, func(t *testing.T) {
+			p := &draftPublisher{acquired: make(chan struct{}), released: make(chan struct{}), published: make(chan bool, 1)}
+			if mode == "begin-error" {
+				p.beginErr = errors.New("no lease")
+			}
+			opened := make(chan struct{})
+			fake := &platformtest.Fake{PromptTextFunc: func(ctx context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+				select {
+				case <-p.acquired:
+				default:
+					t.Error("editor opened before pause")
+				}
+				close(opened)
+				switch mode {
+				case "cancel":
+					return platform.PromptTextResult{Cancelled: true}, nil
+				case "prompt-error":
+					return platform.PromptTextResult{}, errors.New("closed")
+				case "gui-close":
+					<-ctx.Done()
+					return platform.PromptTextResult{}, ctx.Err()
+				}
+				return platform.PromptTextResult{Value: "ready"}, nil
+			}}
+			intents, cancel := setup(actions.Config{ViewModel: publishView, Prompter: fake, Notifier: fake, Shouts: p})
+			defer cancel()
+			send(t, intents, tray.Intent{Kind: tray.IntentPublish, RepoID: "docs"})
+			if mode == "begin-error" {
+				deadline := time.After(time.Second)
+				for len(fake.Snapshot().InfoRequests) == 0 {
+					select {
+					case <-opened:
+						t.Fatal("unguarded editor opened")
+					case <-deadline:
+						t.Fatal("missing error")
+					case <-time.After(time.Millisecond):
+					}
+				}
+				return
+			}
+			select {
+			case <-opened:
+			case <-time.After(time.Second):
+				t.Fatal("editor did not open")
+			}
+			if mode == "gui-close" {
+				cancel()
+			}
+			select {
+			case <-p.released:
+			case <-time.After(time.Second):
+				t.Fatal("pause leaked")
+			}
+			if mode == "send" {
+				if !awaitCh(t, p.published, "publish lease") {
+					t.Fatal("send lost pause/token")
+				}
+			} else {
+				select {
+				case <-p.published:
+					t.Fatal("cancel published")
+				default:
+				}
+			}
+		})
 	}
 }

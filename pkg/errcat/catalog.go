@@ -152,8 +152,8 @@ var specs = []Spec{
 	{"REALM-0001", "realm.remove_unavailable", SevError, HintNone, nil, "Realm removal is not available"},
 	{"REALM-0002", "realm.not_activated", SevError, HintNone, nil, "Server is not activated"},
 	{"REALM-1001", "realm.alias_rejected", SevError, HintRequireAction, nil, "Realm alias was rejected"},
-	{"REALM-1001", "realm.remove_begin_failed", SevError, HintRequireAction, nil, "Realm removal could not start"},
-	{"REALM-1002", "realm.remove_confirm_failed", SevError, HintRequireAction, nil, "Realm removal confirmation failed"},
+	{"REALM-1001", "realm.remove_begin_failed", SevError, HintRequireAction, detailOnly(), "Realm removal could not start"},
+	{"REALM-1002", "realm.remove_confirm_failed", SevError, HintRequireAction, detailOnly(), "Realm removal confirmation failed"},
 	{"REALM-2001", "realm.alias_required", SevError, HintRequireAction, nil, "A stable realm alias is required"},
 
 	{"SERVER-0001", "server.detach_unavailable", SevError, HintNone, nil, "Server detach is not available"},
@@ -161,7 +161,7 @@ var specs = []Spec{
 	{"SERVER-1002", "server.session_timeout_invalid", SevError, HintRequireAction, nil, "Session timeout is invalid"},
 	{"SERVER-1003", "server.session_timeout_failed", SevError, HintRequireAction, nil, "Session timeout could not be saved"},
 	{"SERVER-0002", "server.not_activated", SevError, HintNone, nil, "Server is not activated"},
-	{"SERVER-1001", "server.detach_failed", SevError, HintRequireAction, nil, "Server detach failed"},
+	{"SERVER-1001", "server.detach_failed", SevError, HintRequireAction, detailOnly(), "Server detach failed"},
 
 	{"LOCK-2101", "reservation.list_failed", SevError, HintRetry, []Field{{"repo_id", ParamIdentifier}, detailField}, "Reservation list failed"},
 	{"LOCK-2102", "reservation.invalid_path", SevError, HintNone, nil, "Reservation path is invalid"},
@@ -212,6 +212,9 @@ var specs = []Spec{
 	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, detailOnly(), "Shouting commit failed"},
 	{"INTENT-1001", "intent.resolution_refused", SevError, HintRequireAction, detailOnly(), "Intent resolution refused; inspect a fresh plan"},
 	{"INTENT-1002", "intent.ambiguous", SevWarn, HintRequireAction, detailOnly(), "Ambiguous file changes require an explicit decision"},
+	{"SYNC-1001", "sync.paused", SevInfo, HintRequireAction, nil, "Synchronization paused"},
+	{"SHOUT-1006", "shout.draft_expired", SevError, HintRequireAction, nil, "Announcement editor session expired"},
+	{"SERVER-1004", "server.action_unreachable", SevError, HintRequireAction, detailOnly(), "Server could not confirm the operation; connection unavailable or timed out"},
 	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Notice list failed"},
 	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Notice acknowledgement failed"},
 

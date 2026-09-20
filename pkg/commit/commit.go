@@ -75,8 +75,10 @@ func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
 type Service struct {
-	// Admission covers publication and poll/update through their durable result.
+	// Pause fences ordinary sync cycles across every local working copy.
 	// Configure before Run. Nil retains standalone/test operation.
+	Pause *runtime.SyncPause
+	// Admission covers publication and poll/update through their durable result.
 	Admission *runtime.Admission
 	Cli       client.Client
 	Tickets   interface {
@@ -640,6 +642,11 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 
 // pollOnce checks HEAD revision against local and runs svn update when behind.
 func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
+	leave, pauseErr := s.Pause.Enter(ctx, s.repoID, false)
+	if pauseErr != nil {
+		return
+	}
+	defer leave()
 	release, err := s.Admission.EnterContext(ctx)
 	if err != nil {
 		return
@@ -828,6 +835,13 @@ func (s *Service) RequestPublish(ctx context.Context, wc, comment string) (int64
 	if err := shout.ValidateComment(comment); err != nil {
 		return 0, err
 	}
+	release, err := s.enterPublication(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
 	s.mu.Lock()
 	s.shoutComment = strings.TrimSpace(comment)
 	s.shoutUsed = false
@@ -841,7 +855,7 @@ func (s *Service) RequestPublish(ctx context.Context, wc, comment string) (int64
 		s.shoutComment = ""
 		s.mu.Unlock()
 	}()
-	if err := s.tryCommitMode(ctx, wc, true); err != nil {
+	if err := s.tryCommitLocked(ctx, wc, true); err != nil {
 		return 0, err
 	}
 	s.mu.Lock()
@@ -917,14 +931,36 @@ func (s *Service) tryCommit(ctx context.Context, wc string) error {
 	return s.tryCommitMode(ctx, wc, false)
 }
 
-func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
+func (s *Service) enterPublication(ctx context.Context) (func(), error) {
 	release, err := s.Admission.EnterContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	leave, err := s.Pause.Enter(ctx, s.repoID, true)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return func() { leave(); release() }, nil
+}
+
+func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
+	release, err := s.enterPublication(ctx)
+	if errors.Is(err, runtime.ErrSyncPaused) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	defer release()
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	return s.tryCommitLocked(ctx, wc, force)
+}
+
+// Caller holds publication admission and wcOpMu. The shout comment cannot be
+// consumed by an automatic commit or replaced by a second publish request.
+func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) error {
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("working copy metadata is missing")
 	}

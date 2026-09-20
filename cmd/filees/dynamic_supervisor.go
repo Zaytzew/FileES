@@ -349,7 +349,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {
 		return newControlPassportBackend(repo, svn, reservationRefreshes.Profile)
 	}
-	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
+	starter := &daemonRepoStarter{pause: ipc.SyncPause(), daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
 		timeout := repo.SessionTimeout
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout

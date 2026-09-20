@@ -493,3 +493,6 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .drawer-picker { display: block; margin-top: 5px; max-width: 160px; font-size: .78rem; }
 .drawer-heading button { font-size: .78rem; cursor: pointer; }
 .drawer-organizer button:disabled, .drawer-heading button:disabled, .drawer-picker:disabled { opacity: .5; cursor: default; }
+
+/* Keep the current angle; resume after both pause reasons are cleared. */
+#pulse-card.is-paused .pulse-orbit { animation-play-state: paused; }

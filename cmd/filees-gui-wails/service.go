@@ -50,6 +50,7 @@ type GUIService struct {
 }
 
 type Snapshot struct {
+	SyncPause           contract.SyncPauseStatus          `json:"sync_pause"`
 	MemorySafety        *contract.MemorySafetyStatus      `json:"memory_safety,omitempty"`
 	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
 	Revision            uint64                            `json:"revision"`
@@ -692,6 +693,8 @@ func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
 
 func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
 	switch request.Kind {
+	case string(tray.IntentPauseSync), string(tray.IntentResumeSync):
+		return tray.Intent{Kind: tray.IntentKind(request.Kind)}, vm.Connected && !vm.Stale && vm.Capabilities[contract.CapSyncPause]
 	case string(tray.IntentActivate):
 		return tray.Intent{Kind: tray.IntentActivate}, true
 	case string(tray.IntentActivateDemo):
@@ -939,6 +942,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		Stale:                   vm.Stale,
 		DaemonState:             vm.DaemonState,
 		MemorySafety:            vm.MemorySafety,
+		SyncPause:               vm.SyncPause,
 		UptimeSec:               vm.UptimeSec,
 		IconState:               string(vm.Icon),
 		Capabilities:            make([]string, 0, len(vm.Capabilities)),

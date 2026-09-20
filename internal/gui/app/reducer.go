@@ -373,6 +373,7 @@ func (s appState) viewModel() ViewModel {
 		Stale:               s.stale,
 		DaemonState:         s.system.State,
 		MemorySafety:        s.system.MemorySafety,
+		SyncPause:           s.system.SyncPause,
 		UptimeSec:           s.system.UptimeSec,
 		LastRefresh:         s.refreshed,
 		Capabilities:        caps,

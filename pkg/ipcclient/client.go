@@ -17,6 +17,7 @@ import (
 
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/realmbranding"
+	"filees/pkg/runtime"
 )
 
 const defaultTimeout = 10 * time.Second
@@ -688,7 +689,7 @@ func (c *Client) Unlock(ctx context.Context, repoID string, paths []string) (str
 }
 
 func (c *Client) RepoPublish(ctx context.Context, repoID, comment string) (*contract.RepoPublishResult, error) {
-	resp, err := c.do(ctx, contract.CmdRepoPublish, repoID, contract.RepoPublishPayload{Comment: comment})
+	resp, err := c.do(ctx, contract.CmdRepoPublish, repoID, contract.RepoPublishPayload{Comment: comment, DraftToken: runtime.DraftToken(ctx)})
 	if err != nil {
 		return nil, err
 	}

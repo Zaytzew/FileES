@@ -68,6 +68,7 @@ func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules,
 	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, RealmID: repo.RealmID, OwnerRealmID: repo.OwnerRealmID, UUID: clientUUID, ErrSink: sink, Activity: activityJournal, RequireSVNMetadata: true}
 	if ipc != nil {
 		service.Admission = ipc.OperationAdmission()
+		service.Pause = ipc.SyncPause()
 		service.Emit = func(eventType string, payload any) { ipc.Emit(ipc.NewRepoEvent(repo.ID, eventType, payload)) }
 	}
 	wireRepoStatus(service, state)
@@ -249,6 +250,11 @@ func (s *passportSession) stop() {
 }
 
 func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger, received ...func(string)) bool {
+	leave, err := service.Pause.Enter(ctx, "", false)
+	if err != nil {
+		return false
+	}
+	defer leave()
 	if commit.HasUnresolvedCommit(wc) {
 		logger.Infof("startup update deferred: durable commit receipt recovery pending")
 		return false
@@ -702,6 +708,7 @@ func reservationHasLocalChanges(entry client.LockEntry) bool {
 // daemonRepoStarter binds generic supervisor lifecycle to concrete daemon
 // pipelines. daemonCtx, not the reconcile context, owns running instances.
 type daemonRepoStarter struct {
+	pause          *runtime.SyncPause
 	daemonCtx      context.Context
 	repos          map[reposupervisor.Key]repoRuntime
 	newSVN         svnFactory
@@ -922,7 +929,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		sink = nil
 	}
 	return reposupervisor.StartManaged(lifecycle, func(ctx context.Context) error {
-		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger)
+		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger, s.pause)
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationReleaseFunc(nil)

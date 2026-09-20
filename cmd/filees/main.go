@@ -353,7 +353,11 @@ func recordSyncFailure(sink *errmap.Sink, lg talk.Logger, what string, err error
 	lg.Warnf("%s [%s]: %v", what, entry.Code, err)
 }
 
-func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger) {
+func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger, pauses ...*runtime.SyncPause) {
+	var pause *runtime.SyncPause
+	if len(pauses) > 0 {
+		pause = pauses[0]
+	}
 	if !workingCopyMetadataAvailable(repo.LocalPath) {
 		markWorkingCopyMissing(rs)
 		return
@@ -374,6 +378,11 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		rs.SetCycle(cycle)
 	}
 	update := func(tickAt time.Time) bool {
+		leave, err := pause.Enter(ctx, repo.ID, false)
+		if err != nil {
+			return ctx.Err() == nil
+		}
+		defer leave()
 		release, err := runtime.EnterOperation(ctx)
 		if err != nil {
 			return false

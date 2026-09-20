@@ -1,5 +1,13 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "pause.pause": "Pause",
+  "pause.resume": "Resume",
+  "pause.manual": "Synchronization paused.",
+  "pause.draft": "Sending paused — editing an announcement.",
+  "pause.both": "Synchronization paused — manual pause and announcement editor.",
+  "pause.draining": "Pausing — finishing operations already started.",
+  "pause.failed": "Could not change pause",
+
   "drawers.organize": "Drawers",
   "drawers.name": "Drawer name",
   "drawers.create": "Create drawer",

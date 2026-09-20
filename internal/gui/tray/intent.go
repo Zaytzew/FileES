@@ -34,6 +34,8 @@ const (
 	IntentDetachServer       IntentKind = "detach_server"
 	IntentRestartFileES      IntentKind = "restart_filees"
 	IntentShutdownFileES     IntentKind = "shutdown_filees"
+	IntentPauseSync          IntentKind = "pause_sync"
+	IntentResumeSync         IntentKind = "resume_sync"
 	IntentPublish            IntentKind = "publish"
 	IntentAckNotice          IntentKind = "ack_notice"
 	IntentManagePublicShares IntentKind = "manage_public_shares"

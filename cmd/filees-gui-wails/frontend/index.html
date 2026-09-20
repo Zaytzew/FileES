@@ -18,6 +18,7 @@
         <img class="brand-mark" src="./assets/filees-space-horizontal.svg" alt="filees:space">
       </a>
       <div class="topbar-actions">
+        <button id="sync-pause" class="secondary-button" type="button" data-global-action="sync" data-action="pause_sync" aria-pressed="false" disabled>Ⅱ</button>
         <button id="client-version" class="version-pill" type="button" title="Wersja i aktualizacje" aria-label="Wersja i aktualizacje FileES" aria-haspopup="dialog" aria-controls="version-overlay" data-i18n-title="version.hint" data-i18n-aria-label="version.accessible">—</button>
         <button id="activate-demo" class="icon-button hint-button pair-button demo-button" type="button" hidden data-global-action="activation" data-action="activate_demo" data-hint="Wypróbuj FileES na serwerze demonstracyjnym" aria-label="Aktywuj na serwerze demonstracyjnym" data-i18n-data-hint="action.demoHint" data-i18n-aria-label="action.activateDemo">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
@@ -60,6 +61,7 @@
       </div>
     </header>
 
+    <aside id="sync-pause-status" class="announcement-banner" role="status" hidden></aside>
     <aside id="memory-safety" class="announcement-banner" role="alert" hidden></aside>
     <section id="top" class="hero">
       <div>

@@ -15,6 +15,7 @@ import (
 	"filees/pkg/errcat"
 	"filees/pkg/passport"
 	"filees/pkg/realmbranding"
+	"filees/pkg/runtime"
 	"filees/pkg/shout"
 	"filees/pkg/talk"
 )
@@ -181,6 +182,10 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleLockReleaseDecision(req, false)
 	case contract.CmdLockReleaseAccept:
 		return s.handleLockReleaseDecision(req, true)
+	case contract.CmdSyncPause:
+		return s.handleSyncPause(req)
+	case contract.CmdShoutDraft:
+		return s.handleShoutDraft(req)
 	case contract.CmdRepoPublish:
 		return s.handleRepoPublish(req)
 	case contract.CmdRepoIntentPlan, contract.CmdRepoIntentApply:
@@ -331,7 +336,7 @@ func (s *Server) handleRealmRemoveBegin(req contract.Request) contract.Response 
 	defer cancel()
 	result, err := service.Begin(ctx, payload.ServerID, activation.RealmID, payload)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REALM-1001", "ERROR", "REQUIRE_ACTION", "realm.remove_begin_failed", nil)
+		return remoteActionError(req.RequestID, "REALM-1001", "realm.remove_begin_failed", err)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -351,7 +356,7 @@ func (s *Server) handleRealmRemoveConfirm(req contract.Request) contract.Respons
 	defer cancel()
 	result, err := service.Confirm(ctx, payload)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REALM-1002", "ERROR", "REQUIRE_ACTION", "realm.remove_confirm_failed", nil)
+		return remoteActionError(req.RequestID, "REALM-1002", "realm.remove_confirm_failed", err)
 	}
 	s.RemoveServer(payload.ServerID)
 	return contract.OKResponse(req.RequestID, result)
@@ -375,7 +380,7 @@ func (s *Server) handleServerDetach(req contract.Request) contract.Response {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 	if err := service.Detach(ctx, payload.ServerID); err != nil {
-		return contract.ErrResponse(req.RequestID, "SERVER-1001", "ERROR", "REQUIRE_ACTION", "server.detach_failed", map[string]string{"detail": err.Error()})
+		return remoteActionError(req.RequestID, "SERVER-1001", "server.detach_failed", err)
 	}
 	s.RemoveServer(payload.ServerID)
 	return contract.OKResponse(req.RequestID, contract.ServerDetachResult{ServerID: payload.ServerID})
@@ -1629,6 +1634,7 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	result := contract.SystemStatusResult{
 		MemorySafety:        s.MemorySafety(),
+		SyncPause:           s.pauseStatus(),
 		State:               "running",
 		UptimeSec:           s.uptime(),
 		Repos:               len(s.allRepos()),
@@ -1886,11 +1892,15 @@ func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	ctx = runtime.WithDraft(ctx, payload.DraftToken)
 	rev, err := rs.Publish(ctx, payload.Comment)
 	if err != nil {
 		var fault errcat.Fault
 		if errors.As(err, &fault) {
 			return contract.ErrResponseFrom(req.RequestID, fault)
+		}
+		if errors.Is(err, runtime.ErrDraftExpired) || errors.Is(err, runtime.ErrSyncPaused) {
+			return draftError(req.RequestID, err)
 		}
 		if errors.Is(err, shout.ErrNothingToPublish) {
 			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", "shout.nothing_to_publish", nil)

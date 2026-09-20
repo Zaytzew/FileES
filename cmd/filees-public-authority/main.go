@@ -120,7 +120,12 @@ func run(ctx context.Context, configPath string) error {
 	}
 	staging := &storage.Staging{Root: stagingRoot}
 	interval, _ := storage.CleanupInterval(config.PublicShares.CleanupInterval)
-	maintenance := &storage.Maintenance{Root: stagingRoot, Interval: interval, Sweep: staging.Sweep, Report: func(err error) { fmt.Fprintln(os.Stderr, "filees-public-authority maintenance:", err) }}
+	maintenance := &storage.Maintenance{Root: stagingRoot, Interval: interval, Sweep: func(ctx context.Context, now time.Time) (storage.SweepResult, error) {
+		result, err := staging.Sweep(ctx, now)
+		otpResult, otpErr := otp.Sweep(ctx, now)
+		result.Add(otpResult)
+		return result, errors.Join(err, otpErr)
+	}, Report: func(err error) { fmt.Fprintln(os.Stderr, "filees-public-authority maintenance:", err) }}
 	stopMaintenance := maintenance.Start(ctx)
 	defer stopMaintenance()
 	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, Trees: authority.NewTreeCache(256), FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, Staging: staging, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}

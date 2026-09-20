@@ -77,15 +77,15 @@ type Service struct {
 }
 
 func (s Service) RequestCode(request Request) error {
-	record, recipient, digest, err := s.recipient(request)
-	if err != nil {
-		return ErrDenied
-	}
 	if err := s.validate(); err != nil {
 		return err
 	}
-	now := s.now()
 	return repoworker.WithFileLock(filepath.Join(s.Root, ".lock"), func() error {
+		record, recipient, digest, err := s.recipient(request)
+		if err != nil {
+			return ErrDenied
+		}
+		now := s.now()
 		current, err := s.load(record.ChannelID, digest)
 		if errors.Is(err, os.ErrNotExist) || (err == nil && !now.Before(current.ExpiresAt)) {
 			current = state{
@@ -111,16 +111,19 @@ func (s Service) RequestCode(request Request) error {
 }
 
 func (s Service) Verify(request VerifyRequest) (Grant, error) {
-	record, _, digest, err := s.recipient(request.Request)
-	if err != nil || len(request.Code) != 8 || strings.Trim(request.Code, "0123456789") != "" {
+	if len(request.Code) != 8 || strings.Trim(request.Code, "0123456789") != "" {
 		return Grant{}, ErrDenied
 	}
 	if err := s.validate(); err != nil {
 		return Grant{}, err
 	}
-	now := s.now()
 	var grant Grant
-	err = repoworker.WithFileLock(filepath.Join(s.Root, ".lock"), func() error {
+	err := repoworker.WithFileLock(filepath.Join(s.Root, ".lock"), func() error {
+		record, _, digest, err := s.recipient(request.Request)
+		if err != nil {
+			return ErrDenied
+		}
+		now := s.now()
 		current, err := s.load(record.ChannelID, digest)
 		if err != nil || !now.Before(current.ExpiresAt) || current.FailedAttempts >= s.attempts() {
 			return ErrDenied

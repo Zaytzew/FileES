@@ -335,6 +335,8 @@ type NoticeProjection struct {
 }
 
 type DashboardPublicShareProjection struct {
+	ObservedAt        string `json:"observed_at,omitempty"`
+	Stale             bool   `json:"stale"`
 	ChannelID         string `json:"channel_id"`
 	ServerID          string `json:"server_id"`
 	RepoID            string `json:"repo_id"`
@@ -1134,6 +1136,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		address := strings.Trim(strings.TrimSpace(item.Alias)+"/"+strings.Trim(strings.TrimSpace(item.Slug), "/"), "/")
 		canOpen := vm.CanManagePublicShares() && projectedRepoBelongsToServer(vm, item.RepoID, item.ServerID)
 		result.PublicShares = append(result.PublicShares, DashboardPublicShareProjection{
+			ObservedAt: item.ObservedAt, Stale: item.Stale,
 			ChannelID: item.ChannelID, ServerID: item.ServerID, RepoID: item.RepoID,
 			Repository: firstNonBlank(item.RepoDisplayName, item.RepoID), Address: address,
 			State: item.State, SourceRoot: item.SourceRoot, UpdatedAt: item.UpdatedAt,

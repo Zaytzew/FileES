@@ -122,6 +122,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 		s.publicShares = make([]PublicShareViewModel, 0, len(publicShares))
 		for _, share := range publicShares {
 			s.publicShares = append(s.publicShares, PublicShareViewModel{
+				ObservedAt: share.ObservedAt, Stale: share.Stale,
 				ChannelID: share.ChannelID, ServerID: share.ServerID, RepoID: share.RepoID,
 				RepoDisplayName: share.RepoDisplayName, Alias: share.Alias, Slug: share.Slug,
 				State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt,
@@ -130,6 +131,10 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 			})
 		}
 		s.publicSharesKnown = true
+	} else {
+		for i := range s.publicShares {
+			s.publicShares[i].Stale = true
+		}
 	}
 	s.refreshed = refreshed
 	s.stale = false

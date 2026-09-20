@@ -277,6 +277,8 @@ func (d DetachmentViewModel) Name() string {
 }
 
 type PublicShareViewModel struct {
+	ObservedAt                                   string
+	Stale                                        bool
 	ChannelID, ServerID, RepoID, RepoDisplayName string
 	Alias, Slug, State, SourceRoot, UpdatedAt    string
 	RecipientCount, ObjectCount                  int

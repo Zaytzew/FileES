@@ -9,7 +9,7 @@ import (
 func TestRepoViewIdleAndManualArchive(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("optional node executable unavailable: %v", err)
 	}
 	source := strings.ReplaceAll(embeddedFrontendFile(t, "frontend/repo-view.js"), "export function", "function")
 	program := `const assert=require("node:assert/strict");

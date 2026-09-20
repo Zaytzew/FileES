@@ -333,6 +333,7 @@ function renderMetrics(snapshot) {
   const reservationsOffline = reservationState.state === "daemon_offline";
   const reservationsPartial = reservationState.state === "partial";
   const publicShares = snapshot.public_shares || [];
+  const publicSharesStale = publicShares.some((share) => share.stale);
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
   const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0);
@@ -352,8 +353,8 @@ function renderMetrics(snapshot) {
     : reservationsPartial
     ? t("summary.partialLocks", { count: reservations.length, locks: tn("count.locks", reservations.length), missing: reservationState.unavailable.length })
     : tn("count.locks", reservations.length);
-  $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
-  $("#metric-public-shares-note").textContent = reservationsOffline && snapshot.public_shares_known
+  $("#metric-public-shares").textContent = snapshot.public_shares_known && !publicSharesStale ? activePublicShares : "?";
+  $("#metric-public-shares-note").textContent = (reservationsOffline || publicSharesStale) && snapshot.public_shares_known
     ? t("summary.lastKnown")
     : snapshot.public_shares_known
       ? tn("count.links", activePublicShares)
@@ -833,6 +834,7 @@ function renderPublicShares(snapshot) {
       ? t("share.recipients", { count: share.recipient_count })
       : t("share.open");
     const objects = t("share.files", { count: share.object_count });
+    const freshness = share.stale ? `<small>${escapeHTML(t("summary.lastKnown"))} · ${escapeHTML(shortDateTime(share.observed_at))}</small>` : "";
     const manage = share.can_open
       ? `<button class="dashboard-share-open" type="button" data-action="manage_public_shares" aria-label="${escapeHTML(t("share.openName", { name: share.address }))}">
           <span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span>
@@ -841,7 +843,7 @@ function renderPublicShares(snapshot) {
       : `<div class="dashboard-share-open is-disabled"><span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span><span class="dashboard-share-copy"><strong>${escapeHTML(share.address || t("share.default"))}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span></div>`;
     const revoke = share.can_revoke ? `<button class="dashboard-share-revoke" type="button" data-action="revoke_public_share">${escapeHTML(t("share.revoke"))}</button>` : "";
     return `${serverHeader}<article class="dashboard-share-row ${activeShare ? "is-active" : "is-inactive"}" data-server-id="${escapeHTML(share.server_id)}" data-repo-id="${escapeHTML(share.repo_id)}" data-channel-id="${escapeHTML(share.channel_id)}">
-      <label class="dashboard-share-select" title="${escapeHTML(t("share.select"))}">${share.can_revoke ? `<input type="checkbox" data-share-select ${selectedPublicShares.has(share.channel_id) ? "checked" : ""}><span aria-hidden="true"></span>` : ""}</label>${manage}<div class="dashboard-share-policy"><span>${escapeHTML(publicShareState(share.state))} · ${escapeHTML(audience)}</span><small>${escapeHTML(t("share.lifetime"))}</small></div>${revoke}
+      <label class="dashboard-share-select" title="${escapeHTML(t("share.select"))}">${share.can_revoke ? `<input type="checkbox" data-share-select ${selectedPublicShares.has(share.channel_id) ? "checked" : ""}><span aria-hidden="true"></span>` : ""}</label>${manage}<div class="dashboard-share-policy"><span>${escapeHTML(publicShareState(share.state))} · ${escapeHTML(audience)}</span><small>${escapeHTML(t("share.lifetime"))}</small>${freshness}</div>${revoke}
     </article>`;
   }).join("");
   replaceHTMLIfChanged(root, bulk + rows);

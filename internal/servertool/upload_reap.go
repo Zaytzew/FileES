@@ -21,7 +21,11 @@ func RunUploadReap(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		report(stderr, "upload-reap arguments", err)
 		return ExitUsage
 	}
-	config, err := serverconfig.LoadFor(path, serverconfig.SecretActivation|serverconfig.SecretOTP)
+	if err := sandboxBegin(uploadMaintenancePromises); err != nil {
+		report(stderr, "upload maintenance sandbox", err)
+		return ExitSoftware
+	}
+	config, err := serverconfig.LoadFor(path, serverconfig.SecretOTP)
 	if err != nil {
 		report(stderr, "upload-reap config", err)
 		return ExitConfig
@@ -47,6 +51,10 @@ func RunUploadReap(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	if err := os.MkdirAll(reaper.TrashRoot, 0700); err != nil {
 		report(stderr, "upload-reap trash", err)
 		return ExitConfig
+	}
+	if err := sandboxApplyForExec(uploadMaintenanceProfile(config, false), uploadMaintenancePromises+" prot_exec unveil"); err != nil {
+		report(stderr, "upload maintenance sandbox", err)
+		return ExitSoftware
 	}
 	summary, err := reaper.Reap(context.Background())
 	if err != nil {
@@ -89,7 +97,11 @@ func RunUploadSeedReject(args []string, _ io.Reader, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "upload-seed-reject: -alias is required")
 		return ExitUsage
 	}
-	config, err := serverconfig.LoadFor(path, serverconfig.SecretActivation|serverconfig.SecretOTP)
+	if err := sandboxBegin(writePromises); err != nil {
+		report(stderr, "upload seed sandbox", err)
+		return ExitSoftware
+	}
+	config, err := serverconfig.LoadFor(path, serverconfig.SecretOTP)
 	if err != nil {
 		report(stderr, "upload-seed-reject config", err)
 		return ExitConfig
@@ -100,6 +112,14 @@ func RunUploadSeedReject(args []string, _ io.Reader, stdout, stderr io.Writer) i
 	}
 	stateRoot := config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)
 	store := &channel.Store{Root: stateRoot, TokenKey: config.Onboarding.OTPPepper}
+	if err := os.MkdirAll(config.Upload.EffectiveTrashRoot(config.Repositories.ResultsRoot), 0700); err != nil {
+		report(stderr, "upload seed trash", err)
+		return ExitConfig
+	}
+	if err := sandboxApply(uploadMaintenanceProfile(config, true)); err != nil {
+		report(stderr, "upload seed sandbox", err)
+		return ExitSoftware
+	}
 	owner, err := store.OwnerRealmForAlias(alias)
 	if err != nil {
 		report(stderr, "upload-seed-reject alias", err)

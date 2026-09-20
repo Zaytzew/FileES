@@ -145,3 +145,17 @@ func TestGenerateRequiresFreshnessCounters(t *testing.T) {
 		t.Fatalf("fully counted spec rejected: %v", err)
 	}
 }
+
+func TestGenerateRefusesUnlistedPayloadBinary(t *testing.T) {
+	root := t.TempDir()
+	writePayload(t, root, "bin/known", "known")
+	writePayload(t, root, "bin/new-worker", "must not disappear")
+	spec := Spec{ReleaseID: "r1", Platform: "openbsd-amd64", Sequence: 1, SecurityEpoch: 1, Files: []FileSpec{{Source: "bin/known", Target: "/usr/local/bin/known", Owner: "root", Group: "wheel"}}}
+	if _, err := Generate(root, spec); err == nil || !strings.Contains(err.Error(), "bin/new-worker") {
+		t.Fatalf("unlisted binary: %v", err)
+	}
+	spec.Files = append(spec.Files, FileSpec{Source: "bin/new-worker", Target: "/usr/local/bin/new-worker", Owner: "root", Group: "wheel"})
+	if _, err := Generate(root, spec); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -150,22 +150,31 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	shares := make([]contract.PublicShareSummary, 0, len(view.Repositories))
+	var failed []string
 	for _, repo := range view.Repositories {
 		if repo.OwnerRealmID != view.RealmID || repo.State != "active" {
 			continue
 		}
 		listed, err := lister.ListPublicShares(ctx, serverID, repo.RepoID)
 		if err != nil {
+			failed = append(failed, repo.RepoID)
 			talk.With("public-shares:"+serverID).Warnf("aggregate listing failed for repo %s: %v", repo.RepoID, err)
 			continue
 		}
 		for _, share := range listed {
 			share.ServerID = serverID
+			share.RepoID = repo.RepoID
 			share.RepoDisplayName = repo.DisplayName
 			shares = append(shares, share)
 		}
 	}
-	cache.Set(serverID, shares)
+	if partial, ok := cache.(interface {
+		SetPartial(string, []contract.PublicShareSummary, []string)
+	}); ok {
+		partial.SetPartial(serverID, shares, failed)
+	} else if len(failed) == 0 {
+		cache.Set(serverID, shares)
+	}
 	if ipc != nil {
 		ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
 	}
@@ -269,6 +278,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if publish != nil {
 			publish()
 		}
+		if scoped, ok := shareCache.(interface{ SetDetached(string, bool) }); ok {
+			scoped.SetDetached(serverID, detached)
+		}
 		// The durable half. freshness.Detached is a flag describing the server
 		// right now and dies with the process; this is the moment, and it has
 		// to outlive a daemon restart or a forty-eight hour lifetime measured
@@ -365,6 +377,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}
 		if monitored[serverID] {
 			return nil
+		}
+		if tracked, ok := shareCache.(interface{ Track(string) }); ok {
+			tracked.Track(serverID)
 		}
 		monitorCtx, cancelMonitor := context.WithCancel(ctx)
 		monitorMu.Lock()

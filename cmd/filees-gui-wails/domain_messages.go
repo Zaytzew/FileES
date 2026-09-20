@@ -65,7 +65,9 @@ func (d *domainCatalogues) onChanged(callback func()) {
 	if d == nil {
 		return
 	}
+	d.mu.Lock()
 	d.changed = callback
+	d.mu.Unlock()
 }
 
 // notify re-renders on its own goroutine, never on the caller's.
@@ -74,8 +76,11 @@ func (d *domainCatalogues) onChanged(callback func()) {
 // use() from inside it; the snapshot observer it installed takes that same
 // mutex. Calling back synchronously would deadlock the two against each other.
 func (d *domainCatalogues) notify() {
-	if d.changed != nil {
-		go d.changed()
+	d.mu.Lock()
+	callback := d.changed
+	d.mu.Unlock()
+	if callback != nil {
+		go callback()
 	}
 }
 
@@ -98,8 +103,8 @@ func (d *domainCatalogues) use(locale string) {
 	// longer wanted is discarded on arrival rather than overruling the user.
 	d.wanted = locale
 	if cached, ok := d.byLocale[locale]; ok {
-		d.mu.Unlock()
 		d.current.Store(cached)
+		d.mu.Unlock()
 		d.notify()
 		return
 	}
@@ -135,11 +140,14 @@ func (d *domainCatalogues) refresh() {
 	d.byLocale = map[string]*messagerender.Catalogue{}
 	d.catalogID = ""
 	d.pending = map[string]bool{}
-	d.mu.Unlock()
-	if locale == "" {
-		return
+	if locale != "" {
+		d.pending[locale] = true
 	}
-	d.use(locale)
+	connection := d.connection
+	d.mu.Unlock()
+	if locale != "" {
+		go d.fetch(locale, connection)
+	}
 }
 
 func (d *domainCatalogues) fetch(locale string, connection uint64) {
@@ -178,11 +186,13 @@ func (d *domainCatalogues) fetch(locale string, connection uint64) {
 	// The interface may have moved on while this was in flight. Caching the
 	// answer is still right; showing it is not.
 	stale := d.wanted != locale
+	if !stale {
+		d.current.Store(catalogue)
+	}
 	d.mu.Unlock()
 	if stale {
 		return
 	}
-	d.current.Store(catalogue)
 	d.notify()
 }
 

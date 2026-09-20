@@ -26,7 +26,7 @@ func frontendI18NTestPrelude(t *testing.T) string {
 func TestFrontendI18NCataloguesAndPreference(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("optional node executable unavailable: %v", err)
 	}
 	cmd := exec.CommandContext(t.Context(), node, "--test", "frontend-tests/i18n.test.mjs")
 	if output, err := cmd.CombinedOutput(); err != nil {

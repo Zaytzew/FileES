@@ -199,3 +199,29 @@ func TestRepositoryLifecycleLocateAcceptsOnlyExistingWorkingCopy(t *testing.T) {
 		t.Fatalf("result=%+v stored=%+v queued=%q", result, stored, queued)
 	}
 }
+
+func TestRepositoryLifecycleLocateMayReaffirmExistingRoot(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(filepath.Join(current, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	record, err := local.BeginAttach("office", "repo", current, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = local.ApproveAttach(record.OperationID, "office", "repo", "svn+ssh://example/repo", "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = local.MarkAttached(record.OperationID, "repo"); err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: local}
+	got, err := service.BeginLocate("office", "repo", current)
+	if err != nil || got.State != "relocating" || got.PendingLocalPath != current {
+		t.Fatalf("reappeared root refused: %+v %v", got, err)
+	}
+}

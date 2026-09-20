@@ -50,6 +50,9 @@ func TestWaitingListHidesAndPurgesAfterTTL(t *testing.T) {
 }
 
 func TestSeedRejectAppearsOnOwnerList(t *testing.T) {
+	if os.Getenv("FILEES_TEST_EICAR") != "1" {
+		t.Skip("EICAR integration test requires FILEES_TEST_EICAR=1 on an isolated host; resident antivirus can quarantine the fixture")
+	}
 	root := t.TempDir()
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	owner := uuid.NewString()

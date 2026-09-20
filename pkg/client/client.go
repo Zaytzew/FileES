@@ -897,7 +897,7 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		if len(args) > 0 {
 			name = args[0]
 		}
-		return processoutput.Text(stdout.Bytes()), fmt.Errorf("uruchomienie '%s' nie powiodło się: %w", name, err)
+		return processoutput.Text(stdout.Bytes()), fmt.Errorf("starting '%s' failed: %w", name, err)
 	}
 	if err := cmd.Wait(); err != nil {
 		name := "svn"
@@ -912,12 +912,12 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		if ctx.Err() != nil {
 			return out, fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v%s", name, ctx.Err(), diagnostic)
 		}
-		return out, cliFault(fmt.Errorf("komenda '%s' zakończyła się błędem: %v%s", name, err, diagnostic), diagnostic)
+		return out, cliFault(fmt.Errorf("command '%s' failed: %v%s", name, err, diagnostic), diagnostic)
 	}
 	if svnXMLOutput(args) {
 		out, err := processoutput.UTF8(stdout.Bytes())
 		if err != nil {
-			return "", fmt.Errorf("komenda '%s' zwróciła XML poza UTF-8: %w", args[0], err)
+			return "", fmt.Errorf("command '%s' returned non-UTF-8 XML: %w", args[0], err)
 		}
 		return out, nil
 	}

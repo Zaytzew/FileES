@@ -215,14 +215,14 @@ func TestLoadRejectsDuplicateIDs(t *testing.T) {
 		{"id":"same","repo_url":"svn://example/a","local_path":"/tmp/a","commit_interval":"1m"},
 		{"id":"same","repo_url":"svn://example/b","local_path":"/tmp/b","commit_interval":"1m"}
 	]`)
-	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "duplikat") {
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("Load error = %v, want duplicate ID", err)
 	}
 }
 
 func TestLoadRejectsRelativeLocalPath(t *testing.T) {
 	path := writeConfig(t, `[{"id":"r","repo_url":"svn://example/r","local_path":"relative","commit_interval":"1m"}]`)
-	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "bezwzględna") {
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("Load error = %v, want absolute path error", err)
 	}
 }
@@ -233,7 +233,7 @@ func TestLoadRejectsNestedRootsInBothOrders(t *testing.T) {
 			{"id":"a","repo_url":"svn://example/a","local_path":%q,"commit_interval":"1m"},
 			{"id":"b","repo_url":"svn://example/b","local_path":%q,"commit_interval":"1m"}
 		]`, paths[0], paths[1])
-		if _, err := Load(writeConfig(t, data)); err == nil || !strings.Contains(err.Error(), "nakładające się korzenie") {
+		if _, err := Load(writeConfig(t, data)); err == nil || !strings.Contains(err.Error(), "overlapping roots") {
 			t.Fatalf("Load(%v) error = %v, want overlap", paths, err)
 		}
 	}
@@ -277,7 +277,7 @@ func TestLoadRejectsSameRootThroughSymlink(t *testing.T) {
 		{"id":"a","repo_url":"svn://example/a","local_path":%q,"commit_interval":"1m"},
 		{"id":"b","repo_url":"svn://example/b","local_path":%q,"commit_interval":"1m"}
 	]`, posixRoot+"/real", posixRoot+"/alias")
-	if _, err := Load(writeConfig(t, data)); err == nil || !strings.Contains(err.Error(), "nakładające się korzenie") {
+	if _, err := Load(writeConfig(t, data)); err == nil || !strings.Contains(err.Error(), "overlapping roots") {
 		t.Fatalf("Load error = %v, want symlink overlap", err)
 	}
 }

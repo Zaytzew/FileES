@@ -1,9 +1,11 @@
 package clientprofile
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"filees/pkg/portablepath"
@@ -108,7 +110,40 @@ func ServerDir(root, serverID string) (string, error) {
 		// the place this one is read is a file manager.
 		writeEncodingNotice(root)
 	}
-	return filepath.Join(root, name), nil
+	canonical := filepath.Join(root, name)
+	// Unix releases predating portable names stored e.g. atmprojekt:filees
+	// directly. Keep those absolute paths intact, but only for a complete,
+	// matching profile and with no competing encoded directory.
+	if runtime.GOOS != "windows" && name != serverID && serverID != "." && serverID != ".." && !strings.ContainsAny(serverID, "/\\%\x00") {
+		legacy := filepath.Join(root, serverID)
+		info, err := os.Lstat(legacy)
+		if err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("legacy profile directory is not a plain directory")
+			}
+			profile, err := Load(filepath.Join(legacy, "client-profile.json"))
+			if err != nil {
+				return "", fmt.Errorf("read legacy profile: %w", err)
+			}
+			if profile.ServerID != serverID {
+				// A literal plus-escape ID may spell another server's canonical
+				// directory. It is not our legacy profile and must not be adopted.
+				other, err := StateDirName(profile.ServerID)
+				if err == nil && other == serverID {
+					return canonical, nil
+				}
+				return "", fmt.Errorf("legacy profile identity mismatch")
+			}
+			if _, err := os.Lstat(canonical); !errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("legacy profile conflicts with encoded directory %q", name)
+			}
+			return legacy, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	return canonical, nil
 }
 
 const encodingNoticeName = "CZYTAJ-TO-nazwy-katalogow.txt"

@@ -972,6 +972,7 @@ type RepoLifecycleResult struct {
 	PendingLocalPath      string `json:"pending_local_path,omitempty"`
 	State                 string `json:"state"`
 	LastError             string `json:"last_error,omitempty"`
+	LastErrorKey          string `json:"last_error_key,omitempty"`
 	ServerDeleteCompleted bool   `json:"server_delete_completed,omitempty"`
 	RetainUntil           string `json:"retain_until,omitempty"`
 	RecoveryPrepared      bool   `json:"recovery_prepared,omitempty"`

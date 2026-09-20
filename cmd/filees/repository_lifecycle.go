@@ -44,7 +44,16 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 }
 
 func (service repositoryLifecycleService) BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error) {
-	check, err := provisioning.PreflightLocalPath(existingLocalPath, provisioning.LocalPathAttachResume, service.allRoots())
+	// The current root may simply have reappeared after reconnecting a drive.
+	// Exclude this record only; Store still rejects nested relocation targets.
+	operationID := ""
+	for _, record := range service.store.List() {
+		if record.ServerID == serverID && record.RepoID == repoID {
+			operationID = record.OperationID
+			break
+		}
+	}
+	check, err := provisioning.PreflightLocalPath(existingLocalPath, provisioning.LocalPathAttachResume, service.allRootsExcept(operationID))
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
@@ -273,7 +282,7 @@ func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
 	if record.ShelfFetch.Placement.ParentRepoID != "" {
 		destination = filepath.Join(record.ShelfFetch.Placement.ParentRoot, filepath.FromSlash(record.ShelfFetch.Placement.RelativePath))
 	}
-	return contract.RepoLifecycleResult{FetchDestination: destination, FetchID: record.ShelfFetch.ID, FetchUploadID: record.ShelfFetch.UploadID, FetchState: record.ShelfFetch.State, FetchError: record.ShelfFetch.Error, OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError, ServerDeleteCompleted: record.ServerDeleteCompleted, RetainUntil: record.RetainUntil, RecoveryPrepared: record.RecoveryPrepared, RecoveryKitPath: record.RecoveryKitPath, LocalCleanupCompleted: record.LocalCleanupCompleted}
+	return contract.RepoLifecycleResult{FetchDestination: destination, FetchID: record.ShelfFetch.ID, FetchUploadID: record.ShelfFetch.UploadID, FetchState: record.ShelfFetch.State, FetchError: record.ShelfFetch.Error, OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError, LastErrorKey: record.LastErrorKey, ServerDeleteCompleted: record.ServerDeleteCompleted, RetainUntil: record.RetainUntil, RecoveryPrepared: record.RecoveryPrepared, RecoveryKitPath: record.RecoveryKitPath, LocalCleanupCompleted: record.LocalCleanupCompleted}
 }
 
 func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories []config.Repo) ([]config.Repo, error) {

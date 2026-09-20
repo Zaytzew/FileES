@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/pkg/errcat"
 	"os"
 	"strings"
 	"testing"
@@ -471,5 +472,21 @@ func TestDeleteOwnedRemoteRepositoryDoesNotRequireAttachment(t *testing.T) {
 	}
 	if stub.deleteCalls != 1 || stub.detachCalls != 0 || stub.deleteDisplayName != "Zdalne archiwum" {
 		t.Fatalf("remote delete route: delete=%d detach=%d name=%q", stub.deleteCalls, stub.detachCalls, stub.deleteDisplayName)
+	}
+}
+
+type locateFailureService struct{ lifecycleStub }
+
+func (*locateFailureService) BeginLocate(string, string, string) (contract.RepoLifecycleResult, error) {
+	return contract.RepoLifecycleResult{}, errcat.New("repo.locate_not_working_copy", nil, errors.New("arbitrary diagnostic, independent of language"))
+}
+func TestLocateEmitsTypedFailureWithoutMatchingDiagnosticText(t *testing.T) {
+	server := New("unused")
+	server.SetRepositoryLifecycleService(&locateFailureService{})
+	server.RegisterRepoAccess("repo", "svn+ssh://example/repo", "/wc", "office", "rw")
+	request := lifecycleRequest(contract.CmdRepoLocate, contract.RepoLocatePayload{ServerID: "office", RepoID: "repo", ExistingLocalPath: "/plain"})
+	response := server.dispatch(request)
+	if response.Error == nil || response.Error.MessageKey != "repo.locate_not_working_copy" || !strings.Contains(response.Error.Details["detail"], "arbitrary diagnostic") {
+		t.Fatalf("typed diagnostic lost: %+v", response)
 	}
 }

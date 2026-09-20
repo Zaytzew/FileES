@@ -209,11 +209,12 @@ type fakeRepositoryAttacher struct {
 
 type locateCall struct{ serverID, repoID, localPath string }
 type fakeRepositoryLocator struct {
-	calls     chan locateCall
-	err       error
-	status    string
-	lastError string
-	statusErr error
+	calls        chan locateCall
+	err          error
+	status       string
+	lastError    string
+	lastErrorKey string
+	statusErr    error
 }
 
 func (f *fakeRepositoryLocator) LocateRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
@@ -221,15 +222,15 @@ func (f *fakeRepositoryLocator) LocateRepository(_ context.Context, serverID, re
 	return "locate-" + repoID, f.err
 }
 
-func (f *fakeRepositoryLocator) LocateStatus(_ context.Context, _ string) (string, string, error) {
+func (f *fakeRepositoryLocator) LocateStatus(_ context.Context, _ string) (string, string, string, error) {
 	if f.statusErr != nil {
-		return "", "", f.statusErr
+		return "", "", "", f.statusErr
 	}
 	state := f.status
 	if state == "" {
 		state = "attached"
 	}
-	return state, f.lastError, nil
+	return state, f.lastErrorKey, f.lastError, nil
 }
 
 func (f *fakeRepositoryAttacher) AttachRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
@@ -1871,7 +1872,7 @@ func TestControllerReportsImmediateLocateRejectionAsModal(t *testing.T) {
 }
 
 func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
-	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), lastError: "relocated working copy URL does not match projected repository"}
+	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), lastErrorKey: "repo.locate_other_repository", lastError: "relocated working copy URL does not match projected repository"}
 	target := filepath.Join(t.TempDir(), "WRONG")
 	platformFake := &platformtest.Fake{
 		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
@@ -1900,7 +1901,7 @@ func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	snapshot := platformFake.Snapshot()
-	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie można połączyć przeniesionej kopii" || !strings.Contains(snapshot.InfoRequests[0].Text, "innego repozytorium") || strings.Contains(snapshot.InfoRequests[0].Text, "does not match") {
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie można połączyć przeniesionej kopii" || !strings.Contains(snapshot.InfoRequests[0].Text, "innego repozytorium") || !strings.Contains(snapshot.InfoRequests[0].Text, "does not match") {
 		t.Fatalf("locate failure modal=%#v", snapshot.InfoRequests)
 	}
 	if len(snapshot.Notifications) != 1 || snapshot.Notifications[0].Urgency != platform.UrgencyCritical {

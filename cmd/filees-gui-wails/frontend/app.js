@@ -30,6 +30,14 @@ const escapeHTML = (value) => String(value ?? "")
 const localizedStates = new Set(["active", "busy", "initializing", "baselining", "paused", "stopping", "offline", "attention", "unattached", "disabled", "revoked", "unknown", "deleted"]);
 
 const actionErrors = {
+  get action_disconnected() { return t("error.action_disconnected"); },
+  get action_stale() { return t("error.action_stale"); },
+  get action_repository_missing() { return t("error.action_repository_missing"); },
+  get action_repository_initializing() { return t("error.action_repository_initializing"); },
+  get action_not_attached() { return t("error.action_not_attached"); },
+  get action_read_only() { return t("error.action_read_only"); },
+  get action_capability_unavailable() { return t("error.action_capability_unavailable"); },
+
   get actions_unavailable() { return t("error.actionsUnavailable"); },
   get action_unavailable() { return t("error.actionUnavailable"); },
   get action_queue_busy() { return t("error.queueBusy"); },
@@ -992,7 +1000,7 @@ async function acknowledgeAnnouncement() {
     if (!result.accepted) {
       announcementAckPending = "";
       renderAnnouncementDialog(currentSnapshot);
-      showToast({ level: "normal", title: t("shout.cannotAck"), message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("shout.cannotAck"), message: actionErrors[result.reason] || actionErrors[result.code] || result.code });
       return;
     }
     window.setTimeout(() => {
@@ -1244,7 +1252,7 @@ async function detachDeletedCopy() {
   $("#deleted-copy-dialog").close();
   try {
     const result = await GUIService.Trigger({ kind: "detach_repository", repo_id: repo.id, server_id: repo.server_id });
-    if (!result.accepted) showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
+    if (!result.accepted) showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.reason] || actionErrors[result.code] || result.code });
   } catch (error) {
     showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
   }
@@ -1272,7 +1280,7 @@ async function triggerAction(button) {
       path: button.dataset.path || "",
     });
     if (!result.accepted) {
-      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.reason] || actionErrors[result.code] || result.code });
     }
   } catch (error) {
     showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
@@ -1288,7 +1296,7 @@ async function triggerBulkPublicShares(button, serverID, channelIDs) {
   try {
     const result = await GUIService.Trigger({ kind: "revoke_public_shares", server_id: serverID, channel_ids: cleanIDs });
     if (!result.accepted) {
-      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.reason] || actionErrors[result.code] || result.code });
       return;
     }
     selectedPublicShares.clear();

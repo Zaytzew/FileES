@@ -16,6 +16,7 @@ import (
 
 	"filees/internal/durable"
 	"filees/pkg/clientview"
+	"filees/pkg/errcat"
 
 	"github.com/google/uuid"
 )
@@ -109,6 +110,7 @@ type Record struct {
 	LoadDumpKeepLastRevisions *int      `json:"load_dump_keep_last_revisions,omitempty"`
 	State                     State     `json:"state"`
 	LastError                 string    `json:"last_error,omitempty"`
+	LastErrorKey              string    `json:"last_error_key,omitempty"`
 	CreatedAt                 time.Time `json:"created_at"`
 	UpdatedAt                 time.Time `json:"updated_at"`
 }
@@ -330,6 +332,7 @@ func (s *Store) MarkAttached(operationID, repoID string) (Record, error) {
 			return errors.New("repository ID is invalid")
 		}
 		record.RepoID, record.State, record.LastError = repoID, StateAttached, ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -351,6 +354,7 @@ func (s *Store) MarkRepositoryCreated(operationID, repoID, repoURL string) (Reco
 		}
 		record.RepoID, record.RepoURL, record.Access = repoID, repoURL, "rw"
 		record.State, record.LastError = StateRepositoryCreated, ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -364,6 +368,7 @@ func (s *Store) ResumeCreate(operationID string) (Record, error) {
 			return errors.New("only a created repository can resume initial import")
 		}
 		record.LastError = ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -375,12 +380,14 @@ func (s *Store) Retry(operationID string) (Record, error) {
 		switch record.State {
 		case StateRequestPending, StateRepositoryCreated, StateAttaching, StateRelocating, StateReconciling, StateDetaching, StateDeleting:
 			record.LastError = ""
+			record.LastErrorKey = ""
 			return nil
 		case StateError:
 			if record.RepoID == "" || record.RepoURL == "" || (record.Access != "r" && record.Access != "rw") {
 				return errors.New("failed local operation has no resumable repository authority")
 			}
 			record.State, record.LastError = StateAttaching, ""
+			record.LastErrorKey = ""
 			return nil
 		default:
 			return errors.New("local repository operation does not require repair")
@@ -403,6 +410,7 @@ func (s *Store) Abandon(operationID string) (Record, error) {
 			return errors.New("only a failed create or attach operation can be abandoned")
 		}
 		record.State, record.LastError = StateAbandoned, ""
+		record.LastErrorKey = ""
 		record.PendingLocalPath = ""
 		record.RelocationAdoptExisting = false
 		record.RelocationMoveExisting = false
@@ -435,6 +443,7 @@ func (s *Store) RepairCreatedRepositoryInput(operationID, displayName, localPath
 			}
 		}
 		record.DisplayName, record.LocalPath, record.LastError = displayName, localPath, ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -454,6 +463,7 @@ func (s *Store) ApproveAttach(operationID, serverID, repoID, repoURL, access str
 			return errors.New("local repository operation cannot start attachment")
 		}
 		record.State, record.LastError, record.RepoURL, record.Access = StateAttaching, "", repoURL, access
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -470,6 +480,7 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 			record.State = StateError
 		}
 		record.LastError = cause.Error()
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -512,20 +523,21 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, errors.New("only an attached repository can be relocated")
 	}
 	if !filepath.IsAbs(newLocalPath) || newLocalPath == string(filepath.Separator) {
-		return Record{}, errors.New("relocation target must be an absolute disjoint non-root path")
+		return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target must be an absolute disjoint non-root path"))
 	}
 	// Locate may reaffirm the current root after the drive or mount becomes
 	// available again. A true relocation must remain disjoint.
 	if pathsOverlap(record.LocalPath, newLocalPath) && !(adoptExisting && filepath.Clean(newLocalPath) == filepath.Clean(record.LocalPath)) {
-		return Record{}, errors.New("relocation target must be an absolute disjoint non-root path")
+		return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target must be an absolute disjoint non-root path"))
 	}
 	for id, existing := range s.records {
 		if id != operationID && pathsOverlap(existing.LocalPath, newLocalPath) {
-			return Record{}, errors.New("relocation target overlaps another FileES repository root")
+			return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target overlaps another FileES repository root"))
 		}
 	}
 	before := record
 	record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, adoptExisting, moveExisting, "", s.now().UTC()
+	record.LastErrorKey = ""
 	if err := validate(record); err != nil {
 		return Record{}, err
 	}
@@ -543,6 +555,7 @@ func (s *Store) CompleteRelocation(operationID string) (Record, error) {
 			return errors.New("repository relocation is not in progress")
 		}
 		record.LocalPath, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.State, record.LastError = record.PendingLocalPath, "", false, false, StateAttached, ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -553,6 +566,11 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 			return errors.New("active relocation and failure are required")
 		}
 		record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError = StateAttached, "", false, false, cause.Error()
+		record.LastErrorKey = "repo.locate_failed"
+		var fault errcat.Fault
+		if errors.As(cause, &fault) && fault.Code == "REPO-2010" {
+			record.LastErrorKey = string(fault.Key)
+		}
 		return nil
 	})
 }
@@ -587,6 +605,7 @@ func (s *Store) BeginReconcile(serverID, repoID string, applyIgnorePolicy bool, 
 	record.LoadDumpApplyIgnorePolicy = applyIgnorePolicy
 	record.LoadDumpKeepLastRevisions = keepLastRevisions
 	record.LastError = ""
+	record.LastErrorKey = ""
 	record.UpdatedAt = s.now().UTC()
 	if err := validate(record); err != nil {
 		return Record{}, err
@@ -608,6 +627,7 @@ func (s *Store) CompleteReconcile(operationID string) (Record, error) {
 			return errors.New("repository reconcile is not in progress")
 		}
 		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", ""
+		record.LastErrorKey = ""
 		record.LoadDumpApplyIgnorePolicy, record.LoadDumpKeepLastRevisions = false, nil
 		return nil
 	})
@@ -626,6 +646,7 @@ func (s *Store) FailReconcile(operationID string, cause error) (Record, error) {
 			return errors.New("active reconcile and failure are required")
 		}
 		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", cause.Error()
+		record.LastErrorKey = ""
 		record.LoadDumpApplyIgnorePolicy, record.LoadDumpKeepLastRevisions = false, nil
 		return nil
 	})
@@ -706,6 +727,7 @@ func (s *Store) beginDetachLocked(serverID, repoID string, deleteRepository bool
 	record.RecoveryDismissed = false
 	record.LocalCleanupCompleted = false
 	record.LastError = ""
+	record.LastErrorKey = ""
 	record.UpdatedAt = s.now().UTC()
 	if err := validate(record); err != nil {
 		return Record{}, err
@@ -740,6 +762,7 @@ func (s *Store) MarkServerDeleted(operationID, retainUntil string) (Record, erro
 		record.ServerDeleteCompleted = true
 		record.RetainUntil = canonical
 		record.LastError = ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -767,6 +790,7 @@ func (s *Store) MarkRecoveryPrepared(operationID, kitPath string) (Record, error
 			record.RecoveryKitPath = ""
 		}
 		record.LastError = ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -836,6 +860,7 @@ func (s *Store) CompleteDetach(operationID string) (Record, error) {
 			return errors.New("repository detach is not in progress")
 		}
 		record.LastError = ""
+		record.LastErrorKey = ""
 		return nil
 	})
 }
@@ -849,6 +874,7 @@ func (s *Store) RecordDetachError(operationID string, cause error) (Record, erro
 			return errors.New("repository detach error is required")
 		}
 		record.LastError = cause.Error()
+		record.LastErrorKey = ""
 		return nil
 	})
 }

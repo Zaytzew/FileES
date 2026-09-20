@@ -21,7 +21,6 @@ import (
 	"filees/internal/gui/journal"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
-	"filees/pkg/errcat"
 	"filees/pkg/localpin"
 	"filees/pkg/realmbranding"
 )
@@ -117,7 +116,7 @@ type RepositoryLocator interface {
 	LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (operationID string, err error)
 	// LocateStatus observes the durable outcome. A rejected locate returns to
 	// "attached" with LastError set rather than entering lifecycle "error".
-	LocateStatus(ctx context.Context, operationID string) (state, lastError string, err error)
+	LocateStatus(ctx context.Context, operationID string) (state, lastErrorKey, lastError string, err error)
 }
 
 type RepositoryRelocator interface {
@@ -1277,7 +1276,7 @@ func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operatio
 			return
 		case <-timer.C:
 		}
-		state, lastError, err := c.cfg.RepositoryLocator.LocateStatus(ctx, operationID)
+		state, lastErrorKey, lastError, err := c.cfg.RepositoryLocator.LocateStatus(ctx, operationID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -1293,11 +1292,11 @@ func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operatio
 		delay = interval
 		switch state {
 		case "error":
-			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.messageLabel("REPO-2010", locateFailureKey(lastError), nil))
+			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.locateErrorBody(lastErrorKey, lastError))
 			return
 		case "attached":
 			if strings.TrimSpace(lastError) != "" {
-				c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.messageLabel("REPO-2010", locateFailureKey(lastError), nil))
+				c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.locateErrorBody(lastErrorKey, lastError))
 				return
 			}
 			title := c.uiText("feedback.locatedTitle", "Kopia robocza została wskazana")
@@ -4481,11 +4480,7 @@ func (c *Controller) actionErrorBody(err error) string {
 	}
 	code, _, _, key := structured.PresentationError()
 	details := structured.PresentationDetails()
-	if key == "repo.locate_failed" {
-		// The daemon reports the reason as prose here; classify it into a key
-		// so the reader gets the specific sentence in their own language.
-		key = locateFailureKey(strings.TrimSpace(details["detail"]))
-	}
+
 	sentence := c.messageLabel(code, key, details)
 	// The catalogue sentence names the class of failure, not the instance.
 	// The daemon already carries the instance in Details, and dropping it
@@ -4526,34 +4521,17 @@ func (c *Controller) publishPresentation(err error, texts ...func(string, string
 	}
 }
 
-// locateFailureKey classifies why a folder could not be bound to a share.
-//
-// The daemon still reports most of these as free text in Details, so this
-// matches on that text — but it yields a message KEY, never a sentence. The
-// difference matters: a key has wording in every language and one place to fix
-// it, while choosing a Polish sentence from an English fragment left English
-// readers with nothing and made the daemon's prose part of the interface.
-//
-// Emitting these keys from the daemon is the remaining half; when it lands,
-// these needles become dead code and go, with no change to what is rendered.
-func locateFailureKey(raw string) string {
-	switch {
-	case strings.TrimSpace(raw) == "":
-		return "repo.locate_failed"
-	case strings.Contains(raw, "not a Subversion working copy"):
-		return "repo.locate_not_working_copy"
-	case strings.Contains(raw, "does not match projected"):
-		return "repo.locate_other_repository"
-	case strings.Contains(raw, "working-copy identity"):
-		return "repo.locate_no_identity"
-	case strings.Contains(raw, "overlaps"), strings.Contains(raw, "disjoint"):
-		return "repo.locate_overlaps"
-	case errcat.KnownKey(raw):
-		// The daemon already sent a key instead of prose.
-		return raw
-	default:
-		return "repo.locate_failed"
+// Legacy lifecycle records have only diagnostics. Render the generic key
+// and retain that evidence; never guess identity from translated/free text.
+func (c *Controller) locateErrorBody(key, detail string) string {
+	if key == "" {
+		key = "repo.locate_failed"
 	}
+	body := c.messageLabel("REPO-2010", key, nil)
+	if strings.TrimSpace(detail) != "" {
+		body += "\n\n" + detail
+	}
+	return body
 }
 
 func (c *Controller) hintLabel(hint string) string {

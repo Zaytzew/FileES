@@ -934,15 +934,15 @@ func (adapter repositoryRelocateAdapter) RelocationStatus(ctx context.Context, o
 	return result.State, result.LastError, nil
 }
 
-func (adapter repositoryLocateAdapter) LocateStatus(ctx context.Context, operationID string) (string, string, error) {
+func (adapter repositoryLocateAdapter) LocateStatus(ctx context.Context, operationID string) (string, string, string, error) {
 	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if result == nil {
-		return "", "", errors.New("daemon returned an empty repository operation")
+		return "", "", "", errors.New("daemon returned an empty repository operation")
 	}
-	return result.State, result.LastError, nil
+	return result.State, result.LastErrorKey, result.LastError, nil
 }
 
 type repositoryDumpLoadClient interface {

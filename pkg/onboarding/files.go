@@ -1568,6 +1568,7 @@ func (s *Files) bundleFromTicketLocked(ticket Ticket, requestID string, now time
 
 func (s *Files) allocatePortLocked(now time.Time) (uint16, error) {
 	used := make(map[uint16]bool)
+	var nextExpiry time.Time
 	bundles, err := s.readBundlesLocked()
 	if err != nil {
 		return 0, err
@@ -1576,9 +1577,19 @@ func (s *Files) allocatePortLocked(now time.Time) (uint16, error) {
 		op := bundle.Operation
 		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted || op.State == OperationHelperAnnounced || op.State == OperationIdentityGenerated || op.State == OperationAccessStaged || op.State == OperationPossessionProved) {
 			used[op.AssignedReversePort] = true
+			if nextExpiry.IsZero() || op.ExpiresAt.Before(nextExpiry) {
+				nextExpiry = op.ExpiresAt
+			}
 		}
 	}
-	return s.portAllocator.Allocate(s.reversePortFirst, s.reversePortLast, func(port uint16) bool { return used[port] })
+	port, err := s.portAllocator.Allocate(s.reversePortFirst, s.reversePortLast, func(port uint16) bool { return used[port] })
+	if errors.Is(err, ErrNoReversePort) && !nextExpiry.IsZero() {
+		// Report the lease boundary, not a promise that another caller cannot
+		// acquire the released slot first. No identity or ticket is disclosed.
+		minutes := int((nextExpiry.Sub(now) + time.Minute - 1) / time.Minute)
+		return 0, fmt.Errorf("%w; next activation slot expiry in %d min", err, minutes)
+	}
+	return port, err
 }
 
 func (s *Files) readTicketsLocked() (map[string]Ticket, error) {

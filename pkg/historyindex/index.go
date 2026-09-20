@@ -190,6 +190,10 @@ func (x *Index) Extend(ctx context.Context, uuid string, src Source, pages int) 
 	if !validUUID(uuid) {
 		return 0, 0, ErrInvalidRepository
 	}
+	// Serialize writers separately; cached reads never wait for the network.
+	writer := x.lock(uuid + "\x00extend")
+	writer.Lock()
+	defer writer.Unlock()
 	l := x.lock(uuid)
 	l.Lock()
 	defer l.Unlock()
@@ -209,7 +213,10 @@ func (x *Index) Extend(ctx context.Context, uuid string, src Source, pages int) 
 		return 0, 0, err
 	}
 	indexed = last.Revision
-	if head, err = src.Head(ctx); err != nil {
+	l.Unlock()
+	head, err = src.Head(ctx)
+	l.Lock()
+	if err != nil {
 		return indexed, 0, err
 	}
 	if head < indexed {
@@ -229,7 +236,9 @@ func (x *Index) Extend(ctx context.Context, uuid string, src Source, pages int) 
 		}
 		oldest := indexed + 1
 		newest := min(indexed+int64(page), head)
+		l.Unlock()
 		commits, err := src.Log(ctx, newest, oldest, int(newest-oldest+1))
+		l.Lock()
 		if err != nil {
 			return indexed, head, err
 		}

@@ -157,6 +157,10 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 			if _, err := reapRecoveryCapabilities(r.ResultsRoot, time.Now()); err != nil {
 				return err
 			}
+			// Maintenance errors preserve records and must not deny unrelated requests.
+			if _, err := sweepLockReleases(ctx, config); err != nil {
+				report(stderr, "lock request maintenance", err)
+			}
 			return dispatcher.Serve(ctx, args[0], in, out)
 		})
 	}); err != nil {

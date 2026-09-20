@@ -581,6 +581,20 @@ func sameLockReleaseProjection(left, right []contract.LockReleaseRequest) bool {
 	return true
 }
 
+// LockReleaseRequests returns this activation/repository's private projection.
+// The daemon consumer must still observe SVN authority before any mutation.
+func (s *Server) LockReleaseRequests(serverID, repoID string) []contract.LockReleaseRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []contract.LockReleaseRequest
+	for _, r := range s.lockReleaseRequests[serverID] {
+		if r.RepoID == repoID {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func (s *Server) allLockReleaseRequests() []contract.LockReleaseRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -15,6 +15,15 @@ import (
 // projection after a same-token migration. No record is broadcast to another
 // client or carried through the generic notice channel.
 func (p ServicePublisher) PublishLockRelease(ctx context.Context, record LockReleaseRecord) error {
+	return p.publishLockRelease(ctx, record, false, false)
+}
+
+// RemoveLockRelease retires all private copies, including a migrated holder.
+func (p ServicePublisher) RemoveLockRelease(ctx context.Context, record LockReleaseRecord) error {
+	return p.publishLockRelease(ctx, record, true, true)
+}
+
+func (p ServicePublisher) publishLockRelease(ctx context.Context, record LockReleaseRecord, remove, allowMissing bool) error {
 	if !filepath.IsAbs(p.ServiceWC) || p.Runner == nil {
 		return errors.New("lock release projector is incomplete")
 	}
@@ -38,8 +47,11 @@ func (p ServicePublisher) PublishLockRelease(ctx context.Context, record LockRel
 		}
 		viewPath := filepath.Join(clientsRoot, entry.Name(), "view.json")
 		view, err := clientview.Load(viewPath)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			continue
+		}
+		if err != nil {
+			return err
 		}
 		if previous, exists := aliases[view.RealmID]; exists && previous != view.RealmAlias && previous != "" && view.RealmAlias != "" {
 			return errors.New("lock release projection found conflicting realm aliases")
@@ -54,7 +66,7 @@ func (p ServicePublisher) PublishLockRelease(ctx context.Context, record LockRel
 		foundRequester = foundRequester || projection.view.ClientID == record.RequesterClientID
 		foundHolder = foundHolder || projection.view.ClientID == record.HolderClientID
 	}
-	if !foundRequester || !foundHolder {
+	if !allowMissing && (!foundRequester || !foundHolder) {
 		return errors.New("lock release projection target is missing")
 	}
 	commitPaths := make([]string, 0, 2)
@@ -66,6 +78,9 @@ func (p ServicePublisher) PublishLockRelease(ctx context.Context, record LockRel
 			role, alias = "requester", aliases[record.HolderRealmID]
 		case record.HolderClientID:
 			role, alias = "holder", aliases[record.RequesterRealmID]
+		}
+		if remove {
+			role = ""
 		}
 		wanted := clientview.LockReleaseRequest{
 			RequestID: record.RequestID, RepoID: record.RepoID, Path: record.Path,
@@ -93,7 +108,7 @@ func (p ServicePublisher) PublishLockRelease(ctx context.Context, record LockRel
 			changed = true
 		}
 		if !changed {
-			if role != "" {
+			if role != "" || remove {
 				commitPaths = append(commitPaths, projection.path)
 			}
 			continue

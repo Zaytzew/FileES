@@ -358,11 +358,23 @@ func (s *Service) restoreStartup(ctx context.Context, wc string) bool {
 	return true
 }
 
+// BindWorkingCopy initializes identity before IPC callbacks become visible.
+// A service belongs to one repository for its entire lifetime.
+func (s *Service) BindWorkingCopy(repoID, wc string) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	if s.repoID != repoID {
+		s.repoID = repoID
+	}
+	if s.wc != wc {
+		s.wc = wc
+	}
+}
+
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	defer s.cancelConnectivityJournal()
-	s.repoID = repoID
-	s.wc = wc
+	s.BindWorkingCopy(repoID, wc)
 	if !s.workingCopyAvailable(wc) {
 		s.Logger.Warnf("working copy metadata disappeared at %s", wc)
 		return

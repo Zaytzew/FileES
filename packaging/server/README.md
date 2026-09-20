@@ -346,3 +346,14 @@ resident worker service to restart; the next authenticated operation execs the
 new image. Never overwrite `filees-bootstrap-entry`, `filees-entry`,
 `filees-client-entry`, mobile or recovery entries without restoring their exact
 OpenBSD ownership and set-id modes.
+
+### Lock release request maintenance
+
+`filees-admin -config /etc/filees/server.json repo reap-lock-requests`
+reconciles pending requests and removes terminal records after seven days,
+only when the exact original lock token is no longer live. Projection removal
+is committed before deleting the record. An unavailable authority or failed
+publication retains the record. Repository-control also runs this pass.
+`lock-requests-reap.crontab.example` supports cleanup without client activity;
+installation copies the example but does not activate cron. Run as
+`_filees-state` with the existing service WC/publication permissions.

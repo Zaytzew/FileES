@@ -1,0 +1,4 @@
+# Optional scheduled cleanup as _filees-state, after operator rollout.
+# Also runs on repository-control requests. Errors go to cron mail.
+MAILTO=root
+*/15 * * * * /usr/local/sbin/filees-admin -config /etc/filees/server.json repo reap-lock-requests >/dev/null

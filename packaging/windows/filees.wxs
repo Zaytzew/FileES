@@ -56,32 +56,7 @@
     </Component>
 
     <Component Id="FileESInterface" Directory="INSTALLFOLDER" Guid="*">
-      <!-- Both shortcuts are nested in the File, which is what makes them point
-           at it without an explicit Target, and both are Advertise="no".
-
-           The first attempt advertised the Start Menu entry and buried it in a
-           FileES subfolder. An advertised shortcut stores the installer's icon
-           cache as its target and resolves the real one through MSI when
-           clicked; it works, but Windows 11's Start does not surface it well and
-           the owner could not find the application at all. A single application
-           does not need a folder of its own either - it needs to be in the list
-           under its own name. -->
-      <File Id="FileESInterfaceExe" Source="$(var.SourceDir)\filees-gui-wails.exe" KeyPath="yes">
-        <Shortcut Id="FileESStartMenuShortcut"
-                  Directory="ProgramMenuFolder"
-                  Name="FileES"
-                  Description="Pilnuje Twoich plików"
-                  Icon="FileESIcon"
-                  WorkingDirectory="INSTALLFOLDER"
-                  Advertise="no" />
-        <Shortcut Id="FileESDesktopShortcut"
-                  Directory="DesktopFolder"
-                  Name="FileES"
-                  Description="Pilnuje Twoich plików"
-                  Icon="FileESIcon"
-                  WorkingDirectory="INSTALLFOLDER"
-                  Advertise="no" />
-      </File>
+      <File Id="FileESInterfaceExe" Source="$(var.SourceDir)\filees-gui-wails.exe" KeyPath="yes" />
     </Component>
 
     <!-- The supervisor and the windowless launcher. The launcher is what the
@@ -94,6 +69,20 @@
 
     <Component Id="FileESLauncher" Directory="INSTALLFOLDER" Guid="*">
       <File Id="FileESLauncherScript" Source="$(var.SourceDir)\start-filees.vbs" KeyPath="yes" />
+      <!-- All entry points start the pair through its singleton supervisor.
+           Interactive launches also raise an already-running Wails window. -->
+      <Shortcut Id="FileESStartMenuShortcut"
+                Directory="ProgramMenuFolder" Name="FileES"
+                Description="Pilnuje Twoich plików" Icon="FileESIcon"
+                Advertise="no" Target="[System64Folder]wscript.exe"
+                Arguments="&quot;[INSTALLFOLDER]start-filees.vbs&quot; --show"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="FileESDesktopShortcut"
+                Directory="DesktopFolder" Name="FileES"
+                Description="Pilnuje Twoich plików" Icon="FileESIcon"
+                Advertise="no" Target="[System64Folder]wscript.exe"
+                Arguments="&quot;[INSTALLFOLDER]start-filees.vbs&quot; --show"
+                WorkingDirectory="INSTALLFOLDER" />
       <!-- A sibling of the file rather than nested inside it, because a
            Shortcut under a File implicitly targets that file and WiX refuses an
            explicit Target there.

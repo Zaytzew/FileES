@@ -3,6 +3,7 @@
 package packaging_test
 
 import (
+	"encoding/xml"
 	"os"
 	"strings"
 	"testing"
@@ -81,5 +82,49 @@ func TestTheInstallerRequiresNothingTheBuilderCannotStage(t *testing.T) {
 		if !found {
 			t.Errorf("%s is not required, so a bundle without it would install", essential)
 		}
+	}
+}
+
+// A valid bundle is not enough: all MSI entry points must start the pair,
+// including the shortcuts used after an intentional daemon shutdown.
+func TestWindowsShortcutsStartTheSupervisedPair(t *testing.T) {
+	raw, err := os.ReadFile("windows/filees.wxs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Package struct {
+			Components []struct {
+				ID        string `xml:"Id,attr"`
+				Shortcuts []struct {
+					ID        string `xml:"Id,attr"`
+					Target    string `xml:"Target,attr"`
+					Arguments string `xml:"Arguments,attr"`
+				} `xml:"Shortcut"`
+			} `xml:"Component"`
+		} `xml:"Package"`
+	}
+	if err := xml.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"FileESStartMenuShortcut": `"[INSTALLFOLDER]start-filees.vbs" --show`,
+		"FileESDesktopShortcut":   `"[INSTALLFOLDER]start-filees.vbs" --show`,
+		"FileESStartupShortcut":   `"[INSTALLFOLDER]start-filees.vbs"`,
+	}
+	for _, component := range document.Package.Components {
+		for _, shortcut := range component.Shortcuts {
+			arguments, ok := want[shortcut.ID]
+			if !ok {
+				continue
+			}
+			if component.ID != "FileESLauncher" || shortcut.Target != "[System64Folder]wscript.exe" || shortcut.Arguments != arguments {
+				t.Fatalf("shortcut bypasses supervisor: %+v in %s", shortcut, component.ID)
+			}
+			delete(want, shortcut.ID)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing supervised shortcuts: %v", want)
 	}
 }

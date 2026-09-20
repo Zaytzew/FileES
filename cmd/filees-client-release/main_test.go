@@ -40,7 +40,10 @@ func TestWindowsProducerAndSignerUseTheConsumerContract(t *testing.T) {
 	for _, required := range []string{
 		"COMPONENT=" + config.DesktopUpdateComponent,
 		`release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$COMPONENT/$PLATFORM"`,
-		`-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"`,
+		`candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"`,
+		`channel_out="$candidate"`,
+		`-channel-out "$channel_out"`,
+		`mv "$channel_out" "$candidate"`,
 		`FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY"`,
 		`FILEES_RELEASE_REPO_URL="$FILEES_RELEASE_REPO_URL"`,
 		`packaging/build-client-bundle.sh`,

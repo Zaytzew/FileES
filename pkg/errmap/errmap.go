@@ -162,11 +162,13 @@ var (
 	sessionEndedNeedles = []string{
 		"filees-session-ended",
 	}
-	// identityRefusedNeedles matches OpenSSH refusing the client's key, e.g.
+	// identityRefusedNeedles matches activation proof refusal or OpenSSH
+	// refusing the client's key, e.g.
 	// "Permission denied (publickey)." or "(publickey,password)". The server
 	// was reached and answered; nothing about it is a network condition.
 	identityRefusedNeedles = []string{
 		"permission denied (publickey",
+		"proof does not match one live staged or active client",
 	}
 	authNeedles = []string{
 		"authorization failed", "authentication failed",

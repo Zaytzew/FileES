@@ -146,3 +146,37 @@ func TestCLICodesAreParsedInOrder(t *testing.T) {
 		t.Fatalf("parseCLICodes = %+v", got)
 	}
 }
+
+func TestIdentityRefusalOverridesSVNTransportCodes(t *testing.T) {
+	for _, refusal := range []string{
+		"proof does not match one live staged or active client",
+		"Permission denied (publickey).",
+	} {
+		t.Run(refusal, func(t *testing.T) {
+			diagnostic := refusal + "\nsvn: E170013: Unable to connect to a repository at URL 'svn+ssh://host/repo'\nsvn: E210002: Network connection closed unexpectedly"
+			cause := errors.New(diagnostic)
+			native := nativeFault("update", errors.New("exit status 1"), false,
+				receipt(`{"code":170013,"message":"Unable to connect to a repository at URL"}`, `{"code":210002,"message":"Network connection closed unexpectedly"}`), refusal)
+			for name, err := range map[string]error{"native": native, "cli": cliFault(cause, diagnostic)} {
+				if got := errmap.Classify(err); got.Key != errcat.KeyAuthFailed || got.IsNetwork() {
+					t.Errorf("%s: identity refusal classified as %+v", name, got)
+				}
+				if !IsIdentityRefused(err) || IsNetworkError(err) {
+					t.Errorf("%s: refusal entered network retry path: %v", name, err)
+				}
+			}
+			var failure *NativeFailure
+			if !errors.As(native, &failure) || len(failure.Codes()) != 2 || failure.Codes()[0] != 170013 || failure.Codes()[1] != 210002 || failure.Stderr != refusal {
+				t.Fatalf("native diagnostics lost: %v", native)
+			}
+			if !errors.Is(cliFault(cause, diagnostic), cause) {
+				t.Fatal("CLI cause lost")
+			}
+		})
+	}
+	// A transport close without the exact refusal remains a network failure.
+	err := nativeFault("update", nil, false, receipt(`{"code":210002,"message":"Network connection closed unexpectedly"}`), "proof service unavailable")
+	if got := errmap.Classify(err); got.Key != errcat.KeyConnectionDropped || IsIdentityRefused(err) {
+		t.Fatalf("ordinary disconnect treated as revoked identity: %+v", got)
+	}
+}

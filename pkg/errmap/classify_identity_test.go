@@ -39,3 +39,13 @@ func TestARefusedKeyIsAnIdentityRefusalNotAnOutage(t *testing.T) {
 		t.Fatalf("outage lost its network classification: %s", Classify(outage).Key)
 	}
 }
+
+func TestRefusedActivationProofIsNotAnOutage(t *testing.T) {
+	err := errors.New("filees-client-entry: proof does not match one live staged or active client\nsvn: E170013: Unable to connect to a repository at URL 'svn+ssh://host/repo'\nsvn: E210002: Network connection closed unexpectedly")
+	if got := Classify(err); got.Key != errcat.KeyAuthFailed || got.IsNetwork() {
+		t.Fatalf("proof refusal classified as %+v", got)
+	}
+	if !client.IsIdentityRefused(err) || client.IsNetworkError(err) {
+		t.Fatal("proof refusal must not enter the network retry path")
+	}
+}

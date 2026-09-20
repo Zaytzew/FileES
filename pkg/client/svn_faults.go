@@ -166,6 +166,11 @@ func nativeFault(verb string, exitErr error, truncated bool, stdout, stderr stri
 		Output:    strings.TrimRight(stdout+"\n"+stderr, "\n"),
 		Stderr:    strings.TrimSpace(stderr),
 	}
+	// SSH/activation can refuse before SVN receives a protocol response.
+	// Its transport codes describe the consequence, not the actual cause.
+	if IsIdentityRefused(failure) {
+		return errcat.New(errcat.KeyAuthFailed, map[string]string{"detail": failure.Error()}, failure)
+	}
 	key, code, ok := classifyNativeCodes(failure.Entries)
 	if !ok {
 		return failure
@@ -205,6 +210,9 @@ func parseCLICodes(diagnostic string) []NativeErrorEntry {
 // calls a revoked key a network blip. Reading the chain instead of the prose
 // makes the deeper code decide - the defect M9 describes.
 func cliFault(cause error, diagnostic string) error {
+	if IsIdentityRefused(cause) {
+		return errcat.New(errcat.KeyAuthFailed, map[string]string{"detail": cause.Error()}, cause)
+	}
 	entries := parseCLICodes(diagnostic)
 	key, code, ok := classifyNativeCodes(entries)
 	if !ok {

@@ -20,6 +20,7 @@ import (
 	"filees/pkg/config"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
+	"filees/pkg/errcat"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
 	"filees/pkg/recoverykit"
@@ -554,7 +555,7 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 	info, err := svn.GetInfo(ctx, check.CanonicalPath)
 	if err != nil || !infoHasURL(info, record.RepoURL) {
 		if err == nil {
-			err = errors.New("relocated working copy URL does not match projected repository")
+			err = errcat.New("repo.locate_other_repository", nil, errors.New("relocated working copy URL does not match projected repository"))
 		}
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
@@ -573,7 +574,7 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		}
 	}
 	if err := ensureWorkingCopyIdentity(check.CanonicalPath, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
-		p.rollbackRelocation(ctx, record, profile, fmt.Errorf("validate working-copy identity: %w", err))
+		p.rollbackRelocation(ctx, record, profile, errcat.New("repo.locate_no_identity", nil, fmt.Errorf("validate working-copy identity: %w", err)))
 		return
 	}
 	updated, err := p.local.CompleteRelocation(record.OperationID)

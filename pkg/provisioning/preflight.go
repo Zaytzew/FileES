@@ -2,6 +2,7 @@ package provisioning
 
 import (
 	"errors"
+	"filees/pkg/errcat"
 	"fmt"
 	"io"
 	"io/fs"
@@ -49,7 +50,7 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 			return LocalPathCheck{}, err
 		}
 		if info, err := os.Stat(filepath.Join(canonical, ".svn")); err != nil || !info.IsDir() {
-			return LocalPathCheck{}, errors.New("resumed attachment is not a Subversion working copy")
+			return LocalPathCheck{}, errcat.New("repo.locate_not_working_copy", nil, errors.New("resumed attachment is not a Subversion working copy"))
 		}
 	} else if mode == LocalPathCreateResume {
 		// A failed initial import may already have checked the new repository
@@ -70,7 +71,7 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 			return LocalPathCheck{}, fmt.Errorf("resolve existing repository root %q: %w", root, err)
 		}
 		if pathsOverlap(canonical, other) {
-			return LocalPathCheck{}, fmt.Errorf("local path %q overlaps existing repository root %q", canonical, other)
+			return LocalPathCheck{}, errcat.New("repo.locate_overlaps", nil, fmt.Errorf("local path %q overlaps existing repository root %q", canonical, other))
 		}
 	}
 
@@ -126,7 +127,7 @@ func reverseStrings(values []string) []string {
 func rejectWorkingCopy(path string) error {
 	for cursor := path; ; cursor = filepath.Dir(cursor) {
 		if info, err := os.Stat(filepath.Join(cursor, ".svn")); err == nil && info.IsDir() {
-			return fmt.Errorf("local path is inside an existing Subversion working copy rooted at %q", cursor)
+			return errcat.New("repo.locate_overlaps", nil, fmt.Errorf("local path is inside an existing Subversion working copy rooted at %q", cursor))
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect Subversion metadata at %q: %w", cursor, err)
 		}

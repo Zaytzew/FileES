@@ -50,6 +50,11 @@ func main() {
 		DumpDepth:     *dumpDepth,
 	}
 
+	if err := confineRotation(cfg.RepoPath, cfg.ArchiveDir); err != nil {
+		fmt.Fprintf(os.Stderr, "filees-rotate: sandbox: %v\n", err)
+		os.Exit(1)
+	}
+
 	if !*dryRun {
 		if _, found, err := svnrotate.Recover(cfg.RepoPath, cfg.ArchiveDir, ""); err != nil {
 			fmt.Fprintln(os.Stderr, err)

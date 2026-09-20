@@ -103,7 +103,13 @@ func TestDetachedCredentialStopsPeriodicTransportUntilActivation(t *testing.T) {
 			coordinator.UpdateView("manual", view)
 
 			deadline := time.Now().Add(time.Second)
-			for fetcher.calls.Load() == 0 && time.Now().Before(deadline) {
+			for time.Now().Before(deadline) {
+				coordinator.mu.RLock()
+				ready := coordinator.results[reposupervisor.Key{ServerID: "manual", RepoID: "one"}].detached && coordinator.results[reposupervisor.Key{ServerID: "manual", RepoID: "two"}].detached
+				coordinator.mu.RUnlock()
+				if ready {
+					break
+				}
 				time.Sleep(time.Millisecond)
 			}
 			if got := fetcher.calls.Load(); got != 1 {

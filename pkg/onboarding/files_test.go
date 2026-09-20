@@ -331,7 +331,7 @@ func TestPortExhaustionRollsBackSecondTicket(t *testing.T) {
 	if _, err := store.Take("one@example.net", uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Take("two@example.net", uuid.NewString()); !errors.Is(err, ErrNoReversePort) {
+	if _, err := store.Take("two@example.net", uuid.NewString()); !errors.Is(err, ErrNoReversePort) || !strings.Contains(err.Error(), "next activation slot expiry in") {
 		t.Fatalf("second take error=%v", err)
 	}
 	tickets, _ := store.ListTickets()

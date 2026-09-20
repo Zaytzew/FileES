@@ -219,7 +219,7 @@ func (s *Server) handleRepoRecoveryDismiss(req contract.Request) contract.Respon
 	}
 	result, err := service.DismissRecovery(payload.ServerID, payload.RepoID, payload.OperationID)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2018", "ERROR", "REQUIRE_ACTION", "repo.recovery_dismiss_failed", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2018", "ERROR", "REQUIRE_ACTION", "repo.recovery_dismiss_failed", map[string]string{"detail": err.Error()})
 	}
 	s.dismissDeletedProjection(payload.ServerID, payload.RepoID, false)
 	return contract.OKResponse(req.RequestID, result)
@@ -375,7 +375,7 @@ func (s *Server) handleServerDetach(req contract.Request) contract.Response {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 	if err := service.Detach(ctx, payload.ServerID); err != nil {
-		return contract.ErrResponse(req.RequestID, "SERVER-1001", "ERROR", "REQUIRE_ACTION", "server.detach_failed", nil)
+		return contract.ErrResponse(req.RequestID, "SERVER-1001", "ERROR", "REQUIRE_ACTION", "server.detach_failed", map[string]string{"detail": err.Error()})
 	}
 	s.RemoveServer(payload.ServerID)
 	return contract.OKResponse(req.RequestID, contract.ServerDetachResult{ServerID: payload.ServerID})
@@ -404,7 +404,7 @@ func (s *Server) handleServerSetSessionTimeout(req contract.Request) contract.Re
 			return contract.ErrResponse(req.RequestID, "SERVER-1002", "ERROR", "REQUIRE_ACTION", "server.session_timeout_invalid", nil)
 		}
 		talk.With("session-timeout:"+payload.ServerID).Warnf("save failed: %v", err)
-		return contract.ErrResponse(req.RequestID, "SERVER-1003", "ERROR", "REQUIRE_ACTION", "server.session_timeout_failed", nil)
+		return contract.ErrResponse(req.RequestID, "SERVER-1003", "ERROR", "REQUIRE_ACTION", "server.session_timeout_failed", map[string]string{"detail": err.Error()})
 	}
 	activation.SessionTimeoutMin = minutes
 	s.RegisterActivation(activation)
@@ -1248,7 +1248,7 @@ func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 	}
 	result, err := service.BeginRelocate(payload.ServerID, payload.RepoID, payload.NewLocalPath, payload.MoveExisting)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1301,7 +1301,12 @@ func (s *Server) handleRepoLocate(req contract.Request) contract.Response {
 	}
 	result, err := service.BeginLocate(payload.ServerID, payload.RepoID, payload.ExistingLocalPath)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "REQUIRE_ACTION", "repo.locate_failed", map[string]string{"detail": err.Error()})
+		key := "repo.locate_failed"
+		var fault errcat.Fault
+		if errors.As(err, &fault) && fault.Code == "REPO-2010" {
+			key = string(fault.Key)
+		}
+		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "REQUIRE_ACTION", key, map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1336,7 +1341,7 @@ func (s *Server) handleRepoLoadDump(req contract.Request) contract.Response {
 	}
 	result, err := service.BeginLoadDump(payload.ServerID, payload.RepoID, payload.ApplyCurrentIgnorePolicy, payload.KeepLastRevisions)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2014", "ERROR", "REQUIRE_ACTION", "repo.load_dump_failed", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2014", "ERROR", "REQUIRE_ACTION", "repo.load_dump_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1428,7 +1433,7 @@ func (s *Server) handleRepoAttachApprove(req contract.Request) contract.Response
 	}
 	result, err := service.ApproveAttach(payload.OperationID, payload.ServerID, payload.RepoID, summary.URL, summary.Access)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2005", "ERROR", "REQUIRE_ACTION", "repo.attachment_approval_failed", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2005", "ERROR", "REQUIRE_ACTION", "repo.attachment_approval_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1474,7 +1479,7 @@ func (s *Server) handleRepoCreateRequest(req contract.Request) contract.Response
 	}
 	result, err := service.BeginCreate(payload.ServerID, payload.DisplayName, payload.LocalPath)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1501,7 +1506,7 @@ func (s *Server) handleRepoAttachIntent(req contract.Request) contract.Response 
 	}
 	result, err := service.BeginAttach(payload.ServerID, payload.RepoID, payload.LocalPath, snapshot.AttachmentPolicy == "required")
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1662,7 +1667,7 @@ func (s *Server) handleUpdateStatus(req contract.Request) contract.Response {
 	defer cancel()
 	result, err := service.Status(ctx)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "UPDATE-1001", "ERROR", "RETRY_BACKOFF", "update.status_failed", nil)
+		return contract.ErrResponse(req.RequestID, "UPDATE-1001", "ERROR", "RETRY_BACKOFF", "update.status_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1676,7 +1681,7 @@ func (s *Server) handleUpdatePlan(req contract.Request) contract.Response {
 	defer cancel()
 	result, err := service.Plan(ctx)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "UPDATE-1002", "ERROR", "RETRY_BACKOFF", "update.plan_failed", nil)
+		return contract.ErrResponse(req.RequestID, "UPDATE-1002", "ERROR", "RETRY_BACKOFF", "update.plan_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1690,7 +1695,7 @@ func (s *Server) handleUpdateApply(req contract.Request) contract.Response {
 	defer cancel()
 	result, err := service.Apply(ctx)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "UPDATE-1003", "ERROR", "REQUIRE_ACTION", "update.apply_failed", nil)
+		return contract.ErrResponse(req.RequestID, "UPDATE-1003", "ERROR", "REQUIRE_ACTION", "update.apply_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1913,7 +1918,7 @@ func (s *Server) handleNoticeList(req contract.Request) contract.Response {
 	for _, rs := range repos {
 		items, err := rs.Notices()
 		if err != nil {
-			return contract.ErrResponse(req.RequestID, "SHOUT-1004", "ERROR", "RETRY_LOCAL", "shout.list_failed", nil)
+			return contract.ErrResponse(req.RequestID, "SHOUT-1004", "ERROR", "RETRY_LOCAL", "shout.list_failed", map[string]string{"detail": err.Error()})
 		}
 		notices = append(notices, items...)
 	}
@@ -1957,7 +1962,7 @@ func (s *Server) handleNoticeAck(req contract.Request) contract.Response {
 	s.mu.RUnlock()
 	for _, rs := range repos {
 		if err := rs.AckNotice(payload.NoticeID); err != nil {
-			return contract.ErrResponse(req.RequestID, "SHOUT-1005", "ERROR", "RETRY_LOCAL", "shout.ack_failed", nil)
+			return contract.ErrResponse(req.RequestID, "SHOUT-1005", "ERROR", "RETRY_LOCAL", "shout.ack_failed", map[string]string{"detail": err.Error()})
 		}
 	}
 	return contract.OKResponse(req.RequestID, map[string]bool{"acked": true})

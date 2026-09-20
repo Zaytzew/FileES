@@ -178,24 +178,24 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 		view.ClientRole = "normal"
 	}
 	if view.ClientRole != "normal" && view.ClientRole != "ro" {
-		return ClientView{}, errors.New("config.client_role: wymagane normal albo ro")
+		return ClientView{}, errors.New("config.client_role: expected normal or ro")
 	}
 	if file.Projection != nil {
 		workingCopy := filepath.Clean(strings.TrimSpace(file.Projection.WorkingCopy))
 		cachePath := filepath.Clean(strings.TrimSpace(file.Projection.CachePath))
 		relative := filepath.Clean(strings.TrimSpace(file.Projection.RelativeViewPath))
 		if !filepath.IsAbs(workingCopy) || !filepath.IsAbs(cachePath) {
-			return ClientView{}, errors.New("config.projection: working_copy i cache_path muszą być ścieżkami bezwzględnymi")
+			return ClientView{}, errors.New("config.projection: working_copy and cache_path must be absolute paths")
 		}
 		if relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return ClientView{}, errors.New("config.projection.relative_view_path: wymagana bezpieczna ścieżka względna")
+			return ClientView{}, errors.New("config.projection.relative_view_path: safe relative path required")
 		}
 		interval := time.Minute
 		if raw := strings.TrimSpace(file.Projection.Interval); raw != "" {
 			var err error
 			interval, err = time.ParseDuration(raw)
 			if err != nil || interval <= 0 {
-				return ClientView{}, errors.New("config.projection.interval: wymagana dodatnia wartość duration")
+				return ClientView{}, errors.New("config.projection.interval: positive duration required")
 			}
 		}
 		view.Projection = &Projection{WorkingCopy: workingCopy, RelativeViewPath: relative, CachePath: cachePath, Interval: interval}
@@ -226,14 +226,14 @@ func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot
 	repoURL = strings.TrimRight(strings.TrimSpace(repoURL), "/")
 	parsed, err := url.Parse(repoURL)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "svn" && parsed.Scheme != "svn+ssh" && parsed.Scheme != "https") {
-		return UpdateConfig{}, errors.New("config.update.repo_url: wymagany URL svn, svn+ssh albo https")
+		return UpdateConfig{}, errors.New("config.update.repo_url: svn, svn+ssh or https URL required")
 	}
 	password := false
 	if parsed.User != nil {
 		_, password = parsed.User.Password()
 	}
 	if password || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return UpdateConfig{}, errors.New("config.update.repo_url: hasło, query i fragment są zabronione")
+		return UpdateConfig{}, errors.New("config.update.repo_url: password, query and fragment are forbidden")
 	}
 	channel = strings.TrimSpace(channel)
 	if channel == "" {
@@ -244,7 +244,7 @@ func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot
 		component = DesktopUpdateComponent
 	}
 	if component != DesktopUpdateComponent {
-		return UpdateConfig{}, fmt.Errorf("config.update.component: klient desktopowy wymaga wartości %s", DesktopUpdateComponent)
+		return UpdateConfig{}, fmt.Errorf("config.update.component: desktop client requires %s", DesktopUpdateComponent)
 	}
 	platform = strings.TrimSpace(platform)
 	if platform == "" {
@@ -252,20 +252,20 @@ func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot
 	}
 	for name, value := range map[string]string{"channel": channel, "platform": platform} {
 		if !safeConfigIdentifier(value) {
-			return UpdateConfig{}, fmt.Errorf("config.update.%s: nieprawidłowy identyfikator", name)
+			return UpdateConfig{}, fmt.Errorf("config.update.%s: invalid identifier", name)
 		}
 	}
 	statePath = filepath.Clean(strings.TrimSpace(statePath))
 	stageRoot = filepath.Clean(strings.TrimSpace(stageRoot))
 	if !filepath.IsAbs(statePath) || !filepath.IsAbs(stageRoot) {
-		return UpdateConfig{}, errors.New("config.update: state_path i stage_root muszą być ścieżkami bezwzględnymi")
+		return UpdateConfig{}, errors.New("config.update: state_path and stage_root must be absolute paths")
 	}
 	svnProgram = strings.TrimSpace(svnProgram)
 	if svnProgram == "" {
 		svnProgram = "svn"
 	}
 	if strings.ContainsAny(svnProgram, "\r\n\x00") {
-		return UpdateConfig{}, errors.New("config.update: nieprawidłowa nazwa programu")
+		return UpdateConfig{}, errors.New("config.update: invalid program name")
 	}
 	return UpdateConfig{RepoURL: repoURL, Channel: channel, Component: component, Platform: platform, StatePath: statePath, StageRoot: stageRoot, SVNProgram: svnProgram}, nil
 }
@@ -288,27 +288,27 @@ func Load(path string) ([]Repo, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("plik konfiguracyjny %q nie istnieje", path)
+			return nil, fmt.Errorf("configuration file %q does not exist", path)
 		}
-		return nil, fmt.Errorf("nie udało się odczytać %q: %w", path, err)
+		return nil, fmt.Errorf("cannot read %q: %w", path, err)
 	}
 
 	var file jsonConfig
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&file); err != nil {
-		return nil, fmt.Errorf("błąd parsowania JSON %q: %w", path, err)
+		return nil, fmt.Errorf("invalid JSON %q: %w", path, err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("błąd parsowania JSON %q: dodatkowe dane po dokumencie", path)
+		return nil, fmt.Errorf("invalid JSON %q: trailing data after document", path)
 	}
 	identityFile := strings.TrimSpace(file.Transport.IdentityFile)
 	knownHosts := strings.TrimSpace(file.Transport.KnownHosts)
 	if !filepath.IsAbs(identityFile) || !filepath.IsAbs(knownHosts) {
-		return nil, errors.New("config.transport: identity_file i known_hosts muszą być ścieżkami bezwzględnymi")
+		return nil, errors.New("config.transport: identity_file and known_hosts must be absolute paths")
 	}
 	if strings.ContainsAny(identityFile+knownHosts, " \t\r\n") {
-		return nil, errors.New("config.transport: ścieżki nie mogą zawierać białych znaków")
+		return nil, errors.New("config.transport: paths must not contain whitespace")
 	}
 	identityFile, knownHosts = filepath.Clean(identityFile), filepath.Clean(knownHosts)
 	raw := file.Repositories
@@ -322,29 +322,29 @@ func Load(path string) ([]Repo, error) {
 	for i, r := range raw {
 		id := strings.TrimSpace(r.ID)
 		if id == "" {
-			return nil, fmt.Errorf("config[%d]: brak pola 'id'", i)
+			return nil, fmt.Errorf("config[%d]: missing 'id'", i)
 		}
 		if prev, ok := ids[id]; ok {
-			return nil, fmt.Errorf("config[%d].id: duplikat %q (pierwszy wpis: config[%d])", i, id, prev)
+			return nil, fmt.Errorf("config[%d].id: duplicate %q (first entry: config[%d])", i, id, prev)
 		}
 		ids[id] = i
 		repoURL := strings.TrimSpace(r.RepoURL)
 		if repoURL == "" {
-			return nil, fmt.Errorf("config[%d]: brak pola 'repo_url'", i)
+			return nil, fmt.Errorf("config[%d]: missing 'repo_url'", i)
 		}
 		parsedURL, parseErr := url.Parse(repoURL)
 		if parseErr != nil || parsedURL.Scheme != "svn+ssh" || parsedURL.Hostname() == "" || parsedURL.User == nil || (parsedURL.User.Username() != "_filees-client" && parsedURL.User.Username() != "_filees-data") {
-			return nil, fmt.Errorf("config[%d].repo_url: wymagany transport svn+ssh://: %q", i, repoURL)
+			return nil, fmt.Errorf("config[%d].repo_url: svn+ssh:// transport required: %q", i, repoURL)
 		}
 		if _, hasPassword := parsedURL.User.Password(); hasPassword || parsedURL.Port() != "" || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
-			return nil, fmt.Errorf("config[%d].repo_url: URL svn+ssh nie może zawierać hasła, portu, query ani fragmentu", i)
+			return nil, fmt.Errorf("config[%d].repo_url: svn+ssh URL must not contain password, port, query or fragment", i)
 		}
 		localPath := strings.TrimSpace(r.LocalPath)
 		if localPath == "" {
-			return nil, fmt.Errorf("config[%d]: brak pola 'local_path'", i)
+			return nil, fmt.Errorf("config[%d]: missing 'local_path'", i)
 		}
 		if !filepath.IsAbs(localPath) {
-			return nil, fmt.Errorf("config[%d].local_path: wymagana ścieżka bezwzględna: %q", i, localPath)
+			return nil, fmt.Errorf("config[%d].local_path: absolute path required: %q", i, localPath)
 		}
 		localPath, err = canonicalPath(localPath)
 		if err != nil {
@@ -355,7 +355,7 @@ func Load(path string) ([]Repo, error) {
 		if s := strings.TrimSpace(r.WatchInterval); s != "" {
 			watch, err = time.ParseDuration(s)
 			if err != nil || watch <= 0 {
-				return nil, fmt.Errorf("config[%d].watch_interval: wymagana dodatnia wartość duration", i)
+				return nil, fmt.Errorf("config[%d].watch_interval: positive duration required", i)
 			}
 		}
 		commit, err := parseDurationNonEmpty(r.CommitInterval)
@@ -367,7 +367,7 @@ func Load(path string) ([]Repo, error) {
 		if strings.TrimSpace(r.RateLimitShout) != "" {
 			shoutRate, err = time.ParseDuration(strings.TrimSpace(r.RateLimitShout))
 			if err != nil || shoutRate < 0 {
-				return nil, fmt.Errorf("config[%d].rate_limit_shout: wymagana nieujemna wartość duration", i)
+				return nil, fmt.Errorf("config[%d].rate_limit_shout: non-negative duration required", i)
 			}
 		}
 
@@ -375,14 +375,14 @@ func Load(path string) ([]Repo, error) {
 		if s := strings.TrimSpace(r.PollInterval); s != "" {
 			pollInterval, err = time.ParseDuration(s)
 			if err != nil || pollInterval <= 0 {
-				return nil, fmt.Errorf("config[%d].poll_interval: wymagana dodatnia wartość duration", i)
+				return nil, fmt.Errorf("config[%d].poll_interval: positive duration required", i)
 			}
 		}
 		var shutdownTimeout time.Duration
 		if s := strings.TrimSpace(r.ShutdownCommitTimeout); s != "" {
 			shutdownTimeout, err = time.ParseDuration(s)
 			if err != nil || shutdownTimeout <= 0 {
-				return nil, fmt.Errorf("config[%d].shutdown_commit_timeout: wymagana dodatnia wartość duration", i)
+				return nil, fmt.Errorf("config[%d].shutdown_commit_timeout: positive duration required", i)
 			}
 		}
 		passportTTL, err := parseOptionalPositiveDuration(r.EditPassportTTL)
@@ -405,16 +405,16 @@ func Load(path string) ([]Repo, error) {
 		effectiveHeartbeat := durationDefault(passportHeartbeat, 5*time.Minute)
 		effectiveMax := durationDefault(passportMax, 24*time.Hour)
 		if effectiveHeartbeat >= effectiveTTL {
-			return nil, fmt.Errorf("config[%d]: edit_passport_heartbeat musi być krótszy niż edit_passport_ttl", i)
+			return nil, fmt.Errorf("config[%d]: edit_passport_heartbeat must be shorter than edit_passport_ttl", i)
 		}
 		if effectiveMax < effectiveTTL {
-			return nil, fmt.Errorf("config[%d]: edit_passport_max_session musi być >= edit_passport_ttl", i)
+			return nil, fmt.Errorf("config[%d]: edit_passport_max_session must be >= edit_passport_ttl", i)
 		}
 		if r.MaxBatchFiles < 0 || r.MaxBatchMiB < 0 || r.BacklogFlushMiB < 0 {
-			return nil, fmt.Errorf("config[%d]: limity batcha nie mogą być ujemne", i)
+			return nil, fmt.Errorf("config[%d]: batch limits must not be negative", i)
 		}
 		if r.MaxBatchMiB > 0 && r.BacklogFlushMiB > 0 && r.BacklogFlushMiB < r.MaxBatchMiB {
-			return nil, fmt.Errorf("config[%d]: backlog_flush_mib musi być >= max_batch_mib", i)
+			return nil, fmt.Errorf("config[%d]: backlog_flush_mib must be >= max_batch_mib", i)
 		}
 
 		for j, pattern := range r.ShoutPatterns {
@@ -429,18 +429,18 @@ func Load(path string) ([]Repo, error) {
 		for j, t := range r.CommitTiers {
 			d, terr := time.ParseDuration(strings.TrimSpace(t.Interval))
 			if terr != nil || d <= 0 {
-				return nil, fmt.Errorf("config[%d].commit_tiers[%d]: wymagana dodatnia wartość interval", i, j)
+				return nil, fmt.Errorf("config[%d].commit_tiers[%d]: positive interval required", i, j)
 			}
 			if t.MaxMB < 0 {
-				return nil, fmt.Errorf("config[%d].commit_tiers[%d].max_mb: wartość nie może być ujemna", i, j)
+				return nil, fmt.Errorf("config[%d].commit_tiers[%d].max_mb: value must not be negative", i, j)
 			}
 			if seenCatchAll {
-				return nil, fmt.Errorf("config[%d].commit_tiers[%d]: tier po max_mb=0 jest nieosiągalny", i, j)
+				return nil, fmt.Errorf("config[%d].commit_tiers[%d]: tier after max_mb=0 is unreachable", i, j)
 			}
 			if t.MaxMB == 0 {
 				seenCatchAll = true
 			} else if j > 0 && t.MaxMB <= previousMax {
-				return nil, fmt.Errorf("config[%d].commit_tiers[%d].max_mb: wartości muszą rosnąć", i, j)
+				return nil, fmt.Errorf("config[%d].commit_tiers[%d].max_mb: values must increase", i, j)
 			}
 			tiers = append(tiers, TierSpec{MaxMB: t.MaxMB, Interval: d})
 			previousMax = t.MaxMB
@@ -454,7 +454,7 @@ func Load(path string) ([]Repo, error) {
 			access = "r"
 		}
 		if access != "rw" && access != "r" {
-			return nil, fmt.Errorf("config[%d].access: wymagane rw albo r", i)
+			return nil, fmt.Errorf("config[%d].access: expected rw or r", i)
 		}
 		out = append(out, Repo{
 			ID:                     id,
@@ -497,7 +497,7 @@ func parseOptionalPositiveDuration(raw string) (time.Duration, error) {
 	}
 	d, err := time.ParseDuration(strings.TrimSpace(raw))
 	if err != nil || d <= 0 {
-		return 0, errors.New("wymagana dodatnia wartość duration")
+		return 0, errors.New("positive duration required")
 	}
 	return d, nil
 }
@@ -519,7 +519,7 @@ func canonicalPath(path string) (string, error) {
 		return filepath.Clean(resolved), nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("nie można rozwiązać symlinków dla %q: %w", path, err)
+		return "", fmt.Errorf("cannot resolve symlinks for %q: %w", path, err)
 	}
 	return abs, nil
 }
@@ -529,7 +529,7 @@ func validateDisjointRoots(repos []Repo) error {
 		for j := i + 1; j < len(repos); j++ {
 			if pathsOverlap(repos[i].LocalPath, repos[j].LocalPath) {
 				return fmt.Errorf(
-					"config: repozytoria %q i %q mają nakładające się korzenie: %q i %q; zagnieżdżanie monitorowanych katalogów jest zabronione",
+					"config: repositories %q and %q have overlapping roots: %q and %q; nesting watched directories is forbidden",
 					repos[i].ID, repos[j].ID, repos[i].LocalPath, repos[j].LocalPath,
 				)
 			}
@@ -550,14 +550,14 @@ func pathsOverlap(a, b string) bool {
 func parseDurationNonEmpty(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, errors.New("puste")
+		return 0, errors.New("empty")
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		return 0, err
 	}
 	if d <= 0 {
-		return 0, errors.New("wymagana dodatnia wartość duration")
+		return 0, errors.New("positive duration required")
 	}
 	return d, nil
 }

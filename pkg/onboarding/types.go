@@ -31,7 +31,7 @@ var (
 	ErrTicketUnavailable = errors.New("onboarding ticket unavailable")
 	ErrRequestConflict   = errors.New("onboarding request already exists with different parameters")
 	ErrNotFound          = errors.New("onboarding record not found")
-	ErrNoReversePort     = errors.New("no reverse port available")
+	ErrNoReversePort     = errors.New("no reverse port available: another activation occupies the server activation slot; retry after it completes or expires")
 	ErrOTPInvalid        = errors.New("invalid onboarding OTP")
 	ErrOTPExpired        = errors.New("onboarding OTP expired")
 	ErrTunnelGrant       = errors.New("authorized tunnel grant unavailable")

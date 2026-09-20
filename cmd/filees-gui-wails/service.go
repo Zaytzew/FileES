@@ -248,6 +248,7 @@ type ActionRequest struct {
 }
 
 type ActionAcceptance struct {
+	Reason   string `json:"reason,omitempty"`
 	Accepted bool   `json:"accepted"`
 	Code     string `json:"code,omitempty"`
 }
@@ -461,7 +462,7 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	}
 	intent, allowed := translateAction(vm, request)
 	if !allowed {
-		return ActionAcceptance{Code: "action_unavailable"}
+		return ActionAcceptance{Code: "action_unavailable", Reason: rejectedActionReason(vm, request)}
 	}
 	tracked := pendingActionFor(vm, request, service.actionSeq.Add(1), service.localizeText)
 	if tracked.ID != "" && service.runner != nil {

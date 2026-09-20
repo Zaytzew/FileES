@@ -3,8 +3,10 @@ package localrepo
 import (
 	"encoding/json"
 	"errors"
+	"filees/pkg/errcat"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -702,5 +704,42 @@ func TestStoreDeletionRetryKeepsSameDurableOperation(t *testing.T) {
 	completed, err := store.CompleteDetach(record.OperationID)
 	if err != nil || completed.State != StateDeleted || !completed.DeleteRepository {
 		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
+
+func TestLocateFailureKeySurvivesRestartAndClearsOnRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(t.TempDir(), "wc")
+	record, err := store.BeginAttach("server", "repo", current, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.ApproveAttach(record.OperationID, "server", "repo", "svn+ssh://example/repo", "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.MarkAttached(record.OperationID, "repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.BeginLocate("server", "repo", current); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.FailRelocation(record.OperationID, errcat.New("repo.locate_no_identity", nil, errors.New("diagnostic changed independently"))); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(record.OperationID)
+	if got.LastErrorKey != "repo.locate_no_identity" || !strings.Contains(got.LastError, "diagnostic changed independently") {
+		t.Fatalf("lost diagnostic: %+v", got)
+	}
+	got, err = store.BeginLocate("server", "repo", current)
+	if err != nil || got.LastErrorKey != "" || got.LastError != "" {
+		t.Fatalf("stale diagnostic after retry: %+v %v", got, err)
 	}
 }

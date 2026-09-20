@@ -216,8 +216,11 @@ func List(root string) ([]Profile, error) {
 		}
 		// The directory carries the encoded form, so compare against that:
 		// an ID the filesystem cannot spell is stored under a name it can.
-		expected, nameErr := StateDirName(profile.ServerID)
-		if nameErr != nil || expected != entry.Name() {
+		expected, nameErr := ServerDir(root, profile.ServerID)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		if filepath.Base(expected) != entry.Name() {
 			return nil, fmt.Errorf("client profile directory does not match server ID %q", profile.ServerID)
 		}
 		if _, exists := seen[profile.ServerID]; exists {
@@ -237,11 +240,10 @@ func Remove(root, serverID string) error {
 	if !filepath.IsAbs(cleanRoot) || strings.TrimSpace(serverID) == "" || strings.ContainsAny(serverID, "/\\\x00\r\n\t ") {
 		return errors.New("client profile root or server ID is invalid")
 	}
-	name, err := StateDirName(serverID)
+	target, err := ServerDir(cleanRoot, serverID)
 	if err != nil {
 		return err
 	}
-	target := filepath.Join(cleanRoot, name)
 	if filepath.Dir(target) != cleanRoot {
 		return errors.New("client profile path escapes root")
 	}

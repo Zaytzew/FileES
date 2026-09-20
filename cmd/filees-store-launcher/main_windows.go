@@ -199,7 +199,8 @@ func runSupervisor(paths storePaths, showGUI bool) error {
 			if waitErr := cmd.Wait(); waitErr != nil {
 				logger.Printf("daemon exited: %v", waitErr)
 			} else {
-				logger.Print("daemon exited normally")
+				logger.Print("daemon exited normally; supervisor stops")
+				return nil
 			}
 		}
 		firstStart = false

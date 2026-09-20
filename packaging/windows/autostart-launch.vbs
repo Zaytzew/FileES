@@ -12,4 +12,9 @@ Dim shell, here, command
 Set shell = CreateObject("WScript.Shell")
 here = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\") - 1)
 command = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File """ & here & "\start-filees.ps1"""
+If WScript.Arguments.Count > 1 Then WScript.Quit 2
+If WScript.Arguments.Count = 1 Then
+    If WScript.Arguments(0) <> "--show" Then WScript.Quit 2
+    command = command & " -ShowGUI"
+End If
 shell.Run command, 0, False

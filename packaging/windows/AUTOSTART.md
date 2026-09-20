@@ -5,6 +5,24 @@ przez cały poprzedni dzień istniały **wyłącznie** na jego dysku — a to zn
 że nikt poza sesją, która je napisała, nie wiedział ani że istnieją, ani jak
 działają.
 
+## Korekta startu i zatrzymania — źródła 2026-09-20
+
+Start Menu i pulpit uruchamiają `wscript start-filees.vbs --show`; autostart
+używa tego samego launchera bez `--show`. Własność nadzorcy chroni mutex sesji.
+Kolejne kliknięcie podnosi istniejące Wails przez jego single-instance handler.
+Jeśli demon już zakończył pracę, kliknięcie czeka na zwolnienie mutexu przez
+starego nadzorcę i uruchamia pełną parę. Nadzorca zachowuje uchwyt procesu,
+adoptuje zastępcę po restarcie i ponawia awarię; zakończenie z kodem 0 bez
+zastępcy kończy też nadzorcę. Zamknięcie samego okna GUI nie wyłącza demona.
+Store również kończy nadzorcę po poprawnym zakończeniu procesu potomnego.
+
+To zmiana źródeł, bez MSI/bundla ani odbioru Windows (host niedostępny).
+Dotychczas zainstalowane skróty zmieni dopiero upgrade/repair MSI, a nowy
+skrypt zacznie obowiązywać po ponownym uruchomieniu nadzorcy. Instrukcje
+poniżej opisują starszą instalację; dla niej ręczne zatrzymanie nadzorcy
+przed podmianą nadal obowiązuje. Cross-build nie dowodzi zachowania COM,
+PowerShell, mutexu ani skrótów na Windows.
+
 ## Co jest zainstalowane
 
 Katalog produkcyjny: `%LOCALAPPDATA%\Programs\FileES\`

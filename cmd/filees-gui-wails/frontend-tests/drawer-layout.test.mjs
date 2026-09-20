@@ -74,3 +74,37 @@ test("renderer keeps archives and shelves in their drawer, including empty drawe
  const keys=[...html.matchAll(/data-idle-key="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(keys).size,keys.length);
  assert.match(render({id:"s",gui_scope:"r"},[]),/drawers.empty/);
 });
+
+test('background drawer refresh keeps controls enabled and cannot overwrite a newer gesture', async () => {
+ const source=readFileSync(new URL('../frontend/app.js',import.meta.url),'utf8');
+ const extract=name=>{
+  const start=source.indexOf(`function ${name}(`);
+  return source.slice(source.lastIndexOf('\n',start)+1,source.indexOf('\n}',start)+2);
+ };
+ for (const rejected of [false,true]) {
+  const server={id:'s',gui_scope:'realm'};
+  const original={scope:'realm',version:'old',data:''};
+  const entry={state:original,ready:true,busy:false,fetching:false,generation:0,next:0};
+  let resolve,reject;
+  const pending=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  const api=runInNewContext(`${extract('refreshDrawers')}\n${extract('modifyDrawers')}\n${extract('drawerToolbar')}\n({refreshDrawers,modifyDrawers,drawerToolbar})`,{
+   drawerState:()=>entry,drawerServer:()=>server,drawerEnabled:()=>true,
+   GUIService:{GetGUIBlob:()=>pending,SetGUIBlob:async(serverID,expected,data)=>({scope:'realm',version:'written',data})},
+   commitDrawerChange,rememberDrawers:(_,entry,state)=>{entry.state=state;entry.ready=true;},
+   currentSnapshot:{capabilities:['realm.gui_blob.v1']},renderRepositories:()=>{},scheduleWindowFit:()=>{},
+   drawerKey:()=>'',drawerDrafts:new Map(),expandedIdleGroups:new Set(),escapeHTML:String,t:key=>key,
+   showToast:()=>assert.fail('unexpected mutation failure'),
+  });
+  api.refreshDrawers(server);
+  assert.equal(entry.fetching,true);
+  assert.doesNotMatch(api.drawerToolbar(server),/disabled|drawers.loading/);
+  await api.modifyDrawers('s',{type:'create',id:'local',name:'New drawer'});
+  assert.equal(entry.state.version,'written');
+  if(rejected)reject(Error('old request failed'));else resolve(original);
+  await new Promise(r=>setTimeout(r,0));
+  assert.equal(entry.ready,true);
+  assert.equal(entry.fetching,false);
+  assert.equal(entry.state.version,'written');
+  assert.equal(parseDrawers(entry.state.data).drawers[0].id,'local');
+ }
+});

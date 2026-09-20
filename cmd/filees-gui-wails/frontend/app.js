@@ -6,6 +6,7 @@ import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.
 import { initializeLanguageMenu } from "./language-menu.js";
 import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
 import { parseDrawers, groupDrawers, commitDrawerChange } from "./drawer-layout.js";
+import { reconcileRepositoryHTML } from "./repository-dom.js";
 
 initializeTheme();
 initializeLanguage();
@@ -57,7 +58,8 @@ const autoFit = {
 function replaceHTMLIfChanged(node, html) {
   if (renderedHTML.get(node) === html) return false;
   renderedHTML.set(node, html);
-  node.innerHTML = html;
+  if (node.id === "repositories") reconcileRepositoryHTML(node, html);
+  else node.innerHTML = html;
   return true;
 }
 
@@ -458,7 +460,7 @@ function drawerKey(server) { return JSON.stringify([server.id,server.gui_scope])
 function drawerState(server) {
   const key = drawerKey(server);
   if (!drawerStates.has(key)) {
-    const entry = {state:{scope:server.gui_scope,version:"",data:""}, ready:false, busy:false, fetching:false, next:0};
+    const entry = {state:{scope:server.gui_scope,version:"",data:""}, ready:false, busy:false, fetching:false, generation:0, next:0};
     try {
       const saved = JSON.parse(localStorage.getItem("filees.drawers.v1:"+key) || "null");
       if (saved?.scope === server.gui_scope) { parseDrawers(saved.data); entry.state=saved; }
@@ -479,11 +481,12 @@ function refreshDrawers(server) {
   if (!drawerEnabled(server)) return;
   const entry=drawerState(server);
   if (entry.busy || entry.fetching || entry.next>Date.now()) return;
+  const generation=entry.generation;
   entry.fetching=true; entry.next=Date.now()+30000;
   GUIService.GetGUIBlob(server.id).then(state=>{
-    if (drawerServer(server.id)?.gui_scope !== server.gui_scope) return;
+    if (drawerServer(server.id)?.gui_scope !== server.gui_scope || entry.generation !== generation) return;
     rememberDrawers(server,entry,state);
-  }).catch(()=>{ entry.ready=false; }).finally(()=>{
+  }).catch(()=>{ if (entry.generation === generation) entry.ready=false; }).finally(()=>{
     entry.fetching=false;
     if (currentSnapshot) { renderRepositories(currentSnapshot); scheduleWindowFit(); }
   });
@@ -494,7 +497,7 @@ function drawerPicker(repo) {
   const entry=drawerState(server), layout=parseDrawers(entry.state.data);
   if (!layout.drawers.length) return "";
   const selected=Object.hasOwn(layout.repos,repo.id) ? layout.repos[repo.id] : "";
-  return `<select class="drawer-picker" data-drawer-repo="${escapeHTML(repo.id)}" aria-label="${escapeHTML(t("drawers.move"))}" title="${escapeHTML(t("drawers.move"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>
+  return `<select class="drawer-picker" data-drawer-repo="${escapeHTML(repo.id)}" aria-label="${escapeHTML(t("drawers.move"))}" title="${escapeHTML(t("drawers.move"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy?"disabled":""}>
     <option value="">${escapeHTML(t("drawers.none"))}</option>${layout.drawers.map(d=>`<option value="${escapeHTML(d.id)}" ${selected===d.id?"selected":""}>${escapeHTML(d.name)}</option>`).join("")}</select>`;
 }
 function drawerToolbar(server) {
@@ -502,7 +505,7 @@ function drawerToolbar(server) {
   const entry=drawerState(server), key=JSON.stringify([server.id,server.gui_scope,"drawer-tools"]);
   return `<details class="drawer-organizer" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(t("drawers.organize"))}</summary>
     <form data-drawer-create><label>${escapeHTML(t("drawers.name"))}<input name="drawer-name" maxlength="80" required value="${escapeHTML(drawerDrafts.get(drawerKey(server))||"")}" autocomplete="off"></label>
-    <button type="submit" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>${escapeHTML(t("drawers.create"))}</button>
+    <button type="submit" ${!drawerEnabled(server)||!entry.ready||entry.busy?"disabled":""}>${escapeHTML(t("drawers.create"))}</button>
     ${!entry.ready?`<span role="status">${escapeHTML(t(entry.fetching?"drawers.loading":"drawers.unavailable"))}</span>`:""}</form></details>`;
 }
 function renderDrawers(server,repos) {
@@ -512,15 +515,16 @@ function renderDrawers(server,repos) {
   const {groups,loose}=groupDrawers(repos,layout);
   return groups.map(drawer=>{
     const key=JSON.stringify([server.id,server.gui_scope,"drawer",drawer.id]);
-    return `<section class="repo-drawer"><header class="drawer-heading"><h4>${escapeHTML(drawer.name)} <small>(${drawer.repos.length})</small></h4>
-      <button type="button" data-drawer-delete="${escapeHTML(drawer.id)}" title="${escapeHTML(t("drawers.deleteHint"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy||entry.fetching?"disabled":""}>${escapeHTML(t("drawers.delete"))}</button></header>
+    return `<section class="repo-drawer" data-drawer-id="${escapeHTML(drawer.id)}"><header class="drawer-heading"><h4>${escapeHTML(drawer.name)} <small>(${drawer.repos.length})</small></h4>
+      <button type="button" data-drawer-delete="${escapeHTML(drawer.id)}" title="${escapeHTML(t("drawers.deleteHint"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy?"disabled":""}>${escapeHTML(t("drawers.delete"))}</button></header>
       ${drawer.repos.length?renderRepoGroup("",drawer.repos,"drawer-content",false,key):`<p class="drawer-empty">${escapeHTML(t("drawers.empty"))}</p>`}</section>`;
   }).join("")+renderRepoGroup("",loose,"drawer-loose",false,JSON.stringify([server.id,server.gui_scope,"loose"]));
 }
 async function modifyDrawers(serverID,action) {
   const server=drawerServer(serverID); if (!drawerEnabled(server)) return;
   const entry=drawerState(server);
-  if (!entry.ready || entry.busy || entry.fetching) return;
+  if (!entry.ready || entry.busy) return;
+  entry.generation++;
   entry.busy=true;
   renderRepositories(currentSnapshot);
   try {
@@ -675,7 +679,7 @@ function renderRepositories(snapshot) {
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
       || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
     const accent = /^#[0-9a-f]{6}$/i.test(server.accent_color || "") ? server.accent_color : "#FF6A00";
-    return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}" style="--realm-accent:${escapeHTML(accent)}">
+    return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}" data-gui-scope="${escapeHTML(server.gui_scope || "")}" style="--realm-accent:${escapeHTML(accent)}">
       <header class="server-header" data-toggle-server="${escapeHTML(server.id)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-controls="server-folders-${escapeHTML(server.id)}">
         <div class="server-identity"><span class="server-mark ${health.className}" role="img" aria-label="${escapeHTML(health.label)}" title="${escapeHTML(health.label)}"></span><div>
           <div class="server-title-line">
@@ -1427,7 +1431,7 @@ $("#intent-alerts").addEventListener("click", (event) => {
   if (button) triggerAction(button);
 });
 $("#repositories").addEventListener("toggle", event => {
-  const key = event.target.dataset?.idleKey; if (!key) return;
+  const key = event.target.dataset?.idleKey; if (!key || !event.target.isConnected) return;
   if(event.target.open) expandedIdleGroups.add(key); else expandedIdleGroups.delete(key);
 }, true);
 function refreshRepoViewPreferences() {

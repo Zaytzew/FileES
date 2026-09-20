@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>Repository DOM regression</title>
+<div id="fixture"></div>
+<script type="module">
+import { reconcileRepositoryHTML as render } from '../frontend/repository-dom.js';
+const root=document.querySelector('#fixture');
+let count=0;
+const check=(condition,label)=>{if(!condition)throw Error(label);count++;};
+const markup=({queue='idle',draft='nowa',scope='one',order=['a','b'],drawer=true}={})=>
+ `<article class="server-panel" data-server-id="s" data-gui-scope="${scope}"><header>Server</header><div id="folders" class="server-folders"><details data-idle-key="tools" open><summary>Drawers</summary><form><input value="${draft}"><button>Create</button></form></details>${drawer?`<section data-drawer-id="d"><h4>Drawer</h4>${order.map(id=>`<article data-repo-id="${id}"><span>${id==='a'?queue:id}</span><select><option value="">Loose</option><option value="d" selected>Drawer</option></select></article>`).join('')}</section>`:''}</div></article>`;
+try {
+ render(root,markup());
+ const input=root.querySelector('input'),details=root.querySelector('details'),drawer=root.querySelector('section');
+ const row=root.querySelector('[data-repo-id="a"]'),picker=row.querySelector('select');
+ const folders=root.querySelector('#folders');folders.style.setProperty('--repo-title-min','240px');
+ input.focus();input.setSelectionRange(1,3);
+ const changes=[];const observer=new MutationObserver(records=>changes.push(...records));observer.observe(root,{childList:true,subtree:true,attributes:true});
+ render(root,markup({queue:'published'}));
+ await new Promise(r=>setTimeout(r,0));
+ check(root.querySelector('input')===input,'input replaced');
+ check(document.activeElement===input&&input.selectionStart===1&&input.selectionEnd===3,'focus/caret lost');
+ check(root.querySelector('details')===details&&details.open,'details recreated or closed');
+ check(root.querySelector('section')===drawer&&root.querySelector('[data-repo-id="a"]')===row,'drawer/row replaced');
+ check(row.querySelector('select')===picker&&picker.value==='d','picker replaced');
+ check(row.querySelector('span').textContent==='published','status not updated');
+ check(folders.style.getPropertyValue('--repo-title-min')==='240px','measured width lost');
+ check(!changes.some(record=>[...record.removedNodes].includes(input)||[...record.removedNodes].includes(drawer)),'live controls detached');
+ changes.length=0;render(root,markup({queue:'published'}));await new Promise(r=>setTimeout(r,0));
+ check(changes.length===0,'identical snapshot mutates DOM');
+ input.value='nowa pisana';input.setSelectionRange(5,5);
+ render(root,markup({queue:'changed elsewhere',draft:'nowa pisana'}));
+ check(input.value==='nowa pisana'&&document.activeElement===input&&input.selectionStart===5,'draft editing interrupted');
+ render(root,markup({order:['b','a'],draft:'nowa pisana'}));
+ check(root.querySelector('[data-repo-id="a"]')===row&&drawer.firstElementChild.nextElementSibling.dataset.repoId==='b','keyed reorder failed');
+ render(root,markup({order:['b'],draft:'nowa pisana'}));check(!row.isConnected,'deleted row remains');
+ render(root,markup({draft:''}));check(input.value==='','successful submit cannot clear draft');
+ render(root,markup({drawer:false}));check(!drawer.isConnected,'deleted drawer remains');
+ render(root,markup({scope:'other'}));check(!input.isConnected,'realm replacement retains old controls');
+ observer.disconnect();
+ document.title=`PASS ${count}`;
+ window.webkit?.messageHandlers?.result?.postMessage(document.title);
+} catch(error) {
+ document.title='FAIL '+error.message;
+ window.webkit?.messageHandlers?.result?.postMessage(document.title);
+ throw error;
+}
+</script>

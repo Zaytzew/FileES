@@ -14,7 +14,6 @@ package svnrotate
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,10 +46,14 @@ type Meta struct {
 // Rotate performs the generation change. reason is recorded in meta.json
 // (the trigger description, or "forced"). Nothing touches the hot repo
 // except the temporary pre-commit block hook until the final swap; every
-// failure before the swap restores the hook and leaves the repo as found.
+// ordinary failure before preparation restores the hook. Once the durable
+// journal exists, the original fence and verified staging belong to recovery.
 func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(logw, "filees-rotate: "+format+"\n", a...)
+	}
+	if _, found, err := Recover(cfg.RepoPath, cfg.ArchiveDir, ""); found || err != nil {
+		return err
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -70,6 +73,9 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 		return err
 	}
 	defer release()
+	if _, found, err := recoverSwap(cfg.RepoPath, cfg.ArchiveDir, ""); found || err != nil {
+		return err
+	}
 
 	head, err := headRev(cfg.RepoPath)
 	if err != nil {
@@ -113,7 +119,12 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(workDir) // always our own fresh temp dir, never caller input
+	prepared := false
+	defer func() {
+		if !prepared {
+			_ = os.RemoveAll(workDir)
+		}
+	}()
 
 	// 3. Manifest of the full history, taken after writes stopped.
 	tag := archiveTag()
@@ -197,61 +208,19 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	logf("switching generations")
-	if err := os.Rename(cfg.RepoPath, archiveRepo); err != nil {
-		return fmt.Errorf("archive rename: %w", err)
+	meta := Meta{Tag: tag, RotatedAt: time.Now().UTC().Format(time.RFC3339), OldUUID: oldUUID, NewUUID: newUUID, OldHead: head, Reason: reason, ArchiveDir: archiveRepo, DumpRange: dumpRange}
+	transaction, err := prepareSwap(cfg.RepoPath, cfg.ArchiveDir, workDir, meta, tag+".log.xml", dumpName)
+	if _, journalErr := os.Lstat(swapPath(cfg.RepoPath, cfg.ArchiveDir)); journalErr == nil {
+		prepared = true
+		blockActive = false
 	}
-	if err := os.Rename(newRepo, cfg.RepoPath); err != nil {
-		err = fmt.Errorf("install rename: %w", err)
-		if rerr := os.Rename(archiveRepo, cfg.RepoPath); rerr != nil {
-			err = errors.Join(err, fmt.Errorf(
-				"ROLLBACK FAILED, hot repo is at %s: %w", archiveRepo, rerr))
-		}
-		return err
-	}
-	// The hot repo is now the new generation with the original hooks; the
-	// block hook lives on only in the frozen archive, by design.
-	blockActive = false
-	if err := fsyncDir(filepath.Dir(cfg.RepoPath)); err != nil {
-		return err
-	}
-	if err := fsyncDir(cfg.ArchiveDir); err != nil {
-		return err
-	}
-
-	// 9. Archive artifacts: manifest, meta, optional dump, FROZEN marker.
-	if err := os.Rename(manifestWork, filepath.Join(cfg.ArchiveDir, tag+".log.xml")); err != nil {
-		return fmt.Errorf("manifest into archive: %w", err)
-	}
-	if dumpWork != "" {
-		if err := os.Rename(dumpWork, filepath.Join(cfg.ArchiveDir, dumpName)); err != nil {
-			return fmt.Errorf("dump into archive: %w", err)
-		}
-	}
-	meta := Meta{
-		Tag:        tag,
-		RotatedAt:  time.Now().UTC().Format(time.RFC3339),
-		OldUUID:    oldUUID,
-		NewUUID:    newUUID,
-		OldHead:    head,
-		Reason:     reason,
-		ArchiveDir: archiveRepo,
-		DumpRange:  dumpRange,
-	}
-	metaData, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := writeFileExcl(filepath.Join(cfg.ArchiveDir, tag+".meta.json"),
-		append(metaData, '\n'), 0o640); err != nil {
-		return fmt.Errorf("meta.json: %w", err)
-	}
-	frozen := fmt.Sprintf("Frozen FileES repository generation.\nTag: %s\nUUID: %s\nHead: r%d\nCommits are permanently blocked by hooks/pre-commit.\n",
-		tag, oldUUID, head)
-	if err := writeFileExcl(filepath.Join(archiveRepo, "FROZEN"), []byte(frozen), 0o444); err != nil {
-		return fmt.Errorf("FROZEN marker: %w", err)
-	}
-	if err := fsyncDir(cfg.ArchiveDir); err != nil {
+	prepared = true
+	blockActive = false
+	swapCheckpoint("prepared")
+	if err := transaction.finish(cfg.ArchiveDir); err != nil {
 		return err
 	}
 

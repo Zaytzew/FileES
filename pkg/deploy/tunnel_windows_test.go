@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -128,8 +129,8 @@ func TestAskpassRejectsForeignPipeNames(t *testing.T) {
 // B1 and B8: the secret travels on the pipe, never in the environment handed
 // to ssh, and a hostile SSH_ASKPASS inherited from the caller is dropped.
 func TestBootstrapEnvironmentCarriesNoSecretAndDropsInheritedAskpass(t *testing.T) {
-	inherited := []string{"PATH=C:\\Windows", "SSH_ASKPASS=C:\\evil.exe", "SSH_ASKPASS_REQUIRE=never", "DISPLAY=:1", askpassPipeEnv + `=\\.\pipe\evil`}
-	scrubbed := scrubEnvironment(inherited, "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, connectKeyEnv, connectRequestIDEnv)
+	inherited := []string{"PATH=C:\\Windows", "SSH_ASKPASS=C:\\evil.exe", "SSH_ASKPASS_REQUIRE=never", "DISPLAY=:1", askpassPipeEnv + `=\\.\pipe\evil`, askpassServerPIDEnv + "=123"}
+	scrubbed := scrubEnvironment(inherited, "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, askpassServerPIDEnv, connectKeyEnv, connectRequestIDEnv)
 	for _, entry := range scrubbed {
 		if strings.HasPrefix(entry, "SSH_ASKPASS") || strings.HasPrefix(entry, "DISPLAY") || strings.HasPrefix(entry, askpassPipeEnv) {
 			t.Fatalf("inherited %q survived scrubbing", entry)
@@ -158,6 +159,7 @@ func TestAskpassRejectsAnOversizedReply(t *testing.T) {
 	go func() { _ = serveOTPOnce(pipe, bytes.Repeat([]byte("x"), 1025)) }()
 
 	t.Setenv(askpassPipeEnv, name)
+	t.Setenv(askpassServerPIDEnv, strconv.Itoa(os.Getpid()))
 	stdout, restore := captureStdout(t)
 	err = RunAskpass()
 	restore()
@@ -180,6 +182,7 @@ func TestAskpassPrintsTheSecretWithASingleNewline(t *testing.T) {
 	go func() { _ = serveOTPOnce(pipe, []byte("OTP-CODE")) }()
 
 	t.Setenv(askpassPipeEnv, name)
+	t.Setenv(askpassServerPIDEnv, strconv.Itoa(os.Getpid()))
 	stdout, restore := captureStdout(t)
 	err = RunAskpass()
 	restore()
@@ -312,4 +315,30 @@ func captureStdout(t *testing.T) (func() string, func()) {
 	}
 	t.Cleanup(restore)
 	return func() string { return <-collected }, restore
+}
+
+func TestAskpassRejectsAnotherPipeServerBeforeReading(t *testing.T) {
+	name, pipe, err := createOTPPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(pipe)
+	served := make(chan error, 1)
+	go func() { served <- serveOTPOnce(pipe, []byte("TEST-OTP")) }()
+	t.Setenv(askpassPipeEnv, name)
+	t.Setenv(askpassServerPIDEnv, strconv.Itoa(os.Getpid()+1))
+	stdout, restore := captureStdout(t)
+	err = RunAskpass()
+	restore()
+	if err == nil || !strings.Contains(err.Error(), "not the tunnel owner") {
+		t.Fatalf("wrong pipe server accepted: %v", err)
+	}
+	if got := stdout(); got != "" {
+		t.Fatal("untrusted pipe bytes reached stdout")
+	}
+	select {
+	case <-served:
+	case <-time.After(time.Second):
+		t.Fatal("pipe writer did not end after rejected connection")
+	}
 }

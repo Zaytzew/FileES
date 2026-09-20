@@ -1,4 +1,4 @@
-import { Events, Window, Call } from "/wails/runtime.js";
+import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
@@ -480,7 +480,7 @@ function refreshDrawers(server) {
   const entry=drawerState(server);
   if (entry.busy || entry.fetching || entry.next>Date.now()) return;
   entry.fetching=true; entry.next=Date.now()+30000;
-  Call.ByName("filees/cmd/filees-gui-wails.GUIService.GetGUIBlob",server.id).then(state=>{
+  GUIService.GetGUIBlob(server.id).then(state=>{
     if (drawerServer(server.id)?.gui_scope !== server.gui_scope) return;
     rememberDrawers(server,entry,state);
   }).catch(()=>{ entry.ready=false; }).finally(()=>{
@@ -524,7 +524,7 @@ async function modifyDrawers(serverID,action) {
   entry.busy=true;
   renderRepositories(currentSnapshot);
   try {
-    const state=await commitDrawerChange(entry.state,action,(version,data)=>Call.ByName("filees/cmd/filees-gui-wails.GUIService.SetGUIBlob",serverID,version,data));
+    const state=await commitDrawerChange(entry.state,action,(version,data)=>GUIService.SetGUIBlob(serverID,version,data));
     if (drawerServer(serverID)?.gui_scope !== server.gui_scope) return;
     rememberDrawers(server,entry,state);
     if (action.type==="create") drawerDrafts.delete(drawerKey(server));

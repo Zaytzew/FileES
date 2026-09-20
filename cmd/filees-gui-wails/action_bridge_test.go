@@ -213,6 +213,11 @@ func (stub *realmGrantClientStub) RepoSetEditingPolicy(_ context.Context, payloa
 	return &contract.RepoSetEditingPolicyResult{RepoID: payload.RepoID, Policy: payload.Policy}, nil
 }
 
+func (stub *shoutClientStub) BeginShoutDraft(ctx context.Context, _ string) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
+func (stub *shoutClientStub) SyncPause(context.Context, bool) error { return nil }
+
 func (stub *shoutClientStub) RepoPublish(_ context.Context, repoID, comment string) (*contract.RepoPublishResult, error) {
 	stub.repoID, stub.comment = repoID, comment
 	return &contract.RepoPublishResult{Revision: 17}, nil

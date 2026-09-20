@@ -28,6 +28,7 @@ type Server struct {
 	guiBlobs             GUIBlobService
 	memorySafety         *contract.MemorySafetyStatus
 	operationAdmission   runtime.Admission
+	syncPause            runtime.SyncPause
 	requestAdmission     runtime.Admission
 	projectionMu         sync.Mutex
 	dismissedLocalCopies map[string]bool // runtime fence; durable owner is localrepo
@@ -79,6 +80,8 @@ type Server struct {
 // OperationAdmission is the daemon's shared top-level work barrier. Wire all
 // participants before starting them. This accessor does not imply that IPC
 // dispatch or every background writer has already joined the barrier.
+func (s *Server) SyncPause() *runtime.SyncPause { return &s.syncPause }
+
 func (s *Server) OperationAdmission() *runtime.Admission { return &s.operationAdmission }
 
 type ActivationService interface {

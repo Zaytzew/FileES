@@ -311,6 +311,7 @@ type StackLifecycle interface {
 }
 
 type ShoutPublisher interface {
+	BeginDraft(context.Context, string) (context.Context, func(), error)
 	Publish(ctx context.Context, repoID, comment string) (int64, error)
 }
 
@@ -550,6 +551,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startStackLifecycle(ctx, true)
 	case tray.IntentShutdownFileES:
 		c.startStackLifecycle(ctx, false)
+	case tray.IntentPauseSync, tray.IntentResumeSync:
+		c.startSyncPause(ctx, intent.Kind)
 	case tray.IntentPublish:
 		c.startPublish(ctx, intent.RepoID)
 	case tray.IntentAckNotice:
@@ -1560,7 +1563,7 @@ func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
 		}
 		if err := c.cfg.ServerDetacher.DetachServer(ctx, serverID); err != nil {
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "server-detach." + serverID, Group: "server-detach." + serverID, Title: c.uiText("feedback.n005", "Nie udało się odłączyć serwera"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.reportActionError(ctx, "server-detach."+serverID, c.uiText("feedback.n005", "Nie udało się odłączyć serwera"), c.actionErrorBody(err))
 			}
 			return
 		}
@@ -3702,6 +3705,10 @@ func (c *Controller) startPublish(ctx context.Context, repoID string) {
 }
 
 func (c *Controller) handlePublish(ctx context.Context, repoID string) {
+	if !c.beginOperation("shout-editor") {
+		return
+	}
+	defer c.endOperation("shout-editor")
 	if c.cfg.Shouts == nil || c.cfg.Prompter == nil {
 		return
 	}
@@ -3709,16 +3716,37 @@ func (c *Controller) handlePublish(ctx context.Context, repoID string) {
 	if !vm.Connected || vm.Stale || !vm.CanPublish() {
 		return
 	}
-	result, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+	draftCtx, finish, err := c.cfg.Shouts.BeginDraft(ctx, repoID)
+	if err != nil {
+		c.reportActionError(ctx, "shout", c.uiText("error.publish", "Nie udało się opublikować wydania"), c.actionErrorBody(err))
+		return
+	}
+	defer finish()
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+	result, err := c.cfg.Prompter.PromptText(draftCtx, platform.PromptTextRequest{
 		PresentationKey: "form.publish",
 		Title:           "Opublikuj wydanie",
 		Text:            "Komentarz wydania (widoczny dla zespołu po aktualizacji):",
 		Placeholder:     "np. materiały na jutrzejsze spotkanie",
 	})
 	if err != nil || result.Cancelled {
+		cause := context.Cause(draftCtx)
+		finish()
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+		if cause != nil && ctx.Err() == nil {
+			c.reportActionError(ctx, "shout", c.uiText("error.publish", "Nie udało się opublikować wydania"), c.actionErrorBody(cause))
+		}
 		return
 	}
-	rev, err := c.cfg.Shouts.Publish(ctx, repoID, result.Value)
+	rev, err := c.cfg.Shouts.Publish(draftCtx, repoID, result.Value)
+	finish()
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
 	if err != nil {
 		title, body, infoOnly := c.publishPresentation(err, c.uiText)
 		if infoOnly {

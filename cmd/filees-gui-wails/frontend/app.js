@@ -283,6 +283,21 @@ function journalTime(item, now = new Date()) {
   return new Intl.RelativeTimeFormat(getLocale(), {numeric: "auto"}).format(-days, "day");
 }
 
+function renderSyncPause(snapshot) {
+  const state = snapshot.sync_pause || {};
+  const paused = Boolean(state.manual || state.draft);
+  const button = $("#sync-pause");
+  if (!button) return;
+  button.dataset.action = state.manual ? "resume_sync" : "pause_sync";
+  button.textContent = t(state.manual ? "pause.resume" : "pause.pause");
+  button.setAttribute("aria-pressed", String(Boolean(state.manual)));
+  button.disabled = !snapshot.connected || snapshot.stale || !(snapshot.capabilities || []).includes("sync.pause");
+  const banner = $("#sync-pause-status");
+  banner.hidden = !paused;
+  banner.textContent = paused ? t(state.draining ? "pause.draining" : state.manual && state.draft ? "pause.both" : state.manual ? "pause.manual" : "pause.draft") : "";
+  $("#pulse-card").classList.toggle("is-paused", paused);
+}
+
 function renderConnection(snapshot) {
   const core = $("#pulse-core");
   const freshness = $("#projection-freshness");
@@ -1113,6 +1128,7 @@ function render(snapshot) {
   const capabilities = new Set(snapshot.capabilities || []);
   pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
   renderConnection(snapshot);
+  renderSyncPause(snapshot);
   const memory = snapshot.memory_safety;
   const memoryBanner = $("#memory-safety");
   const memoryPhases = ["warning", "draining", "deferred", "cooldown", "restarting", "recovery_required"];
@@ -1523,6 +1539,7 @@ $("#ack-announcement").addEventListener("click", acknowledgeAnnouncement);
 $("#announcement-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) closeAnnouncement();
 });
+$("#sync-pause").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#client-version").addEventListener("click", openVersionDialog);
 $("#close-version").addEventListener("click", closeVersionDialog);
 $("#dismiss-version").addEventListener("click", closeVersionDialog);

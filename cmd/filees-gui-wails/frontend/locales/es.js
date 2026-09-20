@@ -1,5 +1,13 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "pause.pause": "Pausar",
+  "pause.resume": "Reanudar",
+  "pause.manual": "Sincronización pausada.",
+  "pause.draft": "Envío pausado — editando un anuncio.",
+  "pause.both": "Sincronización pausada — pausa manual y editor de anuncios.",
+  "pause.draining": "Pausando — terminando las operaciones iniciadas.",
+  "pause.failed": "No se pudo cambiar la pausa",
+
   "drawers.organize": "Cajones",
   "drawers.name": "Nombre del cajón",
   "drawers.create": "Crear cajón",

@@ -47,11 +47,13 @@ const (
 	CmdMobilePairingBegin = "mobile_pairing.begin"
 
 	// Repos
-	CmdRepoList                = "repo.list"                    // list all configured repos
-	CmdRepoStatus              = "repo.status"                  // snapshot of one repo
-	CmdRepoPause               = "repo.pause"                   // suspend automatic operations
-	CmdRepoResume              = "repo.resume"                  // resume after pause
-	CmdRepoSyncNow             = "repo.sync_now"                // request immediate poll/update
+	CmdRepoList                = "repo.list"     // list all configured repos
+	CmdRepoStatus              = "repo.status"   // snapshot of one repo
+	CmdRepoPause               = "repo.pause"    // suspend automatic operations
+	CmdRepoResume              = "repo.resume"   // resume after pause
+	CmdRepoSyncNow             = "repo.sync_now" // request immediate poll/update
+	CmdSyncPause               = "sync.pause"
+	CmdShoutDraft              = "shout.draft"
 	CmdRepoPublish             = "repo.publish"                 // request immediate commit of pending changes
 	CmdRepoCreateRequest       = "repo.create_request"          // persist intent; server work is a later stage
 	CmdRepoAttachIntent        = "repo.attach_intent"           // persist local path choice; no checkout yet
@@ -178,6 +180,8 @@ const (
 	CapRepoLifecycleStatus   = "repo.lifecycle_status"
 	CapRepoLifecycleRepair   = "repo.lifecycle_repair"
 	CapRepoActivity          = "repo.activity"
+	CapSyncPause             = "sync.pause"
+	CapShoutDraft            = "shout.draft"
 	CapRepoPublish           = "repo.publish"
 	CapRepoCommitRecovery    = "repo.commit_recovery.resolve.v1"
 	CapNoticeList            = "notice.list"
@@ -241,6 +245,8 @@ var AllCapabilities = []string{
 	CapRepoLifecycleStatus,
 	CapRepoLifecycleRepair,
 	CapRepoPublish,
+	CapSyncPause,
+	CapShoutDraft,
 	CapRepoCommitRecovery,
 	CapRepoIntentResolution,
 	CapNoticeList,
@@ -258,7 +264,25 @@ type HelloResult struct {
 }
 
 // SystemStatusResult is the result for CmdSystemStatus.
+// SyncPauseStatus describes local sync workers, not server jobs or other desktops.
+type SyncPauseStatus struct {
+	Manual   bool `json:"manual"`
+	Draft    bool `json:"draft"`
+	Draining bool `json:"draining"`
+}
+type SyncPausePayload struct {
+	Paused bool `json:"paused"`
+}
+type ShoutDraftPayload struct {
+	Token  string `json:"token"`
+	Action string `json:"action"`
+}
+type ShoutDraftResult struct {
+	Ready bool `json:"ready"`
+}
+
 type SystemStatusResult struct {
+	SyncPause    SyncPauseStatus     `json:"sync_pause"`
 	MemorySafety *MemorySafetyStatus `json:"memory_safety,omitempty"`
 	State        string              `json:"state"` // "running" | "stopping"
 	UptimeSec    int64               `json:"uptime_sec"`
@@ -1039,7 +1063,8 @@ type RepoSummary struct {
 
 // RepoPublishPayload is the required comment for a shouting commit.
 type RepoPublishPayload struct {
-	Comment string `json:"comment"`
+	DraftToken string `json:"draft_token,omitempty"`
+	Comment    string `json:"comment"`
 }
 
 // RepoPublishResult is the revision created by a shouting commit.

@@ -467,11 +467,23 @@ func (adapter realmGrantAdapter) SetEditingPolicy(ctx context.Context, serverID,
 }
 
 type shoutClient interface {
+	BeginShoutDraft(context.Context, string) (context.Context, func(), error)
+	SyncPause(context.Context, bool) error
 	RepoPublish(context.Context, string, string) (*contract.RepoPublishResult, error)
 	NoticeAck(context.Context, string) error
 }
 
 type shoutAdapter struct{ client shoutClient }
+
+func (adapter shoutAdapter) BeginDraft(ctx context.Context, repo string) (context.Context, func(), error) {
+	if adapter.client == nil {
+		return nil, nil, errors.New("shout editor is unavailable")
+	}
+	return adapter.client.BeginShoutDraft(ctx, repo)
+}
+func (adapter shoutAdapter) SyncPause(ctx context.Context, paused bool) error {
+	return adapter.client.SyncPause(ctx, paused)
+}
 
 func (adapter shoutAdapter) Publish(ctx context.Context, repoID, comment string) (int64, error) {
 	if adapter.client == nil {

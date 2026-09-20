@@ -15,6 +15,7 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/runtime"
 	"filees/pkg/talk"
 )
 
@@ -194,4 +195,18 @@ func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
 	if snapshot.State != contract.StateInteractionRequired || snapshot.CurrentOperation == nil || *snapshot.CurrentOperation != "working_copy_missing" {
 		t.Fatalf("moved read-only working copy snapshot=%+v", snapshot)
 	}
+}
+
+func TestReadOnlyCycleHonoursGeneralPause(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := &runtime.SyncPause{}
+	p.SetManual(true)
+	server := ipcserver.New(t.TempDir())
+	state := server.RegisterRepo("docs", "svn://example/docs", wc)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	runReadOnlyRepo(ctx, config.Repo{ID: "docs", LocalPath: wc, PollInterval: time.Millisecond}, state, nil, nil, talk.With("pause-test"), p)
 }

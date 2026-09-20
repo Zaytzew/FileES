@@ -1,5 +1,13 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "pause.pause": "Pausieren",
+  "pause.resume": "Fortsetzen",
+  "pause.manual": "Synchronisierung pausiert.",
+  "pause.draft": "Senden pausiert — Mitteilung wird bearbeitet.",
+  "pause.both": "Synchronisierung pausiert — manuelle Pause und Mitteilungseditor.",
+  "pause.draining": "Wird pausiert — laufende Vorgänge werden abgeschlossen.",
+  "pause.failed": "Pause konnte nicht geändert werden",
+
   "drawers.organize": "Schubladen",
   "drawers.name": "Name der Schublade",
   "drawers.create": "Schublade erstellen",

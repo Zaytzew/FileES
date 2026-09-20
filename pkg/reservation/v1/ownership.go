@@ -63,9 +63,11 @@ func validateOwnership(r Result) error {
 		}
 		seen[e.Path] = true
 		id, err := hex.DecodeString(e.ID)
-		if err != nil || len(id) != 32 || e.CreatedRevision < 1 || e.CreatedRevision > s.Revision || e.FirstCommitter == "" || (e.Kind != "file" && e.Kind != "dir") {
+		if err != nil || len(id) != 32 || e.CreatedRevision < 1 || e.CreatedRevision > s.Revision || (e.Kind != "file" && e.Kind != "dir") {
 			return fail
 		}
+		// Historical SVN revisions may have no author. Authority comes from the
+		// server-resolved owner, not the optional original author attribution.
 		if _, err := uuid.Parse(e.OwnerRealmID); err != nil {
 			return fail
 		}

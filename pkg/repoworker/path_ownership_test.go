@@ -15,6 +15,7 @@ import (
 	"filees/pkg/clientview"
 	"filees/pkg/passport"
 	"filees/pkg/pathownership"
+	reservation "filees/pkg/reservation/v1"
 	"github.com/google/uuid"
 )
 
@@ -254,5 +255,59 @@ func TestOwnershipGrantRecordValidation(t *testing.T) {
 func TestOwnershipOutputCannotBypassBoundThroughReadFrom(t *testing.T) {
 	if _, ok := any(&ownershipOutput{}).(io.ReaderFrom); ok {
 		t.Fatal("io.Copy can bypass bounded Write")
+	}
+}
+
+// Imported or maintenance revisions can have no svn:author. Their provenance
+// must survive the wire; rights still require an active authoritative owner.
+func TestAnonymousHistoryOwnershipReachesClient(t *testing.T) {
+	for _, name := range []string{"svn", "svnadmin"} {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skip(name + " unavailable")
+		}
+	}
+	f := newReplacementFixture(t)
+	svn, _ := exec.LookPath("svn")
+	source := SVNPathOwners{SVN: svn, RepositoriesRoot: t.TempDir(), ServiceWC: f.authority.ServiceWC, CacheRoot: t.TempDir()}
+	repoPath := filepath.Join(source.RepositoriesRoot, f.req.RepoID)
+	wc := filepath.Join(t.TempDir(), "wc")
+	replacementCommand(t, "svnadmin", "create", repoPath)
+	replacementCommand(t, svn, "co", svnurl.File(repoPath), wc)
+	legacy := filepath.Join(wc, "legacy.bin")
+	if err := os.WriteFile(legacy, []byte("historical data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replacementCommand(t, svn, "add", legacy)
+	replacementCommand(t, svn, "ci", "-m", "historical fixture", wc)
+	empty := filepath.Join(t.TempDir(), "empty-author")
+	if err := os.WriteFile(empty, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	replacementCommand(t, "svnadmin", "setrevprop", repoPath, "-r", "1", "svn:author", empty)
+	resolved, err := source.Snapshot(t.Context(), f.req.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := reservation.Result{Schema: reservation.AutolockSchema, RepoID: f.req.RepoID, RepositoryState: "active", Generation: "1", AsOf: time.Now(), PathOwnership: &resolved}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := reservation.ParseResult(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := decoded.PathOwnership.Entries[0]
+	if entry.FirstCommitter != "" || entry.OwnerRealmID != f.owner || entry.ID != resolved.Entries[0].ID {
+		t.Fatalf("lost provenance or owner: %+v", entry)
+	}
+	f.put(t, filepath.Join("admin", "repositories", f.req.RepoID+".json"), repositoryRecord{Schema: RepositorySchema, RepoID: f.req.RepoID, State: "active"})
+	if _, err = source.Snapshot(t.Context(), f.req.RepoID); err == nil {
+		t.Fatal("anonymous history created authority without owner")
+	}
+	f.put(t, filepath.Join("admin", "repositories", f.req.RepoID+".json"), repositoryRecord{Schema: RepositorySchema, RepoID: f.req.RepoID, OwnerRealmID: f.owner, State: "active"})
+	f.realm(t, f.owner, "removed")
+	if _, err = source.Snapshot(t.Context(), f.req.RepoID); err == nil {
+		t.Fatal("anonymous history created authority for inactive realm")
 	}
 }

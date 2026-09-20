@@ -19,6 +19,15 @@ func TestAutolockWireValidation(t *testing.T) {
 		valid  bool
 	}{
 		{"fresh", func(*Result) {}, true},
+		{"anonymous historical author", func(r *Result) { r.PathOwnership.Entries[0].FirstCommitter = "" }, true},
+		{"anonymous without owner", func(r *Result) {
+			r.PathOwnership.Entries[0].FirstCommitter = ""
+			r.PathOwnership.Entries[0].OwnerRealmID = ""
+		}, false},
+		{"anonymous malformed owner", func(r *Result) {
+			r.PathOwnership.Entries[0].FirstCommitter = ""
+			r.PathOwnership.Entries[0].OwnerRealmID = "not-a-realm"
+		}, false},
 		{"unknown ownership", func(r *Result) { r.PathOwnership = nil; r.OwnershipDetail = "legacy grant" }, true},
 		{"absent ownership", func(r *Result) { r.PathOwnership = nil }, false},
 		{"legacy schema", func(r *Result) { r.Schema = StateSchema }, false},

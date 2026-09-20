@@ -74,6 +74,10 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 		return LoadedDump{}, err
 	}
 
+	if loaded, found, err := s.replayLoad(ctx, repoPath, realmID, repoID, operationID, applyIgnorePolicy, keepLastRevisions); found || err != nil {
+		return loaded, err
+	}
+
 	// §4: precondition. HEAD must be exactly the carrier commit — this is
 	// both the only authorization gate for the destructive side effect and
 	// the protection against retrofitting onto a repo with real content.
@@ -115,37 +119,34 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 		dump, low, high = bounded, boundedLow, boundedHigh
 	}
 
+	loaded := LoadedDump{SourceRevisionRange: fmt.Sprintf("r%d:r%d", low, high), ToolVersions: toolVersions}
 	cfg := svnrotate.LoadConfig{RepoPath: repoPath, ArchiveDir: s.ArchiveDir}
-	meta, err := svnrotate.LoadGeneration(cfg, bytes.NewReader(dump), operationID, os.Stderr)
-	if err != nil {
+	cfg.Prepare = func(staging string, meta svnrotate.Meta) error {
+		loaded.OldUUID, loaded.NewUUID = meta.OldUUID, meta.NewUUID
+		// Configuration must be installed before the generation is visible.
+		if err := writeDataAuthzConf(staging, s.DataAuthzFile); err != nil {
+			return err
+		}
+		return atomicJSON(filepath.Join(staging, "conf", "filees-load-receipt.json"), dumpLoadReceipt{
+			Schema: "filees.load-receipt.v1", RealmID: realmID, RepoID: repoID, OperationID: operationID,
+			ApplyIgnorePolicy: applyIgnorePolicy, KeepLastRevisions: keepLastRevisions, Result: loaded, Meta: meta,
+		})
+	}
+	if _, err := svnrotate.LoadGeneration(cfg, bytes.NewReader(dump), operationID, os.Stderr); err != nil {
 		return LoadedDump{}, fmt.Errorf("LOAD_REPOSITORY_DUMP: %w", err)
 	}
-
-	// The new generation's conf/ came from svnadmin create's bare defaults
-	// (LoadGeneration does not inherit a carrier's conf/ — it never had any
-	// of its own beyond what CreateFSFS wrote). Overwrite it with the same
-	// canonical data-authz configuration every repository gets.
-	if err := writeDataAuthzConf(repoPath, s.DataAuthzFile); err != nil {
-		return LoadedDump{}, fmt.Errorf("LOAD_REPOSITORY_DUMP: %w", err)
-	}
-
-	return LoadedDump{
-		OldUUID: meta.OldUUID, NewUUID: meta.NewUUID,
-		SourceRevisionRange: fmt.Sprintf("r%d:r%d", low, high),
-		ToolVersions:        toolVersions,
-	}, nil
+	return loaded, nil
 }
 
 // writeDataAuthzConf restores the canonical svnserve.conf every FileES data
-// repository gets, mirroring ServerEffects.CreateFSFS — LoadGeneration built
-// the new generation with svnadmin create's bare defaults, which point at
-// no authz file at all.
+// repository gets, mirroring ServerEffects.CreateFSFS. Prepare installs it
+// in staging; svnadmin create's bare defaults point at no authz file.
 func writeDataAuthzConf(repoPath, dataAuthzFile string) error {
 	if !filepath.IsAbs(dataAuthzFile) {
 		return errors.New("data authz path must be absolute")
 	}
 	conf := []byte("[general]\nanon-access = none\nauth-access = write\nauthz-db = " + dataAuthzFile + "\n")
-	return os.WriteFile(filepath.Join(repoPath, "conf", "svnserve.conf"), conf, 0o600)
+	return atomicBytes(filepath.Join(repoPath, "conf", "svnserve.conf"), conf)
 }
 
 func (s DumpLoadService) checkOwnership(repoID, realmID string) error {
@@ -325,4 +326,61 @@ func toolVersion(ctx context.Context, bin string) string {
 	}
 	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
 	return line
+}
+
+// The receipt is server-owned configuration, never imported SVN content. It
+// travels with the staged generation in the swap, so a new worker can prove
+// which operation installed that generation even without a result-store entry.
+type dumpLoadReceipt struct {
+	Schema            string         `json:"schema"`
+	RealmID           string         `json:"realm_id"`
+	RepoID            string         `json:"repo_id"`
+	OperationID       string         `json:"operation_id"`
+	ApplyIgnorePolicy bool           `json:"apply_ignore_policy"`
+	KeepLastRevisions *int           `json:"keep_last_revisions"`
+	Result            LoadedDump     `json:"result"`
+	Meta              svnrotate.Meta `json:"meta"`
+}
+
+func (s DumpLoadService) replayLoad(ctx context.Context, repoPath, realm, repo, operation string, ignore bool, keep *int) (LoadedDump, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(repoPath, "conf", "filees-load-receipt.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return LoadedDump{}, false, nil
+	}
+	if err != nil {
+		return LoadedDump{}, true, err
+	}
+	var receipt dumpLoadReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		return LoadedDump{}, true, err
+	}
+	sameKeep := receipt.KeepLastRevisions == nil && keep == nil || receipt.KeepLastRevisions != nil && keep != nil && *receipt.KeepLastRevisions == *keep
+	if receipt.Schema != "filees.load-receipt.v1" || receipt.RealmID != realm || receipt.RepoID != repo || receipt.OperationID != operation || receipt.ApplyIgnorePolicy != ignore || !sameKeep {
+		return LoadedDump{}, true, errors.New("LOAD_REPOSITORY_DUMP: installed generation belongs to a different operation or payload")
+	}
+	current, err := s.svnlook(ctx, "uuid", repoPath)
+	if err != nil {
+		return LoadedDump{}, true, err
+	}
+	meta := receipt.Meta
+	if strings.TrimSpace(string(current)) != receipt.Result.NewUUID || meta.NewUUID != receipt.Result.NewUUID || meta.OldUUID != receipt.Result.OldUUID || meta.Reason != operation || meta.Tag == "" || filepath.Base(meta.Tag) != meta.Tag || meta.ArchiveDir != filepath.Join(s.ArchiveDir, meta.Tag+".svn") {
+		return LoadedDump{}, true, errors.New("LOAD_REPOSITORY_DUMP: receipt does not match installed generation")
+	}
+	// Only a finished generation change is a success. A receipt from staging
+	// alone must not turn an incomplete archive into a completed operation.
+	archiveRaw, err := os.ReadFile(filepath.Join(s.ArchiveDir, meta.Tag+".meta.json"))
+	if err != nil {
+		return LoadedDump{}, true, err
+	}
+	var archived svnrotate.Meta
+	if err := json.Unmarshal(archiveRaw, &archived); err != nil {
+		return LoadedDump{}, true, err
+	}
+	if archived != meta {
+		return LoadedDump{}, true, errors.New("LOAD_REPOSITORY_DUMP: archive metadata differs from receipt")
+	}
+	if _, err := os.Stat(filepath.Join(meta.ArchiveDir, "FROZEN")); err != nil {
+		return LoadedDump{}, true, err
+	}
+	return receipt.Result, true, nil
 }

@@ -17,6 +17,9 @@ type LoadConfig struct {
 	RepoPath   string
 	ArchiveDir string
 	BreakLocks bool // proceed despite active locks (edit passports die)
+	// Prepare writes caller-owned configuration and a durable operation receipt
+	// in the verified staging repository, before it becomes the hot generation.
+	Prepare func(staging string, meta Meta) error
 }
 
 func (c *LoadConfig) Validate() error {
@@ -136,8 +139,8 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 	}
 
 	// 4. Keep operational hook policy (including FileES lock guards) from
-	// the carrier, not the dump. conf/ is still rebuilt by the caller from
-	// canonical authz. copyHooks removes only the temporary commit fence.
+	// the carrier, not the dump. Prepare may rebuild conf/ from canonical
+	// authz before the swap. copyHooks removes only the temporary commit fence.
 	if err := copyHooks(filepath.Join(cfg.RepoPath, "hooks"), filepath.Join(newRepo, "hooks")); err != nil {
 		return Meta{}, fmt.Errorf("copy carrier hooks: %w", err)
 	}
@@ -164,6 +167,16 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 		return Meta{}, fmt.Errorf("archive target %s already exists", archiveRepo)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Meta{}, err
+	}
+	result := Meta{
+		Tag: tag, RotatedAt: time.Now().UTC().Format(time.RFC3339),
+		OldUUID: oldUUID, NewUUID: newUUID, OldHead: head,
+		Reason: reason, ArchiveDir: archiveRepo,
+	}
+	if cfg.Prepare != nil {
+		if err := cfg.Prepare(newRepo, result); err != nil {
+			return Meta{}, fmt.Errorf("prepare new generation: %w", err)
+		}
 	}
 	logf("switching generations")
 	if err := os.Rename(cfg.RepoPath, archiveRepo); err != nil {
@@ -192,15 +205,6 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 	// further to bound here).
 	if err := os.Rename(manifestWork, filepath.Join(cfg.ArchiveDir, tag+".log.xml")); err != nil {
 		return Meta{}, fmt.Errorf("manifest into archive: %w", err)
-	}
-	result := Meta{
-		Tag:        tag,
-		RotatedAt:  time.Now().UTC().Format(time.RFC3339),
-		OldUUID:    oldUUID,
-		NewUUID:    newUUID,
-		OldHead:    head,
-		Reason:     reason,
-		ArchiveDir: archiveRepo,
 	}
 	metaData, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

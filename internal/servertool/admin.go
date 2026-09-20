@@ -54,12 +54,14 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|rotate | erasure complete | demo reap | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|reap-lock-requests|rotate | erasure complete | demo reap | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
 	case "demo reap":
 		return runAdminDemoReap(path, args[2:], stdout, stderr)
+	case "repo reap-lock-requests":
+		return runAdminReapLockRequests(path, args[2:], stdout, stderr)
 	case "repo reap-passports":
 		return runAdminReapPassports(path, args[2:], stdout, stderr)
 	case "repo lock-guards":

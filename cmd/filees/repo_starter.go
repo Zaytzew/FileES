@@ -445,6 +445,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 		return revision, err
 	})
+	service.BindWorkingCopy(repo.ID, wc)
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, service.ApplyCommitRecovery)
@@ -468,6 +469,29 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
+		if deps.ipc != nil {
+			claimCtx, cancelClaims := context.WithCancel(runCtx)
+			claimsDone := make(chan struct{})
+			go func() {
+				defer close(claimsDone)
+				service.RunLockReleaseClaims(claimCtx, repo.ID, wc, func() []contract.LockReleaseRequest {
+					return deps.ipc.LockReleaseRequests(repo.ServerID, repo.ID)
+				}, func(ctx context.Context, paths []string) (string, error) {
+					var out string
+					var err error
+					if manager != nil {
+						_, out, err = manager.Acquire(ctx, paths, "")
+					} else {
+						out, err = svn.Lock(ctx, wc, paths)
+					}
+					if err == nil && deps.reservations != nil {
+						deps.reservations.Schedule(desired.Key.ServerID)
+					}
+					return out, err
+				})
+			}()
+			defer func() { cancelClaims(); <-claimsDone }()
+		}
 		return runReadWritePipeline(runCtx, repo, runtimeRepo.state, scanner, service)
 	}, func(cleanupCtx context.Context) error {
 		var first error

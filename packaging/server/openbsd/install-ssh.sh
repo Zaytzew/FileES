@@ -114,6 +114,7 @@ install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_public_aut
 install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_links" /etc/rc.d/filees_links
 # Example only: do not enable maintenance or rewrite any user's crontab.
 install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/passport-reap.crontab.example" /etc/examples/filees-passport-reap.crontab
+install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/lock-requests-reap.crontab.example" /etc/examples/filees-lock-requests-reap.crontab
 install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/public-links.httpd.conf" /etc/examples/filees-public-links.httpd.conf
 
 # The ports build of svnserve probes this fixed SASL configuration directory.

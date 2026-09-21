@@ -46,7 +46,21 @@ function Initialize-Configuration {
         repositories = @()
     }
     $json = $seed | ConvertTo-Json -Depth 4
-    [System.IO.File]::WriteAllText($config, $json, (New-Object System.Text.UTF8Encoding($false)))
+    # Never leave an unfinished configuration behind after Cancel or a failed
+    # selection. Next launch must ask again, not silently fall back to alpha.
+    $provisional = Join-Path $here ('.filees-setup-' + [guid]::NewGuid().ToString('N') + '.json')
+    try {
+        [System.IO.File]::WriteAllText($provisional, $json, (New-Object System.Text.UTF8Encoding($false)))
+        $selection = Start-Process -FilePath $gui -ArgumentList @('--choose-update-channel', ('"' + $provisional + '"')) -WorkingDirectory $here -Wait -PassThru
+        if ($selection.ExitCode -ne 0) { throw 'Initial update-channel selection was cancelled or failed; start FileES to try again.' }
+        $selected = Get-Content -LiteralPath $provisional -Raw | ConvertFrom-Json
+        if (-not $selected.update.enabled -or $selected.update.channel -notin @('alpha', 'beta')) { throw 'Initial update channel was not saved.' }
+        # File.Move refuses to overwrite a configuration created concurrently.
+        [System.IO.File]::Move($provisional, $config)
+    }
+    finally {
+        if (Test-Path -LiteralPath $provisional) { Remove-Item -LiteralPath $provisional }
+    }
     Write-Supervisor "wrote the initial configuration"
 }
 

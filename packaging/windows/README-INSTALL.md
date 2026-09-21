@@ -1,4 +1,4 @@
-# FileES na Windows — instalacja i kanał aktualizacji (alfa)
+# FileES na Windows — instalacja i kanały aktualizacji
 
 ## Co dostajesz
 
@@ -33,12 +33,18 @@ od kogo masz plik.
 ## Pierwsze uruchomienie
 
 Instalator **nie tworzy konfiguracji**. Robi to nadzorca przy pierwszym starcie,
-bo dopiero wtedy wiadomo, w czyim profilu ma ona żyć. Powstaje minimalny
+bo dopiero wtedy wiadomo, w czyim profilu ma ona żyć. Najpierw otwiera się
+okno FileES z wyborem przyszłych aktualizacji: beta (wybrane, sprawdzone
+wydania) lub alpha (nowe funkcje i testy). Potwierdzenie zapisuje wybór;
+anulowanie zatrzymuje start i pozwala ponowić go później. Powstaje minimalny
 `config.json` wskazujący na `%USERPROFILE%\.local\share\filees` — i od tej pory
 jest Twój. Żadna aktualizacja go nie nadpisze; instalator ani go nie kładzie,
 ani nie kasuje.
 
-Dalej: otwórz interfejs i aktywuj klienta na swoim serwerze.
+Dalej: otwórz interfejs i aktywuj aplikację na swoim serwerze.
+Aktualizacja istniejącej instalacji nie pyta ponownie i nie zmienia jej
+kanału. Wybór nie oznacza pobrania innego wydania podczas instalacji.
+Beta nie została jeszcze opublikowana — to opis przygotowanej ścieżki.
 
 ## Aktualizacje
 

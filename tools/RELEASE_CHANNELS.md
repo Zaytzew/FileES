@@ -65,8 +65,8 @@ Zmiana kanału nie stanowi potwierdzenia aktualizacji ani restartu usług.
 
 Desktop obecnie korzysta z jawnej sekcji `update` konfiguracji, a przy jej
 braku z kanału wkompilowanego. Dlatego samo skopiowanie alpha.v2.json do
-beta.v2.json **nie tworzy poprawnej dystrybucji beta dla nowych instalacji**:
-MSI/AppImage z domyślną alfą nadal ją wybiorą.
+beta.v2.json **nie tworzy poprawnej dystrybucji beta dla nowych instalacji**
+ze starym instalatorem: MSI/AppImage bez dialogu wyboru nadal wybiorą alfę.
 
 Trwały wybór kanału jest dostępny przez CLI (w nowym buildzie):
 
@@ -86,8 +86,24 @@ nadal nie może pobrać starszej bety. Polecenie odmawia przełączenia przy
 jawnym enabled:false i w trybie Store. Dostępne nazwy: alpha, beta, stable;
 akceptacja nazwy nie oznacza, że taki kanał został już opublikowany.
 
-Przed publiczną pierwszą betą pozostaje powiązanie wyboru z pierwszym
-uruchomieniem/pobieraniem oraz odbiór prawdziwego MSI/AppImage.
+Nowe instalatory przy tworzeniu konfiguracji wywołują wspólny dialog Wails
+alpha/beta. Dopiero zapis wyboru kończy inicjalizację; anulowanie nie
+uruchamia demona i przy następnym starcie pytanie wraca. Domyślnie zaznaczona
+beta wymaga zatwierdzenia. Wybór dotyczy przyszłych aktualizacji, nie
+pochodzenia właśnie instalowanego pliku. Istniejąca konfiguracja (także
+bez jawnego kanału albo z wyłączonym update) pozostaje nietknięta.
+
+Linux bez sesji graficznej wymaga jawnego wyboru przy nowej instalacji:
+
+```sh
+FILEES_UPDATE_CHANNEL=beta sh install-user.sh
+```
+
+Ten parametr nie przełącza istniejących instalacji. AppImage korzysta
+z tego samego instalatora; Windows pyta przy pierwszym uruchomieniu
+supervisora. Store nie używa tych ścieżek i zachowuje własne aktualizacje.
+Przed publiczną pierwszą betą pozostaje powiązanie strony pobierania
+z oboma kanałami oraz odbiór prawdziwego MSI/AppImage.
 Nie przebudowujemy
 odebranych binariów wyłącznie po to, by zmienić kanał. Jawne wyłączenie
 aktualizacji i tryb Store nadal mają pierwszeństwo. Istniejących użytkowników

@@ -111,8 +111,9 @@ alpha nie przełączamy automatycznie.
 
 ## Strona pobierania
 
-Do podpisania i odbioru bety strona nadal oferuje alpha. Dopiero potem beta
-może stać się domyślnym pobraniem, z oddzielnym, jednoznacznym odsyłaczem do
-alpha. Publikator downloadów musi czytać oba podpisane wskaźniki oddzielnie,
-nie wyznaczać bety z najnowszej rewizji. Właściciel nadal wdraża paczkę WWW
-ręcznie; lokalny ZIP nie jest dowodem wdrożenia.
+Po podpisaniu beta: /download/ oferuje beta, /download-alpha/ rozwojową alpha.
+Build i cron odczytują oba podpisane zestawy wskaźników oddzielnie, nie
+wyznaczają bety z najnowszej rewizji. State-beta.json jest nowym stanem beta;
+dotychczasowy state.json pozostaje przy alpha. Konfiguracja, szablon, binary,
+publish.sh i cron muszą być wdrożone razem przez packaging/site/install.sh.
+Właściciel nadal wdraża paczkę WWW ręcznie; lokalny ZIP nie dowodzi wdrożenia.

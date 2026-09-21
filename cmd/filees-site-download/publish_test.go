@@ -205,6 +205,45 @@ func TestPublishesTheSignedChannelRelease(t *testing.T) {
 	}
 }
 
+func TestIndependentBetaAndAlphaPages(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "site"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	key := newSigner(t)
+	r := newRepo()
+	r.release(t, key, "r1295", 1295, []byte("beta installer"), "")
+	for _, suffix := range []string{"", ".sig"} {
+		r.files["channels/beta.v2.json"+suffix] = append([]byte(nil), r.files["channels/alpha.v2.json"+suffix]...)
+	}
+	alpha := publisher(t, r, key, root)
+	alpha.Template = []byte(`channel={{CHANNEL}} ` + testTemplate)
+	beta := alpha
+	beta.Config.Channel = "beta"
+	beta.OutDir = filepath.Join(root, "beta")
+	beta.StatePath = filepath.Join(root, "beta-state.json")
+	r.release(t, key, "r1300", 1300, []byte("new alpha"), "")
+	for _, p := range []Publisher{alpha, beta} {
+		if _, err := p.Publish(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(mustRead(t, filepath.Join(p.OutDir, "index.html")), "channel="+p.Config.Channel) {
+			t.Fatal("wrong channel label")
+		}
+	}
+	before := mustRead(t, filepath.Join(beta.OutDir, "index.html"))
+	r.files["channels/alpha.v2.json.sig"] = []byte("invalid")
+	if _, err := alpha.Publish(context.Background()); err == nil {
+		t.Fatal("invalid alpha accepted")
+	}
+	if _, err := beta.Publish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if mustRead(t, filepath.Join(beta.OutDir, "index.html")) != before {
+		t.Fatal("alpha changed beta")
+	}
+}
+
 func TestAnUnchangedChannelDoesNotDownloadTheInstallerAgain(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "site"), 0o755)

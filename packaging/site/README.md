@@ -1,16 +1,20 @@
 # filees.space: automatic download page
 
 `https://filees.space/download/` offers the OpenBSD server bundle followed by
-Windows MSI and Linux AppImage. The server follows signed `alpha` (v1);
-the two desktop platforms follow one shared release on `alpha.v2`.
+Windows MSI and Linux AppImage. This default page follows signed **beta**
+(server v1, desktop v2). `/download-alpha/` independently follows **alpha**.
+Both use the same PL/EN template and link to each other. Each desktop pair
+comes from one shared release; server releases remain independent.
 After this publisher update is installed, signing and promoting each release
 is enough: the site follows within 15 minutes.
 
 ## Server bundle
 
 The first card offers OpenBSD amd64 from the independently signed server
-channel `channels/alpha.json` (v1), enabled by `server` in `download.json`.
-Desktop MSI and AppImage still come from the same `alpha.v2` release.
+channel `channels/beta.json` (v1), enabled by `server` in `download.json`.
+Desktop MSI and AppImage come from the same `beta.v2` release.
+Staging derives download-alpha.json by selecting alpha for both components;
+it does not copy or invent a beta release from the latest alpha revision.
 The publisher verifies the server channel and manifest using the pinned release
 key, binds platform/release/sequence/epoch, and checks every unique payload hash.
 It creates a reproducible `FileES-<release>-openbsd-amd64.tar.gz` containing all
@@ -39,14 +43,15 @@ needed to add the already published server release.
 `cmd/filees-site-download` runs from cron on the web server as the system user
 `filees-site`. Each run:
 
-1. reads `channels/alpha.v2.json` and its signature from
+1. reads its configured `channels/<channel>.v2.json` and its signature from
    `svn://cloud.atmprojekt.pl/FILEES-BIN` (anonymous read) and verifies both
    the channel and the release manifest with the release key in
    `release-key.pub` — the same resolver the desktop client's self-update uses,
    including the manifest identity binding and channel expiry;
 2. refuses a channel that points at an older release than the one it last
    published (sequence and security epoch, remembered in
-   `/var/lib/filees-site/state.json`);
+   `/var/lib/filees-site/state-beta.json` for beta and the existing
+   `/var/lib/filees-site/state.json` for alpha; never merge or reset them);
 3. resolves every platform of that one release, fetches an installer only when
    the page is not already current, and checks its size and SHA-256 against the
    signed manifest of its platform;
@@ -66,10 +71,12 @@ Layout on the server:
 | Path | Owner | What |
 |---|---|---|
 | `/usr/local/bin/filees-site-download` | root | the program |
-| `/usr/local/share/filees-site/` | root | `download.json`, `release-key.pub`, `download.html` |
-| `/var/lib/filees-site/site/download/` | filees-site | the published page and installers |
-| `/var/lib/filees-site/state.json` | filees-site | last published release |
-| `/var/www/filees.space/download` | root | symlink to the published directory |
+| `/usr/local/share/filees-site/` | root | both configs, `publish.sh`, public key and template |
+| `/var/lib/filees-site/site/download/` | filees-site | beta page and installers |
+| `/var/lib/filees-site/site/download-alpha/` | filees-site | alpha page and installers |
+| `/var/lib/filees-site/state.json` | filees-site | alpha rollback state, preserved from the old publisher |
+| `/var/lib/filees-site/state-beta.json` | filees-site | independent beta rollback state |
+| `/var/www/filees.space/download`, `download-alpha` | root | symlinks to the two publications |
 | `/etc/cron.d/filees-site-download` | root | every 15 minutes, `flock`-guarded |
 
 The service user can write only its own directory, never the web root.
@@ -100,14 +107,12 @@ Nginx follows symlinks unless `disable_symlinks` is set for the site.
 
 ## Update an installation that already runs
 
-The script is for the first time only: the service user, the web-root symlink
-and the cron entry are already there, and the cron line - flags and paths -
-has not changed since. Staging produces the three files that do change, and
-installing them over the old ones is the whole update:
+For the first two-channel deployment, rerun the idempotent installer. The cron
+command and publication paths changed: copying only HTML or the old three files
+is not enough. The existing alpha state.json must stay in place.
 
 ```sh
-sudo install -m 0755 -o root -g root site-publisher/filees-site-download /usr/local/bin/
-sudo install -m 0644 -o root -g root site-publisher/download.json site-publisher/download.html /usr/local/share/filees-site/
+sudo sh site-publisher/install.sh
 ```
 
 Cron publishes within fifteen minutes; to see it immediately, run the publish
@@ -120,10 +125,10 @@ first publication rewrites the file in the current shape.
 
 ## Everyday use
 
-- **New release:** sign and promote it to `alpha` as usual. Nothing else.
+- **New release:** sign and promote it to `alpha`; only the alpha page advances.
+  Promote the accepted same artifact to `beta` to advance the default page.
 - **Release notes:** add the release ID to `notes` in `landing/download.json`,
-  commit, then copy the file to the server:
-  `sudo install -m 0644 download.json /usr/local/share/filees-site/`. A release
+  commit, then stage/install both generated configurations. A release
   without notes gets a page without the highlighted box.
 - **Page text:** edit `landing/download/index.html`, commit, stage and install
   again.

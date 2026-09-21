@@ -46,9 +46,23 @@ Są dwie drogi i **obie prowadzą do tego samego katalogu**:
 
 1. **Kanał** — klient sam pyta `FILEES-BIN` o nowe wydanie na swoim kanale i
    sprawdza podpis. GUI pokazuje dostępną wersję; instalację potwierdzasz
-   przyciskiem. Kanał i publiczny klucz są częścią buildu dystrybucyjnego,
-   więc nie wymagają dopisywania sekretów ani ustawień do `config.json`.
+   przyciskiem. Publiczny klucz i domyślny kanał są częścią buildu dystrybucyjnego.
+   Jawny wybór kanału w `config.json` ma pierwszeństwo i przetrwa aktualizację.
 2. **Nowy MSI** — instalacja na wierzchu poprzedniej, przez `MajorUpgrade`.
+
+Nowe wydanie 0.1.17 udostępnia polecenie trwałego wyboru kanału (bez ręcznej
+edycji konfiguracji). W PowerShell, po utworzeniu konfiguracji przez pierwsze
+uruchomienie aplikacji:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\FileES\filees.exe" update-channel beta --config "$env:LOCALAPPDATA\Programs\FileES\config.json"
+```
+
+Bez argumentu `beta` polecenie tylko wyświetla aktualne ustawienie.
+Po zmianie trzeba zrestartować całą parę. Polecenie nie instaluje wydania,
+nie zeruje ochrony przed cofnięciem wersji ani nie włącza wyłączonych
+aktualizacji. Nie dotyczy Store. Beta nie jest jeszcze publicznie uruchomiona
+w momencie dodania tej instrukcji — stan publikacji sprawdza się oddzielnie.
 
 Jawne `"update":{"enabled":false}` pozostaje opt-out. Jeśli aktualizacja
 przyszła kanałem, a potem uruchomisz **Napraw** z listy programów, wrócisz do

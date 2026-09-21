@@ -89,6 +89,8 @@ func main() {
 			return
 		case "config-check":
 			os.Exit(cmdConfigCheck(os.Args[2:]))
+		case "update-channel":
+			os.Exit(cmdUpdateChannel(os.Args[2:]))
 		case "status":
 			os.Exit(cmdStatus(os.Args[2:]))
 		case "lock":
@@ -530,6 +532,7 @@ func printUsage() {
 commands:
   daemon    start sync daemon (default when no command given)
   config-check  validate configuration without starting the daemon
+  update-channel [alpha|beta|stable]  show or persist the update channel; restart required
   version   show client version
   status    show sync state for all configured repos
   lock      lock file(s) in SVN repository

@@ -294,6 +294,7 @@ type ListPublicSharesPayload struct {
 	RepoID string `json:"repo_id"`
 }
 type PublicShareSummary struct {
+	PublicURL         string              `json:"public_url,omitempty"`
 	ChannelID         string              `json:"channel_id"`
 	RepoID            string              `json:"repo_id"`
 	Alias             string              `json:"alias"`

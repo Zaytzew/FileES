@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type PublicShareTokenDeliverer interface {
 }
 
 type ChannelPublicShareService struct {
+	BaseURL   string
 	Channels  *channel.Store
 	Deliverer PublicShareTokenDeliverer
 }
@@ -41,12 +43,23 @@ func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID st
 			objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 		}
 		result = append(result, control.PublicShareSummary{
+			PublicURL: publicShareRecipientURL(s.BaseURL, record.Alias, record.Slug),
 			ChannelID: record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
 			SourceRoot: record.Manifest.SourceRoot, Recipients: append([]string(nil), record.Manifest.Recipients...), PasswordProtected: record.Manifest.Password != "",
 			DoNotFollow: record.Manifest.DoNotFollow, Objects: objects, UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 	return result, nil
+}
+
+// The recipient entry point carries no owner credentials or recipient token.
+// Missing/invalid configuration must not produce a guessed URL from SSH.
+func publicShareRecipientURL(base, alias, slug string) string {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || (u.Path != "" && u.Path != "/") {
+		return ""
+	}
+	return strings.TrimRight(u.String(), "/") + "/" + url.PathEscape(alias) + "/" + url.PathEscape(slug)
 }
 
 func (s ChannelPublicShareService) Create(ctx context.Context, operationID, ownerRealm string, declaration control.PublicShareDeclaration) (control.PublicShareResult, error) {

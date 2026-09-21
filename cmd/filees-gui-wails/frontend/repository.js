@@ -1,4 +1,5 @@
-import { Events, Window } from "/wails/runtime.js";
+import { Browser, Events, Window } from "/wails/runtime.js";
+import { publicShareURL, openPublicShare } from "./public-share-link.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, labelHTML, getLocale } from "./i18n.js";
@@ -48,13 +49,17 @@ function actionButton(action) {
 }
 
 function shareCard(share) {
+  const name = escapeHTML(share.address || share.channel_id);
+  const heading = publicShareURL(share.public_url)
+    ? `<button type="button" class="share-link" data-open-share="${escapeHTML(share.channel_id)}" data-i18n-title="share.openRecipient" title="${escapeHTML(t("share.openRecipient"))}">${name} <span aria-hidden="true">↗</span></button>`
+    : name;
   const controls = [
     share.can_edit ? `<button type="button" data-share-action="edit" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.edit")}</button>` : "",
     share.can_revoke ? `<button type="button" data-share-action="revoke" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
     share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.delete")}</button>` : "",
   ].join("");
   return `<article class="share-row ${share.channel_id === currentSnapshot?.focus_channel_id ? "is-focused" : ""}" data-share-channel-id="${escapeHTML(share.channel_id)}">
-    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${share.source_root ? escapeHTML(share.source_root) : labelHTML("repository.whole")}</small></div></div>
+    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${heading}</strong><small>${share.source_root ? escapeHTML(share.source_root) : labelHTML("repository.whole")}</small></div></div>
     <div class="share-fact"><small>${labelHTML("field.state")}</small><span>${share.state_key ? labelHTML(share.state_key) : share.state ? escapeHTML(share.state) : labelHTML("field.unknown")}</span></div>
     <div class="share-fact"><small>${labelHTML("field.recipients")}</small><span title="${escapeHTML(share.recipients)}">${share.recipients ? escapeHTML(share.recipients) : labelHTML("share.open")}</span></div>
     <div class="share-fact"><small>${labelHTML("field.revision")}</small><span>${escapeHTML(share.revision || "HEAD")}</span></div>
@@ -322,7 +327,16 @@ $("#repository-actions").addEventListener("click", (event) => {
   if (button) chooseAction(button.dataset.repositoryAction, button);
 });
 window.addEventListener("storage", event => { if (event.key === "filees.repo-view.v1" && currentSnapshot) render(currentSnapshot); });
-$("#public-shares").addEventListener("click", (event) => {
+$("#public-shares").addEventListener("click", async (event) => {
+  const link = event.target.closest("[data-open-share]");
+  if (link) {
+    link.disabled = true;
+    try {
+      if (!await openPublicShare(currentSnapshot, link.dataset.openShare, url => Browser.OpenURL(url))) showToast(t("share.openFailed"));
+    } catch { showToast(t("share.openFailed")); }
+    finally { link.disabled = false; }
+    return;
+  }
   const button = event.target.closest("[data-share-action]");
   if (button) chooseShare(button.dataset.shareAction, button.dataset.channelId || "", button);
 });

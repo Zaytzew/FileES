@@ -97,7 +97,7 @@ func TestPublicShareServiceClassifiesInvalidDeclarationAsRejected(t *testing.T) 
 func TestPublicShareServiceListsProtectedChannelsAndPreservesVerifier(t *testing.T) {
 	owner, repo := uuid.NewString(), uuid.NewString()
 	store := &channel.Store{Root: t.TempDir(), Authority: shareAuthority{owner: owner, repo: repo, alias: "atmprojekt"}, TokenKey: []byte(strings.Repeat("t", 32))}
-	service := ChannelPublicShareService{Channels: store, Deliverer: &shareDeliverer{}}
+	service := ChannelPublicShareService{BaseURL: "https://downloads.example:8443/", Channels: store, Deliverer: &shareDeliverer{}}
 	declaration := shareDeclaration(repo)
 	declaration.Recipients = nil
 	declaration.PasswordHash = "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -108,6 +108,9 @@ func TestPublicShareServiceListsProtectedChannelsAndPreservesVerifier(t *testing
 	listed, err := service.List(context.Background(), owner, repo)
 	if err != nil || len(listed) != 1 || listed[0].ChannelID != channelID || !listed[0].PasswordProtected {
 		t.Fatalf("list=%+v err=%v", listed, err)
+	}
+	if listed[0].PublicURL != "https://downloads.example:8443/atmprojekt/przetarg-2026" {
+		t.Fatalf("recipient entry point = %q", listed[0].PublicURL)
 	}
 	declaration.PasswordHash = ""
 	declaration.Objects[0].DisplayName = "Aktualizacja.pdf"

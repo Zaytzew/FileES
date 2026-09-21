@@ -69,6 +69,13 @@ for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifes
 done
 [ "$manifests" -gt 0 ] || die "release has no component manifests: $release_root"
 
+# Alpha is where a new payload is signed. Beta/stable only promote an already
+# signed, reviewed artifact: never turn a mistyped CHANNEL into a first release
+# of untested binaries. Keep existing manifest signatures byte-for-byte.
+if [ "$CHANNEL" != alpha ] && [ "$all_manifests_signed" != true ]; then
+	die "$CHANNEL promotion requires existing valid signatures for every manifest; publish and accept the release on alpha first"
+fi
+
 channel_current=false
 if [ -f "$channel_path" ] && cmp -s "$candidate" "$channel_path" &&
 	[ -f "${channel_path}.sig" ] &&

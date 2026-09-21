@@ -1,0 +1,148 @@
+package packaging
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Exercise the real publisher's file/control flow with fake external commands.
+// This does not test cryptography: signify verification has separate coverage.
+func TestReleaseChannelPromotionIsolation(t *testing.T) {
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		shell = filepath.Join(os.Getenv("ProgramFiles"), "Git", "bin", "bash.exe")
+		if _, err := os.Stat(shell); err != nil {
+			t.Skip("POSIX shell unavailable")
+		}
+	}
+	script, err := filepath.Abs("../tools/release-sign-and-publish.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, schema := range []string{"server", "desktop"} {
+		for _, tc := range []struct {
+			channel, signature string
+			fail               bool
+		}{
+			{"beta", "valid", false}, {"beta", "", true}, {"beta", "invalid", true},
+			{"stable", "", true}, {"alpha", "", false},
+		} {
+			t.Run(schema+"/"+tc.channel+"/"+tc.signature, func(t *testing.T) {
+				root := t.TempDir()
+				write := func(path, text string) {
+					t.Helper()
+					path = filepath.Join(root, filepath.FromSlash(path))
+					if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Mkdir(filepath.Join(root, ".svn"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				write("test.sec", "not a private key")
+				write("test.pub", "not a public key")
+				candidate := "releases/test-release/channel.json"
+				suffix := ".json"
+				manifests := []string{"releases/test-release/openbsd-amd64/manifest.json"}
+				if schema == "desktop" {
+					candidate = "releases/test-release/channel.v2.json"
+					suffix = ".v2.json"
+					manifests = []string{"releases/test-release/desktop/windows-amd64/manifest.json", "releases/test-release/desktop/linux-amd64/manifest.json"}
+				}
+				payload := "{\n  \"release_id\": \"test-release\"\n}\n"
+				write(candidate, payload)
+				for _, manifest := range manifests {
+					write(manifest, "immutable manifest")
+					if tc.signature != "" {
+						write(manifest+".sig", tc.signature)
+					}
+				}
+				for _, channel := range []string{"alpha", "beta", "stable"} {
+					write("channels/"+channel+suffix, "old "+channel)
+					write("channels/"+channel+suffix+".sig", "old "+channel+" signature")
+				}
+				commands := `
+svn() {
+  case "$1" in
+    status|update) return 0 ;;
+    commit) printf '%s\n' "$*" >>"$FILEES_BIN_WC/commits.log" ;;
+    *) return 1 ;;
+  esac
+}
+signify_stub() {
+  operation=$1
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in -x) signature=$2; shift 2 ;; -q) shift ;; *) shift 2 ;; esac
+  done
+  case "$operation" in
+    -V) [ "$(cat "$signature" 2>/dev/null)" = valid ] ;;
+    -S) printf valid >"$signature" ;;
+    *) return 1 ;;
+  esac
+}
+. "$1"
+`
+				cmd := exec.Command(shell, "-c", commands, "publisher-test", filepath.ToSlash(script))
+				cmd.Env = append(os.Environ(), "FILEES_BIN_WC="+filepath.ToSlash(root), "SIGNIFY_BIN=signify_stub",
+					"SIGNIFY_SEC_KEY="+filepath.ToSlash(filepath.Join(root, "test.sec")), "SIGNIFY_PUB_KEY="+filepath.ToSlash(filepath.Join(root, "test.pub")), "RELEASE_ID=test-release", "CHANNEL="+tc.channel)
+				out, err := cmd.CombinedOutput()
+				if (err != nil) != tc.fail {
+					t.Fatalf("err=%v output=%s", err, out)
+				}
+				read := func(path string) string {
+					t.Helper()
+					raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+					if err != nil {
+						t.Fatal(err)
+					}
+					return string(raw)
+				}
+				for _, channel := range []string{"alpha", "beta", "stable"} {
+					want, sig := "old "+channel, "old "+channel+" signature"
+					if channel == tc.channel && !tc.fail {
+						want, sig = payload, "valid"
+					}
+					if got := read("channels/" + channel + suffix); got != want {
+						t.Errorf("%s changed: %q", channel, got)
+					}
+					if got := read("channels/" + channel + suffix + ".sig"); got != sig {
+						t.Errorf("%s signature changed: %q", channel, got)
+					}
+				}
+				for _, manifest := range manifests {
+					if read(manifest) != "immutable manifest" {
+						t.Fatal("manifest changed")
+					}
+					if tc.signature != "" && read(manifest+".sig") != tc.signature {
+						t.Fatal("existing signature changed")
+					}
+					if tc.fail && tc.signature == "" {
+						if _, err := os.Stat(filepath.Join(root, manifest+".sig")); !os.IsNotExist(err) {
+							t.Fatal("promotion signed a missing manifest")
+						}
+					}
+				}
+				if tc.fail {
+					if _, err := os.Stat(filepath.Join(root, "commits.log")); !os.IsNotExist(err) {
+						t.Fatal("failed promotion committed")
+					}
+				} else {
+					commit := read("commits.log")
+					if !strings.Contains(commit, "channels/"+tc.channel+suffix) {
+						t.Fatal("channel absent from commit")
+					}
+					if tc.channel == "beta" && strings.Contains(commit, "releases/") {
+						t.Fatal("promotion touched immutable release")
+					}
+				}
+			})
+		}
+	}
+}

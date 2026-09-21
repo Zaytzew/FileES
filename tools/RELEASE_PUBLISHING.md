@@ -160,6 +160,11 @@ i jego podpis trafiają do **jednego commita SVN**. HEAD nie ma więc okna, w
 którym wybrany kanał wskazuje na niepodpisany release. `CHANNEL` nie ma wartości
 domyślnej i musi być jawnie ustawiony na `alpha`, `beta` albo `stable`. Ten sam
 release można później promować do kolejnego kanału bez przebudowy payloadu.
+Pierwsze podpisanie nowych manifestów odbywa się wyłącznie dla alpha.
+Beta i stable wymagają istniejących poprawnych podpisów wszystkich manifestów;
+nie podpisują brakującego manifestu jako efekt uboczny awansu.
+Zasady zamrożenia bety i warunek trwałego wyboru kanału desktopu:
+[RELEASE_CHANNELS.md](RELEASE_CHANNELS.md).
 Jeśli release jest już podpisany i promowany, wykonanie jest no-op; istniejący
 niepoprawny podpis manifestu powoduje fail closed zamiast nadpisania historii.
 

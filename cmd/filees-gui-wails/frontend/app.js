@@ -539,9 +539,11 @@ function renderDrawers(server,repos) {
   const {groups,loose}=groupDrawers(repos,layout);
   return groups.map(drawer=>{
     const key=JSON.stringify([server.id,server.gui_scope,"drawer",drawer.id]);
-    return `<section class="repo-drawer" data-drawer-id="${escapeHTML(drawer.id)}"><header class="drawer-heading"><h4>${escapeHTML(drawer.name)} <small>(${drawer.repos.length})</small></h4>
-      <button type="button" data-drawer-delete="${escapeHTML(drawer.id)}" title="${escapeHTML(t("drawers.deleteHint"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy?"disabled":""}>${escapeHTML(t("drawers.delete"))}</button></header>
-      ${drawer.repos.length?renderRepoGroup("",drawer.repos,"drawer-content",false,key):`<p class="drawer-empty">${escapeHTML(t("drawers.empty"))}</p>`}</section>`;
+    // Stable presentation colour, independent of order, alias and server health.
+    const hue = [...drawer.id].reduce((hash,char)=>(hash*31+char.codePointAt(0))%360,0);
+    return `<details class="repo-drawer" data-drawer-id="${escapeHTML(drawer.id)}" data-idle-key="${escapeHTML(key)}" style="--drawer-accent:hsl(${hue} 48% 58%)" ${expandedIdleGroups.has(key)?"open":""}><summary class="drawer-heading"><span class="drawer-chevron" aria-hidden="true">›</span><h4>${escapeHTML(drawer.name)} <small>(${drawer.repos.length})</small></h4></summary>
+      <div class="drawer-body"><div class="drawer-controls"><button type="button" data-drawer-delete="${escapeHTML(drawer.id)}" title="${escapeHTML(t("drawers.deleteHint"))}" ${!drawerEnabled(server)||!entry.ready||entry.busy?"disabled":""}>${escapeHTML(t("drawers.delete"))}</button></div>
+      ${drawer.repos.length?renderRepoGroup("",drawer.repos,"drawer-content",false,key):`<p class="drawer-empty">${escapeHTML(t("drawers.empty"))}</p>`}</div></details>`;
   }).join("")+renderRepoGroup("",loose,"drawer-loose",false,JSON.stringify([server.id,server.gui_scope,"loose"]));
 }
 async function modifyDrawers(serverID,action) {
@@ -1459,6 +1461,7 @@ $("#intent-alerts").addEventListener("click", (event) => {
 $("#repositories").addEventListener("toggle", event => {
   const key = event.target.dataset?.idleKey; if (!key || !event.target.isConnected) return;
   if(event.target.open) expandedIdleGroups.add(key); else expandedIdleGroups.delete(key);
+  if(event.target.open) scheduleWindowFit();
 }, true);
 function refreshRepoViewPreferences() {
   const prefs=readRepoView();

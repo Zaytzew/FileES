@@ -60,10 +60,11 @@ test("renderer keeps archives and shelves in their drawer, including empty drawe
  const repos=[{id:"a",server_id:"s",last_commit_at:"2020-01-01",can_fold_inactive:true},{id:"b",server_id:"s",last_commit_at:"2020-01-01",can_fold_inactive:true},{id:"attention",server_id:"s"},{id:"loose",server_id:"s"}];
  const shelf={id:"shelf",server_id:"s",purpose:"upload_shelf",parent_repo_id:"a"};
  const escapeHTML=value=>String(value).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll('"',"&quot;");
+ const expandedIdleGroups=new Set();
  const render=runInNewContext(`${extract("renderDrawers")}\n${extract("renderRepoGroup")}\nrenderDrawers`,{
   parseDrawers,groupDrawers,drawerState:()=>({state:{data:JSON.stringify(layout)},ready:true}),drawerEnabled:()=>true,
   escapeHTML,t:key=>key,repoOrder,readRepoView:()=>({inactive:14,archive:30}),repoSection,
-  expandedIdleGroups:new Set(),currentSnapshot:{repositories:[...repos,shelf],notices:[{repo_id:"attention"}]},
+  expandedIdleGroups,currentSnapshot:{repositories:[...repos,shelf],notices:[{repo_id:"attention"}]},
   shelvesFor,renderRepo:repo=>`<row id="${repo.id}"></row>`
  });
  const html=render({id:"s",gui_scope:"r"},repos);
@@ -73,6 +74,20 @@ test("renderer keeps archives and shelves in their drawer, including empty drawe
  assert.doesNotMatch(first,/<row id="b">/);assert.match(html,/drawers.empty/);assert.match(html,/<row id="loose">/);
  const keys=[...html.matchAll(/data-idle-key="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(keys).size,keys.length);
  assert.match(render({id:"s",gui_scope:"r"},[]),/drawers.empty/);
+ const drawerTags=value=>[...value.matchAll(/<details class="repo-drawer"[^>]*>/g)].map(m=>m[0]);
+ assert.equal(drawerTags(html).length,3);
+ assert.ok(drawerTags(html).every(tag=>!tag.includes(' open')),'drawers start closed');
+ expandedIdleGroups.add(JSON.stringify(['s','r','drawer','one']));
+ const opened=render({id:'s',gui_scope:'r'},repos);
+ assert.ok(drawerTags(opened)[0].includes(' open'));
+ assert.ok(!drawerTags(opened)[1].includes(' open'),'independent expansion');
+ assert.ok(drawerTags(render({id:'s',gui_scope:'r'},repos))[0].includes(' open'),'refresh preserves expansion');
+ assert.ok(drawerTags(render({id:'s',gui_scope:'other'},repos)).every(tag=>!tag.includes(' open')),'realm does not inherit expansion');
+ const tint=drawerTags(opened)[0].match(/--drawer-accent:([^\"]+)/)[1];
+ layout.drawers[0].name='New name';
+ assert.equal(drawerTags(render({id:'s',gui_scope:'r'},repos))[0].match(/--drawer-accent:([^\"]+)/)[1],tint);
+ expandedIdleGroups.clear();
+ assert.ok(drawerTags(render({id:'s',gui_scope:'r'},repos)).every(tag=>!tag.includes(' open')),'new session starts closed');
 });
 
 test('background drawer refresh keeps controls enabled and cannot overwrite a newer gesture', async () => {

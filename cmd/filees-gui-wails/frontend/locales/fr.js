@@ -108,6 +108,7 @@ export default {
   "summary.pendingBytes": "{size} en attente",
   "summary.emptyQueue": "la file d’attente est vide",
   "summary.lastKnown": "dernier état connu · service hors ligne",
+  "summary.lastKnownUnverified": "dernier état connu · actualité non confirmée",
   "summary.partialLocks": "au moins {count} {locks} · {missing} indisponibles",
   "summary.listUnavailable": "liste indisponible",
   "summary.activations": "activations",

@@ -108,6 +108,7 @@ export default {
   "summary.pendingBytes": "{size} warten",
   "summary.emptyQueue": "Warteschlange ist leer",
   "summary.lastKnown": "letzter bekannter Zustand · Dienst offline",
+  "summary.lastKnownUnverified": "letzter bekannter Zustand · Aktualität unbestätigt",
   "summary.partialLocks": "mindestens {count} {locks} · {missing} nicht verfügbar",
   "summary.listUnavailable": "Liste nicht verfügbar",
   "summary.activations": "Aktivierungen",

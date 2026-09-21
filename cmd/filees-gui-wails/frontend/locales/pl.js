@@ -108,6 +108,7 @@ export default {
   "summary.pendingBytes": "{size} oczekuje",
   "summary.emptyQueue": "kolejka jest pusta",
   "summary.lastKnown": "ostatni znany stan · demon offline",
+  "summary.lastKnownUnverified": "ostatni znany stan · aktualność niepotwierdzona",
   "summary.partialLocks": "co najmniej {count} {locks} · {missing} bez emisji",
   "summary.listUnavailable": "lista niedostępna",
   "summary.activations": "aktywacje",

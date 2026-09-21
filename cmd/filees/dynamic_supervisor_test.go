@@ -229,7 +229,7 @@ func TestUnchangedServerGenerationCanPublishLocalLifecycleFailure(t *testing.T) 
 	state := ipc.RegisterProjectedRepo(repoID, "M21 live", view.Repositories[0].URL, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
 	currentViews := map[string]clientview.View{serverID: view}
 	synced := projectionUpdate{serverID: serverID, view: view}
-	if !syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, map[reposupervisor.Key]repoRuntime{}, lifecycle) {
+	if !syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, map[reposupervisor.Key]repoRuntime{}, lifecycle, nil) {
 		t.Fatal("unchanged successful sync was not recognised as the current generation")
 	}
 
@@ -237,4 +237,43 @@ func TestUnchangedServerGenerationCanPublishLocalLifecycleFailure(t *testing.T) 
 	if summary.LifecycleOperationID != record.OperationID || !summary.CanRetryLifecycle || !summary.CanAbandonLifecycle || summary.State != contract.StateInteractionRequired {
 		t.Fatalf("unchanged generation did not publish local repair state: %+v", summary)
 	}
+}
+
+func TestUnchangedSuccessfulPollRefreshesExpiredPublicShares(t *testing.T) {
+	view := clientview.View{Generation: 7, RealmID: "owner", Repositories: []clientview.Repository{{RepoID: "repo", OwnerRealmID: "owner", State: "active"}}}
+	cache := newPublicShareCache()
+	now := time.Now()
+	cache.now = func() time.Time { return now.Add(-6 * time.Minute) }
+	cache.Set("server", []contract.PublicShareSummary{{RepoID: "repo", ChannelID: "old"}})
+	cache.now = time.Now
+	if !cache.Snapshot().Stale {
+		t.Fatal("fixture should be expired")
+	}
+	lister := &blockingPublicShareLister{calls: make(chan string, 1), release: make(chan struct{})}
+	close(lister.release)
+	coordinator := newPublicShareRefreshCoordinator(t.Context(), lister, cache, nil)
+	ipc := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	current := map[string]clientview.View{"server": view}
+	newer := view
+	newer.Generation++
+	if syncProjectionOnSuccessfulPoll(ipc, projectionUpdate{serverID: "server", view: newer}, current, nil, nil, coordinator) {
+		t.Fatal("unreconciled generation must wait for the updates lane")
+	}
+	if !syncProjectionOnSuccessfulPoll(ipc, projectionUpdate{serverID: "server", view: view}, current, nil, nil, coordinator) {
+		t.Fatal("unchanged successful poll ignored")
+	}
+	select {
+	case <-lister.calls:
+	case <-time.After(time.Second):
+		t.Fatal("no actual share list request")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := cache.Snapshot()
+		if !snapshot.Stale && len(snapshot.Shares) == 1 && snapshot.Shares[0].ChannelID == "ch-repo" {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("successful unchanged poll did not replace expired shares")
 }

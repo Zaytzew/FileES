@@ -645,7 +645,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			// A newer generation is reconciled by the updates lane. For the
 			// generation already held here, recompute only daemon-owned overlays
 			// without inventing a new server generation.
-			syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, runtimes, lifecycle)
+			syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, runtimes, lifecycle, shareRefreshes)
 		case serverID := <-publicShareEvents:
 			if reservationRefreshes.Paused(serverID) {
 				continue
@@ -731,12 +731,16 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 }
 
-func syncProjectionOnSuccessfulPoll(ipc *ipcserver.Server, synced projectionUpdate, currentViews map[string]clientview.View, runtimes map[reposupervisor.Key]repoRuntime, lifecycle *localrepo.Store) bool {
+func syncProjectionOnSuccessfulPoll(ipc *ipcserver.Server, synced projectionUpdate, currentViews map[string]clientview.View, runtimes map[reposupervisor.Key]repoRuntime, lifecycle *localrepo.Store, shares *publicShareRefreshCoordinator) bool {
 	current, ok := currentViews[synced.serverID]
 	if !ok || current.Generation != synced.view.Generation {
 		return false
 	}
 	syncProjectionKnowledge(ipc, synced.serverID, synced.view, runtimes, lifecycle)
+	// A successful unchanged poll is still a refresh opportunity. Public
+	// shares can change without a new repository projection generation, and
+	// their freshness must come from a real list, not merely a newer timestamp.
+	shares.Schedule(synced.serverID, synced.view)
 	return true
 }
 

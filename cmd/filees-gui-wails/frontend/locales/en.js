@@ -108,6 +108,7 @@ export default {
   "summary.pendingBytes": "{size} waiting",
   "summary.emptyQueue": "queue is empty",
   "summary.lastKnown": "last known state · daemon offline",
+  "summary.lastKnownUnverified": "last known state · freshness unconfirmed",
   "summary.partialLocks": "at least {count} {locks} · {missing} unavailable",
   "summary.listUnavailable": "list unavailable",
   "summary.activations": "activations",

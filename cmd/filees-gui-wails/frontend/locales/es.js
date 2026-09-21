@@ -108,6 +108,7 @@ export default {
   "summary.pendingBytes": "{size} en espera",
   "summary.emptyQueue": "la cola está vacía",
   "summary.lastKnown": "último estado conocido · servicio sin conexión",
+  "summary.lastKnownUnverified": "último estado conocido · vigencia sin confirmar",
   "summary.partialLocks": "al menos {count} {locks} · {missing} no disponibles",
   "summary.listUnavailable": "lista no disponible",
   "summary.activations": "activaciones",

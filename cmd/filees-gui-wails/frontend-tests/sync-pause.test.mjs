@@ -12,9 +12,11 @@ test("manual and editor pause keep radar stopped until both are cleared", () => 
  const snapshot={connected:true,stale:false,capabilities:["sync.pause"],sync_pause:{manual:true,draft:true}};
  context.renderSyncPause(snapshot);
  assert.equal(get("#sync-pause").dataset.action,"resume_sync");
+ assert.equal(get("#sync-pause").attrs["aria-pressed"],"true");
  assert.equal(get("#sync-pause-status").textContent,"pause.both");
  assert.equal(get("#pulse-card").classList["is-paused"],true);
  snapshot.sync_pause.manual=false;context.renderSyncPause(snapshot);
+ assert.equal(get("#sync-pause").attrs["aria-pressed"],"false");
  assert.equal(get("#sync-pause").dataset.action,"pause_sync");
  assert.equal(get("#pulse-card").classList["is-paused"],true);
  snapshot.sync_pause.draft=false;context.renderSyncPause(snapshot);
@@ -24,4 +26,12 @@ test("manual and editor pause keep radar stopped until both are cleared", () => 
  snapshot.connected=true;snapshot.capabilities=[];context.renderSyncPause(snapshot);assert.equal(get("#sync-pause").disabled,true);
  const css=readFileSync(new URL("../frontend/app.css",import.meta.url),"utf8");
  assert.match(css,/#pulse-card\.is-paused \.pulse-orbit\s*\{\s*animation-play-state: paused;/);
+});
+
+test("pause uses the shared header control with a red signal in both states", () => {
+ const html=readFileSync(new URL("../frontend/index.html",import.meta.url),"utf8");
+ const css=readFileSync(new URL("../frontend/app.css",import.meta.url),"utf8");
+ assert.match(html, /id="sync-pause" class="icon-button pair-button sync-pause-button"/);
+ assert.match(css, /\.topbar #sync-pause\s*\{[^}]*min-width:108px;[^}]*color:var\(--red\)/);
+ assert.match(css, /\.topbar #sync-pause\[aria-pressed="true"\]\s*\{[^}]*border-color:var\(--red\)/);
 });

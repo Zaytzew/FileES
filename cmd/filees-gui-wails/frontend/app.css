@@ -59,6 +59,9 @@ button:focus-visible,a:focus-visible { outline:3px solid color-mix(in srgb,var(-
 .pair-button span { line-height:1; }
 .demo-button[hidden] { display:none; }
 .topbar .pair-button { height:38px; border-radius:11px; }
+.topbar #sync-pause { min-width:108px; justify-content:center; white-space:nowrap; color:var(--red); border-color:color-mix(in srgb,var(--red) 55%,var(--line)); background:color-mix(in srgb,var(--red) 10%,transparent); }
+.topbar #sync-pause:hover:not(:disabled) { color:var(--red); border-color:var(--red); background:color-mix(in srgb,var(--red) 18%,transparent); }
+.topbar #sync-pause[aria-pressed="true"] { color:var(--red); border-color:var(--red); background:color-mix(in srgb,var(--red) 22%,transparent); box-shadow:inset 0 -2px var(--red); }
 .action-switch { display:flex; height:38px; border:1px solid var(--theme-line); border-radius:11px; background:var(--theme-panel); }
 .action-switch > .icon-button, .action-switch .language-menu > .icon-button { width:38px; height:36px; border:0; border-radius:0; background:transparent; }
 .action-switch > .icon-button:first-child { border-radius:10px 0 0 10px; }
@@ -479,18 +482,22 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 @keyframes update-spinner { to { transform: rotate(360deg); } }
 
 /* Realm drawers are presentation only; repo actions and shelf parentage stay intact. */
-.drawer-organizer { margin: 8px 12px; font-size: .85rem; }
-.drawer-organizer summary { cursor: pointer; }
-.drawer-organizer form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 10px 0; }
-.drawer-organizer label { display: flex; flex-direction: column; gap: 4px; }
+.drawer-organizer { margin:8px 12px; color:var(--soft-text); font-family:inherit; font-size:14px; }
+.drawer-organizer summary { cursor:pointer; padding:12px 4px; font-family:inherit; font-size:14px; font-weight:600; }
+.drawer-organizer form { display:flex; flex-wrap:wrap; gap:16px; align-items:end; padding:12px 0; }
+.drawer-organizer label { display:flex; flex-direction:column; gap:8px; }
 .drawer-organizer input { max-width: 240px; }
-.drawer-organizer input, .drawer-organizer button, .drawer-heading button, .drawer-picker { color: inherit; background: var(--surface, transparent); border: 1px solid var(--line, #7777); border-radius: 5px; padding: 5px 8px; font: inherit; }
+.drawer-organizer input, .drawer-organizer button, .drawer-heading button, .drawer-picker { color:var(--text); background:var(--panel-solid); border:1px solid var(--line); border-radius:10px; padding:9px 12px; font:inherit; }
+.drawer-organizer input, .drawer-organizer button { height:40px; }
+.drawer-organizer button, .drawer-heading button { font-weight:750; cursor:pointer; }
+.drawer-organizer button:hover:not(:disabled), .drawer-heading button:hover:not(:disabled), .drawer-picker:hover:not(:disabled) { border-color:var(--focus); }
+.drawer-organizer summary:focus-visible, .drawer-organizer input:focus-visible, .drawer-picker:focus-visible { outline:2px solid var(--focus); outline-offset:3px; border-radius:10px; }
 .repo-drawer { margin: 8px 0; border: 1px solid var(--line, #7774); border-radius: 6px; }
 .drawer-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; }
 .drawer-heading h4 { margin: 0; overflow-wrap: anywhere; }
 .drawer-heading small, .drawer-empty, .repo-last-commit { opacity: .7; }
 .drawer-empty { padding: 0 12px; font-size: .85rem; }
-.drawer-picker { display: block; margin-top: 5px; max-width: 160px; font-size: .78rem; }
+.drawer-picker { display:block; margin-top:8px; max-width:min(100%,240px); font-family:inherit; font-size:12px; cursor:pointer; }
 .drawer-heading button { font-size: .78rem; cursor: pointer; }
 .drawer-organizer button:disabled, .drawer-heading button:disabled, .drawer-picker:disabled { opacity: .5; cursor: default; }
 

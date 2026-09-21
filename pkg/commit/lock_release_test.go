@@ -166,7 +166,11 @@ func TestClaimReleasedLockRealSVN(t *testing.T) {
 		}
 	}
 	run(root, "svnadmin", "create", repository)
-	repoURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(repository)}).String()
+	repoPath := filepath.ToSlash(repository)
+	if filepath.VolumeName(repository) != "" {
+		repoPath = "/" + repoPath
+	}
+	repoURL := (&url.URL{Scheme: "file", Path: repoPath}).String()
 	run(root, "svn", "checkout", repoURL, owner)
 	os.WriteFile(filepath.Join(owner, "file.txt"), []byte("old"), 0600)
 	run(owner, "svn", "add", "file.txt")

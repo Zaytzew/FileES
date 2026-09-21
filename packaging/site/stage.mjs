@@ -12,11 +12,15 @@ await mkdir(out,{recursive:true});
 execFileSync('go',['build','-trimpath','-o',path.join(out,'filees-site-download'),'./cmd/filees-site-download'],
   {cwd:root,stdio:'inherit',env:{...process.env,GOOS:'linux',GOARCH:'amd64',CGO_ENABLED:'0'}});
 await copyFile(path.join(root,'landing','download.json'),path.join(out,'download.json'));
+const alpha=JSON.parse(await readFile(path.join(root,'landing','download.json'),'utf8'));
+alpha.channel='alpha';
+alpha.server.channel='alpha';
+await writeFile(path.join(out,'download-alpha.json'),JSON.stringify(alpha,null,2)+'\n');
 await copyFile(path.join(root,'landing','release-key.pub'),path.join(out,'release-key.pub'));
 await copyFile(path.join(root,'landing','download','index.html'),path.join(out,'download.html'));
 // Both run on Linux: a Windows checkout may have given them CRLF, which breaks
 // sh, and cron ignores a last line without a newline.
-for(const name of ['install.sh','filees-site-download.cron']){
+for(const name of ['install.sh','publish.sh','filees-site-download.cron']){
   const text=(await readFile(path.join(here,name),'utf8')).replace(/\r\n/g,'\n');
   await writeFile(path.join(out,name),text.endsWith('\n')?text:text+'\n');
 }

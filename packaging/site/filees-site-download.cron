@@ -4,4 +4,4 @@
 # tag filees-site-download (journalctl -t filees-site-download).
 SHELL=/bin/sh
 PATH=/usr/local/bin:/usr/bin:/bin
-*/15 * * * * filees-site flock -n /var/lib/filees-site/run.lock /usr/local/bin/filees-site-download -config /usr/local/share/filees-site/download.json -key /usr/local/share/filees-site/release-key.pub -template /usr/local/share/filees-site/download.html -out /var/lib/filees-site/site/download -state /var/lib/filees-site/state.json -quiet 2>&1 | logger -t filees-site-download
+*/15 * * * * filees-site flock -n /var/lib/filees-site/run.lock /bin/sh /usr/local/share/filees-site/publish.sh -quiet 2>&1 | logger -t filees-site-download

@@ -182,7 +182,9 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	template := p.Template
+	// Each invocation publishes one independently verified channel. The label
+	// follows that configuration, never the revision or another channel's state.
+	template := []byte(strings.ReplaceAll(string(p.Template), "{{CHANNEL}}", html.EscapeString(p.Config.Channel)))
 	if server != nil {
 		template = server.render(template)
 	}

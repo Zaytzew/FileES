@@ -74,6 +74,7 @@
 .Op Fl -partially-retained
 .Nm
 .Cm version
+.Op Fl -install-config Ar path
 .Sh DESCRIPTION
 .Nm
 is the operator command for onboarding tickets and a small set of
@@ -86,10 +87,29 @@ Creating a ticket as root produces a root-owned mode 0600 file that the
 set-id onboarding entry intentionally cannot read.
 .Pp
 .Cm version
-is answered before the configuration is opened, so a stale binary can be
-identified even when
+reports the binary build version (including its SVN revision) and platform.
+Aliases are
+.Fl -version
+and
+.Fl version .
+No service identity transition or server configuration is required, so the
+binary can be identified even when
 .Pa server.json
 is suspect.
+It also reports
+.Sy update_channel
+from
+.Pa /etc/filees/install.conf
+and
+.Sy recorded_release
+from the installer's state directory.
+Use
+.Fl -install-config
+after the version command to select a nonstandard installer configuration.
+Unavailable metadata is reported as unknown without hiding the build version.
+The update channel is a local subscription setting, not a label baked into the
+binary; promoting an unchanged release does not require rebuilding it.
+The recorded release does not prove that resident services have restarted.
 .Pp
 Normal repository create, grants, public shares and realm removal are desktop
 control-plane operations.

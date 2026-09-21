@@ -44,9 +44,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 	// reason to ask is that a deployment looks stale, and a suspect config is
 	// a common part of that suspicion - so making the answer depend on the
 	// config would withhold it exactly when it is most wanted.
-	if len(args) == 1 && (args[0] == "version" || args[0] == "--version" || args[0] == "-version") {
-		fmt.Fprintln(stdout, adminVersion)
-		return ExitOK
+	if IsAdminVersionRequest(args) {
+		return runAdminVersion(args[1:], stdout, stderr)
 	}
 	path, args, err := configPath(args)
 	if err != nil {

@@ -226,7 +226,8 @@ func (s appState) applySnapshot(status contract.RepoStatus) appState {
 // applyEvent updates the last-seen sequence and returns:
 //   - the new state
 //   - needsResync: true when a gap in the sequence stream is detected
-//   - dirtyRepo: the repoID to refresh (empty when needsResync is true)
+//   - dirtyRepo: the repoID to refresh; empty requests a full snapshot
+//     without invalidating unrelated data unless needsResync is also true
 func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 	gap := s.lastSeq > 0 && ev.Sequence != s.lastSeq+1
 	if ev.Sequence > s.lastSeq {
@@ -235,14 +236,12 @@ func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 	if gap {
 		return s, true, ""
 	}
-	if ev.Type == contract.EvNoticeCreated {
-		return s, true, ""
-	}
-	if ev.Type == contract.EvPublicSharesChanged {
-		return s, true, ""
-	}
-	if ev.Type == contract.EvLockReleaseChanged {
-		return s, true, ""
+	switch ev.Type {
+	case contract.EvNoticeCreated, contract.EvPublicSharesChanged, contract.EvLockReleaseChanged:
+		// These events update aggregates outside repo.status, but are not
+		// evidence of lost events or connectivity. Keep the last coherent
+		// view until its replacement arrives; a gap above still fails closed.
+		return s, false, ""
 	}
 	return s, false, ev.RepoID
 }

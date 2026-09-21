@@ -629,14 +629,14 @@ func TestReducerApplyEventGap(t *testing.T) {
 
 func TestReducerPublicSharesChangedRequestsAggregateRefresh(t *testing.T) {
 	_, resync, dirty := newAppState().applyEvent(contract.Event{Sequence: 1, Type: contract.EvPublicSharesChanged, RepoID: "docs"})
-	if !resync || dirty != "" {
+	if resync || dirty != "" {
 		t.Fatalf("public shares event: resync=%v dirty=%q", resync, dirty)
 	}
 }
 
 func TestReducerLockReleaseChangedRequestsSystemRefresh(t *testing.T) {
 	_, resync, dirty := newAppState().applyEvent(contract.Event{Sequence: 1, Type: contract.EvLockReleaseChanged})
-	if !resync || dirty != "" {
+	if resync || dirty != "" {
 		t.Fatalf("lock release event resync=%v dirty=%q", resync, dirty)
 	}
 }

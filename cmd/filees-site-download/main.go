@@ -129,6 +129,9 @@ func loadConfig(configPath string) (Config, error) {
 			return Config{}, fmt.Errorf("%s: %s %q is not a plain identifier", configPath, name, value)
 		}
 	}
+	if config.Server != nil && (!identifier.MatchString(config.Server.Channel) || config.Server.Platform != "openbsd-amd64") {
+		return Config{}, errors.New("server needs a channel and platform openbsd-amd64")
+	}
 	platforms := config.platforms()
 	if len(platforms) == 0 {
 		return Config{}, fmt.Errorf("%s: name a platform or a list of platforms", configPath)

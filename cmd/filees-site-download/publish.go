@@ -38,6 +38,7 @@ type Config struct {
 	Platforms []string                `json:"platforms,omitempty"`
 	KeyID     string                  `json:"key_id"`
 	Notes     map[string]ReleaseNotes `json:"notes"`
+	Server    *ServerConfig           `json:"server,omitempty"`
 }
 
 // ReleaseNotes is the optional highlighted sentence for one release.
@@ -61,6 +62,7 @@ type State struct {
 	Sequence      uint64                    `json:"sequence"`
 	SecurityEpoch uint64                    `json:"security_epoch"`
 	Installers    map[string]StateInstaller `json:"installers,omitempty"`
+	Server        *ServerState              `json:"server,omitempty"`
 }
 
 // StateInstaller is what one platform published last.
@@ -176,18 +178,30 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 				previous.ReleaseID, previous.Sequence, previous.SecurityEpoch)
 		}
 	}
-	page, err := renderPage(p.Template, envelope, downloads, p.Config.Notes[envelope.ReleaseID])
+	server, err := p.serverDownload(ctx, previous)
 	if err != nil {
 		return Result{}, err
 	}
-	sums := checksumFile(downloads)
+	template := p.Template
+	if server != nil {
+		template = server.render(template)
+	}
+	page, err := renderPage(template, envelope, downloads, p.Config.Notes[envelope.ReleaseID])
+	if err != nil {
+		return Result{}, err
+	}
+	allDownloads := append([]platformDownload(nil), downloads...)
+	if server != nil {
+		allDownloads = append(allDownloads, server.download)
+	}
+	sums := checksumFile(allDownloads)
 	result := Result{ReleaseID: envelope.ReleaseID, Version: downloads[0].Version}
-	for _, download := range downloads {
+	for _, download := range allDownloads {
 		result.Installers = append(result.Installers, download.Installer.Source)
 	}
 
-	if upToDate(p.OutDir, downloads, page, sums) {
-		return result, p.saveState(envelope, downloads)
+	if upToDate(p.OutDir, allDownloads, page, sums) {
+		return result, p.saveState(envelope, downloads, server)
 	}
 
 	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page}
@@ -205,11 +219,14 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 		}
 		files[download.Installer.Source] = data
 	}
+	if server != nil {
+		files[server.download.Installer.Source] = server.data
+	}
 	if err := replaceDirectory(p.OutDir, files); err != nil {
 		return Result{}, err
 	}
 	result.Changed = true
-	return result, p.saveState(envelope, downloads)
+	return result, p.saveState(envelope, downloads, server)
 }
 
 // checksumFile lists every offered installer, in the order the page shows them.
@@ -389,10 +406,13 @@ func loadState(statePath string) (*State, error) {
 	return &state, nil
 }
 
-func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload) error {
+func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server *serverBundle) error {
 	state := State{ReleaseID: envelope.ReleaseID, Sequence: envelope.Sequence, SecurityEpoch: envelope.SecurityEpoch, Installers: map[string]StateInstaller{}}
 	for _, download := range downloads {
 		state.Installers[download.Platform] = StateInstaller{Source: download.Installer.Source, SHA256: download.Installer.SHA256}
+	}
+	if server != nil {
+		state.Server = &server.state
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

@@ -1,5 +1,26 @@
 # FileES server toolchain bundle
 
+## Identify a deployed build
+
+Run `filees-admin version` (also `--version` or `-version`). It reports the
+binary version with SVN revision, target platform, `update_channel` from
+`/etc/filees/install.conf`, and `recorded_release` from installer state.
+For a custom installation use `filees-admin version --install-config /path/install.conf`.
+This is read-only, requires no `server.json` or service-account transition,
+and never contacts the release repository. Unreadable metadata is `unknown`;
+run as an account allowed to read installer configuration/state (normally root).
+
+The channel is the configured subscription, not a compiled property or proof
+that the installed release came from that channel. The recorded release does
+not prove that all resident services have restarted. The same signed artifact
+can be promoted from alpha to beta unchanged.
+
+Builds stamp `VERSION+r<svnversion>`; mixed revision ranges use a dash, and
+SVN's `M` (modified), `S` (switched), `P` (partial) markers remain visible.
+Exports or builds without SVN discovery say `+unversioned` rather than claiming
+a release revision. Official release preparation requires an exact clean
+revision matching the manifest. The bundle's `VERSION` contains the same stamp.
+
 This bundle contains the short-lived server toolchain plus two optional,
 disabled-by-default Public Shares services:
 

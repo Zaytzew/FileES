@@ -19,5 +19,5 @@ func main() {
 }
 
 func adminNeedsStateIdentity(args []string) bool {
-	return len(args) != 1 || args[0] != "version"
+	return !servertool.IsAdminVersionRequest(args)
 }

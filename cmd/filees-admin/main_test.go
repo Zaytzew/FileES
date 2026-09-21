@@ -9,6 +9,9 @@ func TestAdminNeedsStateIdentity(t *testing.T) {
 		want bool
 	}{
 		{name: "version is stateless", args: []string{"version"}, want: false},
+		{name: "long alias", args: []string{"--version"}, want: false},
+		{name: "short alias", args: []string{"-version"}, want: false},
+		{name: "explicit installer config", args: []string{"version", "--install-config", "/tmp/install.conf"}, want: false},
 		{name: "ticket list", args: []string{"ticket", "list"}, want: true},
 		{name: "ticket create", args: []string{"ticket", "create", "user@example.test"}, want: true},
 		{name: "usage refusal", args: nil, want: true},

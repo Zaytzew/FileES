@@ -60,7 +60,7 @@ mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/share/man/man5" \
 # the only way to tell how old a deployed tool is was to compare its usage text
 # against the source, which is how a stale filees-admin went unnoticed while a
 # newly added flag read as "flag provided but not defined".
-version=$(cat "$root/VERSION")
+version=$(sh "$root/packaging/server-build-version.sh" "$root")
 release_ldflags=""
 
 if [ -n "${FILEES_RELEASE_PUBKEY:-}" ]; then
@@ -114,7 +114,7 @@ if [ -d "$root/docs/man" ]; then
 	cp "$root/docs/man/man7/"* "$tmp/share/man/man7/"
 	cp "$root/docs/man/man8/"* "$tmp/share/man/man8/"
 fi
-cp "$root/VERSION" "$tmp/"
+printf '%s\n' "$version" >"$tmp/VERSION"
 chmod +x "$tmp/install-server.sh"
 chmod +x "$tmp/openbsd/install-ssh.sh"
 (

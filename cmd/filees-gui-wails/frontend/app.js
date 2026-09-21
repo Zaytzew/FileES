@@ -378,7 +378,7 @@ function renderMetrics(snapshot) {
     : tn("count.locks", reservations.length);
   $("#metric-public-shares").textContent = snapshot.public_shares_known && !publicSharesStale ? activePublicShares : "?";
   $("#metric-public-shares-note").textContent = (reservationsOffline || publicSharesStale) && snapshot.public_shares_known
-    ? t("summary.lastKnown")
+    ? t(snapshot.connected ? "summary.lastKnownUnverified" : "summary.lastKnown")
     : snapshot.public_shares_known
       ? tn("count.links", activePublicShares)
       : t("summary.listUnavailable");
@@ -857,7 +857,7 @@ function renderPublicShares(snapshot) {
       ? t("share.recipients", { count: share.recipient_count })
       : t("share.open");
     const objects = t("share.files", { count: share.object_count });
-    const freshness = share.stale ? `<small>${escapeHTML(t("summary.lastKnown"))} · ${escapeHTML(shortDateTime(share.observed_at))}</small>` : "";
+    const freshness = share.stale ? `<small>${escapeHTML(t(snapshot.connected ? "summary.lastKnownUnverified" : "summary.lastKnown"))} · ${escapeHTML(shortDateTime(share.observed_at))}</small>` : "";
     const manage = share.can_open
       ? `<button class="dashboard-share-open" type="button" data-action="manage_public_shares" aria-label="${escapeHTML(t("share.openName", { name: share.address }))}">
           <span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span>

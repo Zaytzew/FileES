@@ -196,7 +196,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .realm-group.guest .realm-divider { color:#b8bff2; } .realm-group.guest .realm-divider::after { background:rgba(154,167,232,.16); }
 .realm-group.deleted .realm-divider { color:var(--amber); } .realm-group.deleted .realm-divider::after { background:rgba(244,199,109,.16); }
 .repo-list { display:grid; gap:9px; }
-.repo-row { display:grid; align-items:center; min-height:82px; padding:14px 15px; border:1px solid transparent; border-radius:14px; background:rgba(255,255,255,.028); transition:.18s ease; }
+.repo-row { display:grid; align-items:center; min-height:82px; padding:14px 15px; border:1px solid transparent; border-radius:14px; background:rgba(255,255,255,.028); transition:background .18s ease,border-color .18s ease; }
 .repo-row:hover { transform:translateY(-1px); border-color:rgba(255,255,255,.11); background:rgba(255,255,255,.045); }
 .repo-title { min-width:var(--repo-title-min); display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:9px; }
 .repo-tools { min-width:0; display:flex; align-items:center; justify-content:flex-start; flex-wrap:nowrap; gap:5px; }
@@ -487,19 +487,24 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .drawer-organizer form { display:flex; flex-wrap:wrap; gap:16px; align-items:end; padding:12px 0; }
 .drawer-organizer label { display:flex; flex-direction:column; gap:8px; }
 .drawer-organizer input { max-width: 240px; }
-.drawer-organizer input, .drawer-organizer button, .drawer-heading button, .drawer-picker { color:var(--text); background:var(--panel-solid); border:1px solid var(--line); border-radius:10px; padding:9px 12px; font:inherit; }
+.drawer-organizer input, .drawer-organizer button, .drawer-controls button, .drawer-picker { color:var(--text); background:var(--panel-solid); border:1px solid var(--line); border-radius:10px; padding:9px 12px; font:inherit; }
 .drawer-organizer input, .drawer-organizer button { height:40px; }
-.drawer-organizer button, .drawer-heading button { font-weight:750; cursor:pointer; }
-.drawer-organizer button:hover:not(:disabled), .drawer-heading button:hover:not(:disabled), .drawer-picker:hover:not(:disabled) { border-color:var(--focus); }
-.drawer-organizer summary:focus-visible, .drawer-organizer input:focus-visible, .drawer-picker:focus-visible { outline:2px solid var(--focus); outline-offset:3px; border-radius:10px; }
-.repo-drawer { margin: 8px 0; border: 1px solid var(--line, #7774); border-radius: 6px; }
-.drawer-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; }
-.drawer-heading h4 { margin: 0; overflow-wrap: anywhere; }
+.drawer-organizer button, .drawer-controls button { font-weight:750; cursor:pointer; }
+.drawer-organizer button:hover:not(:disabled), .drawer-controls button:hover:not(:disabled), .drawer-picker:hover:not(:disabled) { border-color:var(--focus); }
+.drawer-organizer summary:focus-visible, .drawer-heading:focus-visible, .drawer-organizer input:focus-visible, .drawer-picker:focus-visible { outline:2px solid var(--focus); outline-offset:3px; border-radius:10px; }
+.repo-drawer { margin:8px 0; border:1px solid color-mix(in srgb,var(--drawer-accent) 30%,var(--line)); border-left:3px solid var(--drawer-accent); border-radius:14px; background:color-mix(in srgb,var(--drawer-accent) 4%,transparent); }
+.drawer-heading { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; background:linear-gradient(110deg,color-mix(in srgb,var(--drawer-accent) 13%,transparent),transparent); cursor:pointer; list-style:none; font:inherit; }
+.drawer-heading::-webkit-details-marker { display:none; }
+.drawer-chevron { color:var(--soft-text); font-size:22px; line-height:1; }
+.repo-drawer[open] > .drawer-heading .drawer-chevron { transform:rotate(90deg); }
+.drawer-heading h4 { margin:0; min-width:0; overflow-wrap:anywhere; }
+.drawer-body { padding:0 10px 10px; }
+.drawer-controls { display:flex; justify-content:flex-end; padding:8px 0; }
 .drawer-heading small, .drawer-empty, .repo-last-commit { opacity: .7; }
 .drawer-empty { padding: 0 12px; font-size: .85rem; }
 .drawer-picker { display:block; margin-top:8px; max-width:min(100%,240px); font-family:inherit; font-size:12px; cursor:pointer; }
-.drawer-heading button { font-size: .78rem; cursor: pointer; }
-.drawer-organizer button:disabled, .drawer-heading button:disabled, .drawer-picker:disabled { opacity: .5; cursor: default; }
+.drawer-controls button { font-size:.78rem; cursor:pointer; }
+.drawer-organizer button:disabled, .drawer-controls button:disabled, .drawer-picker:disabled { opacity:.5; cursor:default; }
 
 /* Keep the current angle; resume after both pause reasons are cleared. */
 #pulse-card.is-paused .pulse-orbit { animation-play-state: paused; }

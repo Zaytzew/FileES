@@ -35,6 +35,26 @@ try {
  render(root,markup({draft:''}));check(input.value==='','successful submit cannot clear draft');
  render(root,markup({drawer:false}));check(!drawer.isConnected,'deleted drawer remains');
  render(root,markup({scope:'other'}));check(!input.isConnected,'realm replacement retains old controls');
+ // Conditional actions keep their native buttons and SVGs, not just their text.
+ const actions=lock=>`<div class="repo-tools"><button data-action="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg></button>${lock?'<button data-action="lock"><svg><rect width="10" height="10"/></svg></button>':''}<button data-action="publish"><svg><path d="M1 1L4 4"/></svg></button></div>`;
+ render(root,actions(true));
+ const publish=root.querySelector('[data-action="publish"]'),icon=publish.querySelector('svg');
+ render(root,actions(false));
+ check(root.querySelector('[data-action="publish"]')===publish&&publish.querySelector('svg')===icon,'action repurposed after neighbour removal');
+ check(!root.querySelector('[data-action="lock"]'),'withdrawn action retained');
+ render(root,actions(true));
+ check(root.querySelector('[data-action="publish"]')===publish,'action replaced on neighbour insertion');
+ const groups=first=>`${first?'<section class="realm-group owned"><article data-repo-id="first">First</article></section>':''}<section class="realm-group guest"><article data-repo-id="guest">Guest</article></section>`;
+ render(root,groups(true));const guest=root.querySelector('[data-repo-id="guest"]');
+ render(root,groups(false));check(root.querySelector('[data-repo-id="guest"]')===guest,'unrelated group rebuilt');
+ // Real details: native mouse/keyboard toggles have a session-owned open bit.
+ const folded=open=>`<details class="repo-drawer" data-drawer-id="d" data-idle-key="drawer" ${open?'open':''}><summary>Drawer</summary><div>${actions(true)}</div></details>`;
+ render(root,folded(false));const fold=root.querySelector('details');
+ check(!fold.open,'drawer default is expanded');
+ fold.querySelector('summary').click();check(fold.open,'drawer cannot expand');
+ const foldAction=fold.querySelector('[data-action="publish"]');
+ render(root,folded(true));check(root.querySelector('details')===fold&&fold.open&&fold.querySelector('[data-action="publish"]')===foldAction,'refresh rebuilt open drawer');
+ fold.querySelector('summary').click();render(root,folded(false));check(!fold.open,'drawer cannot collapse');
  observer.disconnect();
  document.title=`PASS ${count}`;
  window.webkit?.messageHandlers?.result?.postMessage(document.title);

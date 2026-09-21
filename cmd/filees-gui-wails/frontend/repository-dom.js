@@ -5,6 +5,10 @@ function key(node) {
   if (node.matches('.server-panel[data-server-id]')) {
     return JSON.stringify(['server', node.dataset.serverId, node.dataset.guiScope || '']);
   }
+  // A conditional group/action must not lend its DOM to the next group or
+  // action when a neighbour disappears. In particular, keep the same SVG.
+  if (node.matches('.realm-group')) return JSON.stringify(['group', node.className]);
+  if (node.matches('.repo-tools [data-action]')) return JSON.stringify(['action', node.dataset.action]);
   for (const attribute of ['data-drawer-id', 'data-repo-id', 'data-idle-key', 'id']) {
     if (node.hasAttribute(attribute)) return JSON.stringify([attribute, node.getAttribute(attribute)]);
   }

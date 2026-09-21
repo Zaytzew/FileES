@@ -26,7 +26,7 @@ function refreshPromptLabels() {
   const next = snapshot;
   $("#prompt-mode").textContent = submissionError
     ? t("prompt.submitFailed", { reason: submissionError })
-    : t(next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
+    : t(next.presentation_key === "select.updateChannel" ? "select.updateChannel.label" : next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
   $("#prompt-label").textContent = next.mode === "text" ? promptText(next, "label", next.label || t("field.value")) : next.label || t("field.value");
   if (next.mode === "text") $("#prompt-value").placeholder = next.placeholder ? promptText(next, "placeholder", next.placeholder) : "";
   $("#prompt-select-label").textContent = next.mode === "select" ? promptText(next, "label", next.label || t("field.server")) : next.label || t("field.server");
@@ -75,8 +75,8 @@ function render(next) {
     const node = document.createElement("option");
     node.value = option.value;
     node.textContent = option.detail && option.detail !== option.label ? `${option.label} — ${option.detail}` : option.label;
-    if (next.presentation_key === "select.visibility") {
-      node.dataset.i18n = "select.visibility." + option.value;
+    if (["select.visibility", "select.updateChannel"].includes(next.presentation_key)) {
+      node.dataset.i18n = next.presentation_key + "." + option.value;
       node.textContent = t(node.dataset.i18n);
     }
     return node;

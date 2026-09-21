@@ -37,7 +37,27 @@ escape_sed_replacement() {
 
 mkdir -p "$config_dir"
 if [ ! -f "$config" ]; then
-	install -m 0600 "$bundle/share/filees/config.example.json" "$config"
+	provisional=$(mktemp "$config_dir/.filees-setup.XXXXXX")
+	trap 'rm -f "$provisional"' EXIT HUP INT TERM
+	install -m 0600 "$bundle/share/filees/config.example.json" "$provisional"
+	if [ -n "${FILEES_UPDATE_CHANNEL:-}" ]; then
+		case "$FILEES_UPDATE_CHANNEL" in alpha|beta) ;; *) printf 'Initial channel must be alpha or beta\n' >&2; exit 2 ;; esac
+		"$bundle/bin/filees" update-channel "$FILEES_UPDATE_CHANNEL" --config "$provisional"
+	else
+		if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+			printf 'Choose a channel for this new installation: FILEES_UPDATE_CHANNEL=beta (or alpha) sh install-user.sh\n' >&2
+			exit 2
+		fi
+		"$bundle/bin/filees-gui" --choose-update-channel "$provisional"
+	fi
+	# A successful dialog must have saved an explicit channel. Do not accept a
+	# default reported by a binary when the config itself remains unfinished.
+	grep -Eq '"channel"[[:space:]]*:[[:space:]]*"(alpha|beta)"' "$provisional" || { printf 'Initial update channel was not saved\n' >&2; exit 1; }
+	"$bundle/bin/filees" config-check --config "$provisional"
+	# A hard link refuses to overwrite a concurrently created configuration.
+	ln "$provisional" "$config"
+	rm -f "$provisional"
+	trap - EXIT HUP INT TERM
 fi
 "$bundle/bin/filees" config-check --config "$config"
 

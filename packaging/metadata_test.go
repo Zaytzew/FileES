@@ -280,11 +280,25 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bundle, "share", "icons", "hicolor", "scalable", "apps", "filees-gui.svg"), []byte("<svg/>\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fileesStub := "#!/bin/sh\n[ \"$1\" = config-check ] || exit 2\nexit 0\n"
+	fileesStub := `#!/bin/sh
+case "$1" in
+  config-check) exit 0 ;;
+  update-channel) printf '{"repositories":[],"update":{"enabled":true,"channel":"%s"}}\n' "$2" > "$4" ;;
+  *) exit 2 ;;
+esac
+`
 	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees"), []byte(fileesStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	guiStub := `#!/bin/sh
+if [ "$1" = --choose-update-channel ]; then
+  echo choose >> "$HOME/selection.log"
+  [ "${CANCEL_SELECTION:-0}" = 1 ] && exit 1
+  printf '{"repositories":[],"update":{"enabled":true,"channel":"beta"}}\n' > "$2"
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-gui"), []byte(guiStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-pair-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -304,16 +318,49 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	env := append(os.Environ(),
 		"HOME="+home, "PREFIX="+prefix, "XDG_DATA_HOME="+dataHome, "XDG_CONFIG_HOME="+configHome,
 		"PATH="+fakeBin+":/usr/bin:/bin", "ENABLE_DAEMON=0", "ENABLE_AUTOSTART=0",
+		"DISPLAY=:test", "FILEES_UPDATE_CHANNEL=", "CANCEL_SELECTION=0",
 	)
-	runScript(t, filepath.Join(bundle, "install-user.sh"), env)
 	configPath := filepath.Join(configHome, "filees", "config.json")
+	// Cancellation leaves no final config or installed daemon. Retry must ask
+	// again; an upgrade must not ask or rewrite the existing choice.
+	cancelled := exec.Command("sh", filepath.Join(bundle, "install-user.sh"))
+	cancelled.Env = append(append([]string{}, env...), "CANCEL_SELECTION=1")
+	if output, err := cancelled.CombinedOutput(); err == nil {
+		t.Fatalf("cancelled setup succeeded: %s", output)
+	}
+	for _, path := range []string{configPath, filepath.Join(prefix, "bin", "filees")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("cancelled setup left %s: %v", path, err)
+		}
+	}
+	runScript(t, filepath.Join(bundle, "install-user.sh"), env)
+	if got, err := os.ReadFile(configPath); err != nil || !strings.Contains(string(got), `"channel":"beta"`) {
+		t.Fatalf("initial channel missing: %s %v", got, err)
+	}
 	custom := []byte("[{\"managed\":true}]\n")
 	if err := os.WriteFile(configPath, custom, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runScript(t, filepath.Join(bundle, "install-user.sh"), env)
+	if got, err := os.ReadFile(filepath.Join(home, "selection.log")); err != nil || strings.Count(string(got), "choose") != 2 {
+		t.Fatalf("selection repeated on upgrade: %s %v", got, err)
+	}
 	if got, err := os.ReadFile(configPath); err != nil || !stringEqual(got, custom) {
 		t.Fatalf("upgrade overwrote config: %q err=%v", got, err)
+	}
+	headlessHome := filepath.Join(root, "headless-config")
+	headlessEnv := append(append([]string{}, env...), "XDG_CONFIG_HOME="+headlessHome, "DISPLAY=", "WAYLAND_DISPLAY=")
+	noChoice := exec.Command("sh", filepath.Join(bundle, "install-user.sh"))
+	noChoice.Env = headlessEnv
+	if output, err := noChoice.CombinedOutput(); err == nil || !strings.Contains(string(output), "FILEES_UPDATE_CHANNEL=beta") {
+		t.Fatalf("headless setup did not explain choice: %s %v", output, err)
+	}
+	if _, err := os.Stat(filepath.Join(headlessHome, "filees", "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("headless setup created implicit config: %v", err)
+	}
+	runScript(t, filepath.Join(bundle, "install-user.sh"), append(headlessEnv, "FILEES_UPDATE_CHANNEL=alpha"))
+	if got, err := os.ReadFile(filepath.Join(headlessHome, "filees", "config.json")); err != nil || !strings.Contains(string(got), `"channel":"alpha"`) {
+		t.Fatalf("headless channel missing: %s %v", got, err)
 	}
 	for _, path := range []string{
 		filepath.Join(prefix, "bin", "filees"), filepath.Join(prefix, "bin", "filees-gui"),

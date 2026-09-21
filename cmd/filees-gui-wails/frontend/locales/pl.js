@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.updateChannel.title": "Wybierz kanał aktualizacji",
+  "select.updateChannel.text": "Beta otrzymuje wybrane, sprawdzone wydania. Alpha udostępnia nowe funkcje wcześniej i może zawierać błędy. Wybór zostanie zapisany i zachowany przy kolejnych aktualizacjach.",
+  "select.updateChannel.label": "Kanał",
+  "select.updateChannel.confirm": "Zapisz i uruchom",
+  "select.updateChannel.cancel": "Anuluj",
+  "select.updateChannel.alpha": "Alpha — nowe funkcje i testy",
+  "select.updateChannel.beta": "Beta — wybrane, sprawdzone wydania",
+  "info.updateChannelFailed.title": "Nie udało się zapisać kanału",
+  "info.updateChannelFailed.text": "Aplikacja nie została uruchomiona. Spróbuj ponownie.\n{reason}",
+  "info.updateChannelFailed.confirm": "Rozumiem",
+  "info.updateChannelFailed.cancel": "Anuluj",
   "share.openRecipient": "Otwórz stronę udostępnienia w przeglądarce",
   "share.openFailed": "Nie udało się otworzyć publicznego linku.",
   "pause.pause": "Wstrzymaj",

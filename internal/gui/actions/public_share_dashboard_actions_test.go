@@ -47,11 +47,14 @@ func publicShareDashboardView() app.ViewModel {
 }
 
 func TestControllerOpensFocusedPublicShareDirectlyFromDashboard(t *testing.T) {
-	manager := &dashboardPublicShareManager{shares: []actions.PublicShareSummary{{ChannelID: "share-1", State: "active"}}, revoked: make(chan string, 1)}
+	manager := &dashboardPublicShareManager{shares: []actions.PublicShareSummary{{ChannelID: "share-1", State: "active", PublicURL: "https://download.example/realm/share"}}, revoked: make(chan string, 1)}
 	platformFake := &platformtest.Fake{
 		PublicSharesFunc: func(_ context.Context, request platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error) {
 			if !request.DirectEntry || request.FocusChannelID != "share-1" || request.ServerID != "office" || request.RepoID != "repo-1" {
 				t.Fatalf("direct public share request = %#v", request)
+			}
+			if len(request.Shares) != 1 || request.Shares[0].PublicURL != "https://download.example/realm/share" {
+				t.Fatalf("recipient URL lost: %+v", request.Shares)
 			}
 			return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
 		},

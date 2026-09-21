@@ -927,6 +927,13 @@ export class PublicShareProjection {
      * @param {Partial<PublicShareProjection>} [$$source = {}] - The source object to create the PublicShareProjection.
      */
     constructor($$source = {}) {
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["public_url"] = undefined;
+        }
         /** @type {string | undefined} */
         this["state_key"] = undefined;
         if (!("channel_id" in $$source)) {

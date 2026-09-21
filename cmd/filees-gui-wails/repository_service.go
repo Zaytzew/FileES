@@ -127,6 +127,7 @@ type RepositoryActionProjection struct {
 }
 
 type PublicShareProjection struct {
+	PublicURL  string `json:"public_url,omitempty"`
 	StateKey   string `json:"state_key,omitempty"`
 	ChannelID  string `json:"channel_id"`
 	Address    string `json:"address"`
@@ -1000,6 +1001,7 @@ func projectPublicShares(request platform.PublicShareDialogRequest) (RepositoryS
 	for _, share := range request.Shares {
 		active := strings.EqualFold(strings.TrimSpace(share.State), "aktywne") || strings.EqualFold(strings.TrimSpace(share.State), "active")
 		snapshot.Shares = append(snapshot.Shares, PublicShareProjection{
+			PublicURL: share.PublicURL,
 			ChannelID: share.ChannelID, Address: share.Address, State: share.State, StateKey: share.StateKey, SourceRoot: share.SourceRoot,
 			Recipients: share.Recipients, Password: share.Password, Revision: share.Revision,
 			CanEdit: active, CanRevoke: active, CanDelete: strings.TrimSpace(share.ChannelID) != "",

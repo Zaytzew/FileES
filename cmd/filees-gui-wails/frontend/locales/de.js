@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "share.openRecipient": "Freigabeseite im Browser öffnen",
+  "share.openFailed": "Der öffentliche Link konnte nicht geöffnet werden.",
   "pause.pause": "Pausieren",
   "pause.resume": "Fortsetzen",
   "pause.manual": "Synchronisierung pausiert.",

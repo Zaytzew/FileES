@@ -82,7 +82,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	if config.PublicShares.Enabled {
 		stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
 		publicShareChannels = &channel.Store{Root: stateRoot, Authority: publisher, TokenKey: config.Onboarding.OTPPepper, MaxChannelsPerRealm: config.PublicShares.EffectiveMaxChannelsPerRealm(), PasswordRequired: config.PublicShares.PasswordRequired}
-		publicShares = repoworker.ChannelPublicShareService{Channels: publicShareChannels, Deliverer: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")}}
+		publicShares = repoworker.ChannelPublicShareService{BaseURL: config.PublicShares.BaseURL, Channels: publicShareChannels, Deliverer: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")}}
 	}
 	realmRemoval := realmRemovalCoordinator{
 		Store:         realmRemovalStore,

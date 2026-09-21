@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import { promptDetailText } from "../frontend/prompt-details.js";
+import { publicShareURL } from "../frontend/public-share-link.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
@@ -762,7 +763,7 @@ test("repository translated controls retain opaque action IDs and escape user da
   const labelStart = i18nSource.indexOf("export function labelHTML(");
   const labelEnd = i18nSource.indexOf("\n}", labelStart) + 2;
   const card = runInNewContext(`${i18nSource.slice(labelStart, labelEnd).replace("export ", "")}\n${source.slice(start, end)}\nshareCard`, {
-    escapeHTML: escape, currentSnapshot: null,
+    escapeHTML: escape, currentSnapshot: null, publicShareURL,
     t: (key, args) => translate(catalogues, "en", key, args),
   });
   const html = card({ channel_id: 'opaque"<id>', address: "Nazwa użytkownika <DWG>", can_edit: true, can_revoke: true });
@@ -771,6 +772,12 @@ test("repository translated controls retain opaque action IDs and escape user da
   assert.match(html, /data-i18n="action.edit">Edit<\/span>/);
   assert.match(html, /Nazwa użytkownika &lt;DWG&gt;/);
   assert.doesNotMatch(html, /data-share-action="delete"/);
+  assert.doesNotMatch(html, /data-open-share/);
+  const linked = card({channel_id: 'opaque"<id>', address: "pracownia/<nazwa>", public_url: "https://download.example/realm/share"});
+  assert.match(linked, /data-open-share="opaque&quot;&lt;id&gt;"/);
+  assert.match(linked, /pracownia\/&lt;nazwa&gt;/);
+  assert.match(linked, /data-i18n-title="share.openRecipient"/);
+  assert.doesNotMatch(card({channel_id: "x", public_url: "javascript:alert(1)"}), /data-open-share/);
 });
 
 // Raw daemon diagnostics belong in the full journal and nowhere else. The

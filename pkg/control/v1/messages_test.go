@@ -385,6 +385,7 @@ func TestPublicShareListAndPasswordPreservationContracts(t *testing.T) {
 		t.Fatal("password preservation with recipient tokens was accepted")
 	}
 	result := ListPublicSharesResult{Shares: []PublicShareSummary{{ChannelID: channelID, RepoID: repoID, Alias: "atmprojekt", Slug: "przetarg-2026", State: "active", SourceRoot: "wydanie", PasswordProtected: true, Objects: declaration.Objects, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}}}
+	result.Shares[0].PublicURL = "https://download.example/atmprojekt/przetarg-2026"
 	if _, err := NewSuccessResult(uuid.NewString(), uuid.NewString(), TicketListPublicShares, result, time.Now()); err != nil {
 		t.Fatal(err)
 	}

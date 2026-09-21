@@ -774,6 +774,7 @@ type PublicShareChannelPayload struct {
 }
 
 type PublicShareSummary struct {
+	PublicURL         string              `json:"public_url,omitempty"`
 	ObservedAt        string              `json:"observed_at,omitempty"`
 	Stale             bool                `json:"stale,omitempty"`
 	ChannelID         string              `json:"channel_id"`

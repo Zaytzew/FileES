@@ -10,6 +10,11 @@
 html { min-height: 100%; scrollbar-width: none; }
 body { min-width: 760px; min-height: 100vh; margin: 0; overflow-x: hidden; color: var(--text); background: var(--background); }
 button { font: inherit; }
+.share-link { max-width: 100%; padding: 2px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.share-link span { color: var(--teal); }
+.share-link:hover { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; }
+.share-link:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; border-radius: 3px; }
+.share-link:disabled { opacity: .6; cursor: wait; }
 .share-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .share-actions button { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--soft-text); background: rgba(255,255,255,.03); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
 .share-actions button:hover { border-color: rgba(255,106,0,.36); color: #ff9a52; }

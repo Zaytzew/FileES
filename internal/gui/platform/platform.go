@@ -116,6 +116,7 @@ type PublicShareDialogRequest struct {
 }
 
 type PublicShareSummary struct {
+	PublicURL                                                             string
 	StateKey                                                              string
 	ChannelID, Address, State, SourceRoot, Recipients, Password, Revision string
 }

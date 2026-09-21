@@ -179,6 +179,7 @@ type PublicShareObject struct {
 }
 
 type PublicShareSummary struct {
+	PublicURL                                            string
 	ChannelID, Alias, Slug, State, SourceRoot, UpdatedAt string
 	Recipients                                           []string
 	PasswordProtected                                    bool
@@ -1872,7 +1873,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				if len(share.Recipients) > 0 {
 					recipients = strings.Join(share.Recipients, ", ")
 				}
-				request.Shares = append(request.Shares, platform.PublicShareSummary{ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), StateKey: publicShareStateKey(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
+				request.Shares = append(request.Shares, platform.PublicShareSummary{PublicURL: share.PublicURL, ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), StateKey: publicShareStateKey(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
 			}
 			if direct {
 				if _, ok := known[focusChannelID]; !ok {

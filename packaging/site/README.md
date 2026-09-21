@@ -8,6 +8,16 @@ comes from one shared release; server releases remain independent.
 After this publisher update is installed, signing and promoting each release
 is enough: the site follows within 15 minutes.
 
+The main-page header reads each lane's `release.json` without browser cache:
+`beta r… · alpha r…` means the two published desktop releases, not the revision
+of the website sources or the independently released server. The publisher
+replaces this small public JSON together with the page and verified downloads;
+a failed run leaves the previous number in place. No history is accumulated.
+Install the updated publisher and deploy `index.html` plus `release-badge.js`
+from the site package once. Later cron runs need no write access to the root
+page. An unavailable JSON leaves a plain channel link rather than a guessed
+revision. Numbers refresh on page load; an already open tab needs a reload.
+
 ## Server bundle
 
 The first card offers OpenBSD amd64 from the independently signed server

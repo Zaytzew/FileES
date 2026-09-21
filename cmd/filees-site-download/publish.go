@@ -198,15 +198,25 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	}
 	sums := checksumFile(allDownloads)
 	result := Result{ReleaseID: envelope.ReleaseID, Version: downloads[0].Version}
+	// Public header metadata travels with the verified publication, not the
+	// private rollback state or the source revision of the landing page.
+	metadata, err := json.Marshal(struct {
+		Channel   string `json:"channel"`
+		ReleaseID string `json:"release_id"`
+		Version   string `json:"version"`
+	}{p.Config.Channel, result.ReleaseID, result.Version})
+	if err != nil {
+		return Result{}, err
+	}
 	for _, download := range allDownloads {
 		result.Installers = append(result.Installers, download.Installer.Source)
 	}
 
-	if upToDate(p.OutDir, allDownloads, page, sums) {
+	if upToDate(p.OutDir, allDownloads, page, sums, metadata) {
 		return result, p.saveState(envelope, downloads, server)
 	}
 
-	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page}
+	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page, "release.json": metadata}
 	for _, download := range downloads {
 		data, err := p.Fetcher.Cat(ctx, path.Join(path.Dir(download.Manifest), download.Installer.Source))
 		if err != nil {
@@ -317,7 +327,11 @@ func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads [
 	return []byte(page), nil
 }
 
-func upToDate(dir string, downloads []platformDownload, page, sums []byte) bool {
+func upToDate(dir string, downloads []platformDownload, page, sums, metadata []byte) bool {
+	currentMetadata, err := os.ReadFile(filepath.Join(dir, "release.json"))
+	if err != nil || !bytes.Equal(currentMetadata, metadata) {
+		return false
+	}
 	current, err := os.ReadFile(filepath.Join(dir, "index.html"))
 	if err != nil || !bytes.Equal(current, page) {
 		return false

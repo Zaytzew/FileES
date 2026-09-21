@@ -230,17 +230,54 @@ func TestIndependentBetaAndAlphaPages(t *testing.T) {
 		if !strings.Contains(mustRead(t, filepath.Join(p.OutDir, "index.html")), "channel="+p.Config.Channel) {
 			t.Fatal("wrong channel label")
 		}
+		wantRelease := "r1300"
+		if p.Config.Channel == "beta" {
+			wantRelease = "r1295"
+		}
+		var metadata map[string]string
+		if err := json.Unmarshal([]byte(mustRead(t, filepath.Join(p.OutDir, "release.json"))), &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if metadata["channel"] != p.Config.Channel || metadata["release_id"] != wantRelease {
+			t.Fatalf("wrong release header: %v", metadata)
+		}
 	}
 	before := mustRead(t, filepath.Join(beta.OutDir, "index.html"))
+	alphaMetadata := mustRead(t, filepath.Join(alpha.OutDir, "release.json"))
 	r.files["channels/alpha.v2.json.sig"] = []byte("invalid")
 	if _, err := alpha.Publish(context.Background()); err == nil {
 		t.Fatal("invalid alpha accepted")
+	}
+	if mustRead(t, filepath.Join(alpha.OutDir, "release.json")) != alphaMetadata {
+		t.Fatal("failed publication changed the header")
 	}
 	if _, err := beta.Publish(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if mustRead(t, filepath.Join(beta.OutDir, "index.html")) != before {
 		t.Fatal("alpha changed beta")
+	}
+}
+
+func TestMissingReleaseMetadataIsRecreated(t *testing.T) {
+	r := newRepo()
+	key := newSigner(t)
+	r.release(t, key, "r1295", 1295, []byte("installer"), "")
+	p := publisher(t, r, key, t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(p.OutDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Publish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(p.OutDir, "release.json")
+	want := mustRead(t, metadataPath)
+	if err := os.Remove(metadataPath); err != nil {
+		t.Fatal(err)
+	}
+	result, err := p.Publish(context.Background())
+	if err != nil || !result.Changed || mustRead(t, metadataPath) != want {
+		t.Fatalf("missing metadata not repaired: %+v, %v", result, err)
 	}
 }
 

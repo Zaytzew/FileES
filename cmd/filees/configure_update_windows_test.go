@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,25 @@ import (
 
 	"filees/pkg/config"
 )
+
+func TestStoreRefusesChannelSelectionWithoutWritingConfig(t *testing.T) {
+	previous := injectedClientUpdateMode
+	defer func() { injectedClientUpdateMode = previous }()
+	injectedClientUpdateMode = "store"
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{"repositories":[]}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runUpdateChannel([]string{"beta", "--config", path}, &out); err == nil || !strings.Contains(err.Error(), "Store") {
+		t.Fatalf("err=%v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(data, after) {
+		t.Fatal("Store configuration changed")
+	}
+}
 
 // The client updates the directory it is running from, and nothing else.
 //

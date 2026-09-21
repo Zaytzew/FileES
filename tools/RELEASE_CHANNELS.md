@@ -68,8 +68,27 @@ braku z kanału wkompilowanego. Dlatego samo skopiowanie alpha.v2.json do
 beta.v2.json **nie tworzy poprawnej dystrybucji beta dla nowych instalacji**:
 MSI/AppImage z domyślną alfą nadal ją wybiorą.
 
-Przed publikacją pierwszej bety potrzebny jest trwały wybór kanału instalacji,
-zachowywany przez aktualizację i restart na Windows/Linux. Nie przebudowujemy
+Trwały wybór kanału jest dostępny przez CLI (w nowym buildzie):
+
+```sh
+filees update-channel --config /path/config.json
+filees update-channel beta --config /path/config.json
+```
+
+Pierwsze polecenie tylko odczytuje, drugie zapisuje wybór w istniejącym
+config.json i wymaga restartu pary. Bez pobierania, instalowania ani
+automatycznego cofania wersji. Polecenie wymaga istniejącej konfiguracji;
+nie zakłada profilu w przypadkowym katalogu. Na Windows użyć filees.exe
+z katalogu instalacji i wskazać jego config.json; na Linux zwykle
+`$XDG_CONFIG_HOME/filees/config.json` lub `~/.config/filees/config.json`.
+Stan antyrollback oraz jego ścieżka pozostają niezmienione. Zbyt nowa alfa
+nadal nie może pobrać starszej bety. Polecenie odmawia przełączenia przy
+jawnym enabled:false i w trybie Store. Dostępne nazwy: alpha, beta, stable;
+akceptacja nazwy nie oznacza, że taki kanał został już opublikowany.
+
+Przed publiczną pierwszą betą pozostaje powiązanie wyboru z pierwszym
+uruchomieniem/pobieraniem oraz odbiór prawdziwego MSI/AppImage.
+Nie przebudowujemy
 odebranych binariów wyłącznie po to, by zmienić kanał. Jawne wyłączenie
 aktualizacji i tryb Store nadal mają pierwszeństwo. Istniejących użytkowników
 alpha nie przełączamy automatycznie.

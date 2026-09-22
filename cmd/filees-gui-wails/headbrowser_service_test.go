@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"hash/fnv"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,17 +77,20 @@ func TestHeadBrowserFrontendBindingUsesBuildContextIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := map[string]string{
-		"Open": "1302558521", "Context": "1296624396", "Repository": "635738405", "List": "1147532241",
-		"Preview": "3881288903", "OpenLocal": "1320231244", "Materialize": "2128678882", "Fill": "2384190360",
-		"Operation": "667235286", "Close": "2252102579",
-	}
-	for method, id := range ids {
+	// Wails hashes "<package path>.<Type>.<Method>" with FNV-1a, and in the
+	// released binary this package's path is "main". A test binary sees the
+	// import path instead, so an ID read from bindings here would differ from
+	// the one the application answers to - which is exactly how r1450 shipped
+	// with "unknown bound method id" behind every button of this window.
+	for _, method := range []string{"Open", "Context", "Repository", "List", "Preview", "OpenLocal", "Materialize", "Fill", "Operation", "Close"} {
 		if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.HeadBrowserService." + method}) == nil {
 			t.Fatalf("binding not found: %s", method)
 		}
-		if !strings.Contains(string(module), "export function "+method+"(") || !strings.Contains(string(module), "ByID("+id) {
-			t.Fatalf("frontend module lacks %s with build-context ID %s", method, id)
+		sum := fnv.New32a()
+		_, _ = sum.Write([]byte("main.HeadBrowserService." + method))
+		id := strconv.FormatUint(uint64(sum.Sum32()), 10)
+		if !strings.Contains(string(module), "export function "+method+"(") || !strings.Contains(string(module), "ByID("+id+"") {
+			t.Fatalf("frontend module lacks %s with the released binary's ID %s", method, id)
 		}
 	}
 	for _, internal := range []string{"lookup", "focused", "chooseAnchor", "openPath", "attachPlatform"} {

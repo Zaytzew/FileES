@@ -19,6 +19,9 @@
 /* A listing arrives on stdin, one entry per line, and is bounded so a
  * malformed producer cannot make this process grow without limit. */
 #define FILEES_CFAPI_MAX_ENTRIES 4096
+/* Long paths are ordinary in a project tree; MAX_PATH is the shell's old
+ * limit, not the file system's. */
+#define FILEES_CFAPI_MAX_PATH 1024
 #define FILEES_CFAPI_MAX_LINE 4096
 
 /* One listing entry: what Explorer shows before anything is downloaded. */
@@ -37,6 +40,15 @@ void filees_cfapi_json_string(const char *value);
 
 /* UTF-8 argv into wide strings; the shell is wide everywhere. */
 int filees_cfapi_widen(const char *utf8, WCHAR *out, size_t out_chars);
+
+/* The call to the daemon (bridge.c). waiting() is invoked about once a second
+ * while an answer has not arrived; returning 0 abandons the request. */
+typedef int (*filees_bridge_waiting)(void *context);
+
+void filees_bridge_start(void);
+void filees_bridge_answer(char *line);
+int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG length,
+                          filees_bridge_waiting waiting, void *context, WCHAR *path);
 
 /* Verbs. Each returns a process exit code and has already printed its JSON. */
 int filees_cfapi_register(const WCHAR *root, const WCHAR *identity);

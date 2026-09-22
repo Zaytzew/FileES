@@ -5,15 +5,17 @@
  * stdin closes, which is how the daemon's own exit takes the anchor offline
  * without a second channel.
  *
- * First cut: the callbacks that must exist, and the two that must say no.
- * Fetching the bytes of a clicked file is the next portion; until it lands,
- * a click is refused with a status that says "not yet", not a crash and not a
- * silent empty file.
+ * A click on a placeholder suspends CreateFile inside Windows until this
+ * process answers. The answer is not a download: the daemon materializes that
+ * one path into the working copy (sparse update), and the bytes handed back
+ * are read from that file. TRANSFER_DATA is the bridge for the handle
+ * Windows is holding open, not a second copy of the file.
  */
 #include "filees_cfapi.h"
 
 #include <cfapi.h>
 #include <stdio.h>
+#include <string.h>
 
 /* The SDK documents CF_SIZE_OF_OP_PARAM but does not define it in cfapi.h.
  * The filter reads exactly as many bytes as the answered member needs, so the
@@ -21,12 +23,24 @@
  * guessed at with sizeof(the whole union). */
 #define FILEES_OP_PARAM_SIZE(field)     (ULONG)(FIELD_OFFSET(CF_OPERATION_PARAMETERS, field) + sizeof(((CF_OPERATION_PARAMETERS *)0)->field))
 
-#ifndef STATUS_NOT_IMPLEMENTED
-#define STATUS_NOT_IMPLEMENTED ((NTSTATUS)0xC0000002L)
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#endif
+#ifndef STATUS_UNSUCCESSFUL
+#define STATUS_UNSUCCESSFUL ((NTSTATUS)0xC0000001L)
 #endif
 #ifndef STATUS_ACCESS_DENIED
 #define STATUS_ACCESS_DENIED ((NTSTATUS)0xC0000022L)
 #endif
+
+/* One megabyte per CfExecute: large enough that a drawing does not turn into
+ * thousands of round trips, small enough to keep progress moving. A transfer
+ * length must be a multiple of 4096 unless it ends at the end of the file. */
+#define FILEES_CHUNK (1024 * 1024)
+/* A fetch the daemon never answers must end. Twenty minutes is far longer
+ * than any materialization this is meant for and still finite, because a
+ * callback that never answers leaves Explorer hanging for good. */
+#define FILEES_FETCH_TIMEOUT_TICKS (20 * 60)
 
 static CF_CONNECTION_KEY g_connection;
 static int g_trace;
@@ -52,31 +66,134 @@ static void operation_info(const CF_CALLBACK_INFO *info, CF_OPERATION_TYPE type,
     out->RequestKey = info->RequestKey;
 }
 
-/* Every callback runs on a thread pool thread, several at a time, and none of
- * them returns a value: the answer is always a CfExecute. */
-static void CALLBACK on_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
+static void fail_fetch(const CF_CALLBACK_INFO *info, LARGE_INTEGER offset, LARGE_INTEGER length, NTSTATUS status)
 {
     CF_OPERATION_INFO operation;
     CF_OPERATION_PARAMETERS answer;
-    (void)params;
     operation_info(info, CF_OPERATION_TYPE_TRANSFER_DATA, &operation);
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(TransferData);
     answer.TransferData.Flags = CF_OPERATION_TRANSFER_DATA_FLAG_NONE;
-    answer.TransferData.CompletionStatus = STATUS_NOT_IMPLEMENTED;
+    answer.TransferData.CompletionStatus = status;
     answer.TransferData.Buffer = NULL;
-    answer.TransferData.Offset = params->FetchData.RequiredFileOffset;
-    answer.TransferData.Length = params->FetchData.RequiredLength;
-    trace("fetch refused", CfExecute(&operation, &answer));
+    answer.TransferData.Offset = offset;
+    answer.TransferData.Length = length;
+    trace("fetch failed", CfExecute(&operation, &answer));
+}
+
+struct progress {
+    const CF_CALLBACK_INFO *info;
+    LONGLONG total;
+    int ticks;
+};
+
+/* Called about once a second while the daemon works. Explorer shows the
+ * provider's progress, so a long sparse update reads as "downloading", not as
+ * an application that stopped responding. */
+static int still_waiting(void *context)
+{
+    struct progress *state = context;
+    LARGE_INTEGER total, done;
+    total.QuadPart = state->total;
+    done.QuadPart = 0;
+    CfReportProviderProgress(state->info->ConnectionKey, state->info->TransferKey, total, done);
+    return ++state->ticks < FILEES_FETCH_TIMEOUT_TICKS;
+}
+
+/* Hand over one file, in chunks, from the working copy. Offsets are the
+ * filter's, not the file's: Windows asks for the range it needs. */
+static int transfer_file(const CF_CALLBACK_INFO *info, const WCHAR *path,
+                         LARGE_INTEGER offset, LARGE_INTEGER length)
+{
+    HANDLE file;
+    BYTE *buffer;
+    LONGLONG position = offset.QuadPart, left = length.QuadPart;
+    LARGE_INTEGER done;
+    int ok = 1;
+
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return 0;
+    buffer = VirtualAlloc(NULL, FILEES_CHUNK, MEM_COMMIT, PAGE_READWRITE);
+    if (!buffer) {
+        CloseHandle(file);
+        return 0;
+    }
+
+    while (left > 0) {
+        CF_OPERATION_INFO operation;
+        CF_OPERATION_PARAMETERS answer;
+        LARGE_INTEGER seek;
+        DWORD wanted = (DWORD)(left < FILEES_CHUNK ? left : FILEES_CHUNK), read = 0;
+        HRESULT hr;
+
+        seek.QuadPart = position;
+        if (!SetFilePointerEx(file, seek, NULL, FILE_BEGIN) || !ReadFile(file, buffer, wanted, &read, NULL) || read == 0) {
+            ok = 0;
+            break;
+        }
+        operation_info(info, CF_OPERATION_TYPE_TRANSFER_DATA, &operation);
+        ZeroMemory(&answer, sizeof answer);
+        answer.ParamSize = FILEES_OP_PARAM_SIZE(TransferData);
+        answer.TransferData.Flags = CF_OPERATION_TRANSFER_DATA_FLAG_NONE;
+        answer.TransferData.CompletionStatus = STATUS_SUCCESS;
+        answer.TransferData.Buffer = buffer;
+        answer.TransferData.Offset.QuadPart = position;
+        answer.TransferData.Length.QuadPart = read;
+        hr = CfExecute(&operation, &answer);
+        trace("fetch chunk", hr);
+        if (FAILED(hr)) {
+            ok = 0;
+            break;
+        }
+        position += read;
+        left -= read;
+        done.QuadPart = length.QuadPart - left;
+        CfReportProviderProgress(info->ConnectionKey, info->TransferKey, length, done);
+    }
+
+    VirtualFree(buffer, 0, MEM_RELEASE);
+    CloseHandle(file);
+    return ok;
+}
+
+/* Every callback runs on a thread pool thread, several at a time, and none of
+ * them returns a value: the answer is always a CfExecute. */
+static void CALLBACK on_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    struct progress state;
+    LARGE_INTEGER offset = params->FetchData.RequiredFileOffset;
+    LARGE_INTEGER length = params->FetchData.RequiredLength;
+
+    if (!info->FileIdentity || info->FileIdentityLength < sizeof(WCHAR)) {
+        fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
+        return;
+    }
+    state.info = info;
+    state.total = length.QuadPart;
+    state.ticks = 0;
+    /* The identity is what the placeholder was created with: the path inside
+     * the repository. The daemon turns it into a path on this disk, which is
+     * the only thing this process is allowed to read. */
+    if (!filees_bridge_request((const WCHAR *)info->FileIdentity, offset.QuadPart, length.QuadPart,
+                               still_waiting, &state, path)) {
+        fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
+        return;
+    }
+    if (!transfer_file(info, path, offset, length)) {
+        fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
+    }
 }
 
 static void CALLBACK on_cancel_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
 {
-    /* Nothing is in flight while fetching is unimplemented. The callback is
-     * registered anyway, because the pair is what the filter expects and a
-     * missing one shows up only under load. */
+    /* Windows has given up on this range. The request in flight will finish
+     * on its own and its answer will be dropped, because the slot waiting for
+     * it is gone (bridge.c). Nothing here needs to be cancelled by hand. */
     (void)info;
     (void)params;
+    trace("fetch cancelled", S_OK);
 }
 
 /* Deleting or renaming a placeholder would ask FileES to delete or rename in
@@ -122,11 +239,14 @@ static CF_CALLBACK_REGISTRATION k_callbacks[] = {
 
 int filees_cfapi_connect(const WCHAR *root)
 {
+    char line[FILEES_CFAPI_MAX_LINE];
     HRESULT hr;
+
     g_trace = GetEnvironmentVariableW(L"FILEES_CFAPI_TRACE", NULL, 0) > 0;
+    filees_bridge_start();
     hr = CfConnectSyncRoot(root, k_callbacks, NULL,
-                                   CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO | CF_CONNECT_FLAG_REQUIRE_FULL_FILE_PATH,
-                                   &g_connection);
+                           CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO | CF_CONNECT_FLAG_REQUIRE_FULL_FILE_PATH,
+                           &g_connection);
     if (FAILED(hr)) {
         filees_cfapi_fail("connect_sync_root", hr);
         return 1;
@@ -146,11 +266,13 @@ int filees_cfapi_connect(const WCHAR *root)
      * stdin, so a daemon waiting for this line is never waiting on a click. */
     filees_cfapi_ok("connected");
 
-    /* Holding the connection is the whole job from here. Closed stdin, which
-     * includes the daemon exiting, ends it. */
-    for (;;) {
-        int c = getchar();
-        if (c == EOF) break;
+    /* From here this thread is the reader: every line is an answer for a
+     * callback waiting on it. Closed stdin, which includes the daemon
+     * exiting, ends the anchor. */
+    while (fgets(line, sizeof line, stdin)) {
+        size_t length = strlen(line);
+        while (length && (line[length - 1] == '\n' || line[length - 1] == '\r')) line[--length] = '\0';
+        if (length) filees_bridge_answer(line);
     }
 
     hr = CfDisconnectSyncRoot(g_connection);

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -118,52 +119,26 @@ func TestAListingIsDataAndIsCheckedAsSuch(t *testing.T) {
 
 func TestAConnectedAnchorRefusesDeletingAndRenaming(t *testing.T) {
 	root := anchor(t)
-	if got := run(t, "f\t4096\tsala.dwg\tsala.dwg\n", "placeholders", "--root", root); !got.OK {
+	if got := run(t, "f\t4096\tprojekt/sala.dwg\tsala.dwg\n", "placeholders", "--root", root); !got.OK {
 		t.Fatalf("placeholders: %+v", got)
 	}
-
-	command := exec.Command(helper(t), "connect", "--root", root)
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = stdin.Close()
-		done := make(chan error, 1)
-		go func() { done <- command.Wait() }()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			_ = command.Process.Kill()
-		}
-	})
-	// The helper says it is live before it reads anything, so waiting for that
-	// line is waiting for the anchor, not for a timer.
-	line, err := bufio.NewReader(stdout).ReadString('\n')
-	if err != nil && err != io.EOF {
-		t.Fatal(err)
-	}
-	var connected answer
-	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &connected); err != nil || !connected.OK {
-		t.Fatalf("connect: %q %v", line, err)
-	}
+	// Deleting a placeholder makes Windows hydrate it first, so the bridge has
+	// to be answered even here; a refusal is enough.
+	connectAnchor(t, root, func(request []string) string { return "err\t" + request[1] + "\tnot for this test" })
 	if got := run(t, "", "info", "--root", root); !got.OK || !got.Ours || got.Status == 0 {
 		t.Fatalf("a connected anchor must report itself as ours and running: %+v", got)
 	}
 
+	started := time.Now()
 	if err := os.Remove(filepath.Join(root, "sala.dwg")); err == nil {
 		t.Fatal("deleting in Explorer would delete in the repository; it must be refused")
 	}
+	t.Logf("kasowanie odmowione po %s", time.Since(started))
+	started = time.Now()
 	if err := os.Rename(filepath.Join(root, "sala.dwg"), filepath.Join(root, "inna.dwg")); err == nil {
 		t.Fatal("renaming in Explorer must be refused")
 	}
+	t.Logf("zmiana nazwy odmowiona po %s", time.Since(started))
 	if _, err := os.Stat(filepath.Join(root, "sala.dwg")); err != nil {
 		t.Fatalf("the refused operations must leave the placeholder alone: %v", err)
 	}
@@ -192,4 +167,152 @@ func TestPathsAndVerbsAreCheckedBeforeAnythingIsRegistered(t *testing.T) {
 			t.Fatalf("%v was accepted", args)
 		}
 	}
+}
+
+// anchorProcess is the daemon's side of the bridge, played by the test: it
+// starts `connect`, answers fetch requests from a table, and records what was
+// asked for. The helper never learns it is not talking to the daemon.
+type anchorProcess struct {
+	t        *testing.T
+	command  *exec.Cmd
+	stdin    io.WriteCloser
+	requests chan []string
+}
+
+func connectAnchor(t *testing.T, root string, answerFetch func(request []string) string) *anchorProcess {
+	t.Helper()
+	command := exec.Command(helper(t), "connect", "--root", root)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	anchor := &anchorProcess{t: t, command: command, stdin: stdin, requests: make(chan []string, 8)}
+	reader := bufio.NewReader(stdout)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	var connected answer
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &connected); err != nil || !connected.OK {
+		t.Fatalf("connect: %q %v", line, err)
+	}
+	go func() {
+		for {
+			raw, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			fields := strings.Split(strings.TrimSpace(raw), "\t")
+			if len(fields) < 5 || fields[0] != "fetch" {
+				continue
+			}
+			anchor.requests <- fields
+			if reply := answerFetch(fields); reply != "" {
+				_, _ = io.WriteString(stdin, reply+"\n")
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		done := make(chan error, 1)
+		go func() { done <- command.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			_ = command.Process.Kill()
+		}
+	})
+	return anchor
+}
+
+func TestOpeningAPlaceholderHandsBackTheWorkingCopysBytes(t *testing.T) {
+	root := anchor(t)
+	content := make([]byte, 3*1024*1024+17) // more than one chunk, ending off a page boundary
+	for i := range content {
+		content[i] = byte(i % 251)
+	}
+	materialized := filepath.Join(t.TempDir(), "sala.dwg")
+	if err := os.WriteFile(materialized, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listing := "f\t" + itoa(len(content)) + "\tprojekt/sala.dwg\tsala.dwg\n"
+	if got := run(t, listing, "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+
+	anchored := connectAnchor(t, root, func(request []string) string {
+		if request[4] != "projekt/sala.dwg" {
+			return "err\t" + request[1] + "\tunknown identity"
+		}
+		return "ok\t" + request[1] + "\t" + materialized
+	})
+
+	read, err := os.ReadFile(filepath.Join(root, "sala.dwg"))
+	if err != nil {
+		t.Fatalf("opening a placeholder must give the file: %v", err)
+	}
+	if len(read) != len(content) {
+		t.Fatalf("got %d bytes, want %d", len(read), len(content))
+	}
+	for i := range read {
+		if read[i] != content[i] {
+			t.Fatalf("byte %d differs", i)
+		}
+	}
+	select {
+	case request := <-anchored.requests:
+		// The daemon is asked for the path inside the repository, which is what
+		// the placeholder was created with - never for a path on this disk.
+		if request[4] != "projekt/sala.dwg" {
+			t.Fatalf("the daemon was asked for %q", request[4])
+		}
+	default:
+		t.Fatal("no fetch reached the daemon")
+	}
+
+	// Once hydrated, the file is ordinary: reading it again asks nobody.
+	drain(anchored.requests)
+	if _, err := os.ReadFile(filepath.Join(root, "sala.dwg")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case request := <-anchored.requests:
+		t.Fatalf("a hydrated file must not be fetched again: %v", request)
+	default:
+	}
+}
+
+func TestADaemonThatRefusesLeavesTheFileUnopenedRatherThanEmpty(t *testing.T) {
+	root := anchor(t)
+	if got := run(t, "f\t4096\tprojekt/brak.dwg\tbrak.dwg\n", "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	connectAnchor(t, root, func(request []string) string {
+		return "err\t" + request[1] + "\tnie ma takiej sciezki"
+	})
+	read, err := os.ReadFile(filepath.Join(root, "brak.dwg"))
+	if err == nil {
+		t.Fatalf("a refused fetch must fail the open, got %d bytes", len(read))
+	}
+}
+
+func drain(requests chan []string) {
+	for {
+		select {
+		case <-requests:
+		default:
+			return
+		}
+	}
+}
+
+func itoa(value int) string {
+	return strconv.Itoa(value)
 }

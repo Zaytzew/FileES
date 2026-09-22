@@ -36,6 +36,27 @@ kind <TAB> rozmiar <TAB> tożsamość <TAB> nazwa
 jako jedyna może zawierać spacje. Nazwa ze znakiem ścieżki, `..` albo
 tabulatorem jest odrzucana, nie naprawiana.
 
+## Most do demona
+
+`connect` rozmawia z demonem **własnym wejściem i wyjściem**, jedną linią w
+każdą stronę. Helper nie zna IPC, JSON-a ani Subversion:
+
+```
+helper -> demon    fetch <TAB> id <TAB> offset <TAB> length <TAB> tożsamość
+demon  -> helper   ok    <TAB> id <TAB> bezwzględna ścieżka
+                   err   <TAB> id <TAB> powód
+```
+
+Tożsamość to ta sama, z którą powstał placeholder — ścieżka w repozytorium.
+Demon zamienia ją na ścieżkę na dysku (materializacja niepełnej kopii), a
+helper czyta stamtąd bajty i oddaje je Windowsowi kawałkami po 1 MiB.
+
+**Kto uruchamia `connect`, musi czytać jego wyjście.** Callbacki chodzą na
+wielu wątkach; jeśli nikt nie odbiera linii, zapis się blokuje, callback nie
+odpowiada, a każda operacja w Eksploratorze czeka **dwie minuty** na timeout
+filtra. Zmierzone: z odbieranym wyjściem odmowa kasowania trwa 1,5 ms, bez
+niego 4 minuty.
+
 ## Co pierwsze cięcie robi, a czego nie
 
 - Placeholder wygląda w Eksploratorze jak zwykły plik swojego typu, ma
@@ -44,9 +65,10 @@ tabulatorem jest odrzucana, nie naprawiana.
 - **Kasowanie i zmiana nazwy są odmawiane.** Obie znaczyłyby zmianę
   w repozytorium, a taka decyzja należy do FileES, nie do przeciągnięcia
   myszą w Eksploratorze.
-- **Otwarcie pliku jeszcze nie działa** — `FETCH_DATA` odpowiada „nie
-  zaimplementowane”, więc Windows mówi „operacja w chmurze nie powiodła się”
-  zamiast podać pusty plik. Materializacja ścieżki to porcja 2.
+- **Otwarcie pliku działa**: `FETCH_DATA` pyta demona o ścieżkę, pokazuje
+  postęp w trakcie czekania i oddaje bajty z kopii roboczej. Odmowa demona
+  kończy otwarcie błędem, nigdy pustym plikiem — dla CAD-a pusty plik jest
+  gorszy niż brak pliku.
 
 ## Dwie pułapki, obie kosztowały czas
 

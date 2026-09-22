@@ -584,6 +584,7 @@ export default {
   "headBrowser.loading": "Chargement…",
   "headBrowser.emptyFolder": "Ce dossier est vide.",
   "headBrowser.folder": "Dossier",
+  "headBrowser.previewHint": "Ouvre une copie du fichier du serveur dans l’application associée. Les modifications de cette copie ne retournent pas au serveur.",
   "headBrowser.preview": "Aperçu",
   "headBrowser.local": "Sur cet ordinateur",
   "headBrowser.openLocal": "Ouvrir",

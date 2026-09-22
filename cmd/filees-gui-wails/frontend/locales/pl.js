@@ -596,6 +596,7 @@ export default {
   "headBrowser.loading": "Wczytywanie…",
   "headBrowser.emptyFolder": "Ten folder jest pusty.",
   "headBrowser.folder": "Folder",
+  "headBrowser.previewHint": "Otwiera kopię pliku z serwera w programie, który go obsługuje. Zmiany w tej kopii nie wracają na serwer.",
   "headBrowser.preview": "Podgląd",
   "headBrowser.local": "Na tym komputerze",
   "headBrowser.openLocal": "Otwórz",

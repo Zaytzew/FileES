@@ -9,7 +9,10 @@
 .hb-open { min-width: 0; padding: 0; border: 0; color: var(--text); background: transparent; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hb-open:focus-visible, .hb-row button:focus-visible { outline: 2px solid var(--theme-focus, #4ea7e0); outline-offset: 2px; }
 .hb-type { justify-self: start; min-width: 44px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-align: center; }
-.hb-type.is-dir { color: var(--orange); border-color: rgba(255, 106, 0, .35); }
+.hb-folder { justify-self: center; display: inline-flex; width: 26px; height: 22px; color: var(--orange); }
+.hb-folder svg { width: 100%; height: 100%; fill: rgba(255, 106, 0, .18); stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.hb-folder.is-local svg { fill: rgba(46, 160, 100, .22); stroke: #7fd9a8; }
+.hb-row.is-dir .hb-open { font-weight: 600; }
 .hb-local { padding: 2px 8px; border-radius: 999px; color: #b8f0cf; background: rgba(46, 160, 100, .16); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .hb-actions { display: flex; gap: 6px; }
 .hb-actions button { padding: 5px 10px; font-size: 12px; }

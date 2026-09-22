@@ -574,6 +574,7 @@ export default {
   "headBrowser.loading": "Loading…",
   "headBrowser.emptyFolder": "This folder is empty.",
   "headBrowser.folder": "Folder",
+  "headBrowser.previewHint": "Opens a copy of the file from the server in the app that handles it. Changes to this copy do not go back to the server.",
   "headBrowser.preview": "Preview",
   "headBrowser.local": "On this computer",
   "headBrowser.openLocal": "Open",

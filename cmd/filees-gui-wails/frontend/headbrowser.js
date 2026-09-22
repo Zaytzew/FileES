@@ -24,6 +24,9 @@ const errorText = error => (typeof error === "string" ? error : String(error?.me
 
 const OPERATION_POLL_MS = 1500;
 
+// Folders get an icon, as in a file manager; files keep their type badge.
+const FOLDER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5Z"/></svg>';
+
 const state = { repo: null, path: "", entries: [], loading: false, busy: "", token: 0 };
 
 function toast(message) {
@@ -106,19 +109,21 @@ function renderEntries() {
   listNode.innerHTML = up + state.entries.map(entry => {
     const path = joinPath(state.path, entry.name);
     const dir = entry.kind === "dir";
-    const type = dir ? t("headBrowser.folder") : entryType(entry.name);
+    const badge = dir
+      ? `<span class="hb-folder${entry.local ? " is-local" : ""}" title="${escapeHTML(t("headBrowser.folder"))}">${FOLDER_ICON}</span>`
+      : `<span class="hb-type">${escapeHTML(entryType(entry.name))}</span>`;
     const name = dir
       ? `<button type="button" class="hb-open" data-open-path="${escapeHTML(path)}">${escapeHTML(entry.name)}</button>`
-      : `<button type="button" class="hb-open" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.preview"))}">${escapeHTML(entry.name)}</button>`;
+      : `<button type="button" class="hb-open" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}">${escapeHTML(entry.name)}</button>`;
     const size = dir ? "" : escapeHTML(formatBytes(entry.size ?? 0, getLocale()));
     const local = entry.local ? `<span class="hb-local">${escapeHTML(t("headBrowser.local"))}</span>` : "<span></span>";
     const actions = [
-      dir ? "" : `<button type="button" class="quiet-button" data-preview="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.preview"))}</button>`,
+      dir ? "" : `<button type="button" class="quiet-button" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}"${disabled}>${escapeHTML(t("headBrowser.preview"))}</button>`,
       entry.local
         ? `<button type="button" class="quiet-button" data-open-local="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.openLocal"))}</button>`
         : `<button type="button" class="primary-button" data-materialize="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.materialize"))}</button>`,
     ].join("");
-    return `<div class="hb-row"><span class="hb-type${dir ? " is-dir" : ""}">${escapeHTML(type)}</span>${name}<small>${size}</small>${local}<span class="hb-actions">${actions}</span></div>`;
+    return `<div class="hb-row${dir ? " is-dir" : ""}">${badge}${name}<small>${size}</small>${local}<span class="hb-actions">${actions}</span></div>`;
   }).join("");
 }
 

@@ -584,6 +584,7 @@ export default {
   "headBrowser.loading": "Cargando…",
   "headBrowser.emptyFolder": "Esta carpeta está vacía.",
   "headBrowser.folder": "Carpeta",
+  "headBrowser.previewHint": "Abre una copia del archivo del servidor en la aplicación que lo maneja. Los cambios en esa copia no vuelven al servidor.",
   "headBrowser.preview": "Vista previa",
   "headBrowser.local": "En este equipo",
   "headBrowser.openLocal": "Abrir",

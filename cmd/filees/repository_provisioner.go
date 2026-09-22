@@ -88,6 +88,20 @@ type depthAttachmentSVN interface {
 // an empty root, then the first chosen path with its parents. A resume never
 // becomes a full checkout; it only brings the first path in again, which is a
 // no-op when an interrupted attempt had already done it.
+// isFileESControlPath reports a status entry for the working copy's own
+// .filees directory, whether svn spelled it relative or absolute.
+func isFileESControlPath(root, entry string) bool {
+	rel := filepath.Clean(filepath.FromSlash(entry))
+	if filepath.IsAbs(rel) {
+		inside, err := filepath.Rel(root, rel)
+		if err != nil {
+			return false
+		}
+		rel = inside
+	}
+	return rel == ".filees" || strings.HasPrefix(rel, ".filees"+string(filepath.Separator))
+}
+
 func checkoutSparseAttachment(ctx context.Context, svn attachmentSVN, record localrepo.Record, root string, hadSVN bool) error {
 	deepener, ok := svn.(depthAttachmentSVN)
 	if !ok {
@@ -1315,6 +1329,12 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 		return
 	}
 	for _, entry := range entries {
+		// A sparse attachment writes the working copy's identity before its
+		// first path (the helper deepens only a live copy), so .filees is
+		// already there. It is the daemon's own directory, never user work.
+		if record.Sparse && isFileESControlPath(check.CanonicalPath, entry.Path) {
+			continue
+		}
 		if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
 			p.failAttach(record.OperationID, fmt.Errorf("checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
 			return

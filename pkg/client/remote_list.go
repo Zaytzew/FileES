@@ -89,7 +89,9 @@ func (c *execClient) UpdateSetDepth(ctx context.Context, wc, rel, depth string) 
 		if rel != "" && rel != "." {
 			// --parents brings in the chain above rel at depth empty, so a
 			// path deep in an otherwise empty working copy can be chosen alone.
-			args = append(args, "--parents", "--", filepath.FromSlash(rel))
+			// The helper takes canonical repository-relative paths: forward
+			// slashes on every platform, as svn itself spells them.
+			args = append(args, "--parents", "--", filepath.ToSlash(rel))
 		}
 		r, e := c.nativeRemote(ctx, wc, args...)
 		if e != nil {

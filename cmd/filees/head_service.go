@@ -96,5 +96,16 @@ func (h headService) HeadCat(ctx context.Context, serverID, repoURL, path string
 	if err := svn.CatURL(ctx, headJoin(repoURL, path), dest); err != nil {
 		return "", err
 	}
+	// A preview is a copy that goes nowhere: nothing written to it reaches the
+	// server. Marking it read-only (the read-only attribute on Windows) makes
+	// Word, Excel and most editors open it as read-only instead of letting
+	// someone edit a file whose changes would silently stay in a temp folder.
+	if err := markPreviewReadOnly(dest); err != nil {
+		return "", err
+	}
 	return dest, nil
+}
+
+func markPreviewReadOnly(path string) error {
+	return os.Chmod(path, 0o444)
 }

@@ -373,6 +373,24 @@ func (s *Service) BindWorkingCopy(repoID, wc string) {
 	}
 }
 
+// SetDepth changes which part of a sparse working copy is present: rel ""
+// or "." is the whole tree, anything else one path with its parents. It runs
+// under the same operation lock as commits and polling updates, so choosing a
+// path in the unattached browser never races the daemon's own svn on this
+// working copy (implementation notes (not distributed) §1a).
+func (s *Service) SetDepth(ctx context.Context, wc, rel, depth string) error {
+	deepener, ok := s.Cli.(interface {
+		UpdateSetDepth(context.Context, string, string, string) (string, error)
+	})
+	if !ok {
+		return errors.New("SVN client cannot change working copy depth")
+	}
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	_, err := deepener.UpdateSetDepth(ctx, wc, rel, depth)
+	return err
+}
+
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	defer s.cancelConnectivityJournal()

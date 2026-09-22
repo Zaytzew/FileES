@@ -164,6 +164,7 @@ func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetLockFuncs(nil, nil)
 	state.SetReservationReleaseFunc(nil)
 	state.SetPublishFunc(nil)
+	state.SetDepthFunc(nil)
 	state.SetIntentFuncs(nil, nil)
 	state.SetCommitRecoveryFuncs(nil, nil, nil)
 	state.SetNoticeFuncs(nil, nil)
@@ -452,6 +453,10 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		return revision, err
 	})
 	service.BindWorkingCopy(repo.ID, wc)
+	runtimeRepo.state.SetSparse(repo.Sparse)
+	runtimeRepo.state.SetDepthFunc(func(ctx context.Context, rel, depth string) error {
+		return service.SetDepth(ctx, wc, rel, depth)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, service.ApplyCommitRecovery)
@@ -468,6 +473,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 				deps.reservations.DetachLocal(desired.Key)
 			}
 			runtimeRepo.state.SetPublishFunc(nil)
+			runtimeRepo.state.SetDepthFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -509,6 +515,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			deps.reservations.DetachLocal(desired.Key)
 		}
 		runtimeRepo.state.SetPublishFunc(nil)
+		runtimeRepo.state.SetDepthFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
 		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -907,6 +914,8 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	}
 	logger.Infof("reservation local overlay wired (read-only)")
 	wc := runtime.config.LocalPath
+	runtime.state.SetSparse(runtime.config.Sparse)
+	runtime.state.SetDepthFunc(readOnlyDepthFunc(svn, wc))
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
 		func(id string) error { return shout.Ack(wc, id) },
@@ -937,6 +946,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 			s.reservations.DetachLocal(desired.Key)
 		}
 		runtime.state.SetNoticeFuncs(nil, nil)
+		runtime.state.SetDepthFunc(nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -1026,4 +1036,34 @@ func (s *daemonRepoStarter) waitForWorkingCopy(runtime repoRuntime, svn client.C
 		}
 	}()
 	return instance
+}
+
+// readOnlyDepthFunc deepens a read-only sparse working copy. There is no
+// commit service here to share a lock with, only runReadOnlyRepo's periodic
+// update; when the two meet, svn reports the working copy as locked (E155004)
+// and the choice is simply tried again a moment later.
+func readOnlyDepthFunc(svn client.Client, wc string) func(context.Context, string, string) error {
+	return func(ctx context.Context, rel, depth string) error {
+		deepener, ok := svn.(interface {
+			UpdateSetDepth(context.Context, string, string, string) (string, error)
+		})
+		if !ok {
+			return errors.New("SVN client cannot change working copy depth")
+		}
+		var err error
+		for attempt := 0; attempt < 5; attempt++ {
+			if _, err = deepener.UpdateSetDepth(ctx, wc, rel, depth); err == nil {
+				return nil
+			}
+			if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "e155004") && !strings.Contains(msg, "locked") {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+		return err
+	}
 }

@@ -482,10 +482,16 @@ svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
  * each directory already records" - not "infinity". Passing infinity would
  * quietly deepen a sparse checkout, turning an update into a download nobody
  * asked for. --depth empty targets named paths without doing that either, and
- * depth is never sticky here: this verb reports history, it does not redefine
- * what the working copy is. */
+ * that depth is never sticky: it reports history, it does not redefine what
+ * the working copy is.
+ *
+ * --set-depth is the one exception, and it is explicit: the unattached browser
+ * (implementation notes (not distributed)) chooses which paths a sparse
+ * working copy holds. There the depth is sticky on purpose, so later plain
+ * updates keep exactly what the user chose. */
 svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
+                              svn_boolean_t depth_is_sticky,
                               svn_revnum_t revision, svn_boolean_t make_parents,
                               apr_pool_t *pool)
 {
@@ -523,7 +529,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
     ctx->notify_baton2 = &notify;
 
     SVN_ERR(svn_client_update4(&result_revs, paths, &rev, depth,
-                               FALSE /* depth_is_sticky */,
+                               depth_is_sticky,
                                TRUE /* ignore_externals */,
                                FALSE /* allow_unver_obstructions */,
                                TRUE /* adds_as_modification */,

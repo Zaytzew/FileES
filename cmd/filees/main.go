@@ -260,6 +260,9 @@ func runDaemon() {
 	ipc.SetRepositoryLifecycleService(lifecycleService)
 	history := historyService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath}
 	ipc.SetHistoryService(history)
+	// The unattached browser reads HEAD with the same profile identity and
+	// native helper as history (implementation notes (not distributed)).
+	ipc.SetHeadService(headService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath})
 	// An export must land outside every working copy, so it asks the lifecycle
 	// store for the current roots at the moment it begins.
 	historyExports := &historyexport.Runner{Journal: defaultHistoryExportPath(), Reader: history.exportReader, Roots: lifecycleService.allRoots, FoldCase: historyExportFoldsCase(), Admission: ipc.OperationAdmission()}

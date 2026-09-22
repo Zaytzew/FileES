@@ -39,7 +39,9 @@ type Repo struct {
 	ClientRole        string        `json:"-"`
 	Access            string        `json:"access"`
 	// Purpose is daemon-local routing metadata, never user configuration.
-	Purpose        string        `json:"-"`
+	Purpose string `json:"-"`
+	// Sparse is daemon-local too: the working copy holds only chosen paths.
+	Sparse         bool          `json:"-"`
 	RealmID        string        `json:"-"` // z clientview.View.RealmID (własna tożsamość klienta)
 	OwnerRealmID   string        `json:"-"` // z clientview.View.Repository.OwnerRealmID (właściciel tego repo)
 	WatchInterval  time.Duration `json:"-"` // z pola JSON "watch_interval"

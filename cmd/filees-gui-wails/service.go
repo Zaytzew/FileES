@@ -158,24 +158,29 @@ type RepoProjection struct {
 	CurrentOperation         string                     `json:"current_operation,omitempty"`
 	ReservationCount         int                        `json:"reservation_count"`
 	CanAttach                bool                       `json:"can_attach"`
-	CanOpen                  bool                       `json:"can_open"`
-	CanLock                  bool                       `json:"can_lock"`
-	CanUnlock                bool                       `json:"can_unlock"`
-	CanPublish               bool                       `json:"can_publish"`
-	CanReviewQuarantine      bool                       `json:"can_review_quarantine"`
-	Cycle                    CycleProjection            `json:"cycle"`
-	ServerDeleted            bool                       `json:"server_deleted,omitempty"`
-	LocalCopyPreserved       bool                       `json:"local_copy_preserved,omitempty"`
-	LocalCopyStatus          string                     `json:"local_copy_status,omitempty"`
-	LocalCleanupPending      bool                       `json:"local_cleanup_pending,omitempty"`
-	RetainUntil              string                     `json:"retain_until,omitempty"`
-	RecoveryOperationID      string                     `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable        bool                       `json:"recovery_available,omitempty"`
-	CanDismissRecovery       bool                       `json:"can_dismiss_recovery,omitempty"`
-	RecoveryPending          bool                       `json:"recovery_pending,omitempty"`
-	CleanupError             string                     `json:"cleanup_error,omitempty"`
-	Purpose                  string                     `json:"purpose,omitempty"`
-	ParentRepoID             string                     `json:"parent_repo_id,omitempty"`
+	// CanBrowseHead offers "Browse on the server": a repository with no copy
+	// yet, or one holding only chosen paths (implementation notes (not distributed)).
+	CanBrowseHead bool `json:"can_browse_head"`
+	// Sparse: attached, but only chosen paths are on this computer.
+	Sparse              bool            `json:"sparse,omitempty"`
+	CanOpen             bool            `json:"can_open"`
+	CanLock             bool            `json:"can_lock"`
+	CanUnlock           bool            `json:"can_unlock"`
+	CanPublish          bool            `json:"can_publish"`
+	CanReviewQuarantine bool            `json:"can_review_quarantine"`
+	Cycle               CycleProjection `json:"cycle"`
+	ServerDeleted       bool            `json:"server_deleted,omitempty"`
+	LocalCopyPreserved  bool            `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus     string          `json:"local_copy_status,omitempty"`
+	LocalCleanupPending bool            `json:"local_cleanup_pending,omitempty"`
+	RetainUntil         string          `json:"retain_until,omitempty"`
+	RecoveryOperationID string          `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable   bool            `json:"recovery_available,omitempty"`
+	CanDismissRecovery  bool            `json:"can_dismiss_recovery,omitempty"`
+	RecoveryPending     bool            `json:"recovery_pending,omitempty"`
+	CleanupError        string          `json:"cleanup_error,omitempty"`
+	Purpose             string          `json:"purpose,omitempty"`
+	ParentRepoID        string          `json:"parent_repo_id,omitempty"`
 }
 
 // UnportableNameProjection is one object FileES declines to take under
@@ -1013,6 +1018,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 		ordinary := repo.Purpose == ""
 		canAttach := ordinary && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		canBrowseHead := ordinary && !repo.ServerDeleted && (repo.Access == "r" || repo.Access == "rw") &&
+			(!repo.Attached || repo.Sparse) && vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoHeadBrowse)
 		canLock := ordinary && vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
 		canUnlock := ordinary && vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
 		canPublish := ordinary && vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
@@ -1042,7 +1049,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			CanFoldInactive:          vm.CanFoldInactive(repo),
 			UnportableNames:          unportableNames(repo.UnportableNames),
 			CurrentOperation:         operation, ReservationCount: repo.ReservationCount,
-			CanAttach: canAttach, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
+			CanAttach: canAttach, CanBrowseHead: canBrowseHead, Sparse: repo.Attached && repo.Sparse, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			LocalCopyPreserved: repo.LocalCopyPreserved,

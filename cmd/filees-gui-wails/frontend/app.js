@@ -1,5 +1,6 @@
 import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
+import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowserservice.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
@@ -437,6 +438,7 @@ const repoIcons = {
   remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>',
   quarantine: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6l8-3Z"/><path d="M9 9l6 6M15 9l-6 6"/></svg>',
   pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 5 3 3v2H7v-2l3-3-1-5M12 13v8"/></svg>',
+  browse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v4M4 5v14h7"/><circle cx="16.5" cy="16.5" r="3.5"/><path d="M19 19l2.5 2.5"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>',
 };
 
@@ -576,8 +578,11 @@ function renderRepo(repo) {
     : localProvisioning
       ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : t("queue.importRunning"))
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : t("queue.empty"));
-  const source = repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
+  const source = repo.sparse
+    ? `${repo.local_path || t("repo.folder")} · ${t("repo.sparse")}`
+    : repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
+    repo.can_browse_head ? repoAction("browse_head", t("repo.browseHead"), repoIcons.browse, "browse") : "",
     deleted && repo.local_copy_preserved ? `<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="${escapeHTML(t("copy.info"))}" aria-label="${escapeHTML(t("copy.info"))}" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">` + repoIcons.info + `</button>` : "",
     repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", t("repo.recovery"), repoIcons.recovery, "recovery") : "",
@@ -1442,6 +1447,15 @@ $("#repositories").addEventListener("click", (event) => {
     return;
   }
   const button = event.target.closest("[data-action]");
+  if (button?.dataset.action === "browse_head") {
+    // The browser window checks the repository and the daemon checks every
+    // read again; nothing here needs the action controller.
+    const repoRow = button.closest("[data-repo-id]");
+    const serverPanel = button.closest("[data-server-id]");
+    HeadBrowser.Open(serverPanel?.dataset.serverId || "", repoRow?.dataset.repoId || "")
+      .catch((error) => showToast({ title: t("repo.browseHead"), message: String(error?.message ?? error ?? "") }));
+    return;
+  }
   if (button) triggerAction(button);
 });
 $("#repositories").addEventListener("keydown", (event) => {

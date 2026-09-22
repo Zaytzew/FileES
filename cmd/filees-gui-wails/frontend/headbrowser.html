@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#07101d" media="(prefers-color-scheme: dark)">
+  <title data-i18n="window.headBrowser">Przeglądaj na serwerze — FileES</title>
+  <link rel="stylesheet" href="./repository.css">
+  <link rel="stylesheet" href="./timemachine.css">
+  <link rel="stylesheet" href="./headbrowser.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="tm-shell">
+    <header id="hb-titlebar" class="repository-titlebar">
+      <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong>FileES</strong><small data-i18n="headBrowser.context">Przeglądaj na serwerze</small></div></div>
+      <div class="window-controls">
+        <button id="hb-minimise" class="window-button" type="button" title="Minimalizuj" aria-label="Minimalizuj" data-i18n-title="window.minimize" data-i18n-aria-label="window.minimize">—</button>
+        <button id="hb-close" class="window-button close" type="button" title="Zamknij okno" aria-label="Zamknij okno" data-i18n-title="window.close" data-i18n-aria-label="window.close">×</button>
+      </div>
+    </header>
+
+    <section class="tm-hero">
+      <div>
+        <p id="hb-server" class="eyebrow"></p>
+        <h1 id="hb-name">—</h1>
+        <p id="hb-status" class="tm-subtitle"></p>
+      </div>
+      <div class="hb-hero-actions">
+        <button id="hb-fill" type="button" class="primary-button" hidden data-i18n="headBrowser.fill">Pobierz cały folder</button>
+        <button id="hb-open-copy" type="button" class="quiet-button" hidden data-i18n="headBrowser.openCopy">Otwórz kopię na tym komputerze</button>
+      </div>
+    </section>
+
+    <p id="hb-empty" class="tm-empty" hidden data-i18n="headBrowser.unavailable">Tego repozytorium nie można teraz przeglądać.</p>
+
+    <section id="hb-card" class="content-card hb-card">
+      <div class="tm-panel-head"><nav id="hb-breadcrumb" class="tm-breadcrumb"></nav><span id="hb-progress" class="tm-muted" aria-live="polite"></span></div>
+      <div id="hb-entries" class="tm-list hb-list"></div>
+      <p class="tm-note" data-i18n="headBrowser.note">Podgląd otwiera kopię z serwera tylko do odczytu. Aby edytować, pobierz ścieżkę na ten komputer — trafi do jednej, niepełnej kopii tego folderu.</p>
+    </section>
+  </main>
+  <div id="hb-toasts" class="toast-stack" aria-live="polite"></div>
+  <script type="module" src="./headbrowser.js"></script>
+</body>
+</html>

@@ -1035,27 +1035,30 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID                   string `json:"id"`
-	ServerID             string `json:"server_id"`
-	DisplayName          string `json:"display_name"`
-	Attached             bool   `json:"attached"`
-	Access               string `json:"access"`
-	URL                  string `json:"url"`
-	LocalPath            string `json:"local_path"`
-	State                string `json:"state"`
-	OwnerRealmID         string `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy     string `json:"attachment_policy"`
-	ServerDeleted        bool   `json:"server_deleted,omitempty"`
-	LocalCopyPreserved   bool   `json:"local_copy_preserved,omitempty"`
-	LocalCopyStatus      string `json:"local_copy_status,omitempty"`
-	LocalCleanupPending  bool   `json:"local_cleanup_pending,omitempty"`
-	RetainUntil          string `json:"retain_until,omitempty"`
-	RecoveryOperationID  string `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable    bool   `json:"recovery_available,omitempty"`
-	RecoveryPending      bool   `json:"recovery_pending,omitempty"`
-	CleanupError         string `json:"cleanup_error,omitempty"`
-	Purpose              string `json:"purpose,omitempty"`
-	ParentRepoID         string `json:"parent_repo_id,omitempty"`
+	ID                  string `json:"id"`
+	ServerID            string `json:"server_id"`
+	DisplayName         string `json:"display_name"`
+	Attached            bool   `json:"attached"`
+	Access              string `json:"access"`
+	URL                 string `json:"url"`
+	LocalPath           string `json:"local_path"`
+	State               string `json:"state"`
+	OwnerRealmID        string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy    string `json:"attachment_policy"`
+	ServerDeleted       bool   `json:"server_deleted,omitempty"`
+	LocalCopyPreserved  bool   `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus     string `json:"local_copy_status,omitempty"`
+	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
+	RetainUntil         string `json:"retain_until,omitempty"`
+	RecoveryOperationID string `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable   bool   `json:"recovery_available,omitempty"`
+	RecoveryPending     bool   `json:"recovery_pending,omitempty"`
+	CleanupError        string `json:"cleanup_error,omitempty"`
+	Purpose             string `json:"purpose,omitempty"`
+	ParentRepoID        string `json:"parent_repo_id,omitempty"`
+	// Sparse marks a working copy holding only the paths chosen in the
+	// unattached browser: attached, but not the whole tree.
+	Sparse               bool   `json:"sparse,omitempty"`
 	LifecycleOperationID string `json:"lifecycle_operation_id,omitempty"`
 	LifecycleError       string `json:"lifecycle_error,omitempty"`
 	CanRetryLifecycle    bool   `json:"can_retry_lifecycle,omitempty"`

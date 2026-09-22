@@ -80,6 +80,41 @@ type sparseAttachmentSVN interface {
 	CheckoutDepthEmpty(context.Context, string, string) (string, error)
 }
 
+type depthAttachmentSVN interface {
+	UpdateSetDepth(context.Context, string, string, string) (string, error)
+}
+
+// checkoutSparseAttachment starts a working copy from the unattached browser:
+// an empty root, then the first chosen path with its parents. A resume never
+// becomes a full checkout; it only brings the first path in again, which is a
+// no-op when an interrupted attempt had already done it.
+func checkoutSparseAttachment(ctx context.Context, svn attachmentSVN, record localrepo.Record, root string, hadSVN bool) error {
+	deepener, ok := svn.(depthAttachmentSVN)
+	if !ok {
+		return errors.New("SVN adapter cannot choose paths in a sparse working copy")
+	}
+	if !hadSVN {
+		sparse, ok := svn.(sparseAttachmentSVN)
+		if !ok {
+			return errors.New("SVN adapter does not support sparse checkout")
+		}
+		if _, err := sparse.CheckoutDepthEmpty(ctx, record.RepoURL, root); err != nil {
+			return err
+		}
+	}
+	if record.SparsePath == "" {
+		return nil
+	}
+	// The native helper deepens only a live FileES working copy (one with
+	// .filees). The identity is written again after checkout anyway; writing
+	// it first is what lets the first path arrive before supervision starts.
+	if err := ensureWorkingCopyIdentity(root, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
+		return err
+	}
+	_, err := deepener.UpdateSetDepth(ctx, root, record.SparsePath, "infinity")
+	return err
+}
+
 type provisionedAttachment struct {
 	Repo    config.Repo
 	Quiesce bool
@@ -1237,6 +1272,9 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 		}
 	}
 	checkout := func() error {
+		if record.Sparse {
+			return checkoutSparseAttachment(ctx, svn, record, check.CanonicalPath, hadSVN)
+		}
 		if record.Purpose != clientview.PurposeUploadShelf {
 			_, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath)
 			return err
@@ -1357,7 +1395,7 @@ func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record local
 	if p.attachments == nil {
 		return
 	}
-	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access, Purpose: record.Purpose}
+	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access, Purpose: record.Purpose, Sparse: record.Sparse}
 	select {
 	case p.attachments <- provisionedAttachment{Repo: repo}:
 	case <-ctx.Done():

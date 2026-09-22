@@ -64,7 +64,14 @@ type Record struct {
 	Access      string     `json:"access,omitempty"`
 	// Purpose survives restart so an upload shelf can never be promoted into
 	// the ordinary synchronizing/committing repository pipeline.
-	Purpose          string `json:"purpose,omitempty"`
+	Purpose string `json:"purpose,omitempty"`
+	// Sparse survives restart for the same reason as Purpose: a working copy
+	// started from the unattached browser holds only chosen paths, and no
+	// resume may turn it into a full checkout behind the user's back.
+	// SparsePath is the first chosen path, brought in before the daemon starts
+	// supervising the copy; later ones go through the running commit service.
+	Sparse           bool   `json:"sparse,omitempty"`
+	SparsePath       string `json:"sparse_path,omitempty"`
 	DisplayName      string `json:"display_name,omitempty"`
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
@@ -205,6 +212,44 @@ func (s *Store) BeginAttach(serverID, repoID, localPath string, required bool) (
 	return s.begin(Record{
 		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
 		DisplayName: folderName(localPath), State: state,
+	})
+}
+
+// BeginSparseAttach is BeginAttach for the unattached browser: the working
+// copy starts empty and holds sparsePath (a slash-separated path inside the
+// repository) and whatever the user chooses later.
+func (s *Store) BeginSparseAttach(serverID, repoID, localPath, sparsePath string, required bool) (Record, error) {
+	sparsePath = strings.Trim(strings.TrimSpace(sparsePath), "/")
+	if sparsePath == "" {
+		return Record{}, errors.New("a sparse attachment needs its first path")
+	}
+	state := StateUnattached
+	if required {
+		state = StatePolicyPending
+	}
+	return s.begin(Record{
+		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
+		DisplayName: folderName(localPath), State: state,
+		Sparse: true, SparsePath: sparsePath,
+	})
+}
+
+// MarkFullDepth records that a sparse working copy was deepened to the whole
+// tree: from then on it is an ordinary attached copy.
+func (s *Store) MarkFullDepth(serverID, repoID string) (Record, error) {
+	var operationID string
+	for _, record := range s.List() {
+		if record.ServerID == serverID && record.RepoID == repoID && record.State == StateAttached {
+			operationID = record.OperationID
+			break
+		}
+	}
+	if operationID == "" {
+		return Record{}, errors.New("no attached working copy for this repository")
+	}
+	return s.update(operationID, func(record *Record) error {
+		record.Sparse, record.SparsePath = false, ""
+		return nil
 	})
 }
 

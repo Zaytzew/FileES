@@ -36,7 +36,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -337,6 +337,7 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
     const char *paths[FILEES_SVN_MAX_PATHS];
     svn_revnum_t revision = SVN_INVALID_REVNUM;
     svn_depth_t depth = svn_depth_unknown;
+    svn_boolean_t sticky = FALSE;
     svn_boolean_t live = TRUE;
     svn_boolean_t make_parents = FALSE;
     int n = 0, i;
@@ -357,17 +358,29 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
             else return filees_refuse("--depth must be empty or infinity");
             continue;
         }
+        if (!strcmp(argv[i], "--set-depth") && i + 1 < argc) {
+            ++i;
+            if (!strcmp(argv[i], "empty")) depth = svn_depth_empty;
+            else if (!strcmp(argv[i], "files")) depth = svn_depth_files;
+            else if (!strcmp(argv[i], "immediates")) depth = svn_depth_immediates;
+            else if (!strcmp(argv[i], "infinity")) depth = svn_depth_infinity;
+            else return filees_refuse("--set-depth must be empty, files, immediates or infinity");
+            sticky = TRUE;
+            continue;
+        }
         if (!strcmp(argv[i], "--parents")) { make_parents = TRUE; continue; }
         if (!strcmp(argv[i], "--")) {
             SVN_ERR(collect_paths(i, argc, argv, paths, &n));
             break;
         }
-        return filees_refuse("usage: filees-svn update --wc WC [--depth empty] [--revision N] [-- REL...]");
+        return filees_refuse("usage: filees-svn update --wc WC [--depth empty | --set-depth DEPTH] [--parents] [--revision N] [-- REL...]");
     }
     if (!wc) return filees_refuse("update requires --wc|--disposable-wc");
-    if (make_parents && (depth != svn_depth_empty || n != 1 || !live))
-        return filees_refuse("--parents requires one targeted live depth-empty update");
-    return filees_ra_update(wc, live, paths, n, depth, revision, make_parents, pool);
+    if (sticky && (!live || n > 1))
+        return filees_refuse("--set-depth changes one live working copy path at a time");
+    if (make_parents && (n != 1 || !live || (depth != svn_depth_empty && !sticky)))
+        return filees_refuse("--parents requires one targeted live depth-empty or --set-depth update");
+    return filees_ra_update(wc, live, paths, n, depth, sticky, revision, make_parents, pool);
 }
 
 static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)

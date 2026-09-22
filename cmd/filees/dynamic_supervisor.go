@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -376,6 +377,18 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			timeout = clientprofile.DefaultSessionTimeout
 		}
 		if monitored[serverID] {
+			return nil
+		}
+		// A demo whose announced end has passed is over on the server too: the
+		// realm is removed and every key this client holds is refused. Dialling
+		// anyway costs an OpenSSH penalty for the whole source address (seam
+		// register D3), which lands on everyone behind the same NAT - including
+		// the next person activating a demo. The deadline stays presentation
+		// everywhere else; here it is the one thing known locally that makes
+		// the call pointless before it is made.
+		if demoDeadlinePassed(syncConfig, time.Now()) {
+			talk.With("projection:"+serverID).Infof("demo ended on %s; not contacting the server until this client is activated again", serverID)
+			reservationRefreshes.detectDetached(serverID, errDemoEnded)
 			return nil
 		}
 		if tracked, ok := shareCache.(interface{ Track(string) }); ok {
@@ -766,6 +779,19 @@ func sessionTimeoutMinutes(serverID string, runtimes map[reposupervisor.Key]repo
 		return int(timeout / time.Minute)
 	}
 	return int(clientprofile.DefaultSessionTimeout / time.Minute)
+}
+
+// errDemoEnded is an identity refusal this client can state without asking:
+// the demo server announced the end, and after it every credential is refused.
+// isDetachedClient recognises it through the same sentence the server uses.
+var errDemoEnded = errors.New("demo ended: proof does not match one live staged or active client")
+
+// demoDeadlinePassed reports whether the demo announcement beside the view
+// names a moment that has passed. No announcement, or an unreadable one, is
+// never a reason to stop: every ordinary server answers false here.
+func demoDeadlinePassed(sync clientview.SyncConfig, now time.Time) bool {
+	deadline, err := time.Parse(time.RFC3339, demoExpiresAt(sync))
+	return err == nil && !now.Before(deadline)
 }
 
 // demoExpiresAt reads the demo server's announcement from the service

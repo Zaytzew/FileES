@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
@@ -87,7 +89,12 @@ func (h headService) HeadCat(ctx context.Context, serverID, repoURL, path string
 	if err != nil {
 		return "", err
 	}
-	dir, err := os.MkdirTemp("", "filees-head-*")
+	// Yesterday's previews are nobody's: the copy is read-only, goes nowhere
+	// and the person who looked at it has long closed the application. Left
+	// alone they accumulate in the system temp folder for as long as the
+	// client is installed.
+	prunePreviews(os.TempDir(), previewLifetime, time.Now())
+	dir, err := os.MkdirTemp("", previewPrefix+"*")
 	if err != nil {
 		return "", err
 	}
@@ -108,4 +115,40 @@ func (h headService) HeadCat(ctx context.Context, serverID, repoURL, path string
 
 func markPreviewReadOnly(path string) error {
 	return os.Chmod(path, 0o444)
+}
+
+const (
+	previewPrefix = "filees-head-"
+	// previewLifetime outlives any reasonable look at a file while making
+	// sure a folder does not survive the session that made it. An editor
+	// still holding the copy simply keeps it: a refused removal is not an
+	// error here.
+	previewLifetime = 12 * time.Hour
+)
+
+// prunePreviews removes preview folders this client made earlier than
+// lifetime ago. Preview copies are read-only, which on Windows stops
+// os.RemoveAll, so the files are made writable first.
+func prunePreviews(root string, lifetime time.Duration, now time.Time) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), previewPrefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || now.Sub(info.ModTime()) < lifetime {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		_ = filepath.WalkDir(path, func(name string, item fs.DirEntry, err error) error {
+			if err == nil && !item.IsDir() {
+				_ = os.Chmod(name, 0o666)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(path)
+	}
 }

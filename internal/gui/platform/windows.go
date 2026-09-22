@@ -90,8 +90,18 @@ func hideConsoleWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 }
 
+// Start launches a process that must outlive the request that asked for it:
+// explorer.exe handing a folder or a file to its application. The context is
+// checked before starting and deliberately not bound to the process -
+// exec.CommandContext kills the child when the context ends, and a caller that
+// cancels right after Start returns (as any request with a deferred cancel
+// does) killed explorer.exe before it had opened anything. That is how
+// "Preview" in the unattached browser silently did nothing.
 func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cmd := exec.Command(name, args...)
 	hideConsoleWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return err

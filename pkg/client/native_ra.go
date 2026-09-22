@@ -430,7 +430,11 @@ func (c *execClient) nativeLog(ctx context.Context, target, revision string, ext
 		return nil, e
 	}
 	for _, v := range doc.Entries {
-		if v.Revision <= 0 {
+		// r0 is a real revision - the repository's creation - and the only
+		// one an empty repository has. Rejecting it made the first commit to
+		// every new repository fail its baseline read ("native log invalid
+		// revision") once working-copy operations moved to the helper.
+		if v.Revision < 0 {
 			return nil, errors.New("native log invalid revision")
 		}
 	}

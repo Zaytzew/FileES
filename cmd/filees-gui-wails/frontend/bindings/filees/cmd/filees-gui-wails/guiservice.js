@@ -79,6 +79,29 @@ export function SetGUIBlob(serverID, expected, data) {
     return $Call.ByID(1734090150, serverID, expected, data);
 }
 
+/**
+ * The shown and the own name of one repository. Presentation only: the name
+ * set here never reaches the daemon.
+ * @param {string} serverID
+ * @param {string} repoID
+ * @returns {$CancellablePromise<{server_id: string, repo_id: string, name: string, own_name: string, custom: boolean}>}
+ */
+export function RepositoryNaming(serverID, repoID) {
+    return $Call.ByID(2370858182, serverID, repoID);
+}
+
+/**
+ * Set the name this computer shows for a repository; an empty name brings the
+ * repository's own name back.
+ * @param {string} serverID
+ * @param {string} repoID
+ * @param {string} name
+ * @returns {$CancellablePromise<{server_id: string, repo_id: string, name: string, own_name: string, custom: boolean}>}
+ */
+export function RenameRepository(serverID, repoID, name) {
+    return $Call.ByID(1731525036, serverID, repoID, name);
+}
+
 // Private type creation functions
 const $$createType0 = $models.Snapshot.createFrom;
 const $$createType1 = $models.ActionAcceptance.createFrom;

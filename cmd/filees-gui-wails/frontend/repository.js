@@ -1,6 +1,6 @@
 import { Browser, Events, Window } from "/wails/runtime.js";
 import { publicShareURL, openPublicShare } from "./public-share-link.js";
-import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
+import { GUIService, RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, labelHTML, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, canArchive, setArchived } from "./repo-view.js";
@@ -17,6 +17,9 @@ const escapeHTML = (value) => String(value ?? "")
   .replaceAll("'", "&#039;");
 
 let currentSnapshot = null;
+// The shown name is this client's own (GUIService.RenameRepository); the
+// daemon and the server keep the repository's name.
+let renaming = null;
 
 // Only labels change here: preserve focus, pending actions and their buttons.
 function refreshRepositoryLabels() {
@@ -144,6 +147,7 @@ function shelfTime(value) {
 
 function render(snapshot) {
   if (!snapshot?.revision || !snapshot.context?.repo_id) return;
+  if (renaming && (snapshot.context.server_id !== currentSnapshot?.context?.server_id || snapshot.context.repo_id !== currentSnapshot?.context?.repo_id)) renaming = null;
   const contextChanged = currentSnapshot?.revision !== snapshot.revision;
   currentSnapshot = snapshot;
   const context = snapshot.context;
@@ -163,7 +167,8 @@ function render(snapshot) {
   $("#repository-access").innerHTML = context.access_key ? labelHTML(context.access_key) : escapeHTML(context.access || "—");
   $("#repository-editing").innerHTML = context.editing_key ? labelHTML(context.editing_key) : escapeHTML(context.editing || "—");
 	$("#repository-facts").hidden = detailMode;
-	$("#actions-view").hidden = detailMode;
+	$("#actions-view").hidden = detailMode || renaming;
+	$("#rename-view").hidden = detailMode || !renaming;
   $("#shares-view").hidden = !sharesMode;
 	$("#grants-view").hidden = !grantsMode;
 	$("#uploads-view").hidden = !uploadsMode;
@@ -181,6 +186,7 @@ function render(snapshot) {
     const archived = repoSection(context, prefs) === "archived";
     if (!detailMode) {
       const blocked = !archived && !canArchive(context);
+      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-rename-view><span><strong>${labelHTML("rename.row")}</strong><small>${labelHTML("rename.rowHelp")}</small></span><i aria-hidden="true">›</i></button>`;
       $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view ${blocked ? "disabled" : ""}><span><strong>${labelHTML(archived ? "repository.restoreView" : "repository.archiveView")}</strong><small>${labelHTML(blocked ? "repository.archiveBlocked" : "repository.archiveHelp")}</small></span><i aria-hidden="true">›</i></button>`;
     }
   } else {
@@ -312,8 +318,58 @@ async function closeRepository() {
   }
 }
 
+async function openRename() {
+  const context = currentSnapshot?.context;
+  if (!context) return;
+  try {
+    renaming = await GUIService.RepositoryNaming(context.server_id, context.repo_id);
+  } catch (error) {
+    showToast(t("rename.failed"), error?.message || String(error));
+    return;
+  }
+  render(currentSnapshot);
+  $("#rename-input").value = renaming.name;
+  $("#rename-own").textContent = t("rename.own", {name: renaming.own_name});
+  $("#rename-restore").hidden = !renaming.custom;
+  $("#rename-input").focus();
+  $("#rename-input").select();
+}
+
+function closeRename() {
+  renaming = null;
+  if (currentSnapshot) render(currentSnapshot);
+}
+
+async function saveRename(name) {
+  if (!renaming) return;
+  const value = name.trim();
+  if (value.length > 120 || /[\u0000-\u001f\u007f]/.test(value)) {
+    showToast(t("rename.failed"), t("rename.invalid"));
+    return;
+  }
+  const buttons = document.querySelectorAll("#rename-view button");
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    await GUIService.RenameRepository(renaming.server_id, renaming.repo_id, value);
+    showToast(t("rename.saved"));
+    closeRename();
+  } catch (error) {
+    showToast(t("rename.failed"), error?.message || String(error));
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+$("#rename-view").addEventListener("submit", (event) => { event.preventDefault(); saveRename($("#rename-input").value); });
+$("#rename-restore").addEventListener("click", () => saveRename(""));
+$("#rename-cancel").addEventListener("click", closeRename);
+
 Events.On("filees:repository-snapshot", (event) => render(event?.data ?? event));
 $("#repository-actions").addEventListener("click", (event) => {
+  if (event.target.closest("[data-rename-view]")) {
+    openRename();
+    return;
+  }
   if (event.target.closest("[data-archive-view]")) {
     const context = currentSnapshot?.context;
     if (!context) return;
@@ -374,7 +430,9 @@ $("#repository-titlebar").addEventListener("dblclick", (event) => {
   if (!event.target.closest(".window-controls")) Window.ToggleMaximise();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeRepository();
+  if (event.key !== "Escape") return;
+  if (renaming) closeRename();
+  else closeRepository();
 });
 
 try {

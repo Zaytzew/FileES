@@ -88,6 +88,9 @@ type RepoStatus struct {
 	// delivery repository; upload_trash is the realm-wide reject quarantine.
 	Purpose      string `json:"purpose,omitempty"`
 	ParentRepoID string `json:"parent_repo_id,omitempty"`
+	// Sparse: attached, but holding only paths chosen in the unattached
+	// browser. The interface must not present it as the whole folder.
+	Sparse bool `json:"sparse,omitempty"`
 }
 
 // UnportableName is one refused object. Kind is a stable token

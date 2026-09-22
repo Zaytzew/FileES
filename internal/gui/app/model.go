@@ -43,16 +43,18 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
-	ID                     string
-	DisplayName            string
-	ServerID               string
-	Attached               bool
-	Access                 string
-	OwnerRealmID           string
-	AttachmentPolicy       string
-	EditingPolicy          string
-	Purpose                string
-	ParentRepoID           string
+	ID               string
+	DisplayName      string
+	ServerID         string
+	Attached         bool
+	Access           string
+	OwnerRealmID     string
+	AttachmentPolicy string
+	EditingPolicy    string
+	Purpose          string
+	ParentRepoID     string
+	// Sparse: attached, holding only paths chosen in the unattached browser.
+	Sparse                 bool
 	URL                    string
 	LocalPath              string
 	State                  string

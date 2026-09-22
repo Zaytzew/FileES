@@ -68,6 +68,8 @@ type RepoState struct {
 	recoveryStatsFn          func() contract.RecoveryStats
 	workingCopySizeFn        func() (int64, bool)
 	publishFn                func(ctx context.Context, comment string) (int64, error)
+	depthFn                  func(ctx context.Context, rel, depth string) error
+	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)
 	commitRecoveryRequiredFn func() bool
@@ -100,6 +102,35 @@ func (rs *RepoState) SetEditingPolicy(policy string) {
 	rs.mu.Lock()
 	rs.editingPolicy = policy
 	rs.mu.Unlock()
+}
+
+// SetSparse records that the attached working copy holds only chosen paths.
+func (rs *RepoState) SetSparse(sparse bool) {
+	rs.mu.Lock()
+	rs.sparse = sparse
+	rs.mu.Unlock()
+}
+
+// SetDepthFunc installs the running commit service's depth change, which runs
+// under that service's working-copy operation lock. nil while not running.
+func (rs *RepoState) SetDepthFunc(fn func(ctx context.Context, rel, depth string) error) {
+	rs.mu.Lock()
+	rs.depthFn = fn
+	rs.mu.Unlock()
+}
+
+// ErrDepthUnavailable: the repository has no running working copy to deepen.
+var ErrDepthUnavailable = errors.New("working copy is not running")
+
+// SetDepth deepens the attached working copy through its commit service.
+func (rs *RepoState) SetDepth(ctx context.Context, rel, depth string) error {
+	rs.mu.RLock()
+	fn := rs.depthFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return ErrDepthUnavailable
+	}
+	return fn(ctx, rel, depth)
 }
 
 func (rs *RepoState) SetPurpose(purpose string) {
@@ -555,6 +586,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	attachmentPolicy := rs.attachmentPolicy
 	editingPolicy := rs.editingPolicy
 	purpose := rs.purpose
+	sparse := rs.sparse
 	parentRepoID := rs.parentRepoID
 	headRev := rs.headRev
 	conflicts := rs.conflicts
@@ -620,6 +652,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		CommitRecoveryRequired: commitRecoveryRequired,
 		Purpose:                purpose,
 		ParentRepoID:           parentRepoID,
+		Sparse:                 sparse,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)
@@ -660,6 +693,7 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
 		Purpose:              rs.purpose,
 		ParentRepoID:         rs.parentRepoID,
+		Sparse:               rs.sparse,
 		LifecycleOperationID: rs.lifecycleOperationID, LifecycleError: rs.lifecycleError,
 		CanRetryLifecycle: rs.canRetryLifecycle, CanAbandonLifecycle: rs.canAbandonLifecycle,
 	}

@@ -53,6 +53,7 @@ type Server struct {
 	lockReleaseRequests  map[string][]contract.LockReleaseRequest
 	lifecycle            RepositoryLifecycleService
 	historyReads         HistoryService
+	headReads            HeadService
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
 	historyDensity       HistoryDensityService
@@ -367,6 +368,9 @@ func (s *Server) capabilities() []string {
 		if s.historyDensityService() != nil {
 			caps = append(caps, contract.CapRepoHistoryDensity)
 		}
+	}
+	if s.headService() != nil {
+		caps = append(caps, contract.CapRepoHeadBrowse)
 	}
 	if s.whaleService() != nil {
 		caps = append(caps, contract.CapWhaleList, contract.CapWhaleGet, contract.CapWhalePutBegin, contract.CapWhaleGetBegin, contract.CapWhaleGetConfirm, contract.CapWhaleRetry, contract.CapWhaleCancel)

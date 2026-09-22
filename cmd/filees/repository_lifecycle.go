@@ -233,6 +233,24 @@ func (service repositoryLifecycleService) BeginAttach(serverID, repoID, localPat
 	return lifecycleResult(record), err
 }
 
+// BeginSparseAttach starts the unattached browser's working copy: the same
+// attach lifecycle, with an empty root and the first chosen path.
+func (service repositoryLifecycleService) BeginSparseAttach(serverID, repoID, localPath, sparsePath string, required bool) (contract.RepoLifecycleResult, error) {
+	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	record, err := service.store.BeginSparseAttach(serverID, repoID, check.CanonicalPath, sparsePath, required)
+	return lifecycleResult(record), err
+}
+
+// MarkFullDepth records that a sparse working copy now holds the whole tree,
+// so a later resume treats it as an ordinary attached copy.
+func (service repositoryLifecycleService) MarkFullDepth(serverID, repoID string) error {
+	_, err := service.store.MarkFullDepth(serverID, repoID)
+	return err
+}
+
 func (service repositoryLifecycleService) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error) {
 	if access != "r" && access != "rw" {
 		return contract.RepoLifecycleResult{}, errors.New("repository attachment access must be r or rw")

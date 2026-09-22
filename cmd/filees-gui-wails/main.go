@@ -150,6 +150,9 @@ func main() {
 	// Wehikuł czasu talks to the daemon itself; refusals render through the
 	// same domain catalogue as every other daemon sentence.
 	timeMachine := newTimeMachineService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
+	// "Browse on the server" (implementation notes (not distributed)) is
+	// built the same way: its own window, talking to the daemon itself.
+	headBrowser := newHeadBrowserService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -166,6 +169,7 @@ func main() {
 			application.NewService(promptBridge),
 			application.NewService(newPairingBridge(pairing)),
 			application.NewService(timeMachine),
+			application.NewService(headBrowser),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),
@@ -186,6 +190,7 @@ func main() {
 	prompts.attachEmitter(host.Event)
 	pairing.attachEmitter(host.Event)
 	timeMachine.attachEmitter(host.Event)
+	headBrowser.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "filees-main",
@@ -270,6 +275,23 @@ func main() {
 			NonClientRegionSupport: true,
 		},
 	})
+	headBrowserWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "filees-head-browser",
+		Title:            "Przeglądaj na serwerze — FileES",
+		URL:              "/headbrowser.html",
+		Width:            1040,
+		Height:           760,
+		MinWidth:         720,
+		MinHeight:        520,
+		Frameless:        true,
+		Hidden:           true,
+		JS:               themeJS,
+		BackgroundColour: themeBackground,
+		DevToolsEnabled:  *devtools,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
+	})
 	settings.attachPresentation(func() {
 		settingsWindow.Show()
 		settingsWindow.Center()
@@ -311,6 +333,16 @@ func main() {
 		timeMachineWindow.UnMinimise()
 		timeMachineWindow.Focus()
 	}, func() { timeMachineWindow.Hide() })
+	headBrowser.attachPresentation(func() {
+		headBrowserWindow.Show()
+		headBrowserWindow.UnMinimise()
+		headBrowserWindow.Focus()
+	}, func() { headBrowserWindow.Hide() })
+	headBrowserWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		// Closing only hides; a path being brought in belongs to the daemon.
+		event.Cancel()
+		headBrowserWindow.Hide()
+	})
 	timeMachineWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		// Closing only hides. An export already confirmed belongs to the daemon
 		// and keeps running; reopening the window shows its state again.
@@ -326,6 +358,7 @@ func main() {
 		gui.rememberCurrentRealmBranding(serverID, value.LeadingColor)
 	}}
 	actionPlatform := newActionPlatform()
+	headBrowser.attachPlatform(wailsHistoryPicker(nativePicker), actionPlatform.OpenFolder)
 	actionController := configureActions(
 		gui, daemon, reservationAdapter{client: daemon}, lockReleaseAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot).WithFailureReporter(func(step string, err error) {
 			// The interface records only what the daemon cannot: that the call

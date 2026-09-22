@@ -206,6 +206,17 @@ var specs = []Spec{
 	{"HISTORY-2007", "history.operation_unknown", SevError, HintNone, nil, "History export operation is unknown"},
 	{"HISTORY-2008", "history.operation_state", SevError, HintNone, nil, "History export operation is not in a state for that"},
 
+	// Unattached browser (implementation notes (not distributed)).
+	{"HEAD-0001", "head.unavailable", SevError, HintRetry, nil, "Browsing the server is not available on this client"},
+	{"HEAD-2001", "head.forbidden", SevError, HintNone, nil, "This activation may not browse the repository"},
+	{"HEAD-2002", "head.bad_path", SevError, HintNone, nil, "Path inside the repository is invalid"},
+	{"HEAD-2003", "head.list_failed", SevError, HintRetry, detailOnly(), "Folder on the server could not be listed"},
+	{"HEAD-2004", "head.cat_failed", SevError, HintRetry, detailOnly(), "File on the server could not be read"},
+	{"HEAD-2005", "head.anchor_required", SevError, HintRequireAction, nil, "A local folder is needed for the first chosen path"},
+	{"HEAD-2006", "head.materialize_failed", SevError, HintRetry, detailOnly(), "Chosen path could not be brought to this computer"},
+	{"HEAD-2007", "head.fill_failed", SevError, HintRetry, detailOnly(), "The rest of the folder could not be brought to this computer"},
+	{"HEAD-2008", "head.copy_not_running", SevError, HintRetry, nil, "The local copy is not running yet"},
+
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid"},
 	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only"},

@@ -613,7 +613,7 @@ function renderRepo(repo) {
   return `<article class="repo-row ${repo.intent_resolution_required || recoveryRequired ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title">
       ${open}
-      <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
+      <div class="repo-name"><strong title="${escapeHTML(repo.own_name ? `${repo.display_name} (${t("rename.ownName", {name: repo.own_name})})` : repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
     </div>
     <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>

@@ -17,6 +17,7 @@ import (
 	rootversion "filees"
 	"filees/internal/gui/clientactivation"
 	"filees/internal/gui/projectionmirror"
+	"filees/internal/gui/reponames"
 	"filees/pkg/clientprofile"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
@@ -144,6 +145,12 @@ func main() {
 	gui.setDomainCatalogues(newDomainCatalogues(daemon))
 	settings := newSettingsService()
 	repository := newRepositoryService()
+	// Names shown for repositories belong to this client alone; see repo_names.go.
+	repoNames, repoNamesErr := reponames.Open(filepath.Join(filepath.Dir(*activationRoot), "gui", "repo-names.json"))
+	if repoNamesErr != nil {
+		log.Printf("filees-gui-wails: repository names: %v", repoNamesErr)
+	}
+	gui.attachRepoNames(repoNames, repository.renameContext)
 	prompts := newPromptService()
 	promptBridge := newPromptBridge(prompts)
 	pairing := newPairingService()

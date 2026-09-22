@@ -38,6 +38,13 @@
       <div id="repository-actions" class="action-list"></div>
     </section>
 
+    <form id="rename-view" class="content-card rename-card" hidden novalidate>
+      <label for="rename-input" data-i18n="rename.label">Nazwa na tym komputerze</label>
+      <input id="rename-input" type="text" maxlength="120" autocomplete="off" spellcheck="false">
+      <p id="rename-own" class="rename-hint"></p>
+      <div class="rename-buttons"><button id="rename-restore" class="quiet-button" type="button" data-i18n="rename.restore">Przywróć własną nazwę</button><span></span><button id="rename-cancel" class="quiet-button" type="button" data-i18n="action.cancel">Anuluj</button><button class="primary-button" type="submit" data-i18n="rename.save">Zapisz</button></div>
+    </form>
+
     <section id="shares-view" class="content-card" hidden>
       <header class="shares-header"><div><p class="eyebrow" data-i18n="repository.distribution">Dystrybucja</p><h2 data-i18n="section.shares">Udostępnienia publiczne</h2></div><button id="create-share" class="primary-button" type="button" data-i18n="repository.newShare">Nowe udostępnienie</button></header>
       <div id="public-shares" class="share-list"></div>

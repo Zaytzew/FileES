@@ -12,6 +12,7 @@ import (
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
 	"filees/internal/gui/projectionmirror"
+	"filees/internal/gui/reponames"
 	"filees/internal/gui/tray"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
@@ -37,6 +38,11 @@ type GUIService struct {
 	mu                   sync.RWMutex
 	snapshot             Snapshot
 	view                 guiapp.ViewModel
+	// daemonView is the model as the daemon sent it; view is what this client
+	// shows, with the names set on this computer (repo_names.go) laid over it.
+	daemonView           guiapp.ViewModel
+	repoNames            *reponames.Store
+	onRepoRenamed        func(serverID, repoID, name string)
 	runner               *guiapp.App
 	emitter              snapshotEmitter
 	actions              chan<- tray.Intent
@@ -133,6 +139,7 @@ type RepoProjection struct {
 	ID                       string                     `json:"id"`
 	ServerID                 string                     `json:"server_id"`
 	DisplayName              string                     `json:"display_name"`
+	OwnName                  string                     `json:"own_name,omitempty"`
 	LocalPath                string                     `json:"local_path,omitempty"`
 	URL                      string                     `json:"url,omitempty"`
 	Attached                 bool                       `json:"attached"`
@@ -550,7 +557,10 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	// the journal cannot disagree about what an error says, and a language
 	// change reaches all three at once.
 	service.renderDomainErrors(&vm)
+	daemonView := vm
+	vm = service.applyRepoNames(vm)
 	next := projectViewModel(vm, journal.Texts{Chrome: service.localizeText, Hint: service.domainHint})
+	markOwnNames(&next, daemonView)
 
 	service.mu.Lock()
 	requests := service.applyRealmBrandingLocked(vm, &next)
@@ -558,6 +568,7 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	next.Revision = service.snapshot.Revision + 1
 	service.snapshot = next
 	service.view = vm
+	service.daemonView = daemonView
 	emitter := service.emitter
 	observer := service.observer
 	service.mu.Unlock()

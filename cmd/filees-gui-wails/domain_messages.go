@@ -289,7 +289,7 @@ func (service *GUIService) setDomainCatalogues(catalogues *domainCatalogues) {
 // change, with the revision advanced.
 func (service *GUIService) republishRenderedView() {
 	service.mu.RLock()
-	vm := service.view
+	vm := service.daemonView
 	ready := service.emitter != nil || service.observer != nil
 	service.mu.RUnlock()
 	if !ready {

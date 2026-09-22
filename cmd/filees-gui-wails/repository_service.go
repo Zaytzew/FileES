@@ -1256,3 +1256,19 @@ func shareChoiceAllowed(shares []PublicShareProjection, action platform.PublicSh
 	}
 	return false
 }
+
+// renameContext shows a name set on this computer in the open repository
+// window, so the heading follows the rename without reopening the window.
+func (service *RepositoryService) renameContext(serverID, repoID, name string) {
+	service.mu.Lock()
+	if service.snapshot.Context.ServerID != serverID || service.snapshot.Context.RepoID != repoID {
+		service.mu.Unlock()
+		return
+	}
+	service.revision++
+	service.snapshot.Revision = service.revision
+	service.snapshot.Context.Name = name
+	snapshot, emitter := service.snapshot, service.emitter
+	service.mu.Unlock()
+	emitRepositorySnapshot(emitter, snapshot)
+}

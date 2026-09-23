@@ -225,3 +225,27 @@ func TestRepositoryLifecycleLocateMayReaffirmExistingRoot(t *testing.T) {
 		t.Fatalf("reappeared root refused: %+v %v", got, err)
 	}
 }
+
+// The provisioner keeps its own list of roots for the preflight. It must skip
+// the same pathless records as the lifecycle service, or every attach fails
+// while one of them waits (owner's machine, 2026-09-23: the first Explorer
+// anchor refused with `existing repository root must be absolute: ""`).
+func TestProvisionerRootsSkipAPathlessDeletion(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.BeginDelete("office", "shelf-1", "Półka"); err != nil {
+		t.Fatal(err)
+	}
+	p := &daemonProvisioner{local: local}
+	roots := p.otherRoots("another-operation")
+	for _, root := range roots {
+		if root == "" {
+			t.Fatalf("an empty root reached the preflight: %q", roots)
+		}
+	}
+	if _, err := provisioning.PreflightLocalPath(filepath.Join(t.TempDir(), "Docs"), provisioning.LocalPathAttach, roots); err != nil {
+		t.Fatalf("a pathless deletion blocked an unrelated attach: %v", err)
+	}
+}

@@ -572,12 +572,24 @@ func (s *Scanner) scanTreeEmit(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5
 			return nil
 		}
 		isDir := info.IsDir()
-		// A placeholder of an Explorer anchor (or of another provider's
-		// folder) is not on this disk: hashing it would download it, and a
-		// scan would then fetch the whole repository by itself. It is not the
-		// person's file either, so it is not recorded at all - it appears the
-		// moment it is opened and becomes part of the working copy.
+		// A file whose bytes are not on this disk is never read: hashing it
+		// would download it, and a scan would then fetch a whole anchor (or a
+		// whole Nextcloud/OneDrive folder) by itself.
+		//
+		// What it means depends on whether the scanner knew it. A placeholder
+		// of an Explorer anchor was never recorded: it is not the person's
+		// file and is not recorded now - it arrives when opened. A file that
+		// WAS recorded and has since been turned into a placeholder by another
+		// provider (Nextcloud "free up space", with the working copy inside the
+		// Nextcloud folder) is still the person's file: it is carried over
+		// unchanged. Skipping it would let the deletion debounce report it as
+		// deleted, and the commit service would delete it from the repository.
 		if !isDir && cloudfiles.RecallsOnRead(info) {
+			if old, known := deleted[rel]; known {
+				curr[rel] = old
+				delete(deleted, rel)
+				delete(s.missingSince, rel)
+			}
 			*igCnt++
 			return nil
 		}

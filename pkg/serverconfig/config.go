@@ -67,7 +67,8 @@ type DemoPolicy struct {
 	// RealmQuota is the space every demo realm is entitled to.
 	RealmQuota int64
 	// AddressBlock is how long a client address stays refused after its demo
-	// realm expired; the installation itself is refused for good.
+	// realm expired. The installation is refused for as long as the demo
+	// server keeps the record (onboarding.DemoRecordRetention).
 	AddressBlock time.Duration
 }
 

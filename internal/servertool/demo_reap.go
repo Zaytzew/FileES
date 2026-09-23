@@ -29,6 +29,9 @@ type demoReapResult struct {
 	Status  string   `json:"status"`
 	Expired []string `json:"expired_realms"`
 	Removed []string `json:"removed_realms"`
+	// Pruned counts finished demo operations deleted after the privacy
+	// policy's retention (onboarding.DemoRecordRetention).
+	Pruned int `json:"pruned_records"`
 }
 
 // reapExpiredDemoRealms deletes every demo realm whose TTL has passed since its
@@ -109,7 +112,7 @@ func runAdminDemoReap(configPath string, args []string, stdout, stderr io.Writer
 		fmt.Fprintln(stderr, "usage: filees-admin [-config path] demo reap")
 		return ExitUsage
 	}
-	_, config, err := openFiles(configPath, toolAccess{
+	files, config, err := openFiles(configPath, toolAccess{
 		name: "filees-admin/demo-reap", areas: onboarding.AreaOperations, write: true,
 		needOTP: true, needActivation: true, needRepoResults: true,
 		needRepositoryData: true, needSVN: true, needPublicShareState: true, publicShareStateWrite: true,
@@ -135,6 +138,13 @@ func runAdminDemoReap(configPath string, args []string, stdout, stderr io.Writer
 	})
 	if err != nil {
 		report(stderr, "filees-admin demo reap", err)
+		return ExitTempFail
+	}
+	// After the realms: an operation whose realm has just been reaped is still
+	// inside the retention, so the order only matters for the log, not for
+	// what is kept.
+	if result.Pruned, err = files.PruneDemoRecords(config.Demo.RealmTTL, onboarding.DemoRecordRetention); err != nil {
+		report(stderr, "filees-admin demo reap prune", err)
 		return ExitTempFail
 	}
 	if err := writeJSON(stdout, result); err != nil {

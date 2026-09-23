@@ -184,3 +184,59 @@ func TestDemoRequestProtocolIsClosed(t *testing.T) {
 		t.Fatal("missing SSH_CONNECTION accepted")
 	}
 }
+
+// The privacy policy promises that nothing of a demo activation is left on
+// the demo server 14 days after it ended. An activated demo ends when its
+// realm's TTL runs out, one never activated when its OTP window closes;
+// anything that did not come from the demo endpoint is never touched.
+func TestFinishedDemoRecordsAreDeletedAfterTheRetention(t *testing.T) {
+	f := newDemoFixture(t)
+	uid := uuid.NewString()
+	activated, refusal := f.take("a@example.net", uid, "198.51.100.7")
+	if refusal != nil {
+		t.Fatalf("first demo refused: %+v", refusal)
+	}
+	f.activate(activated)
+	pending, refusal := f.take("b@example.net", uuid.NewString(), "198.51.100.8")
+	if refusal != nil {
+		t.Fatalf("second demo refused: %+v", refusal)
+	}
+	// An ordinary operation shares the directory and must survive.
+	ordinaryPath := f.store.operationPath(uuid.NewString())
+	bundle, err := f.store.readBundlePathLocked(f.store.operationPath(pending.OnboardingRequestID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle.DemoOrigin = nil
+	if err := atomicWriteJSON(ordinaryPath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	ttl := f.admission().RealmTTL
+
+	*f.now = f.now.Add(ttl + DemoRecordRetention - time.Hour)
+	if deleted, err := f.store.PruneDemoRecords(ttl, DemoRecordRetention); err != nil || deleted != 1 {
+		t.Fatalf("an hour before the activated one's retention ends: deleted %d, %v (only the never-activated one may go)", deleted, err)
+	}
+	if _, err := os.Stat(f.store.operationPath(activated.OnboardingRequestID)); err != nil {
+		t.Fatalf("the activated demo was deleted before its retention ended: %v", err)
+	}
+	if _, refusal := f.take("c@example.net", uid, "203.0.113.9"); refusal == nil || refusal.Code != DemoRefusedInstallation {
+		t.Fatalf("within the retention the installation must still be refused: %+v", refusal)
+	}
+
+	*f.now = f.now.Add(2 * time.Hour)
+	if deleted, err := f.store.PruneDemoRecords(ttl, DemoRecordRetention); err != nil || deleted != 1 {
+		t.Fatalf("after the retention: deleted %d, %v", deleted, err)
+	}
+	if _, err := os.Stat(f.store.operationPath(activated.OnboardingRequestID)); !os.IsNotExist(err) {
+		t.Fatalf("the activated demo survived its retention: %v", err)
+	}
+	if _, err := os.Stat(ordinaryPath); err != nil {
+		t.Fatalf("an operation that did not come from the demo endpoint was deleted: %v", err)
+	}
+	// Nothing of the first activation is left, so the same installation may
+	// try the demo again - the owner accepted this.
+	if _, refusal := f.take("a@example.net", uid, "198.51.100.7"); refusal != nil {
+		t.Fatalf("after the retention the installation is refused: %+v", refusal)
+	}
+}

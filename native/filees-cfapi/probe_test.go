@@ -8,6 +8,7 @@ package nativecfapiprobe
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"filees/pkg/cloudfiles"
+	"filees/pkg/watcher"
 )
 
 type answer struct {
@@ -358,5 +360,54 @@ func TestFileESRecognisesPlaceholdersAndOnlyThem(t *testing.T) {
 	}
 	if !cloudfiles.IsSyncRoot(root) || cloudfiles.IsSyncRoot(filepath.Join(root, "art")) {
 		t.Fatal("the anchor folder is a sync root and its folders are not")
+	}
+}
+
+// The daemon's own scanner walks the working copy and hashes new files. In an
+// anchor that would download every placeholder by itself. Run the real
+// scanner over a real anchor and count the fetches that reach the bridge.
+func TestTheWorkingCopyScannerNeverDownloadsAPlaceholder(t *testing.T) {
+	root := anchor(t)
+	if got := run(t, "d\t0\tart\tart\nf\t4096\tprojekt/sala.dwg\tsala.dwg\n", "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	if got := run(t, "f\t2048\tart/model.blend\tmodel.blend\n", "placeholders", "--root", root, "--rel", "art"); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(root, "moja-notatka.txt"), []byte("to jest moje"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(root, "sala.dwg"))
+	if err != nil || !cloudfiles.RecallsOnRead(info) {
+		t.Fatalf("a placeholder must say that reading it downloads it: %v", err)
+	}
+	if info, _ := os.Stat(filepath.Join(root, "moja-notatka.txt")); cloudfiles.RecallsOnRead(info) {
+		t.Fatal("an ordinary file must not look like a placeholder")
+	}
+
+	anchored := connectAnchor(t, root, func(request []string) string {
+		return "err\t" + request[1] + "\tthe scanner must not ask"
+	})
+	scanner, err := watcher.NewScanner(watcher.Options{
+		WC: root, StatePath: filepath.Join(t.TempDir(), "manifest.json"),
+		ScanPeriod: 200 * time.Millisecond, UseMD5: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for event := range scanner.Start(ctx) {
+		if strings.Contains(event.Rel, "sala.dwg") || strings.Contains(event.Rel, "model.blend") {
+			t.Errorf("the scanner reported a placeholder as a change: %+v", event)
+		}
+	}
+	select {
+	case request := <-anchored.requests:
+		t.Fatalf("the scanner downloaded a placeholder: %v", request)
+	default:
+	}
+	if _, known := scanner.WorkingCopySize(); !known {
+		t.Fatal("the scanner never finished a scan, so the test proves nothing")
 	}
 }

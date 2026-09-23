@@ -115,6 +115,16 @@ type Service struct {
 	OnUnportableNames  func([]UnportableName)
 	OnCurrentOperation func(*string)
 	OnCycle            func(contract.CycleStatus)
+	// OnPublicationHeld reports that publication has stopped on a local fault
+	// (true) and that it has resumed (false). Without it a batch held forever
+	// left the tray, the radar and the server indicator green while nothing
+	// was being published - the owner's desktop, 2026-09-23.
+	OnPublicationHeld func(bool)
+	// heldMu guards the failure bookkeeping below; see publicationFailed.
+	heldMu            sync.Mutex
+	heldConsecutive   int
+	heldReported      bool
+	heldLastJournaled string
 	// BeginPublish verifies edit-passport fencing and freezes lock mutation until
 	// the returned release function is called after the publication attempt.
 	BeginPublish func(context.Context, []string) (func(), error)
@@ -530,6 +540,8 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				// before an application atomically renames its temporary path.
 				if err := s.tryCommitMode(ctx, wc, false); err != nil {
 					s.recordCommitFailure("high-water commit failed", err)
+				} else {
+					s.publicationSucceeded()
 				}
 				s.saveCache()
 			}
@@ -549,6 +561,8 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 			}
 			if err := s.tryCommit(ctx, wc); err != nil {
 				s.recordCommitFailure("commit attempt failed", err)
+			} else {
+				s.publicationSucceeded()
 			}
 			s.saveCache()
 			projectCycle(contract.CycleWaiting, tickAt.Add(window))
@@ -571,10 +585,47 @@ func (s *Service) recordCommitFailure(what string, err error) {
 	// Network faults are journaled once by the sustained-offline timer. The
 	// immediate failure path still logs technically and updates connectivity,
 	// but must not bypass the 45-second UX grace window.
-	if !entry.IsNetwork() {
+	if !entry.IsNetwork() && s.publicationFailed(string(entry.Code)+"\x00"+err.Error()) {
 		s.ErrSink.Emit(entry)
 	}
 	s.Logger.Warnf("%s [%s]: %v", what, entry.Code, err)
+}
+
+// heldAfter is how many consecutive failed cycles it takes to call publication
+// held. One failed cycle is often a moment's contention - a working copy
+// briefly locked by an update - and should not turn the tray red; the second
+// cycle, 30 s later, is no longer a moment.
+const heldAfter = 2
+
+// publicationFailed counts a non-network failure and reports whether it should
+// be journaled: once per distinct failure, not once per 30-second retry. The
+// same held batch used to write the same entry every cycle, forever.
+func (s *Service) publicationFailed(key string) bool {
+	s.heldMu.Lock()
+	s.heldConsecutive++
+	report := s.heldConsecutive >= heldAfter && !s.heldReported
+	if report {
+		s.heldReported = true
+	}
+	journal := key != s.heldLastJournaled
+	s.heldLastJournaled = key
+	s.heldMu.Unlock()
+	if report && s.OnPublicationHeld != nil {
+		s.OnPublicationHeld(true)
+	}
+	return journal
+}
+
+// publicationSucceeded ends a held episode: the next failure, even an
+// identical one, is new again and is journaled.
+func (s *Service) publicationSucceeded() {
+	s.heldMu.Lock()
+	wasHeld := s.heldReported
+	s.heldConsecutive, s.heldReported, s.heldLastJournaled = 0, false, ""
+	s.heldMu.Unlock()
+	if wasHeld && s.OnPublicationHeld != nil {
+		s.OnPublicationHeld(false)
+	}
 }
 
 func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.Stage, revision int64, errorID string) {
@@ -2308,6 +2359,16 @@ func (s *Service) statusMap(ctx context.Context, wc string, paths []string) (map
 	for _, e := range st {
 		// Upewnij się, że mamy POSIX (watcher emituje REL w POSIX)
 		p := strings.ReplaceAll(e.Path, "\\", "/")
+		// The native helper answers an absent, never-versioned path with an
+		// explicit "none" row; the svn CLI simply left such a path out. Every
+		// decision below was written for the CLI, where absence is "", so
+		// "none" is recorded as absence. Without this a new file moved into a
+		// new folder before its first commit held publication forever as a
+		// rename with an "unsupported source status" (owner's desktop,
+		// 2026-09-23, retried every 30 s).
+		if e.Item == "none" {
+			continue
+		}
 		out[p] = e.Item
 	}
 	return out, nil

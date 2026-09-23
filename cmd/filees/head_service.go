@@ -24,10 +24,25 @@ type headService struct {
 }
 
 func (h headService) svn(serverID string) (headSVN, error) {
+	svn, err := profileSVN(h.root, h.helper(), serverID, "svn:head:")
+	if err != nil {
+		return nil, err
+	}
+	reader, ok := svn.(headSVN)
+	if !ok {
+		return nil, fmt.Errorf("head: SVN client cannot list HEAD")
+	}
+	return reader, nil
+}
+
+// profileSVN is an SVN client with the identity of the activated profile for
+// serverID: reads of HEAD without a working copy, for the HEAD browser and the
+// Explorer anchor alike.
+func profileSVN(root, nativeHelper, serverID, scope string) (client.Client, error) {
 	if serverID == "" || strings.ContainsAny(serverID, `/\`) || serverID == "." || serverID == ".." {
 		return nil, fmt.Errorf("head: invalid server id")
 	}
-	dir, err := clientprofile.ServerDir(h.root, serverID)
+	dir, err := clientprofile.ServerDir(root, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -35,16 +50,11 @@ func (h headService) svn(serverID string) (headSVN, error) {
 	if err != nil {
 		return nil, err
 	}
-	svn := client.New(client.Options{
-		SvnPath: "svn", NativeSVNPath: h.helper(), Timeout: profile.SVNTimeout(),
-		LogScope: "svn:head:" + serverID, SSHIdentityFile: profile.IdentityFile,
+	return client.New(client.Options{
+		SvnPath: "svn", NativeSVNPath: nativeHelper, Timeout: profile.SVNTimeout(),
+		LogScope: scope + serverID, SSHIdentityFile: profile.IdentityFile,
 		SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address,
-	})
-	reader, ok := svn.(headSVN)
-	if !ok {
-		return nil, fmt.Errorf("head: SVN client cannot list HEAD")
-	}
-	return reader, nil
+	}), nil
 }
 
 type headSVN interface {

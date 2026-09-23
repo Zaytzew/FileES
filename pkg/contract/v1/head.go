@@ -10,11 +10,27 @@ package contract
 // below; the interface offers "Browse on the server" only against it.
 const CapRepoHeadBrowse = "repo.head_browse"
 
+// CapRepoExplorerAnchor is advertised by a daemon that can make a folder an
+// Explorer anchor: Windows with the filees-cfapi helper installed.
+const CapRepoExplorerAnchor = "repo.explorer_anchor"
+
+// RepoAnchorCreatePayload names the repository and the folder that becomes
+// its anchor. The folder must not exist yet or be empty, and must not lie
+// inside a folder another provider (Nextcloud, OneDrive) synchronises.
+type RepoAnchorCreatePayload struct {
+	ServerID  string `json:"server_id"`
+	RepoID    string `json:"repo_id"`
+	LocalPath string `json:"local_path"`
+}
+
 const (
 	CmdRepoHeadList        = "repo.head_list"
 	CmdRepoHeadCat         = "repo.head_cat"
 	CmdRepoHeadMaterialize = "repo.head_materialize"
 	CmdRepoHeadFill        = "repo.head_fill"
+	// CmdRepoAnchorCreate makes a folder an Explorer anchor of a repository
+	// without a working copy (Windows; capability repo.explorer_anchor).
+	CmdRepoAnchorCreate = "repo.anchor_create"
 )
 
 type RepoHeadListPayload struct {

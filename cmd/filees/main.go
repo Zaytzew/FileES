@@ -269,6 +269,16 @@ func runDaemon() {
 	// open the browser again (head_service.go).
 	prunePreviews(os.TempDir(), previewLifetime, time.Now())
 	ipc.SetHeadService(headService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath})
+	// Explorer anchors exist only where the Cloud Files helper is installed
+	// next to the daemon (Windows); the precheck being set is the capability.
+	if cfapi := anchorHelperPath(); cfapi != "" {
+		anchors := &anchorManager{
+			helper: cfapi, nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
+			lifecycle: lifecycleStore, repos: ipc.RepoState, log: talk.With("anchor"),
+		}
+		ipc.SetAnchorPrecheck(anchors.precheck)
+		runtime.Go(ctx, func() { anchors.run(ctx) })
+	}
 	// An export must land outside every working copy, so it asks the lifecycle
 	// store for the current roots at the moment it begins.
 	historyExports := &historyexport.Runner{Journal: defaultHistoryExportPath(), Reader: history.exportReader, Roots: lifecycleService.allRoots, FoldCase: historyExportFoldsCase(), Admission: ipc.OperationAdmission()}

@@ -70,8 +70,13 @@ type Record struct {
 	// resume may turn it into a full checkout behind the user's back.
 	// SparsePath is the first chosen path, brought in before the daemon starts
 	// supervising the copy; later ones go through the running commit service.
-	Sparse           bool   `json:"sparse,omitempty"`
-	SparsePath       string `json:"sparse_path,omitempty"`
+	Sparse     bool   `json:"sparse,omitempty"`
+	SparsePath string `json:"sparse_path,omitempty"`
+	// Anchor marks a sparse copy whose folder is also an Explorer anchor
+	// (native/filees-cfapi): it starts empty, is seeded with placeholders and
+	// takes paths in as they are opened. The daemon keeps the anchor connected
+	// for as long as the copy is attached, across restarts.
+	Anchor           bool   `json:"anchor,omitempty"`
 	DisplayName      string `json:"display_name,omitempty"`
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
@@ -231,6 +236,20 @@ func (s *Store) BeginSparseAttach(serverID, repoID, localPath, sparsePath string
 		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
 		DisplayName: folderName(localPath), State: state,
 		Sparse: true, SparsePath: sparsePath,
+	})
+}
+
+// BeginAnchorAttach starts an Explorer anchor: a sparse copy with nothing
+// chosen yet. Every path arrives later, when someone opens it in Explorer.
+func (s *Store) BeginAnchorAttach(serverID, repoID, localPath string, required bool) (Record, error) {
+	state := StateUnattached
+	if required {
+		state = StatePolicyPending
+	}
+	return s.begin(Record{
+		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
+		DisplayName: folderName(localPath), State: state,
+		Sparse: true, Anchor: true,
 	})
 }
 

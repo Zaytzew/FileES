@@ -54,6 +54,7 @@ type Server struct {
 	lifecycle            RepositoryLifecycleService
 	historyReads         HistoryService
 	headReads            HeadService
+	anchorCheck          AnchorPrecheck
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
 	historyDensity       HistoryDensityService
@@ -371,6 +372,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.headService() != nil {
 		caps = append(caps, contract.CapRepoHeadBrowse)
+	}
+	if s.anchorPrecheck() != nil {
+		caps = append(caps, contract.CapRepoExplorerAnchor)
 	}
 	if s.whaleService() != nil {
 		caps = append(caps, contract.CapWhaleList, contract.CapWhaleGet, contract.CapWhalePutBegin, contract.CapWhaleGetBegin, contract.CapWhaleGetConfirm, contract.CapWhaleRetry, contract.CapWhaleCancel)

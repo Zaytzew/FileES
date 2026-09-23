@@ -40,6 +40,9 @@
     "head.materialize_failed": "Der gewählte Pfad konnte nicht auf diesen Computer geholt werden",
     "head.fill_failed": "Der Rest des Ordners konnte nicht auf diesen Computer geholt werden",
     "head.copy_not_running": "Die lokale Kopie startet noch — versuche es gleich noch einmal",
+    "head.anchor_unavailable": "Explorer-Anker sind auf diesem Computer nicht verfügbar",
+    "head.anchor_attached": "Dieses Repository hat hier bereits eine Arbeitskopie",
+    "head.anchor_refused": "Dieser Ordner kann kein Explorer-Anker werden",
     "intent.ambiguous": "Der Versand ist angehalten: Klären Sie die mehrdeutigen Änderungen in den Ordnereinstellungen",
     "intent.resolution_refused": "Diese Entscheidung kann nicht mehr angenommen werden. Öffnen Sie den Änderungsplan erneut; Dateien, Warteschlange oder Zugriffsrechte könnten sich geändert haben",
     "lock.held_by_other": [

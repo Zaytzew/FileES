@@ -40,6 +40,9 @@
     "head.materialize_failed": "Impossible d’amener le chemin choisi sur cet ordinateur",
     "head.fill_failed": "Impossible d’amener le reste du dossier sur cet ordinateur",
     "head.copy_not_running": "La copie locale démarre encore — réessayez dans un instant",
+    "head.anchor_unavailable": "Les ancrages de l’Explorateur ne sont pas disponibles sur cet ordinateur",
+    "head.anchor_attached": "Ce dépôt a déjà une copie de travail ici",
+    "head.anchor_refused": "Ce dossier ne peut pas devenir un ancrage de l’Explorateur",
     "intent.ambiguous": "L’envoi est suspendu : résolvez les modifications ambiguës dans les paramètres du dossier",
     "intent.resolution_refused": "Cette décision ne peut plus être acceptée. Rouvrez le plan de modifications ; les fichiers, la file d’attente ou vos accès ont peut-être changé",
     "lock.held_by_other": [

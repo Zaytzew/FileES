@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -108,6 +109,34 @@ func (c *execClient) UpdateSetDepth(ctx context.Context, wc, rel, depth string) 
 		args = append(args, rel)
 	}
 	return c.run(ctx, wc, args)
+}
+
+// UpdateAdoptPath takes one path into a sparse working copy at a pinned
+// revision, adopting whatever already sits on disk at that path instead of
+// refusing it. The Explorer anchor hands a file to Windows from a pinned cat
+// first; this is how that file then joins the working copy without being
+// written a second time underneath the application holding it. Bytes that
+// differ become a local modification, never an overwrite.
+func (c *execClient) UpdateAdoptPath(ctx context.Context, wc, rel string, revision int64) (string, error) {
+	rel = strings.Trim(filepath.ToSlash(strings.TrimSpace(rel)), "/")
+	if rel == "" || rel == "." || revision < 0 {
+		return "", fmt.Errorf("adopting needs one path and a revision")
+	}
+	if nativeWCOps(c) {
+		if e := c.nativeRequireFeature(ctx, "sparse_adopt_v1"); e != nil {
+			return "", e
+		}
+		r, e := c.nativeRemote(ctx, wc, "update", "--wc", wc, "--set-depth", "infinity", "--parents", "--adopt",
+			"--revision", strconv.FormatInt(revision, 10), "--", rel)
+		if e != nil {
+			return "", e
+		}
+		return nativeUpdateReceipt(r)
+	}
+	// The CLI spells adopting as --force: unversioned obstructions are taken
+	// over rather than turned into tree conflicts.
+	return c.run(ctx, wc, []string{"update", "--set-depth", "infinity", "--parents", "--force",
+		"-r", strconv.FormatInt(revision, 10), rel})
 }
 
 func parseListXML(output string) ([]RemoteEntry, error) {

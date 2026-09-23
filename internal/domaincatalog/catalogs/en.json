@@ -40,6 +40,9 @@
     "head.materialize_failed": "Could not bring the chosen path to this computer",
     "head.fill_failed": "Could not bring the rest of the folder to this computer",
     "head.copy_not_running": "The local copy is still starting — try again in a moment",
+    "head.anchor_unavailable": "Explorer anchors are not available on this computer",
+    "head.anchor_attached": "This repository already has a working copy here",
+    "head.anchor_refused": "This folder cannot become an Explorer anchor",
     "intent.ambiguous": "Sending is on hold: resolve the ambiguous changes in the folder settings",
     "intent.resolution_refused": "This decision can no longer be accepted. Open the change plan again; the files, the queue or your access may have changed",
     "lock.held_by_other": [

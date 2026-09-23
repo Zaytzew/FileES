@@ -402,6 +402,23 @@ func (s *Service) SetDepth(ctx context.Context, wc, rel, depth string) error {
 	return err
 }
 
+// AdoptPath takes one path into the working copy at a pinned revision,
+// adopting the file already on disk (see client UpdateAdoptPath). It runs under
+// the same working-copy lock as commits and updates, so an anchor never
+// changes the copy underneath a publication.
+func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64) error {
+	adopter, ok := s.Cli.(interface {
+		UpdateAdoptPath(context.Context, string, string, int64) (string, error)
+	})
+	if !ok {
+		return errors.New("SVN client cannot adopt a path into the working copy")
+	}
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	_, err := adopter.UpdateAdoptPath(ctx, wc, rel, revision)
+	return err
+}
+
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	defer s.cancelConnectivityJournal()

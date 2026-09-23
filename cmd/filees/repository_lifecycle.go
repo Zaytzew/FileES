@@ -244,6 +244,18 @@ func (service repositoryLifecycleService) BeginSparseAttach(serverID, repoID, lo
 	return lifecycleResult(record), err
 }
 
+// BeginAnchorAttach starts an Explorer anchor through the same attach
+// lifecycle: an empty root, nothing chosen, placeholders seeded afterwards by
+// the anchor manager.
+func (service repositoryLifecycleService) BeginAnchorAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
+	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	record, err := service.store.BeginAnchorAttach(serverID, repoID, check.CanonicalPath, required)
+	return lifecycleResult(record), err
+}
+
 // MarkFullDepth records that a sparse working copy now holds the whole tree,
 // so a later resume treats it as an ordinary attached copy.
 func (service repositoryLifecycleService) MarkFullDepth(serverID, repoID string) error {

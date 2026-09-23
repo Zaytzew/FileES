@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"filees/pkg/cloudfiles"
 )
 
 type answer struct {
@@ -315,4 +317,46 @@ func drain(requests chan []string) {
 
 func itoa(value int) string {
 	return strconv.Itoa(value)
+}
+
+// The rest of FileES tells placeholders from the person's own files through
+// pkg/cloudfiles; the commit service relies on it not to publish them. This
+// checks it against real placeholders, not against a fake reparse tag.
+func TestFileESRecognisesPlaceholdersAndOnlyThem(t *testing.T) {
+	root := anchor(t)
+	if got := run(t, "d\t0\tart\tart\nf\t4096\tprojekt/sala.dwg\tsala.dwg\n", "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	ordinary := filepath.Join(root, "moja-notatka.txt")
+	if err := os.WriteFile(ordinary, []byte("to jest moje"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]bool{
+		filepath.Join(root, "sala.dwg"): true,
+		filepath.Join(root, "art"):      true,
+		ordinary:                        false,
+		root:                            false,
+	} {
+		if got := cloudfiles.IsPlaceholder(path); got != want {
+			t.Errorf("IsPlaceholder(%s) = %v, want %v", filepath.Base(path), got, want)
+		}
+	}
+
+	// Once opened and turned into an ordinary file it is the person's again.
+	materialized := filepath.Join(t.TempDir(), "sala.dwg")
+	if err := os.WriteFile(materialized, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	connectAnchor(t, root, func(request []string) string { return "ok\t" + request[1] + "\t" + materialized })
+	if _, err := os.ReadFile(filepath.Join(root, "sala.dwg")); err != nil {
+		t.Fatal(err)
+	}
+	opened := filepath.Join(root, "sala.dwg")
+	if !cloudfiles.IsPlaceholder(opened) || cloudfiles.NotOnDisk(opened) {
+		t.Fatalf("a fetched placeholder stays a placeholder until reverted, with its bytes on disk: placeholder=%v notOnDisk=%v",
+			cloudfiles.IsPlaceholder(opened), cloudfiles.NotOnDisk(opened))
+	}
+	if !cloudfiles.IsSyncRoot(root) || cloudfiles.IsSyncRoot(filepath.Join(root, "art")) {
+		t.Fatal("the anchor folder is a sync root and its folders are not")
+	}
 }

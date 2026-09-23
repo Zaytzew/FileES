@@ -19,6 +19,7 @@ import (
 	"filees/internal/durable"
 	"filees/pkg/activity"
 	"filees/pkg/client"
+	"filees/pkg/cloudfiles"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
 	"filees/pkg/filepolicy"
@@ -1263,7 +1264,24 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 			s.Logger.Warnf("skip add %s (stat: %v)", p, err)
 			continue
 		}
+		// An Explorer anchor seeds its folder with placeholders named after
+		// HEAD. They are the repository's own files not yet on this disk, not
+		// new work: adding one would publish an empty copy and, on the way,
+		// download it. It joins the copy only when someone opens it.
+		if cloudfiles.IsPlaceholder(filepath.Join(wc, filepath.FromSlash(p))) {
+			s.Logger.Debugf("skip add %s (placeholder not on this disk)", p)
+			s.removePendingIfUnchanged(p, pending)
+			s.forgetActivity(p)
+			continue
+		}
 		item := st[p]
+		if item == "" && hasUnversionedAncestor(p, st) && placeholderAncestor(wc, p) {
+			// A new file saved inside a folder that is still a placeholder
+			// would make FileES add that folder - which already exists on the
+			// server. It waits until the folder itself is brought in.
+			s.Logger.Warnf("defer add %s (inside a folder not yet on this disk)", p)
+			continue
+		}
 		if item == "unversioned" || (item == "" && hasUnversionedAncestor(p, st)) {
 			toSvnAdd = append(toSvnAdd, p)
 		} else if item == "added" {
@@ -2274,6 +2292,17 @@ func dedup(in []string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// placeholderAncestor reports whether a folder above rel is still a Cloud
+// Files placeholder.
+func placeholderAncestor(wc, rel string) bool {
+	for dir := path.Dir(rel); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
+		if cloudfiles.IsPlaceholder(filepath.Join(wc, filepath.FromSlash(dir))) {
+			return true
+		}
+	}
+	return false
 }
 
 // statusMap pobiera mapę rel-path -> svn status item ("unversioned","normal","modified","missing",...).

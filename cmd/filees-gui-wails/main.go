@@ -72,6 +72,8 @@ func main() {
 	devtools := flags.Bool("devtools", false, "włącz narzędzia deweloperskie WebView")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	chooseChannel := flags.String("choose-update-channel", "", "choose initial update channel for this configuration file")
+	replaceFrom := flags.String("replace-predecessor", "", "ask to remove the other FileES variant (msi or store) before starting")
+	replaceConfig := flags.String("config", "", "this variant's configuration file; only with --replace-predecessor")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
 	}
@@ -82,6 +84,17 @@ func main() {
 	if *chooseChannel != "" {
 		if err := runInitialChannelWindow(*chooseChannel); err != nil {
 			fmt.Fprintln(os.Stderr, "filees-gui: update-channel:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *replaceFrom != "" || *replaceConfig != "" {
+		if *replaceFrom == "" {
+			fmt.Fprintln(os.Stderr, "filees-gui: --config is only accepted with --replace-predecessor")
+			os.Exit(2)
+		}
+		if err := runReplacePredecessorWindow(*replaceFrom, *replaceConfig); err != nil {
+			fmt.Fprintln(os.Stderr, "filees-gui: replace-predecessor:", err)
 			os.Exit(1)
 		}
 		return

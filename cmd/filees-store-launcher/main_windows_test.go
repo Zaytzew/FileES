@@ -66,10 +66,16 @@ func TestEnsureConfigCreatesOnceWithoutReplacingUserChanges(t *testing.T) {
 	}
 }
 
-func TestRefuseLegacyMSI(t *testing.T) {
+// With an MSI installation present the Store version never starts a second
+// pair: at logon it yields to the MSI's own autostart, and when the user opens
+// it, it asks to remove the MSI. An unknown or relative location is an error,
+// not "no MSI", because guessing wrong there starts two daemons.
+func TestMSIStep(t *testing.T) {
 	root := t.TempDir()
-	if err := refuseLegacyMSI(root); err != nil {
-		t.Fatalf("empty isolated profile should be allowed: %v", err)
+	for _, mode := range []string{"interactive", "startup"} {
+		if step, err := msiStep(root, mode); err != nil || step != noPredecessor {
+			t.Fatalf("%s without MSI: step=%v err=%v", mode, step, err)
+		}
 	}
 	legacy := filepath.Join(root, "Programs", "FileES", "filees.exe")
 	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
@@ -78,13 +84,16 @@ func TestRefuseLegacyMSI(t *testing.T) {
 	if err := os.WriteFile(legacy, []byte("fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := refuseLegacyMSI(root); err == nil {
-		t.Fatal("Store launcher accepted an existing MSI installation")
+	if step, err := msiStep(root, "startup"); err != nil || step != yieldToMSI {
+		t.Fatalf("startup with MSI: step=%v err=%v, want yield", step, err)
 	}
-	if err := refuseLegacyMSI(""); err == nil {
+	if step, err := msiStep(root, "interactive"); err != nil || step != askToReplaceMSI {
+		t.Fatalf("interactive with MSI: step=%v err=%v, want ask", step, err)
+	}
+	if _, err := msiStep("", "interactive"); err == nil {
 		t.Fatal("Store launcher accepted an unknown legacy location")
 	}
-	if err := refuseLegacyMSI("relative-path"); err == nil {
+	if _, err := msiStep("relative-path", "interactive"); err == nil {
 		t.Fatal("Store launcher accepted a relative legacy location")
 	}
 }

@@ -37,6 +37,26 @@ func runInitialChannelWindow(path string) error {
 		name += ".exe"
 	}
 	daemon := filepath.Join(filepath.Dir(executable), name)
+	return runStandalonePrompt("filees-channel", func(prompts *PromptService) error {
+		return chooseInitialChannel(context.Background(), prompts, func(channel string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, daemon, "update-channel", channel, "--config", path)
+			prepareChannelCommand(cmd)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+			}
+			return nil
+		})
+	})
+}
+
+// runStandalonePrompt is the window used before any daemon runs: one prompt
+// dialog with no IPC, projection or tray, living exactly as long as work. The
+// initial channel choice and the question about replacing the other FileES
+// variant both run through it.
+func runStandalonePrompt(name string, work func(*PromptService) error) error {
 	prompts := newPromptService()
 	host := application.New(application.Options{
 		Name: "FileES setup", Icon: appIcon,
@@ -45,7 +65,7 @@ func runInitialChannelWindow(path string) error {
 	})
 	dark := systemPrefersDark(host.Env.IsDarkMode())
 	window := host.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "filees-channel", Title: "FileES", URL: "/prompt.html",
+		Name: name, Title: "FileES", URL: "/prompt.html",
 		Width: 680, Height: 560, MinWidth: 560, MinHeight: 460,
 		Frameless:        true,
 		JS:               systemThemeScript(dark) + systemLanguageScript(systemLanguages()),
@@ -63,17 +83,7 @@ func runInitialChannelWindow(path string) error {
 	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
 		started.Do(func() {
 			go func() {
-				result <- chooseInitialChannel(context.Background(), prompts, func(channel string) error {
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-					cmd := exec.CommandContext(ctx, daemon, "update-channel", channel, "--config", path)
-					prepareChannelCommand(cmd)
-					output, err := cmd.CombinedOutput()
-					if err != nil {
-						return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
-					}
-					return nil
-				})
+				result <- work(prompts)
 				host.Quit()
 			}()
 		})
@@ -85,7 +95,7 @@ func runInitialChannelWindow(path string) error {
 	case err := <-result:
 		return err
 	default:
-		return errors.New("channel selection interrupted")
+		return errors.New(name + " interrupted")
 	}
 }
 

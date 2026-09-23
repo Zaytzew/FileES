@@ -32,6 +32,13 @@
 #ifndef STATUS_ACCESS_DENIED
 #define STATUS_ACCESS_DENIED ((NTSTATUS)0xC0000022L)
 #endif
+/* Measured on the owner's machine 2026-09-23: refusing a delete with the
+ * generic access-denied status made Explorer say "the cloud operation was
+ * unsuccessful", which reads like a failure. The cloud-specific status reads
+ * as what it is: access to this cloud file is denied. */
+#ifndef STATUS_CLOUD_FILE_ACCESS_DENIED
+#define STATUS_CLOUD_FILE_ACCESS_DENIED ((NTSTATUS)0xC000CF18L)
+#endif
 
 /* One megabyte per CfExecute: large enough that a drawing does not turn into
  * thousands of round trips, small enough to keep progress moving. A transfer
@@ -218,7 +225,7 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckDelete);
     answer.AckDelete.Flags = CF_OPERATION_ACK_DELETE_FLAG_NONE;
-    answer.AckDelete.CompletionStatus = STATUS_ACCESS_DENIED;
+    answer.AckDelete.CompletionStatus = STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
     trace("delete refused", hr);
 }
@@ -233,7 +240,7 @@ static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckRename);
     answer.AckRename.Flags = CF_OPERATION_ACK_RENAME_FLAG_NONE;
-    answer.AckRename.CompletionStatus = STATUS_ACCESS_DENIED;
+    answer.AckRename.CompletionStatus = STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
     trace("rename refused", hr);
 }

@@ -1370,6 +1370,14 @@ func (p *daemonProvisioner) otherRoots(operationID string) []string {
 	var roots []string
 	for _, record := range p.local.List() {
 		if record.OperationID != operationID && record.State != localrepo.StateDetached && record.State != localrepo.StateDeleted && record.State != localrepo.StateError && record.State != localrepo.StateAbandoned {
+			// A remote-only deletion has no root. repositoryLifecycleService
+			// learned this in r1295; this second copy of the list did not, so a
+			// pathless record still made every attach fail with
+			// `existing repository root must be absolute: ""` (owner's machine,
+			// 2026-09-23).
+			if record.LocalPath == "" {
+				continue
+			}
 			roots = append(roots, record.LocalPath)
 		}
 	}

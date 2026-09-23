@@ -75,7 +75,7 @@ function render(next) {
     const node = document.createElement("option");
     node.value = option.value;
     node.textContent = option.detail && option.detail !== option.label ? `${option.label} — ${option.detail}` : option.label;
-    if (["select.visibility", "select.updateChannel"].includes(next.presentation_key)) {
+    if (["select.visibility", "select.updateChannel", "select.replacePredecessor"].includes(next.presentation_key)) {
       node.dataset.i18n = next.presentation_key + "." + option.value;
       node.textContent = t(node.dataset.i18n);
     }

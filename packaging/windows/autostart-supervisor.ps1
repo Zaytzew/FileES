@@ -64,6 +64,35 @@ function Initialize-Configuration {
     Write-Supervisor "wrote the initial configuration"
 }
 
+function Resolve-StorePredecessor {
+    # The MSI and the Microsoft Store version cannot run side by side: they
+    # share the daemon socket, the single-instance lock and ~/.local/share/filees,
+    # and Find-Daemon below would even adopt the Store daemon as ours. The
+    # owner's rule (2026-09-23): the variant being started offers to remove the
+    # other, keeping its settings. At logon nothing is asked - the Store's own
+    # autostart runs its pair and this one yields. When the user opens the MSI
+    # version, the GUI asks and `filees replace-predecessor` does the work.
+    # Returns $true when this supervisor may go on to start the MSI pair.
+    $package = Get-AppxPackage -Name 'FileES.FileESDesktop' -ErrorAction SilentlyContinue
+    if (-not $package) { return $true }
+    if (-not $ShowGUI) {
+        Write-Supervisor "Microsoft Store version is installed - autostart yields to it"
+        return $false
+    }
+    $config = Join-Path $here 'config.json'
+    $answer = Start-Process -FilePath $gui -ArgumentList @('--replace-predecessor', 'store', '--config', ('"' + $config + '"')) -WorkingDirectory $here -Wait -PassThru
+    if ($answer.ExitCode -ne 0) {
+        # Declined, or the removal failed and the dialog has said why.
+        Write-Supervisor "Microsoft Store version kept - MSI pair not started"
+        return $false
+    }
+    if (Get-AppxPackage -Name 'FileES.FileESDesktop' -ErrorAction SilentlyContinue) {
+        throw 'The Microsoft Store version is still installed after it was removed; see supervisor.log'
+    }
+    Write-Supervisor "Microsoft Store version removed"
+    return $true
+}
+
 function Find-Daemon {
     # A process in another user's session must never satisfy our startup gate.
     $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
@@ -126,6 +155,7 @@ try {
         try { $ownsMutex = $mutex.WaitOne(20000) } catch [System.Threading.AbandonedMutexException] { $ownsMutex = $true }
         if (-not $ownsMutex) { throw 'FileES supervisor did not release a stopped daemon; see supervisor.log' }
     }
+    if (-not (Resolve-StorePredecessor)) { return }
     Initialize-Configuration
     $tracked = Find-Daemon
     if (-not $tracked) { $tracked = Start-Daemon } else { Write-Supervisor "daemon adopted" }

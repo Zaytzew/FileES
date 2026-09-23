@@ -91,6 +91,8 @@ func main() {
 			os.Exit(cmdConfigCheck(os.Args[2:]))
 		case "update-channel":
 			os.Exit(cmdUpdateChannel(os.Args[2:]))
+		case "replace-predecessor":
+			os.Exit(cmdReplacePredecessor(os.Args[2:]))
 		case "status":
 			os.Exit(cmdStatus(os.Args[2:]))
 		case "lock":

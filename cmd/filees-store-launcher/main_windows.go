@@ -19,6 +19,7 @@ import (
 	"unsafe"
 
 	"filees/internal/gui/singleinstance"
+	"filees/internal/predecessor"
 	"filees/pkg/ipcclient"
 )
 
@@ -77,8 +78,22 @@ func run(args []string) error {
 		return fmt.Errorf("locate Store launcher: %w", err)
 	}
 	paths := pathsFor(home, filepath.Dir(executable))
-	if err := refuseLegacyMSI(os.Getenv("LOCALAPPDATA")); err != nil {
+	step, err := msiStep(os.Getenv("LOCALAPPDATA"), launcherMode)
+	if err != nil {
 		return err
+	}
+	switch step {
+	case yieldToMSI:
+		noteLauncher(paths, "an MSI installation of FileES is present; the Store autostart yields to it")
+		return nil
+	case askToReplaceMSI:
+		replaced, err := replaceMSI(paths)
+		if err != nil {
+			return err
+		}
+		if !replaced {
+			return nil
+		}
 	}
 	if err := os.MkdirAll(paths.root, 0o700); err != nil {
 		return fmt.Errorf("prepare Store state outside package: %w", err)
@@ -95,19 +110,76 @@ func run(args []string) error {
 	return runSupervisor(paths, len(args) == 0)
 }
 
-func refuseLegacyMSI(localAppData string) error {
-	if !filepath.IsAbs(localAppData) {
-		return errors.New("LOCALAPPDATA is missing or not absolute; cannot exclude a parallel MSI installation")
+// predecessorStep is what the launcher does about an MSI installation. The two
+// variants cannot run side by side; the owner's rule (2026-09-23) is that the
+// variant being started offers to remove the other, keeping its settings.
+type predecessorStep int
+
+const (
+	noPredecessor predecessorStep = iota
+	// The logon autostart never asks anything: it yields, and the MSI's own
+	// autostart runs the pair. The question comes when the user opens us.
+	yieldToMSI
+	askToReplaceMSI
+)
+
+func msiStep(localAppData, mode string) (predecessorStep, error) {
+	present, err := predecessor.MSIPresent(localAppData)
+	if err != nil {
+		return noPredecessor, fmt.Errorf("inspect existing FileES MSI: %w", err)
 	}
-	legacy := filepath.Join(localAppData, "Programs", "FileES", "filees.exe")
-	_, err := os.Stat(legacy)
-	if err == nil {
-		return fmt.Errorf("the existing FileES MSI at %s must be migrated and removed before running the Store version", legacy)
+	switch {
+	case !present:
+		return noPredecessor, nil
+	case mode == "startup":
+		return yieldToMSI, nil
+	default:
+		return askToReplaceMSI, nil
 	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect existing FileES MSI: %w", err)
+}
+
+// replaceMSI shows the localized question from the GUI, which runs
+// `filees replace-predecessor` on confirmation. A non-zero exit means the user
+// declined or the removal failed; either way the dialog has already said so,
+// and the launcher starts nothing rather than a second pair.
+func replaceMSI(paths storePaths) (bool, error) {
+	if err := os.MkdirAll(paths.logs, 0o700); err != nil {
+		return false, fmt.Errorf("prepare Store logs: %w", err)
 	}
-	return nil
+	logPath := filepath.Join(paths.logs, "replace-msi-"+time.Now().UTC().Format("20060102T150405.000000000")+".log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false, err
+	}
+	defer logFile.Close()
+	cmd := exec.Command(paths.gui, "--replace-predecessor", "msi", "--config", paths.config)
+	cmd.Dir = paths.root
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return false, nil
+		}
+		return false, fmt.Errorf("ask about the MSI installation: %w", err)
+	}
+	if still, err := predecessor.MSIPresent(os.Getenv("LOCALAPPDATA")); err != nil || still {
+		return false, fmt.Errorf("the MSI installation is still present after it was removed (%v); see %s", err, logPath)
+	}
+	return true, nil
+}
+
+// noteLauncher leaves a line where the Store supervisor logs, for the one case
+// in which the launcher deliberately does nothing.
+func noteLauncher(paths storePaths, text string) {
+	if os.MkdirAll(paths.logs, 0o700) != nil {
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(paths.logs, "supervisor.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	log.New(file, "", log.LstdFlags|log.LUTC).Print(text)
 }
 
 func runInteractive(paths storePaths) error {

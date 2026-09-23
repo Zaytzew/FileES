@@ -163,6 +163,8 @@ static void CALLBACK on_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBA
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
     struct progress state;
+    const WCHAR *process;
+    int id = 0;
     LARGE_INTEGER offset = params->FetchData.RequiredFileOffset;
     LARGE_INTEGER length = params->FetchData.RequiredLength;
 
@@ -176,14 +178,21 @@ static void CALLBACK on_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBA
     /* The identity is what the placeholder was created with: the path inside
      * the repository. The daemon turns it into a path on this disk, which is
      * the only thing this process is allowed to read. */
-    if (!filees_bridge_request((const WCHAR *)info->FileIdentity, offset.QuadPart, length.QuadPart,
-                               still_waiting, &state, path)) {
+    process = info->ProcessInfo ? info->ProcessInfo->ImagePath : NULL;
+    if (!filees_bridge_request((const WCHAR *)info->FileIdentity, process, offset.QuadPart, length.QuadPart,
+                               still_waiting, &state, path, &id)) {
         fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
         return;
     }
     if (!transfer_file(info, path, offset, length)) {
         fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
+        return;
     }
+    /* Only a range that reaches the end of the file completes it. A reader
+     * that asked for the first page alone leaves the rest for later, and the
+     * daemon must not let Subversion read a file that is not whole yet. */
+    if (offset.QuadPart + length.QuadPart >= info->FileSize.QuadPart)
+        filees_bridge_say_hydrated(id, (const WCHAR *)info->FileIdentity);
 }
 
 static void CALLBACK on_cancel_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)

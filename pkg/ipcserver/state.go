@@ -69,6 +69,7 @@ type RepoState struct {
 	workingCopySizeFn        func() (int64, bool)
 	publishFn                func(ctx context.Context, comment string) (int64, error)
 	depthFn                  func(ctx context.Context, rel, depth string) error
+	adoptFn                  func(ctx context.Context, rel string, revision int64) error
 	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)
@@ -117,6 +118,26 @@ func (rs *RepoState) SetDepthFunc(fn func(ctx context.Context, rel, depth string
 	rs.mu.Lock()
 	rs.depthFn = fn
 	rs.mu.Unlock()
+}
+
+// SetAdoptFunc installs the running commit service's adopting update (the
+// Explorer anchor's half of materialization). nil while not running.
+func (rs *RepoState) SetAdoptFunc(fn func(ctx context.Context, rel string, revision int64) error) {
+	rs.mu.Lock()
+	rs.adoptFn = fn
+	rs.mu.Unlock()
+}
+
+// Adopt takes one path into the attached working copy at a pinned revision,
+// adopting the file already on disk.
+func (rs *RepoState) Adopt(ctx context.Context, rel string, revision int64) error {
+	rs.mu.RLock()
+	fn := rs.adoptFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return ErrDepthUnavailable
+	}
+	return fn(ctx, rel, revision)
 }
 
 // ErrDepthUnavailable: the repository has no running working copy to deepen.

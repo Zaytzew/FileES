@@ -40,6 +40,9 @@
     "head.materialize_failed": "Nie udało się pobrać wybranej ścieżki na ten komputer",
     "head.fill_failed": "Nie udało się pobrać reszty folderu na ten komputer",
     "head.copy_not_running": "Lokalna kopia jeszcze się uruchamia — spróbuj za chwilę",
+    "head.anchor_unavailable": "Na tym komputerze nie da się założyć kotwicy w Eksploratorze",
+    "head.anchor_attached": "To repozytorium ma już tu kopię roboczą",
+    "head.anchor_refused": "Ten folder nie może być kotwicą w Eksploratorze",
     "intent.ambiguous": "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu",
     "intent.resolution_refused": "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić",
     "lock.held_by_other": [

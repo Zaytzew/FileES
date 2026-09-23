@@ -5,9 +5,17 @@
  * the daemon knows Subversion, the helper knows the shell, and the call
  * between them is one line each way.
  *
- *   helper -> daemon   fetch <TAB> id <TAB> offset <TAB> length <TAB> identity
- *   daemon -> helper   ok    <TAB> id <TAB> absolute path
- *                      err   <TAB> id <TAB> reason
+ *   helper -> daemon   fetch    <TAB> id <TAB> offset <TAB> length <TAB> identity <TAB> process
+ *   daemon -> helper   ok       <TAB> id <TAB> absolute path
+ *                      err      <TAB> id <TAB> reason
+ *   helper -> daemon   hydrated <TAB> id <TAB> identity      (bytes handed over)
+ *   daemon -> helper   revert   <TAB> id <TAB> absolute path (connect.c)
+ *   helper -> daemon   reverted <TAB> id <TAB> HRESULT
+ *
+ * process is the image path of the program opening the file, so the daemon
+ * can refuse a program that tries to download a whole anchor. hydrated tells
+ * the daemon the file is complete on disk: only then may Subversion read it,
+ * because reading a placeholder that is still partial would ask for it again.
  *
  * Callbacks arrive on several thread pool threads at once, so requests carry
  * an id and one reader thread hands each answer to the thread waiting for it.
@@ -69,14 +77,20 @@ static void release_slot(struct slot *slot)
 /* One line out, under the lock: two callbacks writing at once would produce a
  * line the daemon cannot read, and it would look like a protocol bug on the
  * far side. */
-static int send_request(int id, LONGLONG offset, LONGLONG length, const WCHAR *identity)
+static int send_request(int id, LONGLONG offset, LONGLONG length, const WCHAR *identity, const WCHAR *process)
 {
     char utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
+    char image[FILEES_CFAPI_MAX_PATH * 4];
     int written;
     if (!WideCharToMultiByte(CP_UTF8, 0, identity, -1, utf8, (int)sizeof utf8, NULL, NULL)) return 0;
     if (strchr(utf8, '\t') || strchr(utf8, '\n')) return 0;
+    /* An unreadable image path is not a reason to refuse the file; the
+     * daemon then only knows that it does not know who asked. */
+    if (!process || !WideCharToMultiByte(CP_UTF8, 0, process, -1, image, (int)sizeof image, NULL, NULL) ||
+        strchr(image, '\t') || strchr(image, '\n'))
+        strcpy_s(image, sizeof image, "?");
     EnterCriticalSection(&g_lock);
-    written = printf("fetch\t%d\t%lld\t%lld\t%s\n", id, offset, length, utf8);
+    written = printf("fetch\t%d\t%lld\t%lld\t%s\t%s\n", id, offset, length, utf8, image);
     fflush(stdout);
     LeaveCriticalSection(&g_lock);
     return written > 0;
@@ -107,8 +121,8 @@ void filees_bridge_answer(char *line)
     LeaveCriticalSection(&g_lock);
 }
 
-int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG length,
-                          filees_bridge_waiting waiting, void *context, WCHAR *path)
+int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG offset, LONGLONG length,
+                          filees_bridge_waiting waiting, void *context, WCHAR *path, int *id_out)
 {
     struct slot *slot;
     int id = 0, ok = 0;
@@ -121,7 +135,8 @@ int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG lengt
         return 0;
     }
     ResetEvent(slot->done);
-    if (!send_request(id, offset, length, identity)) {
+    if (id_out) *id_out = id;
+    if (!send_request(id, offset, length, identity, process)) {
         release_slot(slot);
         return 0;
     }
@@ -140,6 +155,16 @@ int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG lengt
     }
     release_slot(slot);
     return ok;
+}
+
+void filees_bridge_say_hydrated(int id, const WCHAR *identity)
+{
+    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
+    if (!WideCharToMultiByte(CP_UTF8, 0, identity, -1, utf8, (int)sizeof utf8, NULL, NULL)) return;
+    EnterCriticalSection(&g_lock);
+    printf("hydrated\t%d\t%s\n", id, utf8);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
 }
 
 /* The answer to a revert shares stdout with fetch requests, so it goes out

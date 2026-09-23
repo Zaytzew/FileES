@@ -40,6 +40,9 @@
     "head.materialize_failed": "No se pudo traer la ruta elegida a este equipo",
     "head.fill_failed": "No se pudo traer el resto de la carpeta a este equipo",
     "head.copy_not_running": "La copia local aún se está iniciando; inténtalo de nuevo en un momento",
+    "head.anchor_unavailable": "Los anclajes del Explorador no están disponibles en este equipo",
+    "head.anchor_attached": "Este repositorio ya tiene una copia de trabajo aquí",
+    "head.anchor_refused": "Esta carpeta no puede ser un anclaje del Explorador",
     "intent.ambiguous": "El envío está detenido: resuelva los cambios ambiguos en la configuración de la carpeta",
     "intent.resolution_refused": "Esta decisión ya no se puede aceptar. Abra de nuevo el plan de cambios; los archivos, la cola o su acceso pueden haber cambiado",
     "lock.held_by_other": [

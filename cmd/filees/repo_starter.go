@@ -165,6 +165,7 @@ func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetReservationReleaseFunc(nil)
 	state.SetPublishFunc(nil)
 	state.SetDepthFunc(nil)
+	state.SetAdoptFunc(nil)
 	state.SetIntentFuncs(nil, nil)
 	state.SetCommitRecoveryFuncs(nil, nil, nil)
 	state.SetNoticeFuncs(nil, nil)
@@ -457,6 +458,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetDepthFunc(func(ctx context.Context, rel, depth string) error {
 		return service.SetDepth(ctx, wc, rel, depth)
 	})
+	runtimeRepo.state.SetAdoptFunc(func(ctx context.Context, rel string, revision int64) error {
+		return service.AdoptPath(ctx, wc, rel, revision)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, service.ApplyCommitRecovery)
@@ -474,6 +478,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			}
 			runtimeRepo.state.SetPublishFunc(nil)
 			runtimeRepo.state.SetDepthFunc(nil)
+			runtimeRepo.state.SetAdoptFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -516,6 +521,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 		runtimeRepo.state.SetPublishFunc(nil)
 		runtimeRepo.state.SetDepthFunc(nil)
+		runtimeRepo.state.SetAdoptFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
 		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -916,6 +922,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	wc := runtime.config.LocalPath
 	runtime.state.SetSparse(runtime.config.Sparse)
 	runtime.state.SetDepthFunc(readOnlyDepthFunc(svn, wc))
+	runtime.state.SetAdoptFunc(readOnlyAdoptFunc(svn, wc))
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
 		func(id string) error { return shout.Ack(wc, id) },
@@ -947,6 +954,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		}
 		runtime.state.SetNoticeFuncs(nil, nil)
 		runtime.state.SetDepthFunc(nil)
+		runtime.state.SetAdoptFunc(nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -1036,6 +1044,35 @@ func (s *daemonRepoStarter) waitForWorkingCopy(runtime repoRuntime, svn client.C
 		}
 	}()
 	return instance
+}
+
+// readOnlyAdoptFunc is readOnlyDepthFunc for the Explorer anchor's adopting
+// update: same absence of a commit service, same retry when it meets the
+// periodic update.
+func readOnlyAdoptFunc(svn client.Client, wc string) func(context.Context, string, int64) error {
+	return func(ctx context.Context, rel string, revision int64) error {
+		adopter, ok := svn.(interface {
+			UpdateAdoptPath(context.Context, string, string, int64) (string, error)
+		})
+		if !ok {
+			return errors.New("SVN client cannot adopt a path into the working copy")
+		}
+		var err error
+		for attempt := 0; attempt < 5; attempt++ {
+			if _, err = adopter.UpdateAdoptPath(ctx, wc, rel, revision); err == nil {
+				return nil
+			}
+			if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "e155004") && !strings.Contains(msg, "locked") {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+		return err
+	}
 }
 
 // readOnlyDepthFunc deepens a read-only sparse working copy. There is no

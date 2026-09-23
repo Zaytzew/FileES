@@ -152,6 +152,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleHeadMaterialize(req)
 	case contract.CmdRepoHeadFill:
 		return s.handleHeadFill(req)
+	case contract.CmdRepoAnchorCreate:
+		return s.handleAnchorCreate(req)
 	case contract.CmdRepoHistoryFetch:
 		return s.handleHistoryFetch(req)
 	case contract.CmdRepoHistoryDensity:

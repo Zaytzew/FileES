@@ -216,6 +216,9 @@ var specs = []Spec{
 	{"HEAD-2006", "head.materialize_failed", SevError, HintRetry, detailOnly(), "Chosen path could not be brought to this computer"},
 	{"HEAD-2007", "head.fill_failed", SevError, HintRetry, detailOnly(), "The rest of the folder could not be brought to this computer"},
 	{"HEAD-2008", "head.copy_not_running", SevError, HintRetry, nil, "The local copy is not running yet"},
+	{"HEAD-2009", "head.anchor_unavailable", SevError, HintNone, nil, "Explorer anchors are not available on this computer"},
+	{"HEAD-2010", "head.anchor_attached", SevError, HintNone, nil, "The repository already has a working copy here"},
+	{"HEAD-2011", "head.anchor_refused", SevError, HintRequireAction, nil, "This folder cannot become an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid"},

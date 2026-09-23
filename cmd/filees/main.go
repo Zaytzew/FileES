@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -491,14 +492,37 @@ func scanShoutsAfterUpdate(ctx context.Context, cli client.Client, repo config.R
 
 func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.Tickets = tickets.New()
-	svc.OnConnectivity = func(state string) {
-		if state == "offline" {
-			rs.SetConnectivity(contract.ConnOffline)
+	// State comes from both signals at once. Returning online used to set
+	// active unconditionally, which would silently clear a held publication;
+	// offline wins, then held, then active.
+	var stateMu sync.Mutex
+	offline, held := false, false
+	applyState := func() {
+		switch {
+		case offline:
 			rs.SetState(contract.StateOffline)
-		} else {
-			rs.SetConnectivity(contract.ConnOnline)
+		case held:
+			rs.SetState(contract.StateDegraded)
+		default:
 			rs.SetState(contract.StateActive)
 		}
+	}
+	svc.OnConnectivity = func(state string) {
+		stateMu.Lock()
+		defer stateMu.Unlock()
+		offline = state == "offline"
+		if offline {
+			rs.SetConnectivity(contract.ConnOffline)
+		} else {
+			rs.SetConnectivity(contract.ConnOnline)
+		}
+		applyState()
+	}
+	svc.OnPublicationHeld = func(h bool) {
+		stateMu.Lock()
+		defer stateMu.Unlock()
+		held = h
+		applyState()
 	}
 	svc.OnHeadRevision = rs.SetHeadRev
 	svc.OnLastSync = rs.SetLastSyncAt

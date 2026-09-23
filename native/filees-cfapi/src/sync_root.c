@@ -97,3 +97,44 @@ int filees_cfapi_unregister(const WCHAR *root)
     filees_cfapi_ok("unregistered");
     return 0;
 }
+
+/* revert turns one materialized placeholder into an ordinary file.
+ *
+ * After the daemon has made a path part of the working copy (Subversion
+ * adopted the hydrated file as its own), the file must stop being governed by
+ * the filter: otherwise deleting or renaming it in Explorer would still meet
+ * the refusal meant for paths that are not on this disk yet, and a change the
+ * person makes to their own working copy would be blocked.
+ *
+ * The file is opened through the filter's own oplock handle, so an application
+ * holding it open is not disturbed; if it holds it exclusively, the revert is
+ * refused and the daemon tries again later. Directories are left as they are:
+ * their children may still be placeholders.
+ */
+HRESULT filees_revert_placeholder(const WCHAR *path)
+{
+    HANDLE protected_handle = INVALID_HANDLE_VALUE, handle;
+    HRESULT hr;
+
+    hr = CfOpenFileWithOplock(path, CF_OPEN_FILE_FLAG_WRITE_ACCESS, &protected_handle);
+    if (FAILED(hr)) return hr;
+    handle = CfGetWin32HandleFromProtectedHandle(protected_handle);
+    hr = CfRevertPlaceholder(handle, CF_REVERT_FLAG_NONE, NULL);
+    CfCloseHandle(protected_handle);
+    return hr;
+}
+
+/* The standalone verb works only while no provider is connected to the
+ * anchor: with one connected, Windows reports the file as in use
+ * (ERROR_CLOUD_FILE_IN_USE). A running anchor reverts through its own
+ * connection instead - the `revert` line on the bridge (connect.c). */
+int filees_cfapi_revert(const WCHAR *path)
+{
+    HRESULT hr = filees_revert_placeholder(path);
+    if (FAILED(hr)) {
+        filees_cfapi_fail("revert_placeholder", hr);
+        return 1;
+    }
+    filees_cfapi_ok("reverted");
+    return 0;
+}

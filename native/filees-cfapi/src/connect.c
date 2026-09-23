@@ -237,6 +237,25 @@ static CF_CALLBACK_REGISTRATION k_callbacks[] = {
     CF_CALLBACK_REGISTRATION_END
 };
 
+/* revert <TAB> id <TAB> absolute path, from the daemon once Subversion has
+ * adopted a materialized file. Only the connected provider may do this; the
+ * answer is `reverted <TAB> id <TAB> 0x...` on the same stdout the fetch
+ * requests use, so the daemon reads one stream. A file an application holds
+ * open is refused, and the daemon asks again later. */
+static void revert_request(char *rest)
+{
+    char *path = strchr(rest, '\t');
+    WCHAR wide[FILEES_CFAPI_MAX_PATH];
+    HRESULT hr = E_INVALIDARG;
+    if (path) {
+        *path++ = '\0';
+        if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, FILEES_CFAPI_MAX_PATH) > 0)
+            hr = filees_revert_placeholder(wide);
+    }
+    trace("revert", hr);
+    filees_bridge_say_reverted(rest, hr);
+}
+
 int filees_cfapi_connect(const WCHAR *root)
 {
     char line[FILEES_CFAPI_MAX_LINE];
@@ -272,7 +291,9 @@ int filees_cfapi_connect(const WCHAR *root)
     while (fgets(line, sizeof line, stdin)) {
         size_t length = strlen(line);
         while (length && (line[length - 1] == '\n' || line[length - 1] == '\r')) line[--length] = '\0';
-        if (length) filees_bridge_answer(line);
+        if (!length) continue;
+        if (!strncmp(line, "revert\t", 7)) revert_request(line + 7);
+        else filees_bridge_answer(line);
     }
 
     hr = CfDisconnectSyncRoot(g_connection);

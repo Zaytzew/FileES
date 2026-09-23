@@ -24,6 +24,7 @@ Każdy wypisuje **jeden obiekt JSON** na standardowe wyjście
 | `info --root <folder>` | czy to kotwica, czyja i czy dostawca działa |
 | `placeholders --root <folder> [--rel <podkatalog>]` | tworzy placeholdery z listingu na wejściu |
 | `connect --root <folder>` | podłącza dostawcę i **trzyma połączenie do zamknięcia wejścia** |
+| `revert --root <plik>` | zamienia pobrany placeholder w zwykły plik; tylko przy niepodłączonym dostawcy |
 
 Listing dla `placeholders` to jedna pozycja w wierszu, pola rozdzielone
 tabulatorem:
@@ -50,6 +51,18 @@ demon  -> helper   ok    <TAB> id <TAB> bezwzględna ścieżka
 Tożsamość to ta sama, z którą powstał placeholder — ścieżka w repozytorium.
 Demon zamienia ją na ścieżkę na dysku (materializacja niepełnej kopii), a
 helper czyta stamtąd bajty i oddaje je Windowsowi kawałkami po 1 MiB.
+
+Demon może też poprosić podłączony helper o zamianę pobranego placeholdera w
+zwykły plik, gdy SVN przyjął go już do kopii roboczej:
+
+```
+demon  -> helper   revert   <TAB> id <TAB> bezwzględna ścieżka
+helper -> demon    reverted <TAB> id <TAB> HRESULT
+```
+
+Musi to robić **podłączony** proces: osobne `filees-cfapi revert` przy
+podłączonym dostawcy dostaje `ERROR_CLOUD_FILE_IN_USE`. `0x80070178`
+(`ERROR_NOT_A_CLOUD_FILE`) w odpowiedzi znaczy, że plik już jest zwykły.
 
 **Kto uruchamia `connect`, musi czytać jego wyjście.** Callbacki chodzą na
 wielu wątkach; jeśli nikt nie odbiera linii, zapis się blokuje, callback nie

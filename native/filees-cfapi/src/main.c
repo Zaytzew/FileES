@@ -7,13 +7,14 @@
  *   info       --root <anchor>
  *   placeholders --root <anchor> [--rel <subdirectory>]   (listing on stdin)
  *   connect    --root <anchor>                            (holds until EOF)
+ *   revert     --root <materialized file>                 (placeholder -> ordinary file)
  */
 #include "filees_cfapi.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "unregister", "info", "placeholders", "connect", NULL};
+static const char *const k_verbs[] = {"version", "register", "unregister", "info", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -25,8 +26,8 @@ static void print_version(void)
     }
     /* Features are how the daemon decides what this build can do, exactly as
      * with the native SVN helper: a name appears here only when the thing
-     * behind it works. Fetching is the next portion, so it is absent. */
-    puts("],\"features\":[\"sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\"]}");
+     * behind it works. */
+    puts("],\"features\":[\"sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\"]}");
     fflush(stdout);
 }
 
@@ -83,6 +84,7 @@ int main(int argc, char **argv)
     }
     if (!strcmp(verb, "unregister")) return filees_cfapi_unregister(root);
     if (!strcmp(verb, "info")) return filees_cfapi_info(root);
+    if (!strcmp(verb, "revert")) return filees_cfapi_revert(root);
     if (!strcmp(verb, "placeholders")) {
         relative[0] = L'\0';
         value = option(argc, argv, "--rel");

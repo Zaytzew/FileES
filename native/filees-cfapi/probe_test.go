@@ -411,3 +411,53 @@ func TestTheWorkingCopyScannerNeverDownloadsAPlaceholder(t *testing.T) {
 		t.Fatal("the scanner never finished a scan, so the test proves nothing")
 	}
 }
+
+// A working copy inside another provider's folder (the owner's sits in
+// Nextcloud) can see a file it already knew turned into a placeholder when that
+// provider frees space. The file is still the person's: the scanner must carry
+// it over, not report it deleted - a deletion would reach the repository.
+// Control: a known file that really is gone IS reported, within the same
+// window, so the absence of the first event means something.
+func TestAKnownFileThatBecameAPlaceholderIsNotReportedDeleted(t *testing.T) {
+	root := anchor(t)
+	if got := run(t, "f\t4096\tprojekt/sala.dwg\tsala.dwg\n", "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	anchored := connectAnchor(t, root, func(request []string) string {
+		return "err\t" + request[1] + "\tthe scanner must not ask"
+	})
+	statePath := filepath.Join(t.TempDir(), "manifest.json")
+	known := `[{"path":"sala.dwg","mtime":1,"size":4096,"md5":"0123456789abcdef0123456789abcdef"},` +
+		`{"path":"zniknie.txt","mtime":1,"size":3,"md5":"fedcba9876543210fedcba9876543210"}]`
+	if err := os.WriteFile(statePath, []byte(known), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := watcher.NewScanner(watcher.Options{
+		WC: root, StatePath: statePath, ScanPeriod: 100 * time.Millisecond,
+		DeletedDebounce: 200 * time.Millisecond, UseMD5: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	sawControl := false
+	for event := range scanner.Start(ctx) {
+		switch event.Rel {
+		case "sala.dwg":
+			t.Errorf("a known file that became a placeholder was reported: %+v", event)
+		case "zniknie.txt":
+			if event.Op == watcher.Deleted {
+				sawControl = true
+			}
+		}
+	}
+	if !sawControl {
+		t.Fatal("the control deletion never came, so the test proves nothing")
+	}
+	select {
+	case request := <-anchored.requests:
+		t.Fatalf("the scanner downloaded a placeholder: %v", request)
+	default:
+	}
+}

@@ -470,3 +470,69 @@ func TestRALockCannotStealOrBreak(t *testing.T) {
 	f.jsonCall(t, false, "lock", "--disposable-wc", wc, "--steal", "--", "occupied.txt")
 	f.jsonCall(t, false, "unlock", "--disposable-wc", wc, "--break", "--", "occupied.txt")
 }
+
+// --adopt is the Explorer anchor's half of materialization (native/filees-cfapi):
+// the file was first handed to Windows from a pinned cat, so the bytes are
+// already on disk at the target path when Subversion is asked to take the
+// path into the sparse copy. Measured 2026-09-23 with a real anchor:
+//
+//	without --adopt : the placeholder folder becomes a TREE CONFLICT
+//	                  ("local dir unversioned, incoming dir add"), i.e. an
+//	                  anchor broken by its first click
+//	with --adopt    : "E" - the existing file and folder are taken over,
+//	                  no conflict, status clean
+//
+// A file whose bytes differ is adopted as a local modification, never
+// overwritten underneath the application holding it.
+func TestRAAdoptTakesOverFilesAlreadyOnDisk(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	anchor := func(name string) string {
+		wc := f.second(t, name, "--depth", "empty")
+		// set-depth needs a live copy; the fixture's probe marker alone is not one.
+		if err := os.Mkdir(filepath.Join(wc, ".filees"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(wc, "folder"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(wc, "occupied.txt"), "another object\n")
+		return wc
+	}
+	update := func(wc, rel string, extra ...string) map[string]any {
+		args := append([]string{"update", "--wc", wc, "--set-depth", "infinity", "--parents", "--revision", "1"}, extra...)
+		return f.jsonCall(t, true, append(args, "--", rel)...)
+	}
+
+	plain := anchor("plain")
+	if conflicts, _ := update(plain, "occupied.txt")["conflicts"].([]any); len(conflicts) != 1 {
+		t.Fatalf("without --adopt a file already on disk must be reported as a conflict: %#v", conflicts)
+	}
+
+	adopted := anchor("adopted")
+	for _, rel := range []string{"folder", "occupied.txt"} {
+		if conflicts, _ := update(adopted, rel, "--adopt")["conflicts"].([]any); len(conflicts) != 0 {
+			t.Fatalf("--adopt must take %s over without a conflict: %#v", rel, conflicts)
+		}
+	}
+	status := f.jsonCall(t, true, "status", "--wc", adopted, "--", "occupied.txt")
+	if entries, _ := status["entries"].([]any); len(entries) != 0 {
+		if item := entries[0].(map[string]any)["item"]; item != "normal" {
+			t.Fatalf("an adopted file with the repository's bytes must be clean: %#v", entries)
+		}
+	}
+
+	changed := anchor("changed")
+	write(t, filepath.Join(changed, "occupied.txt"), "edited before the copy took it\n")
+	update(changed, "occupied.txt", "--adopt")
+	status = f.jsonCall(t, true, "status", "--wc", changed, "--", "occupied.txt")
+	entries, _ := status["entries"].([]any)
+	if len(entries) != 1 || entries[0].(map[string]any)["item"] != "modified" {
+		t.Fatalf("different bytes must stay as a local modification: %#v", entries)
+	}
+	if content, _ := os.ReadFile(filepath.Join(changed, "occupied.txt")); string(content) != "edited before the copy took it\n" {
+		t.Fatalf("adopting overwrote the bytes on disk: %q", content)
+	}
+
+	// Narrow on purpose: without a pinned revision nobody vouches for the bytes.
+	f.jsonCall(t, false, "update", "--wc", anchor("unpinned"), "--set-depth", "infinity", "--adopt", "--", "occupied.txt")
+}

@@ -141,3 +141,13 @@ int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG lengt
     release_slot(slot);
     return ok;
 }
+
+/* The answer to a revert shares stdout with fetch requests, so it goes out
+ * under the same lock: one line, never interleaved with another. */
+void filees_bridge_say_reverted(const char *id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("reverted\t%s\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}

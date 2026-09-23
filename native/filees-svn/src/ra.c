@@ -488,12 +488,20 @@ svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
  * --set-depth is the one exception, and it is explicit: the unattached browser
  * (implementation notes (not distributed)) chooses which paths a sparse
  * working copy holds. There the depth is sticky on purpose, so later plain
- * updates keep exactly what the user chose. */
+ * updates keep exactly what the user chose.
+ *
+ * adopt lets Subversion take over an unversioned file already sitting at the
+ * target instead of refusing it. It exists for one caller, the Explorer
+ * anchor: a file opened there was first handed to Windows from a pinned
+ * `cat`, so the file on disk is the repository's own content at that
+ * revision, and adopting it is how it joins the working copy without being
+ * written a second time underneath the application holding it. Content that
+ * differs becomes a local modification, never a silent overwrite. */
 svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
                               svn_boolean_t depth_is_sticky,
                               svn_revnum_t revision, svn_boolean_t make_parents,
-                              apr_pool_t *pool)
+                              svn_boolean_t adopt, apr_pool_t *pool)
 {
     const char *wc;
     svn_client_ctx_t *ctx;
@@ -531,7 +539,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
     SVN_ERR(svn_client_update4(&result_revs, paths, &rev, depth,
                                depth_is_sticky,
                                TRUE /* ignore_externals */,
-                               FALSE /* allow_unver_obstructions */,
+                               adopt /* allow_unver_obstructions */,
                                TRUE /* adds_as_modification */,
                                make_parents,
                                ctx, pool));

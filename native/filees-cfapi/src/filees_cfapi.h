@@ -47,6 +47,7 @@ typedef int (*filees_bridge_waiting)(void *context);
 
 void filees_bridge_start(void);
 void filees_bridge_answer(char *line);
+void filees_bridge_say_reverted(const char *id, HRESULT hr);
 int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG length,
                           filees_bridge_waiting waiting, void *context, WCHAR *path);
 
@@ -54,6 +55,8 @@ int filees_bridge_request(const WCHAR *identity, LONGLONG offset, LONGLONG lengt
 int filees_cfapi_register(const WCHAR *root, const WCHAR *identity);
 int filees_cfapi_unregister(const WCHAR *root);
 int filees_cfapi_info(const WCHAR *root);
+int filees_cfapi_revert(const WCHAR *path);
+HRESULT filees_revert_placeholder(const WCHAR *path);
 int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_connect(const WCHAR *root);
 

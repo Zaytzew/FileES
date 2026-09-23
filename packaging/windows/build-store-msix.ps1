@@ -31,7 +31,29 @@ try {
 $makeappx = Join-Path $sdk 'makeappx.exe'
 $makepri = Join-Path $sdk 'makepri.exe'
 $mt = Join-Path $sdk 'mt.exe'
-$magick = (Get-Command magick.exe -ErrorAction Stop).Source
+# Icons are resized with System.Drawing, which every Windows PowerShell has.
+# ImageMagick used to be required for this alone, and a build machine without
+# it could not produce a package at all (2026-09-23).
+Add-Type -AssemblyName System.Drawing
+function Resize-Png([string]$From, [int]$Size, [string]$To) {
+    $sourceImage = [System.Drawing.Image]::FromFile($From)
+    try {
+        $bitmap = New-Object System.Drawing.Bitmap $Size, $Size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        try {
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.Clear([System.Drawing.Color]::Transparent)
+                $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+                $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+                $graphics.DrawImage($sourceImage, 0, 0, $Size, $Size)
+            } finally { $graphics.Dispose() }
+            $bitmap.Save($To, [System.Drawing.Imaging.ImageFormat]::Png)
+        } finally { $bitmap.Dispose() }
+    } finally { $sourceImage.Dispose() }
+    if (-not (Test-Path -LiteralPath $To -PathType Leaf)) { throw "Icon generation failed: $To" }
+}
 if (-not (Test-Path -LiteralPath $makeappx -PathType Leaf)) { throw 'MakeAppx is missing from SdkBin' }
 foreach ($tool in @($makeappx, $makepri, $mt)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Windows SDK tool is missing: $tool" }
@@ -95,8 +117,7 @@ foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'fi
 
 $icon = Join-Path $source 'cmd/filees-gui-wails/assets/app-icon.png'
 foreach ($item in @(@('StoreLogo.png', 50), @('Square150x150Logo.png', 150), @('Square44x44Logo.png', 44))) {
-    & $magick $icon -resize "$($item[1])x$($item[1])" (Join-Path $assets $item[0])
-    if ($LASTEXITCODE -ne 0) { throw "Icon generation failed: $($item[0])" }
+    Resize-Png $icon $item[1] (Join-Path $assets $item[0])
 }
 # The base 44px logo is a tile asset. Without target-size unplated variants,
 # Windows can shrink the taskbar icon and put it on an accent-coloured plate.
@@ -104,8 +125,7 @@ foreach ($item in @(@('StoreLogo.png', 50), @('Square150x150Logo.png', 150), @('
 foreach ($size in @(16, 20, 24, 30, 32, 36, 40, 44, 48, 60, 64, 72, 80, 96, 256)) {
     foreach ($variant in @('', '_altform-unplated', '_altform-lightunplated')) {
         $name = "Square44x44Logo.targetsize-$size$variant.png"
-        & $magick $icon -resize "${size}x${size}" (Join-Path $assets $name)
-        if ($LASTEXITCODE -ne 0) { throw "Taskbar icon generation failed: $name" }
+        Resize-Png $icon $size (Join-Path $assets $name)
     }
 }
 $identity = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'store-identity.json') -Raw | ConvertFrom-Json

@@ -7,8 +7,10 @@
 package cloudfiles
 
 import (
+	"os"
 	"runtime"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -97,4 +99,21 @@ func NotOnDisk(path string) bool {
 func IsSyncRoot(path string) bool {
 	value, ok := state(path)
 	return ok && value&stateSyncRoot != 0
+}
+
+// FILE_ATTRIBUTE_RECALL_ON_OPEN and FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS.
+// Unlike the placeholder state, these stay visible when Windows disguises a
+// placeholder, and they arrive with the directory listing for free.
+const recallAttributes = 0x00040000 | 0x00400000
+
+// RecallsOnRead reports, from a FileInfo the caller already has, whether
+// reading the file would download it: a placeholder of an Explorer anchor or
+// of any other provider (Nextcloud, OneDrive) whose bytes are not on this
+// disk. Costs no system call, so a scanner can ask it for every file.
+func RecallsOnRead(info os.FileInfo) bool {
+	if info == nil {
+		return false
+	}
+	data, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	return ok && data.FileAttributes&recallAttributes != 0
 }

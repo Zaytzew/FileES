@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/cloudfiles"
 	"filees/pkg/filepolicy"
 	hostruntime "filees/pkg/runtime"
 	"filees/pkg/talk"
@@ -571,6 +572,15 @@ func (s *Scanner) scanTreeEmit(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5
 			return nil
 		}
 		isDir := info.IsDir()
+		// A placeholder of an Explorer anchor (or of another provider's
+		// folder) is not on this disk: hashing it would download it, and a
+		// scan would then fetch the whole repository by itself. It is not the
+		// person's file either, so it is not recorded at all - it appears the
+		// moment it is opened and becomes part of the working copy.
+		if !isDir && cloudfiles.RecallsOnRead(info) {
+			*igCnt++
+			return nil
+		}
 
 		// record into curr snapshot
 		m := meta{MtimeSec: info.ModTime().Unix(), IsDir: isDir}

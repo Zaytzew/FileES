@@ -23,13 +23,73 @@ const DemoOriginSchema = "filees.demo-origin/v1"
 
 // DemoOrigin binds a demo operation to where it came from. Values are keyed
 // hashes, never the address, the installation or the mailbox themselves: the
-// list is kept for good and only ever needs equality.
+// list only ever needs equality. A finished demo operation, hashes included,
+// is deleted DemoRecordRetention after its end (PruneDemoRecords).
 type DemoOrigin struct {
 	Schema    string    `json:"schema"`
 	IPHash    string    `json:"ip_hash"`
 	UIDHash   string    `json:"uid_hash"`
 	EmailHash string    `json:"email_hash"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// DemoRecordRetention is how long a finished demo operation is kept: the
+// promise of the privacy policy (https://filees.space/privacy/, owner's
+// decision 2026-09-23). After it, nothing of that activation is left on the
+// demo server - so the same installation may try the demo again, which the
+// owner accepted.
+const DemoRecordRetention = 14 * 24 * time.Hour
+
+// PruneDemoRecords deletes every demo operation that ended more than keep ago:
+// an activated one when its realm's TTL ran out, one never activated when its
+// OTP window closed. Operations that did not come from the demo endpoint are
+// never touched, and nothing still live is. It answers how many it deleted.
+func (s *Files) PruneDemoRecords(realmTTL, keep time.Duration) (int, error) {
+	if realmTTL <= 0 || keep <= 0 {
+		return 0, errors.New("demo record pruning needs a realm TTL and a retention")
+	}
+	deleted := 0
+	err := s.withLock(func() error {
+		if err := s.recoverClaimsLocked(); err != nil {
+			return err
+		}
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		now := s.clock.Now().UTC()
+		for _, path := range paths {
+			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+				continue
+			}
+			bundle, err := s.readBundlePathLocked(path)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if bundle.DemoOrigin == nil {
+				continue
+			}
+			end := bundle.Operation.ExpiresAt
+			if bundle.Operation.ActivatedAt != nil {
+				end = bundle.Operation.ActivatedAt.UTC().Add(realmTTL)
+			}
+			if end.IsZero() || now.Sub(end) < keep {
+				continue
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			deleted++
+		}
+		if deleted > 0 {
+			return syncDirectory(filepath.Join(s.root, operationsDir))
+		}
+		return nil
+	})
+	return deleted, err
 }
 
 // DemoAdmission is the demo server's policy as the onboarding boundary needs it.

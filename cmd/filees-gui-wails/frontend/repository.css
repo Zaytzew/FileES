@@ -75,6 +75,14 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
   :root:not([data-system-theme="dark"]) .toast { background:rgba(255,255,255,.97); box-shadow:0 18px 50px rgba(47,65,79,.22); }
   :root:not([data-system-theme="dark"]) .toast span { color:var(--muted); }
 }
+/* The heading's own rename button. min-width lets a long name wrap instead of
+   pushing the button out of the window. */
+.repository-name-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.repository-name-row h1 { min-width: 0; overflow-wrap: anywhere; }
+.name-action { flex: none; width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; }
+.name-action svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.name-action:hover { border-color: rgba(255,106,0,.36); color: #ff9a52; background: rgba(255,106,0,.06); }
+.name-action:focus-visible { outline: 2px solid var(--theme-focus, #4ea7e0); outline-offset: 2px; }
 .rename-card { display: grid; gap: 10px; }
 .rename-card label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .rename-card input { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--theme-panel-solid, rgba(255,255,255,.03)); font: inherit; font-size: 15px; }

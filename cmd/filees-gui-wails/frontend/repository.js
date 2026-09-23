@@ -4,6 +4,7 @@ import { GUIService, RepositoryService } from "./bindings/filees/cmd/filees-gui-
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, labelHTML, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, canArchive, setArchived } from "./repo-view.js";
+import { renameOffered } from "./rename-entry.js";
 
 initializeTheme();
 initializeLanguage();
@@ -20,6 +21,7 @@ let currentSnapshot = null;
 // The shown name is this client's own (GUIService.RenameRepository); the
 // daemon and the server keep the repository's name.
 let renaming = null;
+let renameOpener = null;
 
 // Only labels change here: preserve focus, pending actions and their buttons.
 function refreshRepositoryLabels() {
@@ -169,6 +171,8 @@ function render(snapshot) {
 	$("#repository-facts").hidden = detailMode;
 	$("#actions-view").hidden = detailMode || renaming;
 	$("#rename-view").hidden = detailMode || !renaming;
+	const offerRename = renameOffered(detailMode, renaming);
+	$("#rename-inline").hidden = !offerRename;
   $("#shares-view").hidden = !sharesMode;
 	$("#grants-view").hidden = !grantsMode;
 	$("#uploads-view").hidden = !uploadsMode;
@@ -186,7 +190,7 @@ function render(snapshot) {
     const archived = repoSection(context, prefs) === "archived";
     if (!detailMode) {
       const blocked = !archived && !canArchive(context);
-      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-rename-view><span><strong>${labelHTML("rename.row")}</strong><small>${labelHTML("rename.rowHelp")}</small></span><i aria-hidden="true">›</i></button>`;
+      if (offerRename) $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-rename-view><span><strong>${labelHTML("rename.row")}</strong><small>${labelHTML("rename.rowHelp")}</small></span><i aria-hidden="true">›</i></button>`;
       $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view ${blocked ? "disabled" : ""}><span><strong>${labelHTML(archived ? "repository.restoreView" : "repository.archiveView")}</strong><small>${labelHTML(blocked ? "repository.archiveBlocked" : "repository.archiveHelp")}</small></span><i aria-hidden="true">›</i></button>`;
     }
   } else {
@@ -321,6 +325,7 @@ async function closeRepository() {
 async function openRename() {
   const context = currentSnapshot?.context;
   if (!context) return;
+  renameOpener = document.activeElement;
   try {
     renaming = await GUIService.RepositoryNaming(context.server_id, context.repo_id);
   } catch (error) {
@@ -338,6 +343,11 @@ async function openRename() {
 function closeRename() {
   renaming = null;
   if (currentSnapshot) render(currentSnapshot);
+  // Back to the heading button when that is what opened the form. The list row
+  // is rebuilt by render, so it is no longer connected and there is nothing to
+  // return to.
+  if (renameOpener?.isConnected && !renameOpener.hidden) renameOpener.focus();
+  renameOpener = null;
 }
 
 async function saveRename(name) {
@@ -363,6 +373,7 @@ async function saveRename(name) {
 $("#rename-view").addEventListener("submit", (event) => { event.preventDefault(); saveRename($("#rename-input").value); });
 $("#rename-restore").addEventListener("click", () => saveRename(""));
 $("#rename-cancel").addEventListener("click", closeRename);
+$("#rename-inline").addEventListener("click", openRename);
 
 Events.On("filees:repository-snapshot", (event) => render(event?.data ?? event));
 $("#repository-actions").addEventListener("click", (event) => {

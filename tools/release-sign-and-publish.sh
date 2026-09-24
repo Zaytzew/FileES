@@ -69,10 +69,21 @@ for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifes
 done
 [ "$manifests" -gt 0 ] || die "release has no component manifests: $release_root"
 
-# Alpha is where a new payload is signed. Beta/stable only promote an already
-# signed, reviewed artifact: never turn a mistyped CHANNEL into a first release
-# of untested binaries. Keep existing manifest signatures byte-for-byte.
-if [ "$CHANNEL" != alpha ] && [ "$all_manifests_signed" != true ]; then
+# A release built for one channel is published on that channel only: alpha
+# carries every feature, beta and stable are separate nocfapi builds of the
+# same revision (owner's decision, 2026-09-24). Releases prepared before
+# built-for-channel existed keep the old promotion rule below.
+built_for=""
+if [ -f "$release_root/built-for-channel" ]; then
+	built_for=$(tr -d ' \r\n' <"$release_root/built-for-channel")
+	[ "$built_for" = "$CHANNEL" ] || die "release $RELEASE_ID was built for channel $built_for, not $CHANNEL; build a separate release for $CHANNEL"
+fi
+
+# Alpha is where a new payload is signed. Beta/stable otherwise only promote an
+# already signed, reviewed artifact: never turn a mistyped CHANNEL into a first
+# release of untested binaries. A release built for this very channel is the
+# exception - it cannot be anything else. Keep existing signatures byte-for-byte.
+if [ "$CHANNEL" != alpha ] && [ "$all_manifests_signed" != true ] && [ "$built_for" != "$CHANNEL" ]; then
 	die "$CHANNEL promotion requires existing valid signatures for every manifest; publish and accept the release on alpha first"
 fi
 

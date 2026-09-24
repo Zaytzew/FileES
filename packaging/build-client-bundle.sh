@@ -74,6 +74,15 @@ fi
 
 cd "$root"
 
+# Two builds from one revision (owner's decision, 2026-09-24): alpha carries
+# every feature; beta and stable are built with nocfapi - no Explorer anchor and
+# no Cloud Files API code in the daemon. The channel compiled into the client
+# decides, so a release cannot be built for beta with the anchor inside.
+daemon_tags=native_svn_bundle
+case "${FILEES_RELEASE_CHANNEL:-}" in
+	beta|stable) daemon_tags="$daemon_tags,nocfapi" ;;
+esac
+
 case "$PLATFORM" in
 windows-amd64)
 	[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
@@ -89,7 +98,7 @@ windows-amd64)
 	# Only the interface gets -tags production and -H=windowsgui: the tag is a Wails
 	# convention that drops the dev server and devtools, and the daemon is a console
 	# program that must keep its console for `filees status` and friends.
-	GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
+	GOOS=$goos GOARCH=$goarch go build -tags "$daemon_tags" -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
 		-ldflags "-X main.version=$stamp $release_ldflags" \
 		-o "$out/bin/$daemon" ./cmd/filees
 	GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
@@ -101,6 +110,15 @@ windows-amd64)
 		-ldflags "-H=windowsgui" \
 		-o "$out/bin/filees-launch.exe" ./cmd/filees-launch
 
+	case "$daemon_tags" in
+	*nocfapi*)
+		# Same guard as the Store package: a beta daemon must not carry the
+		# Cloud Files API or the anchor helper's name.
+		if grep -a -i -q -e cldapi -e CfGetPlaceholderState -e filees-cfapi.exe "$out/bin/$daemon"; then
+			die "a $FILEES_RELEASE_CHANNEL daemon still carries Cloud Files code"
+		fi
+		;;
+	esac
 	cp "$root/packaging/windows/autostart-supervisor.ps1" "$out/autostart/start-filees.ps1"
 	cp "$root/packaging/windows/autostart-launch.vbs" "$out/autostart/start-filees.vbs"
 	;;
@@ -116,7 +134,7 @@ linux-amd64)
 	go run ./cmd/filees-native-package "$root" "$native_build/runtime" "$native_build/packed" >/dev/null
 	cp "$root/packaging/linux/filees-svn" "$out/bin/filees-svn"
 	chmod 0755 "$out/bin/filees-svn"
-	GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
+	GOOS=$goos GOARCH=$goarch go build -tags "$daemon_tags" -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
 		-ldflags "-X main.version=$stamp $release_ldflags" \
 		-o "$out/bin/$daemon" ./cmd/filees
 	# GTK4/WebKitGTK 6 is the default Wails Linux target; no build tag needed

@@ -54,6 +54,14 @@ svn update --quiet
 release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$COMPONENT/$PLATFORM"
 [ ! -e "$release_root" ] || die "release already exists: $release_root"
 
+# The channel this release was built for (built-for-channel). The signing
+# script refuses to publish it on another one: alpha and beta are two builds
+# of one revision, never one build promoted (owner's decision, 2026-09-24).
+built_for="$FILEES_BIN_WC/releases/$RELEASE_ID/built-for-channel"
+if [ -f "$built_for" ] && [ "$(tr -d ' \r\n' <"$built_for")" != "$CHANNEL" ]; then
+	die "release $RELEASE_ID was built for another channel than $CHANNEL"
+fi
+
 cd "$root"
 # The client version carries the revision, so a build can always be matched to
 # a commit. base+rNNN is what the running client reports; the fourth numeric
@@ -144,9 +152,11 @@ if [ -n "$scratch" ]; then
 fi
 
 trap - EXIT HUP INT TERM
+printf '%s\n' "$CHANNEL" >"$built_for"
 
 echo
 echo "prepared client release $RELEASE_ID ($client_version) from source SVN r$source_revision"
+echo "built for channel $CHANNEL (releases/$RELEASE_ID/built-for-channel)"
 echo "review, then svn add/commit only releases/$RELEASE_ID"
 echo "the manifest binds both the self-update bundle and filees-$client_version.msi"
 echo "on the signing machine, sign and promote:"

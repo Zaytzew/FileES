@@ -1,3 +1,5 @@
+//go:build !nocfapi
+
 package main
 
 import (

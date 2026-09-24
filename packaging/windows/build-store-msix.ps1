@@ -77,10 +77,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native source/payload validation failed' }
     $overlay = Join-Path $output 'native-overlay/overlay.json'
     $stamp = $base + '+r' + $revision
-    & go build -tags native_svn_bundle -overlay $overlay -trimpath -buildvcs=false `
+    # nocfapi: the Store package ships without Explorer anchors and without any
+    # Cloud Files API code (owner's decision, 2026-09-24). Checked below.
+    & go build -tags native_svn_bundle,nocfapi -overlay $overlay -trimpath -buildvcs=false `
         -ldflags "-X main.version=$stamp -X main.injectedClientUpdateMode=store" `
         -o (Join-Path $payload 'filees.exe') ./cmd/filees
     if ($LASTEXITCODE -ne 0) { throw 'Store daemon build failed' }
+    $daemonText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $payload 'filees.exe')))
+    foreach ($marker in @('cldapi', 'CfGetPlaceholderState', 'filees-cfapi.exe')) {
+        if ($daemonText.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Store daemon still carries Cloud Files code: $marker" }
+    }
     & go build -tags production -trimpath -buildvcs=false `
         -ldflags "-H=windowsgui -X main.version=$stamp" `
         -o (Join-Path $payload 'filees-gui-wails.exe') ./cmd/filees-gui-wails

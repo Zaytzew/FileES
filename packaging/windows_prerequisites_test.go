@@ -28,3 +28,26 @@ func TestStorePackageIsBuiltWithoutCloudFiles(t *testing.T) {
 		}
 	}
 }
+
+// Beta and stable desktop bundles are the nocfapi build of the revision; alpha
+// keeps every feature. The channel decides, and a beta daemon that still holds
+// Cloud Files code stops the build (owner's decision, 2026-09-24).
+func TestBetaBundleIsBuiltWithoutCloudFiles(t *testing.T) {
+	raw, err := os.ReadFile("build-client-bundle.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, required := range []string{
+		`beta|stable) daemon_tags="$daemon_tags,nocfapi" ;;`,
+		`-tags "$daemon_tags"`,
+		`grep -a -i -q -e cldapi -e CfGetPlaceholderState -e filees-cfapi.exe`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("build-client-bundle.sh lacks %q", required)
+		}
+	}
+	if strings.Contains(script, "-tags native_svn_bundle ") {
+		t.Fatal("a daemon build bypasses the channel's tags")
+	}
+}

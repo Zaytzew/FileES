@@ -24,13 +24,18 @@ func TestReleaseChannelPromotionIsolation(t *testing.T) {
 	}
 	for _, schema := range []string{"server", "desktop"} {
 		for _, tc := range []struct {
-			channel, signature string
-			fail               bool
+			channel, signature, builtFor string
+			fail                         bool
 		}{
-			{"beta", "valid", false}, {"beta", "", true}, {"beta", "invalid", true},
-			{"stable", "", true}, {"alpha", "", false},
+			// Releases without built-for-channel: the old promotion rule.
+			{"beta", "valid", "", false}, {"beta", "", "", true}, {"beta", "invalid", "", true},
+			{"stable", "", "", true}, {"alpha", "", "", false},
+			// Two builds from one revision (2026-09-24): a release goes only to
+			// the channel it was built for, and may be signed there first.
+			{"beta", "", "beta", false}, {"alpha", "", "alpha", false},
+			{"beta", "valid", "alpha", true}, {"alpha", "", "beta", true}, {"stable", "", "beta", true},
 		} {
-			t.Run(schema+"/"+tc.channel+"/"+tc.signature, func(t *testing.T) {
+			t.Run(schema+"/"+tc.channel+"/"+tc.signature+"/"+tc.builtFor, func(t *testing.T) {
 				root := t.TempDir()
 				write := func(path, text string) {
 					t.Helper()
@@ -57,6 +62,9 @@ func TestReleaseChannelPromotionIsolation(t *testing.T) {
 				}
 				payload := "{\n  \"release_id\": \"test-release\"\n}\n"
 				write(candidate, payload)
+				if tc.builtFor != "" {
+					write("releases/test-release/built-for-channel", tc.builtFor+"\n")
+				}
 				for _, manifest := range manifests {
 					write(manifest, "immutable manifest")
 					if tc.signature != "" {
@@ -138,7 +146,7 @@ signify_stub() {
 					if !strings.Contains(commit, "channels/"+tc.channel+suffix) {
 						t.Fatal("channel absent from commit")
 					}
-					if tc.channel == "beta" && strings.Contains(commit, "releases/") {
+					if tc.channel == "beta" && tc.signature != "" && strings.Contains(commit, "releases/") {
 						t.Fatal("promotion touched immutable release")
 					}
 				}

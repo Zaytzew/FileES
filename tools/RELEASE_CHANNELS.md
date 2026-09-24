@@ -21,6 +21,35 @@ Kanał jest podpisanym wskaźnikiem do niezmiennego katalogu releases/.
 Ewentualna gałąź poprawek starszej bety wymaga osobnej decyzji, gdy zaistnieje
 taka potrzeba; nigdy nie nadpisujemy opublikowanego katalogu wydania.
 
+## Desktop: dwa buildy z jednej rewizji (decyzja 2026-09-24)
+
+Od 2026-09-24 **beta desktopu to osobny build, nie awans alfy**. Alfa niesie
+wszystkie funkcje, łącznie z kotwicą w Eksploratorze; beta i stable są
+budowane z tagiem `nocfapi` — bez kotwicy i bez kodu Cloud Files API w
+demonie. Pakiet Microsoft Store śledzi betę i też jest `nocfapi`.
+
+- Wariant wynika z kanału wkompilowanego w klienta:
+  `packaging/build-client-bundle.sh` dla `FILEES_RELEASE_CHANNEL=beta|stable`
+  dodaje `nocfapi` i przerywa budowę, jeśli demon nadal zawiera `cldapi`,
+  `CfGetPlaceholderState` albo `filees-cfapi.exe`.
+- `tools/prepare-client-release-{windows,linux}.sh` zapisują
+  `releases/<id>/built-for-channel`; oba systemy jednego wydania muszą mieć
+  ten sam kanał.
+- `tools/release-sign-and-publish.sh` publikuje wydanie tylko w kanale, dla
+  którego je zbudowano, i tylko wtedy wolno mu po raz pierwszy podpisać
+  manifesty poza alfą. Alfy nie da się więc opublikować w becie ani odwrotnie.
+  Wydania sprzed tej zmiany (bez `built-for-channel`) zachowują stary awans.
+
+Jedna rewizja, dwa wydania, na przykład:
+
+```sh
+RELEASE_ID=r1510       CHANNEL=alpha SEQUENCE=… tools/prepare-client-release-windows.sh
+RELEASE_ID=r1510-beta  CHANNEL=beta  SEQUENCE=… tools/prepare-client-release-windows.sh
+```
+
+Każde wydanie ma własne `release_id`, a w obrębie kanału rosnące `sequence`.
+Serwer bez zmian: jego beta pozostaje awansem odebranego wydania alfa.
+
 ## Dwa niezależne zestawy kanałów
 
 | Produkt | Alfa | Beta |

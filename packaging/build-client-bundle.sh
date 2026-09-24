@@ -95,6 +95,11 @@ windows-amd64)
 	GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
 		-ldflags "-H=windowsgui -X main.version=$stamp" \
 		-o "$out/bin/$gui" ./cmd/filees-gui-wails
+	# The shortcuts' target: starts the supervisor with no window, which the
+	# wscript shim did until Windows began shipping without VBScript.
+	GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
+		-ldflags "-H=windowsgui" \
+		-o "$out/bin/filees-launch.exe" ./cmd/filees-launch
 
 	cp "$root/packaging/windows/autostart-supervisor.ps1" "$out/autostart/start-filees.ps1"
 	cp "$root/packaging/windows/autostart-launch.vbs" "$out/autostart/start-filees.vbs"
@@ -155,7 +160,7 @@ printf '%s\n' "$client_version" >"$out/VERSION"
 # these lists and this script still say the same thing.
 case "$PLATFORM" in
 windows-amd64)
-	required_list="VERSION SHA256SUMS bin/filees.exe bin/filees-gui-wails.exe autostart/start-filees.ps1 autostart/start-filees.vbs"
+	required_list="VERSION SHA256SUMS bin/filees.exe bin/filees-gui-wails.exe bin/filees-launch.exe autostart/start-filees.ps1 autostart/start-filees.vbs"
 	;;
 linux-amd64)
 	required_list="install-user.sh SHA256SUMS VERSION bin/filees bin/filees-gui bin/filees-svn share/icons/hicolor/scalable/apps/filees-gui.svg share/applications/filees-gui.desktop share/systemd/user/filees.service share/filees/config.example.json"

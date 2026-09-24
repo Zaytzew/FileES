@@ -33,6 +33,7 @@ func completeBundle(version string) map[string]string {
 		"SHA256SUMS":                 "unused by the installer, required by the bundle",
 		"bin/filees.exe":             "daemon " + version,
 		"bin/filees-gui-wails.exe":   "interface " + version,
+		"bin/filees-launch.exe":      "starter " + version,
 		"autostart/start-filees.ps1": "supervisor " + version,
 		"autostart/start-filees.vbs": "launcher " + version,
 	}
@@ -119,6 +120,7 @@ func TestApplyInstallsEveryManagedFile(t *testing.T) {
 		"filees.exe":           "daemon 0.1.15.900",
 		"filees-gui-wails.exe": "interface 0.1.15.900",
 		"start-filees.ps1":     "supervisor 0.1.15.900",
+		"filees-launch.exe":    "starter 0.1.15.900",
 		"start-filees.vbs":     "launcher 0.1.15.900",
 	} {
 		got, err := os.ReadFile(filepath.Join(installDir, name))

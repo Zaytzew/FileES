@@ -66,7 +66,10 @@ func (installer DirectoryInstaller) managedFiles() []managedFile {
 		{"bin/filees.exe", filepath.Join(dir, "filees.exe"), "demon"},
 		{"bin/filees-gui-wails.exe", filepath.Join(dir, "filees-gui-wails.exe"), "interfejs"},
 		{"autostart/start-filees.ps1", filepath.Join(dir, "start-filees.ps1"), "nadzorca autostartu"},
-		{"autostart/start-filees.vbs", filepath.Join(dir, "start-filees.vbs"), "uruchamianie bez okna"},
+		{"bin/filees-launch.exe", filepath.Join(dir, "filees-launch.exe"), "uruchamianie bez okna"},
+		// Kept for shortcuts an MSI older than filees-launch.exe created: they
+		// target wscript and this file until the next MSI upgrade rewrites them.
+		{"autostart/start-filees.vbs", filepath.Join(dir, "start-filees.vbs"), "uruchamianie bez okna (starsze skróty)"},
 	}
 }
 

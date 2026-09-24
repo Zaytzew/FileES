@@ -87,7 +87,7 @@ if (Test-Path $cachedUIExtension) {
 }
 
 $bundle = (Resolve-Path $BundleDir).Path
-foreach ($required in @("bin\filees.exe", "bin\filees-gui-wails.exe",
+foreach ($required in @("bin\filees.exe", "bin\filees-gui-wails.exe", "bin\filees-launch.exe",
                         "autostart\start-filees.ps1", "autostart\start-filees.vbs", "VERSION")) {
     if (-not (Test-Path (Join-Path $bundle $required))) {
         throw "bundle is missing $required - build it with tools/prepare-client-release-windows.sh"
@@ -127,6 +127,7 @@ New-Item -ItemType Directory -Path $staging | Out-Null
 try {
     Copy-Item (Join-Path $bundle "bin\filees.exe") $staging
     Copy-Item (Join-Path $bundle "bin\filees-gui-wails.exe") $staging
+    Copy-Item (Join-Path $bundle "bin\filees-launch.exe") $staging
     Copy-Item (Join-Path $bundle "autostart\start-filees.ps1") $staging
     Copy-Item (Join-Path $bundle "autostart\start-filees.vbs") $staging
     Copy-Item (Join-Path $PSScriptRoot "License.rtf") $staging

@@ -86,7 +86,9 @@ func TestTheInstallerRequiresNothingTheBuilderCannotStage(t *testing.T) {
 }
 
 // A valid bundle is not enough: all MSI entry points must start the pair,
-// including the shortcuts used after an intentional daemon shutdown.
+// including the shortcuts used after an intentional daemon shutdown. They go
+// through filees-launch.exe, not wscript: a Windows without VBScript answered
+// the old shortcut with "no script engine for .vbs" (2026-09-24).
 func TestWindowsShortcutsStartTheSupervisedPair(t *testing.T) {
 	raw, err := os.ReadFile("windows/filees.wxs")
 	if err != nil {
@@ -108,9 +110,9 @@ func TestWindowsShortcutsStartTheSupervisedPair(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"FileESStartMenuShortcut": `"[INSTALLFOLDER]start-filees.vbs" --show`,
-		"FileESDesktopShortcut":   `"[INSTALLFOLDER]start-filees.vbs" --show`,
-		"FileESStartupShortcut":   `"[INSTALLFOLDER]start-filees.vbs"`,
+		"FileESStartMenuShortcut": "--show",
+		"FileESDesktopShortcut":   "--show",
+		"FileESStartupShortcut":   "",
 	}
 	for _, component := range document.Package.Components {
 		for _, shortcut := range component.Shortcuts {
@@ -118,7 +120,7 @@ func TestWindowsShortcutsStartTheSupervisedPair(t *testing.T) {
 			if !ok {
 				continue
 			}
-			if component.ID != "FileESLauncher" || shortcut.Target != "[System64Folder]wscript.exe" || shortcut.Arguments != arguments {
+			if component.ID != "FileESLauncher" || shortcut.Target != "[INSTALLFOLDER]filees-launch.exe" || shortcut.Arguments != arguments {
 				t.Fatalf("shortcut bypasses supervisor: %+v in %s", shortcut, component.ID)
 			}
 			delete(want, shortcut.ID)

@@ -5,9 +5,10 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap10 desktop rescap">
+  IgnorableNamespaces="uap uap3 uap10 desktop rescap">
   <Identity Name="FileES.FileESDesktop"
             Publisher="CN=19672E4E-DB1A-493F-9633-91B7C75CF773"
             ProcessorArchitecture="x64"
@@ -47,6 +48,18 @@
                                Enabled="true"
                                DisplayName="FileES Desktop" />
         </desktop:Extension>
+        <!-- OpenSSH starts filees.exe as SSH_ASKPASS during activation. From
+             outside the package Windows refuses its WindowsApps path
+             ("CreateProcessW failed error:5", clean Windows Sandbox,
+             2026-09-24); the alias is the sanctioned way in. The daemon picks
+             it in pkg/deploy askpassExecutable. -->
+        <uap3:Extension Category="windows.appExecutionAlias"
+                        Executable="filees.exe"
+                        EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="filees-askpass.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>

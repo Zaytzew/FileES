@@ -490,6 +490,13 @@ func (adapter shoutAdapter) Publish(ctx context.Context, repoID, comment string)
 	if adapter.client == nil {
 		return 0, errors.New("shout publish is unavailable")
 	}
+	// The daemon publishes everything queued before it answers and allows
+	// itself 30 minutes (handleRepoPublish). Without a deadline here the IPC
+	// client waited its 10-second default, and a release over SSH to the demo
+	// server ended in "read unix ... daemon.sock: i/o timeout" while the daemon
+	// kept publishing (Windows Sandbox, 2026-09-24).
+	ctx, cancel := context.WithTimeout(ctx, shoutPublishTimeout)
+	defer cancel()
 	result, err := adapter.client.RepoPublish(ctx, repoID, comment)
 	if err != nil {
 		return 0, err
@@ -509,6 +516,10 @@ func (adapter shoutAdapter) AckNotice(ctx context.Context, noticeID string) erro
 
 // recoveryDownloadTimeout bounds a whole archive transfer, not one request.
 const recoveryDownloadTimeout = 2 * time.Hour
+
+// shoutPublishTimeout is the daemon's own limit for repo.publish plus a
+// margin for its answer to arrive.
+const shoutPublishTimeout = 31 * time.Minute
 
 type recoveryDownloadClient interface {
 	RecoveryDownload(context.Context, contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error)
@@ -899,6 +910,23 @@ func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, opera
 		return "", "", errors.New("daemon returned an empty repository operation")
 	}
 	return result.State, result.LastError, nil
+}
+
+// CreationProgress is CreationStatus with the initial publication's measured
+// progress from the same repo.lifecycle_status answer.
+func (adapter repositoryCreateAdapter) CreationProgress(ctx context.Context, operationID string) (string, string, *platform.ProgressMeasure, error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if result == nil {
+		return "", "", nil, errors.New("daemon returned an empty repository operation")
+	}
+	var progress *platform.ProgressMeasure
+	if measured := result.ImportProgress; measured != nil && measured.FilesTotal > 0 {
+		progress = &platform.ProgressMeasure{FilesDone: measured.FilesDone, FilesTotal: measured.FilesTotal, BytesSent: measured.BytesSent, BytesTotal: measured.BytesTotal}
+	}
+	return result.State, result.LastError, progress, nil
 }
 
 type repositoryLocateClient interface {

@@ -197,6 +197,7 @@ export default {
   "language.label": "Sprache der Oberfläche",
   "action.cancel": "Abbrechen",
   "action.continue": "Weiter",
+  "action.understood": "Verstanden",
   "action.close": "Schließen",
   "action.done": "Fertig",
   "action.change": "Ändern",

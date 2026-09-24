@@ -58,6 +58,32 @@ func TestProgressServiceEmitsStagesAndTheirEnd(t *testing.T) {
 	}
 }
 
+// The measured progress of the initial publication reaches the overlay on
+// its own wait (the repository is not in the snapshot yet); an update after
+// the wait closed brings nothing back.
+func TestUpdatableProgressCarriesTheMeasure(t *testing.T) {
+	service := newProgressService()
+	emitter := &progressEmitter{}
+	service.attachEmitter(emitter)
+	update, close, err := service.ShowUpdatableProgress(t.Context(), platform.ProgressRequest{PresentationKey: "progress.createRepository.import"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items := emitter.last().Items; len(items) != 1 || items[0].Measure != nil {
+		t.Fatalf("before the first report: %+v", items)
+	}
+	update(platform.ProgressMeasure{FilesDone: 120, FilesTotal: 330, BytesSent: 80 << 20, BytesTotal: 227 << 20})
+	items := emitter.last().Items
+	if len(items) != 1 || items[0].Measure == nil || *items[0].Measure != (ProgressMeasure{FilesDone: 120, FilesTotal: 330, BytesSent: 80 << 20, BytesTotal: 227 << 20}) {
+		t.Fatalf("after a report: %+v", items)
+	}
+	close()
+	update(platform.ProgressMeasure{FilesDone: 330, FilesTotal: 330})
+	if items := emitter.last().Items; len(items) != 0 {
+		t.Fatalf("an update revived a closed wait: %+v", items)
+	}
+}
+
 // The overlay exists only if app.js starts it and every language words it.
 func TestProgressOverlayIsWiredAndTranslated(t *testing.T) {
 	app, err := os.ReadFile(filepath.Join("frontend", "app.js"))

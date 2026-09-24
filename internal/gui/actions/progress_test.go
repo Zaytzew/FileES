@@ -123,6 +123,78 @@ func TestAwaitRepositorySettledStopsWithTheContext(t *testing.T) {
 	}
 }
 
+type measuredCreator struct {
+	polls    int32
+	statuses []string
+	progress []*platform.ProgressMeasure
+}
+
+func (c *measuredCreator) CreateRepository(context.Context, string, string, string) (string, error) {
+	return "op", nil
+}
+
+func (c *measuredCreator) CreationStatus(context.Context, string) (string, string, error) {
+	return "", "", errors.New("the measured path must be used")
+}
+
+func (c *measuredCreator) CreationProgress(context.Context, string) (string, string, *platform.ProgressMeasure, error) {
+	i := int(atomic.AddInt32(&c.polls, 1)) - 1
+	if i >= len(c.statuses) {
+		i = len(c.statuses) - 1
+	}
+	return c.statuses[i], "", c.progress[i], nil
+}
+
+type updatableProgress struct {
+	fakeProgress
+	updates []platform.ProgressMeasure
+}
+
+func (f *updatableProgress) ShowUpdatableProgress(ctx context.Context, request platform.ProgressRequest) (func(platform.ProgressMeasure), func(), error) {
+	close, err := f.ShowProgress(ctx, request)
+	return func(measure platform.ProgressMeasure) { f.updates = append(f.updates, measure) }, close, err
+}
+
+// The creation poll carries the initial publication's measured progress to
+// the import wait - the only place it can go, because the repository is not
+// in the snapshot yet. A poll without a measure (before sending starts)
+// changes nothing on screen.
+func TestCreationPollFeedsTheMeasuredImportProgress(t *testing.T) {
+	creator := &measuredCreator{
+		statuses: []string{"request_pending", "request_pending", "request_pending", "attached"},
+		progress: []*platform.ProgressMeasure{nil, {FilesDone: 0, FilesTotal: 330, BytesTotal: 227 << 20}, {FilesDone: 200, FilesTotal: 330, BytesSent: 150 << 20, BytesTotal: 227 << 20}, nil},
+	}
+	presenter := &updatableProgress{}
+	controller := &Controller{cfg: Config{Progress: presenter, RepositoryCreator: creator, CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: 5 * time.Second}}
+	update, close := controller.showUpdatableProgressKey(context.Background(), "progress.createRepository.import", nil, "T", "B")
+	controller.awaitCreationOutcome(context.Background(), "demo", "Projekt testowy", "op", update)
+	close()
+	want := []platform.ProgressMeasure{{FilesDone: 0, FilesTotal: 330, BytesTotal: 227 << 20}, {FilesDone: 200, FilesTotal: 330, BytesSent: 150 << 20, BytesTotal: 227 << 20}}
+	if len(presenter.updates) != len(want) || presenter.updates[0] != want[0] || presenter.updates[1] != want[1] {
+		t.Fatalf("updates = %+v", presenter.updates)
+	}
+	if atomic.LoadInt32(&presenter.closed) != 1 {
+		t.Fatal("the import wait was not closed")
+	}
+}
+
+// A presenter without ProgressUpdater still shows the wait; the update is a
+// harmless no-op.
+func TestUpdatableProgressFallsBackToThePlainWait(t *testing.T) {
+	plain := &fakeProgress{}
+	controller := &Controller{cfg: Config{Progress: plain}}
+	update, close := controller.showUpdatableProgressKey(context.Background(), "progress.createRepository.import", nil, "T", "B")
+	update(platform.ProgressMeasure{FilesDone: 1, FilesTotal: 2})
+	close()
+	if atomic.LoadInt32(&plain.calls) != 1 || atomic.LoadInt32(&plain.closed) != 1 {
+		t.Fatalf("plain presenter: calls=%d closed=%d", plain.calls, plain.closed)
+	}
+	none := &Controller{}
+	update, close = none.showUpdatableProgressKey(context.Background(), "k", nil, "T", "B")
+	update(platform.ProgressMeasure{})
+	close()
+}
+
 func TestShowProgressClosesTheWindowItOpened(t *testing.T) {
 	fake := &fakeProgress{}
 	controller := &Controller{cfg: Config{Progress: fake}}

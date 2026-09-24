@@ -1003,6 +1003,9 @@ type RepoLifecycleResult struct {
 	RecoveryPrepared      bool   `json:"recovery_prepared,omitempty"`
 	RecoveryKitPath       string `json:"recovery_kit_path,omitempty"`
 	LocalCleanupCompleted bool   `json:"local_cleanup_completed,omitempty"`
+	// ImportProgress follows the initial publication of a repository being
+	// created; absent outside it.
+	ImportProgress *PublishProgress `json:"import_progress,omitempty"`
 }
 
 type RepoActivityPayload struct {

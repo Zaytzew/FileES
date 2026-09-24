@@ -107,6 +107,12 @@ type RepositoryCreator interface {
 	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+// CreationProgressReader is the optional RepositoryCreator side of the
+// initial publication's measured progress, read with the same poll.
+type CreationProgressReader interface {
+	CreationProgress(ctx context.Context, operationID string) (state, lastError string, progress *platform.ProgressMeasure, err error)
+}
+
 type RepositoryAttacher interface {
 	AttachRepository(ctx context.Context, serverID, repoID, localPath string) (operationID string, err error)
 	AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error)
@@ -3047,10 +3053,10 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		// The picker has closed and the import runs for tens of seconds, during
 		// which the tray legitimately shows transient states. Without a window
 		// the user is left staring at those and reading them as failures.
-		closeImport := c.showProgressKey(ctx, "progress.createRepository.import", progressArgs, "Tworzenie repozytorium", displayName+" — trwa import początkowy…")
+		updateImport, closeImport := c.showUpdatableProgressKey(ctx, "progress.createRepository.import", progressArgs, "Tworzenie repozytorium", displayName+" — trwa import początkowy…")
 		defer closeImport()
 		closeServerStage()
-		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
+		c.awaitCreationOutcome(ctx, serverID, displayName, operationID, updateImport)
 		// "attached" only means the working copy is bound; the initial import
 		// keeps pushing after that. Hold the window for the rest of it.
 		c.awaitRepositorySettled(ctx, picked.Path)
@@ -3105,6 +3111,24 @@ func (c *Controller) showProgressKey(ctx context.Context, key string, args map[s
 		return func() {}
 	}
 	return close
+}
+
+// showUpdatableProgressKey is showProgressKey for a wait whose progress the
+// daemon measures. A presenter without ProgressUpdater gets the plain wait and
+// the update is a no-op; both returned functions are always safe to call.
+func (c *Controller) showUpdatableProgressKey(ctx context.Context, key string, args map[string]string, title, text string) (func(platform.ProgressMeasure), func()) {
+	updater, ok := c.cfg.Progress.(platform.ProgressUpdater)
+	if !ok {
+		return func(platform.ProgressMeasure) {}, c.showProgressKey(ctx, key, args, title, text)
+	}
+	update, close, err := updater.ShowUpdatableProgress(ctx, platform.ProgressRequest{PresentationKey: key, PresentationArgs: args, Title: title, Text: text})
+	if err != nil || close == nil {
+		return func(platform.ProgressMeasure) {}, func() {}
+	}
+	if update == nil {
+		update = func(platform.ProgressMeasure) {}
+	}
+	return update, close
 }
 
 // awaitRepositorySettled blocks while the working copy at localPath still has
@@ -3227,11 +3251,21 @@ func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoI
 	}
 }
 
+// creationStatus reads the lifecycle state and, from a creator that measures
+// it, the initial publication's progress - one daemon request either way.
+func (c *Controller) creationStatus(ctx context.Context, operationID string) (string, string, *platform.ProgressMeasure, error) {
+	if reader, ok := c.cfg.RepositoryCreator.(CreationProgressReader); ok {
+		return reader.CreationProgress(ctx, operationID)
+	}
+	state, lastError, err := c.cfg.RepositoryCreator.CreationStatus(ctx, operationID)
+	return state, lastError, nil, err
+}
+
 // awaitCreationOutcome polls the daemon for the real outcome of a
 // repository creation after the optimistic "started" toast, since
 // provisioning (storage preflight, repository creation, initial commit) all
 // run asynchronously in the daemon and would otherwise fail silently.
-func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, displayName, operationID string) {
+func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, displayName, operationID string, onProgress func(platform.ProgressMeasure)) {
 	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
 	if interval <= 0 {
 		interval = creationStatusPollInterval
@@ -3273,7 +3307,7 @@ func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, display
 			return
 		case <-timer.C:
 		}
-		state, lastError, err := c.cfg.RepositoryCreator.CreationStatus(pollCtx, operationID)
+		state, lastError, progress, err := c.creationStatus(pollCtx, operationID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -3287,6 +3321,9 @@ func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, display
 		}
 		lastStatusError = nil
 		delay = interval
+		if progress != nil && onProgress != nil {
+			onProgress(*progress)
+		}
 		switch state {
 		case "error":
 			body := displayName

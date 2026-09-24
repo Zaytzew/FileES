@@ -156,7 +156,7 @@ func (service *PromptService) SelectOne(ctx context.Context, request PromptSelec
 		Mode: "select", PresentationKey: request.PresentationKey,
 		PresentationArgs: maps.Clone(request.PresentationArgs),
 		Title:            request.Title, Text: request.Text, Label: request.Label,
-		Options: options, Default: defaultValue, ConfirmText: "Dalej", CancelText: "Anuluj",
+		Options: options, Default: defaultValue,
 	})
 	return PromptSelectResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err
 }
@@ -170,7 +170,7 @@ func (service *PromptService) ShowInfo(ctx context.Context, request platform.Inf
 	_, err := service.present(ctx, PromptSnapshot{
 		Mode: "info", PresentationKey: request.PresentationKey,
 		PresentationArgs: maps.Clone(request.PresentationArgs),
-		Title:            request.Title, Text: request.Text, ConfirmText: "Rozumiem",
+		Title:            request.Title, Text: request.Text,
 	})
 	return err
 }
@@ -178,12 +178,9 @@ func (service *PromptService) ShowInfo(ctx context.Context, request platform.Inf
 func (service *PromptService) present(ctx context.Context, snapshot PromptSnapshot) (PromptChoice, error) {
 	service.gate.Lock()
 	defer service.gate.Unlock()
-	if snapshot.ConfirmText == "" {
-		snapshot.ConfirmText = "Dalej"
-	}
-	if snapshot.Mode != "info" && snapshot.CancelText == "" {
-		snapshot.CancelText = "Anuluj"
-	}
+	// Empty button texts stay empty: the window words them in the interface
+	// language (action.continue, action.cancel, action.understood). A Polish
+	// default filled in here showed "Rozumiem" under an English error.
 	session := &promptSession{result: make(chan PromptChoice, 1)}
 	service.mu.Lock()
 	service.revision++

@@ -68,7 +68,7 @@
 <h1 id="ch2">Rozdział 2: Przewodnik użytkownika</h1>
 <div class="chapter-content">
 <h2 id="ch2-install">2.1 Instalacja klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Klient Wails jest obecnie dostępny w systemach Linux i Windows; w systemie Windows jedno MSI instaluje razem demona i GUI.</span></div>
-<h4>Linux (bieżący klient alfa Wails)</h4>
+<h4>Linux (pakiet tar.gz)</h4>
 <pre><code># Rozpakuj pakiet filees-client-linux-amd64
 chmod +x install-user.sh
 ./install-user.sh                     # instaluje do ~/.local/
@@ -79,12 +79,16 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <h4>Klient Windows (MSI)</h4>
 <p>Jeden plik <code>filees-&lt;wersja&gt;.msi</code> instaluje się bez uprawnień administratora do <code>%LOCALAPPDATA%\Programs\FileES</code>. Zawiera parę — demona <code>filees.exe</code>, który w tle pilnuje plików, i okno <code>filees-gui-wails.exe</code> — razem ze skryptami startowymi, skrótem w menu Start, skrótem na pulpicie i skrótem w folderze Autostart, więc FileES uruchamia się sam po najbliższym zalogowaniu.</p>
 <p>Instalator nie jest jeszcze podpisany certyfikatem, więc SmartScreen ostrzega przed uruchomieniem. Kontynuuj tylko wtedy, gdy wiesz, od kogo masz plik. Pierwsze uruchomienie zapisuje minimalny <code>config.json</code>; ani aktualizacja, ani odinstalowanie nie ruszają go, Twoich kopii roboczych ani Twoich plików. Aktualizacje przychodzą podpisanym kanałem (§2.7) albo przez instalację nowszego MSI na poprzednim.</p>
+<h4>Linux (AppImage)</h4>
+<p>Plik <code>FileES-&lt;wersja&gt;-x86_64.AppImage</code> jest najprostszą drogą: nadaj mu prawo wykonania (<code>chmod +x</code>) i uruchom. AppImage korzysta z tego samego instalatora co pakiet powyżej, więc instaluje parę demon + GUI w sesji użytkownika i nie nadpisuje istniejącego <code>config.json</code>. Przy nowej instalacji pyta o kanał aktualizacji (§2.7).</p>
+<h4>Microsoft Store</h4><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Pakiet przeszedł odbiór na czystym Windowsie; wariant ze Sklepu jest w certyfikacji Microsoft (2026-09).</span></div>
+<p>Wersja ze Sklepu Microsoft zawiera tę samą parę co MSI i odpowiada kanałowi beta: jest budowana bez funkcji w przygotowaniu, w tym bez kotwicy w Eksploratorze Windows. Aktualizacje dostarcza Sklep. MSI i wersja ze Sklepu wykluczają się: ta, którą uruchomisz jako drugą, zaproponuje usunięcie poprzedniej z zachowaniem ustawień.</p>
 <h4>Wymagania</h4>
 <div class="table-wrap"><table>
 <tr><th>Platforma</th><th>Wymagania</th></tr>
-<tr><td>Demon Linux</td><td><code>svn</code> i OpenSSH <code>ssh</code> w PATH, aktywowana tożsamość instalacji FileES oraz przypięty klucz serwera usługi; Go 1.25+ tylko przy budowie ze źródeł</td></tr>
+<tr><td>Demon Linux</td><td>aktywowana tożsamość instalacji FileES oraz przypięty klucz serwera usługi. Klient SSH i klient Subversion są wbudowane — systemowe <code>ssh</code> i <code>svn</code> nie są potrzebne. Go 1.25+ tylko przy budowie ze źródeł</td></tr>
 <tr><td>GUI Linux</td><td>GTK4 i WebKitGTK 6.0; pulpit zgodny z SNI (GNOME wymaga rozszerzenia AppIndicator); <code>xdg-open</code>; <code>notify-send</code> (opcjonalnie)</td></tr>
-<tr><td>Klient Windows</td><td>Windows 11 z WebView2 Runtime; instalacja z MSI</td></tr>
+<tr><td>Klient Windows</td><td>Windows 10 w wersji 2004 lub nowszej albo Windows 11, z WebView2 Runtime (w Windows 11 jest wbudowany); instalacja z MSI albo ze Sklepu. OpenSSH ani VBScript nie są potrzebne</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Konfiguracja</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przed utworzeniem stanu demon sprawdza konfigurację i wymusza rozłączne korzenie kopii roboczych.</span></div>
 <p>Bieżącą konfigurację instalacji zmieniasz w Ustawieniach (§2.6), nie przez edycję pliku. Demon nadal czyta <code>config.json</code> z katalogu roboczego (albo <code>--config</code>). Istniejący plik nie jest nadpisywany przy aktualizacji. Ścieżki kopii muszą być bezwzględne i nie mogą się zagnieżdżać. Tabela pól jest w <a href="operations.html#ops-config">Eksploatacji</a>.</p>
@@ -94,8 +98,11 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <p>Administrator serwera wysyła zaproszenie pocztą elektroniczną. Na swoim komputerze wybierz <strong>Aktywuj klienta na nowym serwerze…</strong>, wklej zaproszenie z pierwszej wiadomości, a następnie kod OTP z drugiej. Nie wpisujesz ręcznie adresu serwera, portu ani identyfikatora klienta. GUI prowadzi przez kolejne kroki, ale za połączenia sieciowe i zapis plików odpowiada demon.</p>
 <p>Zwykłe zaproszenie otwiera nową strefę. Aplikacja pyta wtedy jednorazowo o jej niezmienny alias. Zaproszenie związane z istniejącą strefą dziedziczy ten alias i jej foldery; nie jesteś pytany o zmianę nazwy. Opcjonalne foldery zostają niepodłączone, aż połączysz je w Ustawieniach.</p>
 <p>Jeżeli serwer przyjął aktywację, ale proces zatrzymał się przed zakończeniem, wybierz <strong>Wznów</strong>. Inne zaproszenie może zastąpić wyłącznie niedokończony stan. Istniejący <code>client-profile.json</code> stanowi twardą granicę i nie jest nadpisywany.</p>
+<h4>Wypróbowanie bez serwera: Demo</h4><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Aktywacja demo przeszła odbiór na czystym Windowsie (2026-09-24).</span></div>
+<p>Przycisk <strong>Demo</strong> aktywuje klienta na publicznym serwerze demonstracyjnym FileES bez zaproszenia: podajesz adres e-mail i wpisujesz kod z wiadomości. Konto demo działa 120 minut i ma 1 GB miejsca; potem serwer usuwa je razem z danymi. Jedna aktywacja demo przysługuje jednej instalacji. Na serwerze demo linki publiczne i półki przyjęcia plików można obejrzeć, ale nie przesyłają plików, a granty dla innych stref i parowanie telefonu są wyłączone — na własnym serwerze działają normalnie.</p>
 <h4>Dodawanie lokalnego katalogu</h4>
 <p>W Ustawieniach wybierz serwer, potem <strong>Połącz z lokalnym folderem</strong> (albo dodaj nowy folder, którego jesteś właścicielem). FileES sprawdza dostępne miejsce na serwerze, tworzy udział i publikuje pierwszy zrzut. Gdy miejsca brakuje, widzisz wymagany i dostępny rozmiar. Okno pokazuje błąd; operacja nie kończy się bez informacji o niepowodzeniu. Techniczne szczegóły tej operacji są opisane w <a href="operations.html#ops-provision">Eksploatacji</a>.</p>
+<p>Utworzenie repozytorium i pierwsza publikacja dużego folderu mogą potrwać. Na ten czas okno przykrywa nakładka z etapem, czasem i paskiem postępu (wysłane pliki i bajty). <strong>Pracuj w tle</strong> zwija ją do paska nad kafelkami; <strong>Pokaż</strong> przywraca nakładkę. Zamknięcie okna nie przerywa operacji — prowadzi ją demon.</p>
 <h2 id="ch2-sync">2.4 Codzienna synchronizacja</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Normalna praca, gromadzenie przy braku łączności, kontrolowane zamknięcie i uzgodnienie po restarcie są przetestowane.</span></div>
 <p>Po aktywacji demon działa bez interwencji użytkownika:</p>
 <ul>
@@ -222,6 +229,11 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <p>Automatyczne uruchamianie jest własnością instalatora bieżącego klienta, a nie trybem polecenia Wails. Na Linuksie instalator uruchamia parę: demona i GUI w sesji użytkownika. W systemie Windows MSI umieszcza skrót w folderze Autostart, a odinstalowanie go usuwa.</p>
 <h2 id="ch2-update">2.7 Podpisane aktualizacje pulpitu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane od początku do końca</span><span>Podpisane wydanie SVN, przebieg próbny, obecny instalator Linuksa, blokada cofnięcia wersji i kontrolowany restart GUI są pokryte odtwarzalnym testem integracyjnym.</span></div>
 <p>Aktualizacje programu na komputerze są opcjonalne. Program ma wbudowany jeden zaufany klucz publiczny; ustawienia nie pozwalają go zastąpić ani pominąć weryfikacji podpisu. Format pakietu aktualizacji i zasady ochrony przed instalacją starszego wydania opisuje rozdział „Eksploatacja”.</p>
+<h4>Kanały: alfa i beta</h4>
+<p>Wydania pulpitu ukazują się w dwóch podpisanych kanałach, budowanych z tej samej rewizji źródeł. <strong>Alfa</strong> zawiera wszystkie funkcje, także te w przygotowaniu (np. kotwicę w Eksploratorze Windows). <strong>Beta</strong> to odebrane wydanie bez funkcji w przygotowaniu; z niej pochodzi wersja ze Sklepu Microsoft. Nowa instalacja pyta o kanał; zmiana później:</p>
+<pre><code>filees update-channel --config /ścieżka/config.json        # odczyt
+filees update-channel beta --config /ścieżka/config.json   # zmiana, potem restart pary</code></pre>
+<p>Zmiana kanału nie cofa wersji: jeśli zainstalowana alfa jest nowsza niż beta, program czeka, aż beta ją dogoni.</p>
 <h4>Przepływ użytkownika</h4>
 <ol>
 <li>Zweryfikowane nowsze wydanie jest widoczne po kliknięciu pastylki wersji w nagłówku panelu.</li>

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 	"unicode/utf16"
 )
@@ -66,7 +67,15 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	stdout := nativeOutput{max: nativeListingLimit}
 	stderr := nativeOutput{max: nativeReceiptLimit}
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var splitter *progressSplitter
+	if report := commitProgressFrom(ctx); report != nil && slices.Contains(args, "--progress") {
+		splitter = &progressSplitter{report: report, inner: &stderr}
+		cmd.Stderr = splitter
+	}
 	err := cmd.Run()
+	if splitter != nil {
+		splitter.flush()
+	}
 	if err != nil || stdout.truncated || stderr.truncated {
 		// errors.Join keeps the deadline reachable by errors.Is: a killed
 		// process reports only "signal: killed", and losing the difference

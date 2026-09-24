@@ -824,6 +824,53 @@ static svn_error_t *collect_commit(const svn_commit_info_t *info, void *baton,
     return SVN_NO_ERROR;
 }
 
+/* commit --progress (feature commit_progress_v1).
+ *
+ * A first publication of a few gigabytes runs for minutes inside one
+ * svn_client_commit6 call, and until 2026-09-24 nothing came out of it before
+ * the receipt at the end: the interface could only say "in progress". Two
+ * libsvn callbacks now report while it runs, as lines on stderr that
+ * pkg/client strips before any diagnostic:
+ *
+ *   filees-progress\tfile      one file's content has been sent
+ *                                 (svn_wc_notify_commit_postfix_txdelta)
+ *   filees-progress\tbytes\tN  bytes the RA session has moved so far,
+ *                                 at most every 256 KiB
+ *
+ * stdout keeps the single JSON receipt; the progress lines never replace it. */
+static svn_boolean_t commit_progress_enabled = FALSE;
+static apr_off_t commit_progress_reported = -1;
+
+void filees_ra_commit_progress(svn_boolean_t enabled)
+{
+    commit_progress_enabled = enabled;
+}
+
+static void commit_progress_notify(void *baton, const svn_wc_notify_t *notify,
+                                   apr_pool_t *pool)
+{
+    (void)baton;
+    (void)pool;
+    if (notify->action == svn_wc_notify_commit_postfix_txdelta) {
+        fputs("filees-progress\tfile\n", stderr);
+        fflush(stderr);
+    }
+}
+
+static void commit_progress_bytes(apr_off_t progress, apr_off_t total,
+                                  void *baton, apr_pool_t *pool)
+{
+    (void)total;
+    (void)baton;
+    (void)pool;
+    if (progress < 0) return;
+    if (commit_progress_reported >= 0 && progress - commit_progress_reported < 256 * 1024) return;
+    commit_progress_reported = progress;
+    fprintf(stderr, "filees-progress\tbytes\t%" APR_OFF_T_FMT "\n", progress);
+    fflush(stderr);
+}
+
+
 /* filees_ra_commit publishes a named set of paths.
  *
  * depth is empty and commit_as_operations is TRUE, which together mean "these
@@ -890,6 +937,13 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
      * announcements ride in exactly that property. */
     ctx->log_msg_func3 = supply_log_message;
     ctx->log_msg_baton3 = (void *)message;
+
+    if (commit_progress_enabled) {
+        ctx->notify_func2 = commit_progress_notify;
+        ctx->notify_baton2 = NULL;
+        ctx->progress_func = commit_progress_bytes;
+        ctx->progress_baton = NULL;
+    }
 
     commit.revision = SVN_INVALID_REVNUM;
     commit.date = NULL;

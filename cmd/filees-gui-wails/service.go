@@ -11,6 +11,7 @@ import (
 
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
+	"filees/internal/gui/platform"
 	"filees/internal/gui/projectionmirror"
 	"filees/internal/gui/reponames"
 	"filees/internal/gui/tray"
@@ -40,19 +41,20 @@ type GUIService struct {
 	view                 guiapp.ViewModel
 	// daemonView is the model as the daemon sent it; view is what this client
 	// shows, with the names set on this computer (repo_names.go) laid over it.
-	daemonView           guiapp.ViewModel
-	repoNames            *reponames.Store
-	onRepoRenamed        func(serverID, repoID, name string)
-	runner               *guiapp.App
-	emitter              snapshotEmitter
-	actions              chan<- tray.Intent
-	actionSeq            atomic.Uint64
-	observer             func(Snapshot)
-	branding             realmBrandingClient
-	brandingByRealm      map[string]string
-	brandingRequested    map[string]bool
-	brandingKeyByServer  map[string]string
-	ctx                  context.Context
+	daemonView          guiapp.ViewModel
+	repoNames           *reponames.Store
+	onRepoRenamed       func(serverID, repoID, name string)
+	runner              *guiapp.App
+	emitter             snapshotEmitter
+	progress            *ProgressService
+	actions             chan<- tray.Intent
+	actionSeq           atomic.Uint64
+	observer            func(Snapshot)
+	branding            realmBrandingClient
+	brandingByRealm     map[string]string
+	brandingRequested   map[string]bool
+	brandingKeyByServer map[string]string
+	ctx                 context.Context
 }
 
 type Snapshot struct {
@@ -135,27 +137,33 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
-	CanDetachLocalCopy       bool                       `json:"can_detach_local_copy"`
-	ID                       string                     `json:"id"`
-	ServerID                 string                     `json:"server_id"`
-	DisplayName              string                     `json:"display_name"`
-	OwnName                  string                     `json:"own_name,omitempty"`
-	LocalPath                string                     `json:"local_path,omitempty"`
-	URL                      string                     `json:"url,omitempty"`
-	Attached                 bool                       `json:"attached"`
-	LocalProvisioning        bool                       `json:"local_provisioning,omitempty"`
-	Access                   string                     `json:"access"`
-	Ownership                string                     `json:"ownership"`
-	AttachmentPolicy         string                     `json:"attachment_policy"`
-	State                    string                     `json:"state"`
-	DisplayState             string                     `json:"display_state"`
-	Connectivity             string                     `json:"connectivity"`
-	LocalRevision            int64                      `json:"local_revision"`
-	HeadRevision             int64                      `json:"head_revision"`
-	WorkingCopyBytes         int64                      `json:"working_copy_bytes,omitempty"`
-	WorkingCopySizeKnown     bool                       `json:"working_copy_size_known,omitempty"`
-	PendingFiles             int                        `json:"pending_files"`
-	PendingBytes             int64                      `json:"pending_bytes"`
+	CanDetachLocalCopy   bool   `json:"can_detach_local_copy"`
+	ID                   string `json:"id"`
+	ServerID             string `json:"server_id"`
+	DisplayName          string `json:"display_name"`
+	OwnName              string `json:"own_name,omitempty"`
+	LocalPath            string `json:"local_path,omitempty"`
+	URL                  string `json:"url,omitempty"`
+	Attached             bool   `json:"attached"`
+	LocalProvisioning    bool   `json:"local_provisioning,omitempty"`
+	Access               string `json:"access"`
+	Ownership            string `json:"ownership"`
+	AttachmentPolicy     string `json:"attachment_policy"`
+	State                string `json:"state"`
+	DisplayState         string `json:"display_state"`
+	Connectivity         string `json:"connectivity"`
+	LocalRevision        int64  `json:"local_revision"`
+	HeadRevision         int64  `json:"head_revision"`
+	WorkingCopyBytes     int64  `json:"working_copy_bytes,omitempty"`
+	WorkingCopySizeKnown bool   `json:"working_copy_size_known,omitempty"`
+	PendingFiles         int    `json:"pending_files"`
+	PendingBytes         int64  `json:"pending_bytes"`
+	// Publish* is the publication running now (progress-overlay.js draws the
+	// bar from it); all zero when nothing is being sent.
+	PublishFilesDone         int                        `json:"publish_files_done,omitempty"`
+	PublishFilesTotal        int                        `json:"publish_files_total,omitempty"`
+	PublishBytesSent         int64                      `json:"publish_bytes_sent,omitempty"`
+	PublishBytesTotal        int64                      `json:"publish_bytes_total,omitempty"`
 	IntentResolutionRequired bool                       `json:"intent_resolution_required"`
 	CommitRecoveryRequired   bool                       `json:"commit_recovery_required"`
 	LastCommitAt             string                     `json:"last_commit_at,omitempty"`
@@ -419,6 +427,24 @@ func (service *GUIService) attachEmitter(emitter snapshotEmitter) {
 	service.mu.Lock()
 	service.emitter = emitter
 	service.mu.Unlock()
+}
+
+// attachProgress gives the action controller the overlay that explains long
+// waits (progress_service.go).
+func (service *GUIService) attachProgress(progress *ProgressService) {
+	service.mu.Lock()
+	service.progress = progress
+	service.mu.Unlock()
+}
+
+// progressPresenter is nil when no overlay is attached, never a typed nil.
+func (service *GUIService) progressPresenter() platform.ProgressPresenter {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.progress == nil {
+		return nil
+	}
+	return service.progress
 }
 
 func (service *GUIService) attachActions(actions chan<- tray.Intent) {
@@ -1054,6 +1080,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			WorkingCopyBytes: repo.WorkingCopyBytes, WorkingCopySizeKnown: repo.WorkingCopySizeKnown,
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
+			PublishFilesDone: publishField(repo.PublishProgress, "files_done"), PublishFilesTotal: publishField(repo.PublishProgress, "files_total"),
+			PublishBytesSent: publishBytes(repo.PublishProgress, false), PublishBytesTotal: publishBytes(repo.PublishProgress, true),
 			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
 			CommitRecoveryRequired:   repo.Attached && !repo.ServerDeleted && repo.CommitRecoveryRequired,
 			LastCommitAt:             repo.LastCommitAt,
@@ -1319,4 +1347,24 @@ func unportableNames(names []contract.UnportableName) []UnportableNameProjection
 		out = append(out, UnportableNameProjection{Path: name.Path, Kind: name.Kind, Detail: name.Detail})
 	}
 	return out
+}
+
+func publishField(progress *contract.PublishProgress, field string) int {
+	if progress == nil {
+		return 0
+	}
+	if field == "files_done" {
+		return progress.FilesDone
+	}
+	return progress.FilesTotal
+}
+
+func publishBytes(progress *contract.PublishProgress, total bool) int64 {
+	if progress == nil {
+		return 0
+	}
+	if total {
+		return progress.BytesTotal
+	}
+	return progress.BytesSent
 }

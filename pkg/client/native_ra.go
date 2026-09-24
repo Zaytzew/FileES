@@ -263,6 +263,10 @@ func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string
 	if marker != "" {
 		args = append(args, "--revprop", "filees:commit-id="+marker)
 	}
+	// Progress only from a helper that has it; an older one commits unchanged.
+	if commitProgressFrom(ctx) != nil && c.nativeRequireFeature(ctx, "commit_progress_v1") == nil {
+		args = append(args, "--progress")
+	}
 	args = append(args, "--targets-stdin")
 	r, e := c.nativeRemoteInput(ctx, wc, input, args...)
 	if e != nil {

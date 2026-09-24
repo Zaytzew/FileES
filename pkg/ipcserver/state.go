@@ -58,6 +58,7 @@ type RepoState struct {
 	lastSyncAt         time.Time
 	currentOp          *string
 	cycle              contract.CycleStatus
+	publishProgress    *contract.PublishProgress
 	passportIssues     []contract.PassportIssue
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
@@ -333,6 +334,24 @@ func (rs *RepoState) SetCycle(cycle contract.CycleStatus) {
 	rs.mu.Unlock()
 	if changed && srv != nil {
 		srv.Emit(srv.NewRepoEvent(id, contract.EvRepoCycleChanged, cycle))
+	}
+}
+
+// SetPublishProgress records the publication running now (nil when it ends)
+// and tells subscribers, so the interface can show how far it has got.
+func (rs *RepoState) SetPublishProgress(progress *contract.PublishProgress) {
+	rs.mu.Lock()
+	if progress != nil {
+		copied := *progress
+		progress = &copied
+	}
+	changed := (rs.publishProgress == nil) != (progress == nil) || (progress != nil && *rs.publishProgress != *progress)
+	rs.publishProgress = progress
+	srv := rs.server
+	id := rs.id
+	rs.mu.Unlock()
+	if changed && srv != nil {
+		srv.Emit(srv.NewRepoEvent(id, contract.EvSyncProgress, progress))
 	}
 }
 
@@ -614,6 +633,11 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	unportable := append([]contract.UnportableName(nil), rs.unportable...)
 	lastSync := rs.lastSyncAt
 	cycle := rs.cycle
+	var publishProgress *contract.PublishProgress
+	if rs.publishProgress != nil {
+		copied := *rs.publishProgress
+		publishProgress = &copied
+	}
 	var currentOp *string
 	if rs.currentOp != nil {
 		value := *rs.currentOp
@@ -669,6 +693,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		UnportableNames:        unportable,
 		CurrentOperation:       currentOp,
 		Cycle:                  cycle,
+		PublishProgress:        publishProgress,
 		Recovery:               recovery,
 		CommitRecoveryRequired: commitRecoveryRequired,
 		Purpose:                purpose,

@@ -166,6 +166,8 @@ func main() {
 	gui.attachRepoNames(repoNames, repository.renameContext)
 	prompts := newPromptService()
 	promptBridge := newPromptBridge(prompts)
+	progress := newProgressService()
+	gui.attachProgress(progress)
 	pairing := newPairingService()
 	// Wehikuł czasu talks to the daemon itself; refusals render through the
 	// same domain catalogue as every other daemon sentence.
@@ -208,6 +210,7 @@ func main() {
 	settings.attachEmitter(host.Event)
 	repository.attachEmitter(host.Event)
 	prompts.attachEmitter(host.Event)
+	progress.attachEmitter(host.Event)
 	pairing.attachEmitter(host.Event)
 	timeMachine.attachEmitter(host.Event)
 	headBrowser.attachEmitter(host.Event)

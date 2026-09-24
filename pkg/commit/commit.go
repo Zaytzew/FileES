@@ -116,6 +116,9 @@ type Service struct {
 	OnUnportableNames  func([]UnportableName)
 	OnCurrentOperation func(*string)
 	OnCycle            func(contract.CycleStatus)
+	// OnPublishProgress reports the publication running now (nil when it
+	// ends); see publish_progress.go.
+	OnPublishProgress func(*contract.PublishProgress)
 	// OnPublicationHeld reports that publication has stopped on a local fault
 	// (true) and that it has resumed (false). Without it a batch held forever
 	// left the tray, the radar and the server indicator green while nothing

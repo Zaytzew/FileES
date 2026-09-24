@@ -602,7 +602,7 @@ func (c *Controller) startJournal(ctx context.Context) {
 			Rows:  rows,
 		})
 		if err != nil && !errors.Is(err, context.Canceled) {
-			c.notify(ctx, platform.Notification{ID: "journal", Group: "journal", Title: c.uiText("feedback.n001", "Nie udało się otworzyć dziennika"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: "journal", Group: "journal", Title: c.uiText("feedback.n001", "Nie udało się otworzyć dziennika"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 		}
 	}()
 }
@@ -652,7 +652,7 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		defer c.endOperation(operationKey)
 		result, err := c.cfg.SettingsBrowser.ShowSettings(ctx, request)
 		if err != nil && ctx.Err() == nil {
-			c.notify(ctx, platform.Notification{ID: operationKey, Group: operationKey, Title: c.uiText("feedback.n002", "Nie udało się otworzyć okna FileES"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: operationKey, Group: operationKey, Title: c.uiText("feedback.n002", "Nie udało się otworzyć okna FileES"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		switch result.Action {
@@ -1723,7 +1723,7 @@ func (c *Controller) startLoadDump(ctx context.Context, serverID, repoID string)
 		}
 		if err := c.cfg.RepositoryDumpLoader.LoadDump(ctx, serverID, repoID); err != nil {
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "repository-load-dump." + repoID, Group: "repository-load-dump." + repoID, Title: c.uiText("feedback.n009", "Nie udało się rozpocząć odtwarzania z archiwum"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: "repository-load-dump." + repoID, Group: "repository-load-dump." + repoID, Title: c.uiText("feedback.n009", "Nie udało się rozpocząć odtwarzania z archiwum"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -1785,7 +1785,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		choice, err := c.cfg.RealmGrantBrowser.ShowRealmGrants(ctx, request)
 		if err != nil || choice.Action == platform.RealmGrantDialogClose {
 			if err != nil && ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n015", "Nie udało się otworzyć grantów"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n015", "Nie udało się otworzyć grantów"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -1821,7 +1821,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 			err = c.cfg.RealmGrants.Grant(ctx, serverID, repoID, recipient.RealmID, access)
 		}
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n018", "Nie udało się zmienić dostępu"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n018", "Nie udało się zmienić dostępu"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n019", "Dostęp został zaktualizowany"), Body: repo.DisplayName + " — " + label, Urgency: platform.UrgencyNormal})
@@ -1883,7 +1883,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 			}
 			choice, err := c.cfg.PublicShareBrowser.ShowPublicShares(ctx, request)
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n027", "Nie udało się otworzyć udostępnień"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n027", "Nie udało się otworzyć udostępnień"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				return
 			}
 			if choice.Action == platform.PublicShareDialogClose {
@@ -1933,7 +1933,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				return
 			}
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n030", "Nie udało się zmienić udostępnienia"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n030", "Nie udało się zmienić udostępnienia"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				continue
 			}
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n031", "Udostępnienie zostało zaktualizowane"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
@@ -2076,7 +2076,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			}
 			choice, err := c.cfg.UploadChannelBrowser.ShowUploadChannels(ctx, request)
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n042", "Nie udało się otworzyć półek przyjęcia"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n042", "Nie udało się otworzyć półek przyjęcia"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				return
 			}
 			if choice.Action == platform.UploadChannelDialogClose {
@@ -2131,7 +2131,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				return
 			}
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n044", "Nie udało się zmienić półki"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n044", "Nie udało się zmienić półki"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				continue
 			}
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n045", "Półka została zaktualizowana"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
@@ -2186,7 +2186,7 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 	}
 	choice, err := c.cfg.ShelfBrowser.ShowShelf(ctx, request)
 	if err != nil {
-		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n133", "Nie udało się otworzyć półki"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n133", "Nie udało się otworzyć półki"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 		return
 	}
 	if choice.Action == platform.ShelfDialogFetch {
@@ -2242,7 +2242,7 @@ func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID
 			}
 			choice, err := c.cfg.QuarantineBrowser.ShowQuarantine(ctx, request)
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n051", "Nie udało się otworzyć kwarantanny"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n051", "Nie udało się otworzyć kwarantanny"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				return
 			}
 			if choice.Action == platform.QuarantineDialogClose {
@@ -2256,11 +2256,11 @@ func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID
 			switch choice.Action {
 			case platform.QuarantineDialogHide:
 				if err := c.cfg.Quarantine.HideQuarantine(ctx, serverID, current.UploadID); err != nil {
-					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n054", "Nie udało się ukryć pliku"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n054", "Nie udało się ukryć pliku"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				}
 			case platform.QuarantineDialogFetch:
 				if err := c.saveQuarantinePayload(ctx, key, serverID, current); err != nil {
-					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n055", "Nie udało się pobrać pliku"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n055", "Nie udało się pobrać pliku"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				}
 			default:
 				return
@@ -2724,7 +2724,7 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{RealmName: server.RealmAlias, Title: fmt.Sprintf(c.uiText("visibility.title", "Widoczność strefy „%s”"), server.RealmAlias), Text: c.uiText("visibility.body", "Widoczna strefa może zostać wybrana jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczna; Nie — ukryta; Anuluj — bez zmian.")})
 		if err != nil || choice.Action == platform.RealmVisibilityDialogClose {
 			if err != nil && ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n061", "Nie udało się otworzyć widoczności strefy"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n061", "Nie udało się otworzyć widoczności strefy"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -2743,7 +2743,7 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			return
 		}
 		if err := c.cfg.RealmGrants.SetVisibility(ctx, serverID, visibility); err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n062", "Nie udało się zmienić widoczności"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n062", "Nie udało się zmienić widoczności"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		body := c.uiText("feedback.hidden", "Strefa jest teraz ukryta.")
@@ -2867,7 +2867,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			requested, err = realmbranding.PrepareLogo(requested.LeadingColor, http.DetectContentType(raw), raw)
 			if err != nil {
 				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.invalidLogo", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Logo jest nieprawidłowe", Text: err.Error()})
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n072", "Logo jest nieprawidłowe"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n072", "Logo jest nieprawidłowe"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				return
 			}
 		} else if current.LogoBase64 != "" {
@@ -2881,12 +2881,12 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 		}
 		requested, err = realmbranding.Normalize(requested)
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n074", "Wygląd udziałów jest nieprawidłowy"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n074", "Wygląd udziałów jest nieprawidłowy"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		if _, err := c.cfg.RealmBranding.SetPublicBranding(ctx, serverID, requested); err != nil {
 			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.brandingFailed", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Nie udało się zapisać wyglądu udziałów", Text: err.Error()})
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n075", "Nie udało się zapisać wyglądu udziałów"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n075", "Nie udało się zapisać wyglądu udziałów"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n076", "Wygląd udziałów został zapisany"), Body: c.uiText("feedback.n077", "Kolor i logo obowiązują we wszystkich publicznych udziałach tej strefy."), Urgency: platform.UrgencyNormal})
@@ -2946,7 +2946,7 @@ func (c *Controller) startStackLifecycle(ctx context.Context, restart bool) {
 				c.cfg.AbortRestart()
 			}
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "stack-lifecycle", Group: "stack-lifecycle", Title: c.uiText("feedback.n078", "Nie udało się zmienić stanu FileES"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: "stack-lifecycle", Group: "stack-lifecycle", Title: c.uiText("feedback.n078", "Nie udało się zmienić stanu FileES"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -3076,7 +3076,7 @@ func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string)
 		}
 		if err := c.cfg.MobilePairer.Launch(ctx, serverID); err != nil {
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "pair-mobile." + serverID, Group: "pair-mobile." + serverID, Title: c.uiText("feedback.n080", "Nie można sparować urządzenia mobilnego"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: "pair-mobile." + serverID, Group: "pair-mobile." + serverID, Title: c.uiText("feedback.n080", "Nie można sparować urządzenia mobilnego"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 		}
 	}()
@@ -3316,7 +3316,7 @@ func (c *Controller) repositoryCreationFailure(ctx context.Context, err error) {
 	if err == nil || ctx.Err() != nil {
 		return
 	}
-	c.notify(ctx, platform.Notification{ID: "repository-create", Group: "repository-create", Title: c.uiText("feedback.n088", "Nie można utworzyć repozytorium"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+	c.notify(ctx, platform.Notification{ID: "repository-create", Group: "repository-create", Title: c.uiText("feedback.n088", "Nie można utworzyć repozytorium"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 }
 
 func (c *Controller) startUpdate(ctx context.Context, apply bool) {
@@ -3435,7 +3435,7 @@ func (c *Controller) updateFailure(ctx context.Context, title string, err error)
 	if err == nil || ctx.Err() != nil {
 		return
 	}
-	c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: title, Body: err.Error(), Urgency: platform.UrgencyCritical})
+	c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: title, Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 }
 
 func (c *Controller) startServerInfo(ctx context.Context, serverID string) {
@@ -3874,7 +3874,7 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 	if risk {
 		presentationKey = "confirm.releaseRisk"
 	}
-	text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), reservationWorkingCopyAlias(server, reservation))
+	text := fmt.Sprintf("%s\nKopia robocza: %s\n\nPo zwolnieniu inne osoby będą mogły zablokować i edytować ten plik.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), reservationWorkingCopyAlias(server, reservation))
 	if risk {
 		text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
 	}
@@ -3898,7 +3898,7 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: c.uiText("feedback.n096", "Nie można zwolnić rezerwacji"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+			c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: c.uiText("feedback.n096", "Nie można zwolnić rezerwacji"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 		}
 		return false
 	}
@@ -3950,7 +3950,7 @@ func (c *Controller) startLockReleaseRequest(ctx context.Context, reservationID 
 			ServerID: reservation.ServerID, RepoID: reservation.RepoID, Path: reservation.Path, ObservedLockID: reservation.Token,
 		})
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: "lock_release.request." + reservation.ID, Group: "lock_release", Title: c.uiText("feedback.n098", "Nie wysłano prośby"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+			c.notify(ctx, platform.Notification{ID: "lock_release.request." + reservation.ID, Group: "lock_release", Title: c.uiText("feedback.n098", "Nie wysłano prośby"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: "lock_release.request." + reservation.ID, Group: "lock_release", Title: c.uiText("feedback.n099", "Prośba została wysłana"), Body: reservation.Path, Urgency: platform.UrgencyLow})
@@ -4004,7 +4004,7 @@ func (c *Controller) startLockReleaseDecision(ctx context.Context, requestID str
 			err = c.cfg.LockReleases.DismissLockRelease(ctx, decision)
 		}
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: "lock_release.decision." + request.ID, Group: "lock_release", Title: c.uiText("feedback.n100", "Nie zapisano odpowiedzi"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+			c.notify(ctx, platform.Notification{ID: "lock_release.decision." + request.ID, Group: "lock_release", Title: c.uiText("feedback.n100", "Nie zapisano odpowiedzi"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 			return
 		}
 		title := c.uiText("feedback.closedRequest", "Prośba została zamknięta")
@@ -4209,7 +4209,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			reservations, err := c.cfg.Reservations.ListReservations(ctx, server.ID)
 			if err != nil {
 				if ctx.Err() == nil {
-					c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: c.uiText("feedback.n104", "Nie można pobrać rezerwacji"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+					c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: c.uiText("feedback.n104", "Nie można pobrać rezerwacji"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 				}
 				return
 			}
@@ -4232,7 +4232,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 		})
 		if err != nil || ctx.Err() != nil {
 			if err != nil && ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: c.uiText("feedback.n105", "Błąd listy rezerwacji"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+				c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: c.uiText("feedback.n105", "Błąd listy rezerwacji"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 			}
 			return
 		}
@@ -4259,7 +4259,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			if risk {
 				presentationKey = "confirm.releaseRisk"
 			}
-			text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), entry.workingCopyAlias)
+			text := fmt.Sprintf("%s\nKopia robocza: %s\n\nPo zwolnieniu inne osoby będą mogły zablokować i edytować ten plik.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), entry.workingCopyAlias)
 			if risk {
 				text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
 			}
@@ -4274,7 +4274,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{ServerID: entry.serverID, RepoID: reservation.RepoID, Path: reservation.Path, ExpectedToken: reservation.Token, ConfirmRisk: risk})
 			if err != nil {
 				if ctx.Err() == nil {
-					c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: c.uiText("feedback.n096", "Nie można zwolnić rezerwacji"), Body: err.Error(), Urgency: platform.UrgencyNormal})
+					c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: c.uiText("feedback.n096", "Nie można zwolnić rezerwacji"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyNormal})
 				}
 				continue
 			}
@@ -4675,7 +4675,7 @@ func (c *Controller) startSetEditingPolicy(ctx context.Context, serverID, repoID
 		}
 		stored, err := c.cfg.RealmGrants.SetEditingPolicy(ctx, serverID, repoID, lockRequired)
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n111", "Nie udało się zmienić zasad edycji"), Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n111", "Nie udało się zmienić zasad edycji"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			return
 		}
 		body := c.uiText("feedback.freeEditing", "Pliki są znów edytowalne bez wypożyczania.")

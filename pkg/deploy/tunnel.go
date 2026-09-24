@@ -3,11 +3,9 @@ package deploy
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"filees/internal/processoutput"
@@ -23,39 +21,8 @@ const (
 	TunnelServerCommand = "filees tunnel-v1"
 )
 
-// Environment names shared by the parent process and the askpass child it
-// re-execs. They are part of an internal contract between two instances of
-// the same binary, never of the server protocol. The name of the OTP channel
-// itself stays platform-specific: it is a FIFO path on Linux and will be a
-// named pipe on Windows (implementation notes (not distributed) §4).
-const (
-	connectKeyEnv       = "FILEES_RECONNECT_KEY"
-	connectRequestIDEnv = "FILEES_DEPLOY_REQUEST_ID"
-)
-
-// scrubEnvironment drops the named variables from an inherited environment.
-// The bootstrap path relies on this so a hostile pre-set SSH_ASKPASS cannot
-// survive into the ssh child and redirect the OTP handoff.
-func scrubEnvironment(environment []string, names ...string) []string {
-	blocked := make(map[string]bool, len(names))
-	for _, name := range names {
-		blocked[name] = true
-	}
-	out := environment[:0:0]
-	for _, entry := range environment {
-		name := entry
-		if index := strings.IndexByte(entry, '='); index >= 0 {
-			name = entry[:index]
-		}
-		if !blocked[name] {
-			out = append(out, entry)
-		}
-	}
-	return out
-}
-
-// boundedDiagnostic keeps at most limit bytes of a child's stderr so a
-// failing ssh can explain itself without an unbounded buffer.
+// boundedDiagnostic keeps at most limit bytes of the tunnel command's stderr
+// so a failing session can explain itself without an unbounded buffer.
 type boundedDiagnostic struct {
 	data  []byte
 	limit int
@@ -110,9 +77,10 @@ func loadReconnectSigner(path string) (ssh.Signer, error) {
 	return signer, nil
 }
 
-// requireOpenSSH fails with a catalogued fault when no ssh is on PATH. FileES
-// uses the system OpenSSH client for the activation tunnel and for every SVN
-// connection. Windows ships it as an optional feature that a clean Windows
+// requireOpenSSH fails with a catalogued fault when no ssh is on PATH. The
+// activation tunnel no longer needs it (sshtunnel.go), but activation goes on
+// to check out the service working copy over svn+ssh, which still runs the
+// system OpenSSH client. Windows ships it as an optional feature that a clean Windows
 // Sandbox lacks, and the bare "exec: ssh: executable file not found in
 // %PATH%" told the user nothing about what to install (2026-09-24).
 func requireOpenSSH() error {
@@ -135,63 +103,4 @@ type TunnelSpec struct {
 	DeployRequestID    string
 	ReconnectPublicKey string
 	ServerProfile      ServerProfile
-}
-
-// OpenSSHArgs returns the only outer SSH command shape supported by FileES.
-// Login, command and forwarding policy are compiled into the client. The
-// installation profile supplies only the endpoint and its pinned host keys.
-func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
-	if err := spec.ServerProfile.validate(); err != nil {
-		return nil, err
-	}
-	if err := (TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey}).Validate(); err != nil {
-		return nil, err
-	}
-	if spec.RemotePort < 1 || spec.RemotePort > 65535 {
-		return nil, errors.New("bootstrap remote port is outside 1..65535")
-	}
-	host, port, err := net.SplitHostPort(spec.HelperEndpoint.Address)
-	if err != nil {
-		return nil, fmt.Errorf("helper endpoint: %w", err)
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return nil, errors.New("reverse tunnel destination must be loopback")
-	}
-	localPort, err := strconv.Atoi(port)
-	if err != nil || localPort < 1 || localPort > 65535 {
-		return nil, errors.New("helper endpoint port is invalid")
-	}
-	knownHosts := filepath.Clean(strings.TrimSpace(spec.ServerProfile.KnownHostsPath))
-	if knownHosts == "." || !filepath.IsAbs(knownHosts) {
-		return nil, errors.New("pinned known_hosts path must be absolute")
-	}
-	forward := fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", spec.RemotePort, localPort)
-	serverHost, serverPort := spec.ServerProfile.hostAndPort()
-	args := []string{
-		"-F", "/dev/null",
-		"-p", serverPort,
-		"-l", TunnelUser,
-		"-T",
-		"-o", "ExitOnForwardFailure=yes",
-		"-o", "StrictHostKeyChecking=yes",
-		"-o", "HostKeyAlgorithms=ssh-ed25519",
-		"-o", "UserKnownHostsFile=" + knownHosts,
-		"-o", "GlobalKnownHostsFile=/dev/null",
-		"-o", "ForwardAgent=no",
-		"-o", "ForwardX11=no",
-		"-o", "PermitLocalCommand=no",
-		"-o", "EnableEscapeCommandline=no",
-		"-o", "PubkeyAuthentication=no",
-		"-o", "PreferredAuthentications=keyboard-interactive",
-		"-o", "NumberOfPasswordPrompts=1",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
-		"-o", "TCPKeepAlive=no",
-		"-o", "LogLevel=ERROR",
-		"-R", forward,
-		serverHost,
-		TunnelServerCommand,
-	}
-	return args, nil
 }

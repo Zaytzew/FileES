@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"filees/internal/processoutput"
+	"filees/pkg/errcat"
 	"filees/pkg/privatefile"
 
 	"golang.org/x/crypto/ssh"
@@ -106,6 +108,18 @@ func loadReconnectSigner(path string) (ssh.Signer, error) {
 		return nil, errors.New("reconnect private key must be unencrypted Ed25519")
 	}
 	return signer, nil
+}
+
+// requireOpenSSH fails with a catalogued fault when no ssh is on PATH. FileES
+// uses the system OpenSSH client for the activation tunnel and for every SVN
+// connection. Windows ships it as an optional feature that a clean Windows
+// Sandbox lacks, and the bare "exec: ssh: executable file not found in
+// %PATH%" told the user nothing about what to install (2026-09-24).
+func requireOpenSSH() error {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		return errcat.Of("ACTIVATION-1005", errcat.KeyActivationNoOpenSSH, nil, err)
+	}
+	return nil
 }
 
 func tunnelCommandError(label string, err error, diagnostic string) error {

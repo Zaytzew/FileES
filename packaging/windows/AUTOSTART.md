@@ -23,6 +23,20 @@ poniżej opisują starszą instalację; dla niej ręczne zatrzymanie nadzorcy
 przed podmianą nadal obowiązuje. Cross-build nie dowodzi zachowania COM,
 PowerShell, mutexu ani skrótów na Windows.
 
+## Bez VBScriptu — `filees-launch.exe`, 2026-09-24
+
+Czysty Windows (Windows Sandbox) odpowiedział na skrót „Brak aparatu skryptów
+dla rozszerzenia .vbs” i FileES się nie uruchomił: Microsoft wycofuje
+VBScript i nowe instalacje coraz częściej go nie mają. Od tej zmiany skróty
+Start, pulpitu i autostartu MSI wskazują `filees-launch.exe` (`--show` dla
+interaktywnych). To program okienkowy (`-H=windowsgui`), który uruchamia
+`start-filees.ps1` przez `powershell.exe` z `CREATE_NO_WINDOW` i nie czeka —
+ta sama własność, dla której istniał shim: brak jakiegokolwiek okna konsoli.
+
+`start-filees.vbs` nadal jest w paczce i w MSI: instalacje ze skrótami
+utworzonymi przez starsze MSI wskazują wscript do najbliższego upgrade MSI,
+a samoaktualizacja utrzymuje ten plik. Opis niżej, o `wscript`, dotyczy tych
+starszych skrótów.
 ## Co jest zainstalowane
 
 Katalog produkcyjny: `%LOCALAPPDATA%\Programs\FileES\`

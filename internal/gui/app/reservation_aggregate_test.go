@@ -40,11 +40,22 @@ func TestServerWithNoAnsweredSourceStaysUnknown(t *testing.T) {
 	if state != string(contract.ReservationSourceUnknown) || asOf != "" {
 		t.Fatalf("state=%q asOf=%q, want unknown with no stamp", state, asOf)
 	}
-	if state, _ := aggregateReservationProjection(nil, true); state != string(contract.ReservationSourceUnknown) {
-		t.Fatalf("no sources at all = %q, want unknown", state)
-	}
 	if state, _ := aggregateReservationProjection([]contract.ReservationSource{src(contract.ReservationSourceFresh, time.Now())}, false); state != string(contract.ReservationSourceUnknown) {
 		t.Fatal("an unknown server must stay unknown regardless of its sources")
+	}
+}
+
+// A server with no repositories answers with no sources: nothing is missing,
+// there is simply nowhere a lock could be. Reading it as unknown put "0+?" on
+// the first screen after every fresh activation.
+func TestServerWithNoRepositoriesIsComplete(t *testing.T) {
+	for _, sources := range [][]contract.ReservationSource{nil, {}} {
+		if state, asOf := aggregateReservationProjection(sources, true); state != string(contract.ReservationSourceFresh) || asOf != "" {
+			t.Fatalf("no sources = %q/%q, want fresh with no stamp", state, asOf)
+		}
+	}
+	if state, _ := aggregateReservationProjection(nil, false); state != string(contract.ReservationSourceUnknown) {
+		t.Fatal("a server whose list failed must stay unknown even with no sources")
 	}
 }
 

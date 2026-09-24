@@ -40,6 +40,9 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := requireOpenSSH(); err != nil {
+		return err
+	}
 	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey})
 	if err != nil {
 		return err
@@ -104,6 +107,9 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyPath string) error {
 	args, err := OpenSSHArgs(spec)
 	if err != nil {
+		return err
+	}
+	if err := requireOpenSSH(); err != nil {
 		return err
 	}
 	signer, err := loadReconnectSigner(privateKeyPath)
@@ -227,4 +233,3 @@ func writeOTPOnce(ctx context.Context, fifo string, otp []byte) error {
 		}
 	}
 }
-

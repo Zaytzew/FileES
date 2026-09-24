@@ -455,6 +455,16 @@ func aggregateReservationProjection(sources []contract.ReservationSource, known 
 	if !known {
 		return string(contract.ReservationSourceUnknown), ""
 	}
+	// No sources at all is a complete answer, not a missing one: the daemon
+	// sends one source per repository and answers an activated server with no
+	// repositories with an empty list (pkg/ipcserver repo.reservation_list).
+	// Without a working copy there is nowhere a lock of ours could live.
+	// Reading it as unknown showed "0+?" and "current data unavailable" on
+	// the first screen after every fresh activation (Windows Sandbox,
+	// 2026-09-24).
+	if len(sources) == 0 {
+		return string(contract.ReservationSourceFresh), ""
+	}
 	// A source is "unknown" both when the server could not answer for it and
 	// when it was never asked at all: the coordinator only queries
 	// repositories in state "active" (cmd/filees/reservation_projection.go).

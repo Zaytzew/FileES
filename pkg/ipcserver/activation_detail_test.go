@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 )
 
 type failingActivationService struct{ err error }
@@ -83,5 +85,32 @@ func TestActivationFinishAndResumeCarryTheirCause(t *testing.T) {
 	resume := server.handleActivationResume(contract.Request{RequestID: "req-3", Payload: resumePayload})
 	if resume.Error == nil || resume.Error.Details["detail"] == "" {
 		t.Fatalf("activation resume discards its cause: %+v", resume.Error)
+	}
+}
+
+// Without ssh on PATH no retry can help, so the generic "could not finish" with
+// Go's "executable file not found in %PATH%" as its detail was the wrong answer
+// (clean Windows Sandbox, 2026-09-24). Both steps that start a tunnel must name
+// the missing client instead, and a wrapped fault must still be recognised.
+func TestActivationWithoutOpenSSHSaysWhatToInstall(t *testing.T) {
+	server := New(t.TempDir() + "/daemon.sock")
+	missing := errcat.Of("ACTIVATION-1005", errcat.KeyActivationNoOpenSSH, nil, errors.New(`exec: "ssh": executable file not found in %PATH%`))
+	server.SetActivationService(failingActivationService{err: fmt.Errorf("activation: %w", missing)})
+
+	finishPayload, err := json.Marshal(contract.ActivationFinishPayload{ServerID: "demo", OTP: contract.Secret("123456")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumePayload, err := json.Marshal(contract.ActivationResumePayload{ServerID: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, resp := range map[string]contract.Response{
+		"finish": server.handleActivationFinish(contract.Request{RequestID: "req-4", Payload: finishPayload}),
+		"resume": server.handleActivationResume(contract.Request{RequestID: "req-5", Payload: resumePayload}),
+	} {
+		if resp.Error == nil || resp.Error.Code != "ACTIVATION-1005" || resp.Error.MessageKey != "activation.openssh_missing" {
+			t.Fatalf("%s without OpenSSH = %+v, want ACTIVATION-1005 activation.openssh_missing", name, resp.Error)
+		}
 	}
 }

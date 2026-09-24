@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"filees/pkg/onboarding"
 	"filees/pkg/privatefile"
@@ -37,6 +39,60 @@ const askpassServerPIDEnv = "FILEES_ASKPASS_PIPE_SERVER_PID"
 // to — see implementation notes (not distributed) §4.
 const otpPipePrefix = `\\.\pipe\filees-bootstrap-`
 
+// askpassAlias is the Store package's execution alias for filees.exe
+// (packaging/windows/AppxManifest.xml.in). Windows refuses to start an
+// executable inside WindowsApps by its path from outside the package: OpenSSH
+// failed with "CreateProcessW failed error:5" in a clean Windows Sandbox on
+// 2026-09-24, so no Store installation could ever activate. The alias is the
+// sanctioned way in, and the process it starts carries the package identity.
+const askpassAlias = "filees-askpass.exe"
+
+var getCurrentPackageFamilyName = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetCurrentPackageFamilyName")
+
+// packageFamilyName answers the family name of the package this process runs
+// from, or "" for an unpackaged (MSI) process.
+func packageFamilyName() (string, error) {
+	var length uint32
+	result, _, _ := getCurrentPackageFamilyName.Call(uintptr(unsafe.Pointer(&length)), 0)
+	switch result {
+	case 15700: // APPMODEL_ERROR_NO_PACKAGE
+		return "", nil
+	case 122: // ERROR_INSUFFICIENT_BUFFER: packaged, length now set
+	default:
+		return "", fmt.Errorf("GetCurrentPackageFamilyName returned %d", result)
+	}
+	buffer := make([]uint16, length)
+	if result, _, _ = getCurrentPackageFamilyName.Call(uintptr(unsafe.Pointer(&length)), uintptr(unsafe.Pointer(&buffer[0]))); result != 0 {
+		return "", fmt.Errorf("GetCurrentPackageFamilyName returned %d", result)
+	}
+	return windows.UTF16ToString(buffer), nil
+}
+
+// askpassExecutable is what OpenSSH starts as SSH_ASKPASS: this executable
+// for an MSI installation, the package's execution alias for a Store one.
+// The alias under the package family's own folder is preferred because the
+// user can switch off the top-level one in Settings > App execution aliases.
+func askpassExecutable() (string, error) {
+	family, err := packageFamilyName()
+	if err != nil {
+		return "", err
+	}
+	if family == "" {
+		return os.Executable()
+	}
+	local := os.Getenv("LOCALAPPDATA")
+	if local == "" {
+		return "", errors.New("LOCALAPPDATA is not set; the package execution alias cannot be found")
+	}
+	aliases := filepath.Join(local, "Microsoft", "WindowsApps")
+	for _, candidate := range []string{filepath.Join(aliases, family, askpassAlias), filepath.Join(aliases, askpassAlias)} {
+		if _, err := os.Lstat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("package execution alias %s is missing from %s", askpassAlias, aliases)
+}
+
 func AskpassConfigured() bool {
 	return os.Getenv(askpassPipeEnv) != "" || os.Getenv(connectKeyEnv) != ""
 }
@@ -52,11 +108,14 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := requireOpenSSH(); err != nil {
+		return err
+	}
 	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey})
 	if err != nil {
 		return err
 	}
-	executable, err := os.Executable()
+	executable, err := askpassExecutable()
 	if err != nil {
 		return err
 	}
@@ -133,6 +192,9 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 	if err != nil {
 		return err
 	}
+	if err := requireOpenSSH(); err != nil {
+		return err
+	}
 	signer, err := loadReconnectSigner(privateKeyPath)
 	if err != nil {
 		return err
@@ -145,7 +207,7 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 	if err != nil {
 		return err
 	}
-	executable, err := os.Executable()
+	executable, err := askpassExecutable()
 	if err != nil {
 		return err
 	}

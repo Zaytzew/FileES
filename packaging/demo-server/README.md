@@ -35,3 +35,11 @@ Fakty na stronie muszą zgadzać się z polityką demo:
 - zapis aktywacji usuwany po 14 dniach (r1491).
 
 Przy zmianie polityki trzeba zaktualizować także tę stronę.
+
+## Historia wdrożeń
+
+- **2026-09-24, r1525.** Wdrożone za zgodą właściciela w trakcie
+  certyfikacji Sklepu. Plik jest statyczny i nie dotyka usług FileES.
+  Poprzednia wersja (657 B) leży w `/root/demo-index.html.before-20260924`.
+  SHA-256 `00c7a009…e2` jest zgodny z repozytorium, a linki publiczne nadal
+  trafiają do FastCGI.

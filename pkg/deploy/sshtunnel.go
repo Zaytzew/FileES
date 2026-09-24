@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"filees/pkg/onboarding"
+	"filees/pkg/sshlink"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -35,7 +36,7 @@ import (
 //	-R 127.0.0.1:remote:127.0.0.1:helper, ExitOnForwardFailure=yes
 //	                              -> client.Listen before the command runs
 //	ServerAliveInterval=15, ServerAliveCountMax=2, TCPKeepAlive=no
-//	                              -> keepalive@openssh.com probes
+//	                              -> pkg/sshlink keepalive probes
 //	ForwardAgent/X11/LocalCommand/escape characters
 //	                              -> not implemented, so nothing to disable
 //
@@ -143,37 +144,8 @@ func runSSHTunnel(ctx context.Context, label string, spec TunnelSpec, answer tun
 	client := ssh.NewClient(clientConn, channels, requests)
 	defer client.Close()
 
-	// cause is why this side closed the connection, read after the session.
-	var causeMu sync.Mutex
-	var cause error
-	closeWith := func(err error) {
-		causeMu.Lock()
-		first := cause == nil
-		if first {
-			cause = err
-		}
-		causeMu.Unlock()
-		if first {
-			_ = client.Close()
-		}
-	}
-	closedBecause := func() error {
-		causeMu.Lock()
-		defer causeMu.Unlock()
-		return cause
-	}
-	stop := make(chan struct{})
-	defer close(stop)
-	go func() {
-		select {
-		case <-ctx.Done():
-			closeWith(ctx.Err())
-		case <-stop:
-		}
-	}()
-	go keepAlive(client, stop, func() {
-		closeWith(fmt.Errorf("Timeout, server %s not responding.", endpoints.host))
-	})
+	link := sshlink.Watch(ctx, client, tunnelAliveInterval, tunnelAliveCountMax, endpoints.host)
+	defer link.Stop()
 
 	listener, err := client.Listen("tcp", endpoints.remote)
 	if err != nil {
@@ -184,7 +156,7 @@ func runSSHTunnel(ctx context.Context, label string, spec TunnelSpec, answer tun
 
 	session, err := client.NewSession()
 	if err != nil {
-		return tunnelCommandError(label, tunnelCause(closedBecause(), err), "")
+		return tunnelCommandError(label, link.Cause(err), "")
 	}
 	defer session.Close()
 	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
@@ -196,7 +168,7 @@ func runSSHTunnel(ctx context.Context, label string, spec TunnelSpec, answer tun
 		if errors.As(err, &exit) {
 			err = fmt.Errorf("exit status %d", exit.ExitStatus())
 		}
-		return tunnelCommandError(label, tunnelCause(closedBecause(), err), diagnostic.String())
+		return tunnelCommandError(label, link.Cause(err), diagnostic.String())
 	}
 	return nil
 }
@@ -239,49 +211,6 @@ func handshakeError(endpoints tunnelEndpoints, err error) error {
 		return fmt.Errorf("%s: Permission denied (keyboard-interactive): %w", endpoints.host, err)
 	default:
 		return err
-	}
-}
-
-// tunnelCause prefers the reason this side closed the connection (keepalive
-// timeout, cancellation) over the error the closing produced.
-func tunnelCause(cause, err error) error {
-	if cause != nil {
-		return cause
-	}
-	return err
-}
-
-// keepAlive is ServerAliveInterval=15 with ServerAliveCountMax=2: a probe
-// every interval, and the connection is given up after two in a row went
-// unanswered. Any reply counts, including a refusal of the request itself.
-func keepAlive(client *ssh.Client, stop <-chan struct{}, dead func()) {
-	ticker := time.NewTicker(tunnelAliveInterval)
-	defer ticker.Stop()
-	missed := 0
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-		}
-		replied := make(chan struct{})
-		go func() {
-			if _, _, err := client.SendRequest("keepalive@openssh.com", true, nil); err == nil {
-				close(replied)
-			}
-		}()
-		select {
-		case <-stop:
-			return
-		case <-replied:
-			missed = 0
-		case <-time.After(tunnelAliveInterval):
-			missed++
-			if missed >= tunnelAliveCountMax {
-				dead()
-				return
-			}
-		}
 	}
 }
 

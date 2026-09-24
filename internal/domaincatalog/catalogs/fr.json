@@ -9,7 +9,6 @@
     "activation.finish_failed": "Impossible de terminer l’activation",
     "activation.pending_failed": "Impossible de lire l’activation en attente",
     "activation.resume_failed": "Impossible de reprendre l’activation",
-    "activation.openssh_missing": "Le client OpenSSH (ssh) est absent ; sans lui, FileES ne peut pas joindre de serveur. Sous Windows : Paramètres → Système → Fonctionnalités facultatives → Client OpenSSH",
     "activation.unavailable": "L’activation n’est pas disponible pour le moment",
     "auth.failed": "Le serveur n’a pas accepté ces identifiants d’accès",
     "auth.session_ended": "Le serveur a mis fin à cette session. Réessayez dans un instant",

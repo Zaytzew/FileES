@@ -31,6 +31,7 @@ import (
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
 	"filees/pkg/shout"
+	"filees/pkg/sshexec"
 	"filees/pkg/talk"
 	"filees/pkg/tickets"
 	"filees/pkg/whaleclient"
@@ -62,6 +63,16 @@ func (lifecycle *daemonLifecycle) Restart() {
 }
 
 func main() {
+	// Subversion's svn+ssh tunnel (SVN_SSH, pkg/client): FileES's own SSH
+	// client, so nothing here needs the system OpenSSH (pkg/sshexec).
+	if len(os.Args) > 1 && os.Args[1] == "ssh-exec" {
+		os.Exit(sshexec.Main(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if executable, err := os.Executable(); err == nil {
+		if err := client.UseSSHTunnelProgram(executable); err != nil {
+			fmt.Fprintln(os.Stderr, "filees: svn+ssh stays on the system OpenSSH:", err)
+		}
+	}
 	// Version/help and IPC-only commands remain available for diagnosing a
 	// damaged runtime. Any daemon startup prepares native code before clients.
 	if len(os.Args) == 1 || os.Args[1] == "daemon" || os.Args[1] == "native-runtime" || os.Args[1] == "native-exec" {

@@ -159,22 +159,23 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID              string // set from Run(); used by emit()
-	wc                  string // set from Run(); local shout inbox / last_seen
-	mu                  sync.Mutex
-	unportableWake      chan struct{}
-	wcOpMu              sync.Mutex               // serialize publication, poll/update and event merging
-	cacheSaveMu         sync.Mutex               // serialize cache snapshots and their durable replacement
-	staging             map[string]*stageItem    // rel path -> info
-	cachePath           string                   // .filees/commit_cache/cache.json
-	intentPlan          *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
-	commitRecoveryPlan  *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
-	intentReceipts      []intentReceipt          // guarded by mu; atomically stored with staging
-	intentDiagnosticKey string                   // guarded by wcOpMu; diagnostics only
-	intentDiagnosticAt  time.Time
-	receivedDeletes     map[string]bool // successful update removals, guarded by wcOpMu
-	lastShout           time.Time
-	lastCommit          time.Time // last successful commit (for size-adaptive interval)
+	repoID               string // set from Run(); used by emit()
+	wc                   string // set from Run(); local shout inbox / last_seen
+	mu                   sync.Mutex
+	unportableWake       chan struct{}
+	wcOpMu               sync.Mutex               // serialize publication, poll/update and event merging
+	commitRecoveryCached atomic.Bool              // last CommitRecoveryRequired answer, for callers that must not wait on wcOpMu
+	cacheSaveMu          sync.Mutex               // serialize cache snapshots and their durable replacement
+	staging              map[string]*stageItem    // rel path -> info
+	cachePath            string                   // .filees/commit_cache/cache.json
+	intentPlan           *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
+	commitRecoveryPlan   *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
+	intentReceipts       []intentReceipt          // guarded by mu; atomically stored with staging
+	intentDiagnosticKey  string                   // guarded by wcOpMu; diagnostics only
+	intentDiagnosticAt   time.Time
+	receivedDeletes      map[string]bool // successful update removals, guarded by wcOpMu
+	lastShout            time.Time
+	lastCommit           time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.

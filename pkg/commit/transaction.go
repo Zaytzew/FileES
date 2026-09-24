@@ -24,11 +24,23 @@ type commitRecoveryPlanState struct {
 	expires                     time.Time
 }
 
+// CommitRecoveryRequired is part of every repo.status the interface asks for.
+// It must not wait for wcOpMu: a publication or update holds that lock while it
+// talks to the server, and when the server's address stops answering the
+// connect hangs for as long as the timeout. repo.status then outlived the
+// interface's 10-second call limit and the interface reported the *daemon* as
+// unreachable during a server outage (owner's report, 2026-09-24). While the
+// lock is busy the last answer stands - a running publication is not one that
+// needs recovery.
 func (s *Service) CommitRecoveryRequired() bool {
-	s.wcOpMu.Lock()
+	if !s.wcOpMu.TryLock() {
+		return s.commitRecoveryCached.Load()
+	}
 	defer s.wcOpMu.Unlock()
 	in, err := s.readIntent(s.wc)
-	return err != nil || (in != nil && in.Phase == "attempting")
+	required := err != nil || (in != nil && in.Phase == "attempting")
+	s.commitRecoveryCached.Store(required)
+	return required
 }
 
 // PlanCommitRecovery proves that an attempted transaction has no possible

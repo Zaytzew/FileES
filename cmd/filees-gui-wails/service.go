@@ -1263,9 +1263,13 @@ func projectFreshness(vm guiapp.ViewModel) FreshnessProjection {
 			state = "server_unverified"
 		}
 		return FreshnessProjection{
-			State:             state,
-			ServerName:        firstNonBlank(first.server.DisplayName, first.server.ID),
-			Since:             firstNonBlank(first.server.ViewGeneratedAt, first.server.ViewSyncedAt),
+			State:      state,
+			ServerName: firstNonBlank(first.server.DisplayName, first.server.ID),
+			// The last time the server confirmed the data, not when it generated
+			// the view: an unchanged view is generated rarely, and "data from
+			// 27 hours ago" after a two-minute outage read as long-stale data
+			// (owner's report, 2026-09-24).
+			Since:             firstNonBlank(first.server.ViewSyncedAt, first.server.ViewGeneratedAt),
 			Reason:            first.server.ViewSyncError,
 			AdditionalServers: len(stale) - 1,
 		}

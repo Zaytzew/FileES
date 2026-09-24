@@ -202,6 +202,7 @@ export default {
   "language.label": "Idioma de la interfaz",
   "action.cancel": "Cancelar",
   "action.continue": "Continuar",
+  "action.understood": "Entendido",
   "action.close": "Cerrar",
   "action.done": "Listo",
   "action.change": "Cambiar",

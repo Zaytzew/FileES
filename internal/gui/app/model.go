@@ -487,7 +487,20 @@ func (vm ViewModel) CanSetSessionTimeout() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerSetSessionTimeout)
 }
 func (vm ViewModel) CanPairMobile() bool {
-	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapMobilePairingBegin)
+	_, pairable := vm.PairableServer()
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapMobilePairingBegin) && pairable
+}
+
+// PairableServer answers the first server a phone can be paired with. A demo
+// server refuses MOBILE_PAIRING by policy (one activation per realm, since
+// 2026-09-17), so offering "Pair" there only produced MOBILE-1002.
+func (vm ViewModel) PairableServer() (ServerViewModel, bool) {
+	for _, server := range vm.Servers {
+		if server.DemoExpiresAt == "" {
+			return server, true
+		}
+	}
+	return ServerViewModel{}, false
 }
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)

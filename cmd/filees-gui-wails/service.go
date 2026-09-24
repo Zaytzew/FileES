@@ -742,10 +742,11 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentActivateDemo):
 		return tray.Intent{Kind: tray.IntentActivateDemo}, vm.CanActivateDemo()
 	case string(tray.IntentPairMobileDevice):
-		if !vm.CanPairMobile() || len(vm.Servers) == 0 {
+		server, ok := vm.PairableServer()
+		if !vm.CanPairMobile() || !ok {
 			return tray.Intent{}, false
 		}
-		return tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: vm.Servers[0].ID}, true
+		return tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: server.ID}, true
 	case string(tray.IntentRestartFileES):
 		return tray.Intent{Kind: tray.IntentRestartFileES}, vm.CanRestartFileES()
 	case string(tray.IntentShutdownFileES):

@@ -18,6 +18,7 @@ import (
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
 	"filees/pkg/config"
+	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
 	"filees/pkg/errcat"
@@ -40,6 +41,37 @@ type daemonProvisioner struct {
 	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
 	recoveryRegistry recoverykit.Registry
 	running          map[string]provisionerOperation
+	// importProgress is the last report of each initial publication in
+	// flight, answered with repo.lifecycle_status; memory only, like the
+	// progress of ordinary publications.
+	importMu       sync.Mutex
+	importProgress map[string]contract.PublishProgress
+}
+
+func (p *daemonProvisioner) setImportProgress(operationID string, progress provisioning.ImportProgress, startedAt string) {
+	p.importMu.Lock()
+	defer p.importMu.Unlock()
+	if p.importProgress == nil {
+		p.importProgress = map[string]contract.PublishProgress{}
+	}
+	p.importProgress[operationID] = contract.PublishProgress{FilesDone: progress.FilesDone, FilesTotal: progress.FilesTotal, BytesSent: progress.BytesSent, BytesTotal: progress.BytesTotal, StartedAt: startedAt}
+}
+
+func (p *daemonProvisioner) clearImportProgress(operationID string) {
+	p.importMu.Lock()
+	delete(p.importProgress, operationID)
+	p.importMu.Unlock()
+}
+
+// ImportProgress answers the running initial publication of operationID.
+func (p *daemonProvisioner) ImportProgress(operationID string) *contract.PublishProgress {
+	p.importMu.Lock()
+	defer p.importMu.Unlock()
+	progress, ok := p.importProgress[operationID]
+	if !ok {
+		return nil
+	}
+	return &progress
 }
 
 type provisionerOperation struct {
@@ -425,6 +457,11 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 			return err
 		},
 	}
+	importStarted := time.Now().UTC().Format(time.RFC3339)
+	orchestrator.OnImportProgress = func(progress provisioning.ImportProgress) {
+		p.setImportProgress(operationID, progress, importStarted)
+	}
+	defer p.clearImportProgress(operationID)
 	operation, err := orchestrator.RunCreate(ctx, operationID)
 	if err != nil {
 		if durable, getErr := p.provisioning.Get(operationID); getErr == nil && durable.RepoID != "" {

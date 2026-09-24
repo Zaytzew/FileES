@@ -197,6 +197,7 @@ export default {
   "language.label": "Interface language",
   "action.cancel": "Cancel",
   "action.continue": "Continue",
+  "action.understood": "Got it",
   "action.close": "Close",
   "action.done": "Done",
   "action.change": "Change",

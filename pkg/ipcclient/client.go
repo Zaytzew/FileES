@@ -96,7 +96,9 @@ func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Respons
 	// This makes short-deadline callers fail fast and long-deadline callers (e.g. lock/unlock) wait longer.
 	dl, hasDL := ctx.Deadline()
 	if !hasDL {
-		dl = time.Now().Add(c.timeout)
+		// Without one, a command waits as long as the daemon lets it run
+		// (command_timeouts.go), never less than c.timeout.
+		dl = time.Now().Add(timeoutFor(req.Command, c.timeout))
 	}
 	_ = conn.SetDeadline(dl)
 

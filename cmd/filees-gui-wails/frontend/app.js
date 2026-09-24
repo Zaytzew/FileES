@@ -1137,7 +1137,9 @@ function render(snapshot) {
   $("#activate-demo").hidden = !snapshot.demo_activation_available;
   const pairButton = $("#pair-mobile");
   const capabilities = new Set(snapshot.capabilities || []);
-  pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
+  // A demo server refuses pairing by policy; only another server makes it possible (ViewModel.PairableServer).
+  const pairable = (snapshot.servers || []).some((server) => !server.demo_expires_at);
+  pairButton.disabled = !snapshot.connected || snapshot.stale || !pairable || !capabilities.has("mobile_pairing.begin");
   renderConnection(snapshot);
   renderSyncPause(snapshot);
   const memory = snapshot.memory_safety;

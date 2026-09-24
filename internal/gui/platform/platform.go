@@ -58,11 +58,24 @@ type SettingsBrowser interface {
 // exactly like ConsentPrompter.
 //
 // ShowProgress returns a close function that is safe to call once and blocks
-// until the window is gone. Implementations must not report progress values:
-// the daemon does not measure import progress, and a fake percentage is worse
-// than an honest "still working".
+// until the window is gone. Implementations must not invent progress values:
+// a fake percentage is worse than an honest "still working". Measured
+// progress arrives only through ProgressUpdater.
 type ProgressPresenter interface {
 	ShowProgress(ctx context.Context, request ProgressRequest) (close func(), err error)
+}
+
+// ProgressMeasure is progress the daemon measured, never an estimate: files
+// and bytes of the initial publication that reached the repository.
+type ProgressMeasure struct {
+	FilesDone, FilesTotal int
+	BytesSent, BytesTotal int64
+}
+
+// ProgressUpdater is the optional presenter side of measured progress: the
+// returned update replaces the wait's measure until close.
+type ProgressUpdater interface {
+	ShowUpdatableProgress(ctx context.Context, request ProgressRequest) (update func(ProgressMeasure), close func(), err error)
 }
 
 type ProgressRequest struct {

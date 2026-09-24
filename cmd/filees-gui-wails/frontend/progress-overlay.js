@@ -51,19 +51,26 @@ function repoFor(item) {
 // The publication's own report (filees-svn commit --progress, through the
 // daemon's publish_progress) is the real measure; the queue is the fallback
 // for a helper that cannot report, and for the moments before sending starts.
+function published(done, total, bytesSent, bytesTotal) {
+  const share = bytesTotal > 0 ? bytesSent / bytesTotal : done / total;
+  return {
+    line: t("progress.published", { done, total, sent: context.bytes(bytesSent), size: context.bytes(bytesTotal) }),
+    share: Math.max(0, Math.min(1, share)),
+  };
+}
+
 function measure(item) {
+  // The initial publication of a new repository runs before the repository
+  // is in the snapshot; the daemon measures it and the wait itself carries it.
+  const own = item.measure;
+  if (own && Number(own.files_total) > 0) {
+    return published(Number(own.files_done) || 0, Number(own.files_total), Number(own.bytes_sent) || 0, Number(own.bytes_total) || 0);
+  }
   const repo = repoFor(item);
   if (!repo) return { line: "", share: null };
   const total = Number(repo.publish_files_total) || 0;
   if (total > 0) {
-    const done = Number(repo.publish_files_done) || 0;
-    const bytesTotal = Number(repo.publish_bytes_total) || 0;
-    const bytesSent = Number(repo.publish_bytes_sent) || 0;
-    const share = bytesTotal > 0 ? bytesSent / bytesTotal : done / total;
-    return {
-      line: t("progress.published", { done, total, sent: context.bytes(bytesSent), size: context.bytes(bytesTotal) }),
-      share: Math.max(0, Math.min(1, share)),
-    };
+    return published(Number(repo.publish_files_done) || 0, total, Number(repo.publish_bytes_sent) || 0, Number(repo.publish_bytes_total) || 0);
   }
   if (Number(repo.pending_files) > 0) {
     return { line: t("progress.queue", { files: repo.pending_files, size: context.bytes(repo.pending_bytes) }), share: null };

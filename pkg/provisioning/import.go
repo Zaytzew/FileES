@@ -19,6 +19,17 @@ type ImportLimits struct {
 	MaxBatchBytes int64
 }
 
+// ImportProgress is how far the initial publication has got: files and bytes
+// of this run's snapshot that reached the repository. Within a batch it moves
+// file by file when the native helper reports (commit_progress_v1); without
+// it, batch by batch.
+type ImportProgress struct {
+	FilesDone  int
+	FilesTotal int
+	BytesSent  int64
+	BytesTotal int64
+}
+
 type Snapshot struct {
 	Directories []string
 	Files       []SnapshotFile
@@ -104,6 +115,15 @@ func ScanInitialSnapshot(root string) (Snapshot, error) {
 // PublishInitialSnapshot is restart-safe. A repeated call checks WC status and
 // commits only paths that have not already reached the repository.
 func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requestID string, svn InitialSVN, limits ImportLimits) (Operation, error) {
+	return PublishInitialSnapshotWithProgress(ctx, store, operationID, requestID, svn, limits, nil)
+}
+
+// PublishInitialSnapshotWithProgress is PublishInitialSnapshot reporting its
+// progress. The first publication of a new repository runs here, before the
+// repository exists in the daemon's state, so the progress of ordinary
+// publications (pkg/commit) never covered it: the Wails overlay showed only a
+// spinner over a 227 MB import (Windows Sandbox, 2026-09-24).
+func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, operationID, requestID string, svn InitialSVN, limits ImportLimits, report func(ImportProgress)) (Operation, error) {
 	if limits.MaxBatchFiles <= 0 || limits.MaxBatchBytes <= 0 {
 		return Operation{}, errors.New("positive initial import limits are required")
 	}
@@ -180,6 +200,13 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 	if err := addUnversioned(ctx, svn, op.LocalPath, addedDirs, status); err != nil {
 		return fail(err)
 	}
+	progress := ImportProgress{FilesTotal: len(pending)}
+	for _, file := range pending {
+		progress.BytesTotal += file.Size
+	}
+	if report != nil {
+		report(progress)
+	}
 	firstCommit := true
 	for len(pending) > 0 {
 		batch, rest := takeInitialBatch(pending, limits)
@@ -191,8 +218,29 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 			paths = append(append([]string{}, addedDirs...), paths...)
 			firstCommit = false
 		}
-		if _, err := svn.Commit(ctx, op.LocalPath, paths, "FileES initial import"); err != nil {
+		var batchBytes int64
+		for _, file := range batch {
+			batchBytes += file.Size
+		}
+		commitCtx := ctx
+		if report != nil {
+			before := progress
+			// The helper counts protocol bytes too; within a batch the payload
+			// share is capped at the batch, and the batch end sets it exactly.
+			commitCtx = client.WithCommitProgress(ctx, func(moved client.CommitProgress) {
+				now := before
+				now.FilesDone += min(moved.FilesDone, len(batch))
+				now.BytesSent += min(moved.BytesSent, batchBytes)
+				report(now)
+			})
+		}
+		if _, err := svn.Commit(commitCtx, op.LocalPath, paths, "FileES initial import"); err != nil {
 			return fail(fmt.Errorf("commit initial snapshot: %w", err))
+		}
+		progress.FilesDone += len(batch)
+		progress.BytesSent += batchBytes
+		if report != nil {
+			report(progress)
 		}
 		pending = rest
 	}

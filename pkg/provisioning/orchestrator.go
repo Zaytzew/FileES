@@ -21,6 +21,8 @@ type Orchestrator struct {
 	SVN               InitialSVN
 	Limits            ImportLimits
 	OnRepositoryReady func(Operation) error
+	// OnImportProgress, when set, follows the initial publication.
+	OnImportProgress func(ImportProgress)
 }
 
 // RunCreate advances one operation through every durable boundary. It is safe
@@ -106,7 +108,7 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 			if err != nil {
 				return Operation{}, err
 			}
-			if _, err := PublishInitialSnapshot(ctx, o.Store, operationID, requestID, o.SVN, o.Limits); err != nil {
+			if _, err := PublishInitialSnapshotWithProgress(ctx, o.Store, operationID, requestID, o.SVN, o.Limits, o.OnImportProgress); err != nil {
 				return Operation{}, err
 			}
 		case StateInitialSnapshotPublished:

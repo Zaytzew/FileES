@@ -26,6 +26,8 @@ type repositoryLifecycleService struct {
 	onDetach      func(context.Context, string) (localrepo.Record, error)
 	onLoadDump    func(string)
 	onRepair      func(context.Context, string, string) (localrepo.Record, error)
+	// importProgress answers the running initial publication, if any.
+	importProgress func(string) *contract.PublishProgress
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error) {
@@ -203,7 +205,11 @@ func (service repositoryLifecycleService) Status(operationID string) (contract.R
 	if !ok {
 		return contract.RepoLifecycleResult{}, os.ErrNotExist
 	}
-	return lifecycleResult(record), nil
+	result := lifecycleResult(record)
+	if service.importProgress != nil {
+		result.ImportProgress = service.importProgress(operationID)
+	}
+	return result, nil
 }
 
 func (service repositoryLifecycleService) Repair(ctx context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {

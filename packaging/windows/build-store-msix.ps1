@@ -139,7 +139,15 @@ $template = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'AppxManifest.xml.
 foreach ($value in @($identity.identityName, $identity.publisher, $identity.publisherDisplayName)) {
     if (-not $template.Contains($value)) { throw "Manifest and Store identity differ: $value" }
 }
-$manifest = $template.Replace('@MSIX_VERSION@', $Version)
+# The Store refuses a package whose fourth version field is not zero ("Apps
+# are not allowed to have a Version with a revision number other than zero",
+# Partner Center, 2026-09-24). The revision goes into the third field, as in
+# the MSI ProductVersion (major.minor.REV): it alone grows globally, and it
+# must stay within 0..65535.
+$parts = $Version -split '\.'
+if ([int]$parts[3] -gt 65535) { throw "Revision $($parts[3]) does not fit the MSIX build field" }
+$packageVersion = '{0}.{1}.{2}.0' -f $parts[0], $parts[1], $parts[3]
+$manifest = $template.Replace('@MSIX_VERSION@', $packageVersion)
 [xml]$parsedManifest = $manifest
 [IO.File]::WriteAllText((Join-Path $payload 'AppxManifest.xml'), $manifest, [Text.UTF8Encoding]::new($false))
 $priConfig = Join-Path $output 'priconfig.xml'
@@ -147,6 +155,8 @@ $priConfig = Join-Path $output 'priconfig.xml'
 if ($LASTEXITCODE -ne 0) { throw 'MakePri configuration failed' }
 & $makepri new /pr $payload /cf $priConfig /of (Join-Path $payload 'resources.pri') /o
 if ($LASTEXITCODE -ne 0) { throw 'MakePri resource indexing failed' }
+# The file keeps the product version (0.1.17.REV) for traceability; the
+# package identity inside carries $packageVersion (0.1.REV.0).
 $package = Join-Path $output ("FileES-Desktop-$Version-unsigned.msix")
 & $makeappx pack /d $payload /p $package
 if ($LASTEXITCODE -ne 0) { throw 'MakeAppx semantic validation/package creation failed' }

@@ -29,6 +29,27 @@ func TestStorePackageIsBuiltWithoutCloudFiles(t *testing.T) {
 	}
 }
 
+// Partner Center refuses a package whose fourth version field is not zero; the
+// revision rides in the third one, as in the MSI ProductVersion (2026-09-24).
+func TestStorePackageVersionHasZeroRevision(t *testing.T) {
+	raw, err := os.ReadFile("windows/build-store-msix.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, required := range []string{
+		`$packageVersion = '{0}.{1}.{2}.0' -f $parts[0], $parts[1], $parts[3]`,
+		`$template.Replace('@MSIX_VERSION@', $packageVersion)`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("build-store-msix.ps1 lacks %q", required)
+		}
+	}
+	if strings.Contains(script, `$template.Replace('@MSIX_VERSION@', $Version)`) {
+		t.Fatal("the product version (with its revision in the fourth field) reaches the package identity")
+	}
+}
+
 // Beta and stable desktop bundles are the nocfapi build of the revision; alpha
 // keeps every feature. The channel decides, and a beta daemon that still holds
 // Cloud Files code stops the build (owner's decision, 2026-09-24).

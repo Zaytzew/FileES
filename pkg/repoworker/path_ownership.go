@@ -6,13 +6,13 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
 
+	"filees/internal/svnurl"
 	"filees/pkg/pathownership"
 	"github.com/google/uuid"
 )
@@ -35,7 +35,7 @@ func (s SVNPathOwners) repositoryURL(repoID string) (string, error) {
 	if !filepath.IsAbs(s.SVN) || !filepath.IsAbs(s.RepositoriesRoot) || !filepath.IsAbs(s.ServiceWC) {
 		return "", errors.New("ownership authority paths must be absolute")
 	}
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(s.RepositoriesRoot, repoID))}).String(), nil
+	return svnurl.File(filepath.Join(s.RepositoriesRoot, repoID)), nil
 }
 func (s SVNPathOwners) run(ctx context.Context, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)

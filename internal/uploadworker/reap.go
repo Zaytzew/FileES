@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/svnurl"
 	"filees/pkg/avscan"
 	"filees/pkg/namingpolicy"
 	"filees/public-shares/channel"
@@ -313,11 +314,7 @@ func copyFile(src, dst string) error {
 }
 
 func fileURL(path string) string {
-	slashPath := filepath.ToSlash(path)
-	if len(slashPath) >= 2 && slashPath[1] == ':' {
-		slashPath = "/" + slashPath
-	}
-	return (&url.URL{Scheme: "file", Path: slashPath}).String()
+	return svnurl.File(path)
 }
 
 func appendURL(root, relative string) string {

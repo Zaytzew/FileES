@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/url"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"filees/internal/svnurl"
 )
 
 // runTool executes an SVN tool with stderr captured; a failure error carries
@@ -48,8 +48,7 @@ func stderrTail(b []byte) string {
 
 // fileURL builds a correctly encoded file:// URL from an absolute path.
 func fileURL(absPath string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
-	return u.String()
+	return svnurl.File(absPath)
 }
 
 func headRev(repoPath string) (int, error) {

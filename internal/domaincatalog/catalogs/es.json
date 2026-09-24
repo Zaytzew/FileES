@@ -56,6 +56,10 @@
       "El archivo está reservado por otra persona en este momento"
     ],
     "lock.invalid_path": "La ruta seleccionada no pertenece a este repositorio",
+    "lock.not_published": [
+      "«{path}» aún no está en el repositorio: podrás tomarlo prestado tras su primera publicación",
+      "Este archivo aún no está en el repositorio: podrás tomarlo prestado tras su primera publicación"
+    ],
     "lock.operation_failed": "El servicio no completó la operación sobre los archivos",
     "lock_release.decision_failed": "No se pudo ejecutar la decisión sobre la solicitud de liberación",
     "lock_release.inspection_failed": "No se pudo leer la reserva actual",

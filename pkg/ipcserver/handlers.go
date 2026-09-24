@@ -1881,11 +1881,29 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 			return contract.ErrResponse(req.RequestID,
 				"LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.held_by_other", details)
 		}
+		if lock && notPublishedYet(err) {
+			details := map[string]string{}
+			if len(pl.Paths) == 1 {
+				details["path"] = filepath.Base(pl.Paths[0])
+			}
+			return contract.ErrResponse(req.RequestID,
+				"LOCK-2003", "WARN", "RETRY_LOCAL", "lock.not_published", details)
+		}
 		return contract.ErrResponse(req.RequestID,
 			"LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed",
 			map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, contract.LockResult{Output: out})
+}
+
+// notPublishedYet recognises a lock of a file Subversion does not know yet:
+// new in the working copy and not published (E155010 "The node ... was not
+// found", E200009 "not under version control"). Borrowing needs the file on
+// the server, so the answer is "after the first publication", not a failed
+// operation with Subversion's raw text (owner's report, 2026-09-24).
+func notPublishedYet(err error) bool {
+	text := err.Error()
+	return strings.Contains(text, "E155010") || strings.Contains(text, "E200009")
 }
 
 func (s *Server) handleRepoPublish(req contract.Request) contract.Response {

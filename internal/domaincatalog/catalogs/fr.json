@@ -56,6 +56,10 @@
       "Le fichier est actuellement réservé par une autre personne"
     ],
     "lock.invalid_path": "Le chemin sélectionné n’appartient pas à ce dépôt",
+    "lock.not_published": [
+      "« {path} » n’est pas encore dans le dépôt — vous pourrez l’emprunter après sa première publication",
+      "Ce fichier n’est pas encore dans le dépôt — vous pourrez l’emprunter après sa première publication"
+    ],
     "lock.operation_failed": "Le service n’a pas terminé l’opération sur les fichiers",
     "lock_release.decision_failed": "Impossible d’exécuter la décision concernant la demande de libération",
     "lock_release.inspection_failed": "Impossible de lire la réservation actuelle",

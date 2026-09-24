@@ -56,6 +56,10 @@
       "Plik jest w tej chwili wypożyczony przez kogoś innego"
     ],
     "lock.invalid_path": "Wybrana ścieżka nie należy do repozytorium",
+    "lock.not_published": [
+      "Pliku „{path}” nie ma jeszcze w repozytorium — wypożyczysz go po pierwszej publikacji",
+      "Tego pliku nie ma jeszcze w repozytorium — wypożyczysz go po pierwszej publikacji"
+    ],
     "lock.operation_failed": "Daemon nie wykonał operacji na plikach",
     "lock_release.decision_failed": "Nie udało się wykonać decyzji dotyczącej zwolnienia rezerwacji",
     "lock_release.inspection_failed": "Nie udało się odczytać aktualnej rezerwacji",

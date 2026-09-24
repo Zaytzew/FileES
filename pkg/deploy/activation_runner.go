@@ -34,9 +34,11 @@ type ActivationOptions struct {
 type tunnelStarter func(context.Context, TunnelSpec, []byte) error
 
 // RunActivation starts or resumes the client half of deployment. Every value
-// later bound by the server is durable before the one-time OTP is handed to
-// OpenSSH. A successful return means the remote worker command reached active.
+// later bound by the server is durable before the one-time OTP is sent. A successful return means the remote worker command reached active.
 func RunActivation(ctx context.Context, passport OnboardPassport, opts ActivationOptions, otp []byte) error {
+	if err := requireOpenSSH(); err != nil {
+		return err
+	}
 	root, err := profileStateRoot(opts.Root, opts.ServerProfile)
 	if err != nil {
 		return err
@@ -45,13 +47,16 @@ func RunActivation(ctx context.Context, passport OnboardPassport, opts Activatio
 	if err != nil {
 		return err
 	}
-	return runActivation(ctx, passport, opts, otp, prover, RunOpenSSHTunnel)
+	return runActivation(ctx, passport, opts, otp, prover, RunActivationTunnel)
 }
 
 // ResumeActivation recreates a tunnel already authorized by a consumed OTP.
 // The server challenges the durable reconnect key; no mail secret is retained
 // or accepted by this path.
 func ResumeActivation(ctx context.Context, passport OnboardPassport, opts ActivationOptions) error {
+	if err := requireOpenSSH(); err != nil {
+		return err
+	}
 	root, err := profileStateRoot(opts.Root, opts.ServerProfile)
 	if err != nil {
 		return err
@@ -69,7 +74,7 @@ func ResumeActivation(ctx context.Context, passport OnboardPassport, opts Activa
 		return err
 	}
 	return runActivation(ctx, passport, opts, nil, prover, func(ctx context.Context, spec TunnelSpec, _ []byte) error {
-		return RunOpenSSHReconnectTunnel(ctx, spec, reconnect.PrivateKeyPath)
+		return RunReconnectTunnel(ctx, spec, reconnect.PrivateKeyPath)
 	})
 }
 

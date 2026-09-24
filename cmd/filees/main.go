@@ -21,7 +21,6 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
-	"filees/pkg/deploy"
 	"filees/pkg/detachment"
 	"filees/pkg/errmap"
 	"filees/pkg/historyexport"
@@ -63,13 +62,6 @@ func (lifecycle *daemonLifecycle) Restart() {
 }
 
 func main() {
-	if deploy.AskpassConfigured() {
-		if err := deploy.RunAskpass(); err != nil {
-			fmt.Fprintln(os.Stderr, "filees askpass:", err)
-			os.Exit(1)
-		}
-		return
-	}
 	// Version/help and IPC-only commands remain available for diagnosing a
 	// damaged runtime. Any daemon startup prepares native code before clients.
 	if len(os.Args) == 1 || os.Args[1] == "daemon" || os.Args[1] == "native-runtime" || os.Args[1] == "native-exec" {

@@ -281,6 +281,7 @@ func (s appState) viewModel() ViewModel {
 			WorkingCopyBytes:       snap.WorkingCopyBytes,
 			WorkingCopySizeKnown:   snap.WorkingCopySizeKnown,
 			Pending:                snap.Pending,
+			PublishProgress:        snap.PublishProgress,
 			CommitRecoveryRequired: snap.CommitRecoveryRequired,
 			Conflicts:              snap.Conflicts,
 			UnportableNames:        snap.UnportableNames,

@@ -64,6 +64,7 @@ type RepoViewModel struct {
 	WorkingCopyBytes       int64
 	WorkingCopySizeKnown   bool
 	Pending                contract.PendingStats
+	PublishProgress        *contract.PublishProgress
 	Conflicts              int
 	UnportableNames        []contract.UnportableName
 	LastSyncAt             string

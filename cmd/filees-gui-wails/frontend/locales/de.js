@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.published": "{done} von {total} Dateien gesendet · {sent} von {size}",
+  "progress.createRepository.server.title": "Repository wird erstellt",
+  "progress.createRepository.server.text": "„{name}“ — das Repository wird auf dem Server angelegt. Das dauert meist etwa zehn bis zwanzig Sekunden.",
+  "progress.createRepository.import.title": "Erste Veröffentlichung",
+  "progress.createRepository.import.text": "„{name}“ — der Ordnerinhalt wird an den Server gesendet. Große Ordner brauchen Zeit; FileES arbeitet auch im Hintergrund weiter.",
+  "progress.attach.title": "Erster Download",
+  "progress.attach.text": "„{name}“ — das Repository wird in den gewählten Ordner geladen.",
+  "progress.queue": "Verbleibend: {files} Dateien · {size}",
+  "progress.elapsed": "Läuft seit {time}",
+  "progress.background": "Im Hintergrund arbeiten",
+  "progress.show": "Anzeigen",
   "select.updateChannel.title": "Update-Kanal wählen",
   "select.updateChannel.text": "Beta erhält ausgewählte, getestete Versionen. Alpha bietet neue Funktionen früher und kann Fehler enthalten. Ihre Auswahl wird gespeichert und bleibt bei Updates erhalten.",
   "select.updateChannel.label": "Kanal",

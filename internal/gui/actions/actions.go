@@ -1385,7 +1385,7 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			c.tasks.Add(1)
 			go func(serverID, repoID, name, operationID, actionID, localPath string) {
 				defer c.tasks.Done()
-				defer c.showProgress(ctx, "Pierwszy checkout", name+" — trwa pobieranie…")()
+				defer c.showProgressKey(ctx, "progress.attach", map[string]string{"name": name, "path": localPath}, "Pierwszy checkout", name+" — trwa pobieranie…")()
 				if !c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID) {
 					c.finishProjectedAction(actionID)
 				}
@@ -3026,8 +3026,14 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		if !allowed || !found {
 			return
 		}
+		// Shown before the request, not after: creating the repository on the
+		// server takes tens of seconds, and nothing on screen during them read
+		// as a hang (Fedora acceptance, 2026-09-24).
+		progressArgs := map[string]string{"name": displayName, "path": picked.Path}
+		closeServerStage := c.showProgressKey(ctx, "progress.createRepository.server", progressArgs, "Tworzenie repozytorium", displayName+" — tworzenie repozytorium na serwerze…")
 		operationID, err := c.cfg.RepositoryCreator.CreateRepository(ctx, serverID, displayName, picked.Path)
 		if err != nil {
+			closeServerStage()
 			c.repositoryCreationFailure(ctx, err)
 			return
 		}
@@ -3041,7 +3047,9 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		// The picker has closed and the import runs for tens of seconds, during
 		// which the tray legitimately shows transient states. Without a window
 		// the user is left staring at those and reading them as failures.
-		defer c.showProgress(ctx, "Tworzenie repozytorium", displayName+" — trwa import początkowy…")()
+		closeImport := c.showProgressKey(ctx, "progress.createRepository.import", progressArgs, "Tworzenie repozytorium", displayName+" — trwa import początkowy…")
+		defer closeImport()
+		closeServerStage()
 		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
 		// "attached" only means the working copy is bound; the initial import
 		// keeps pushing after that. Hold the window for the rest of it.
@@ -3083,10 +3091,16 @@ func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string)
 // PowerShell that would not start must not turn a working import into a
 // user-visible error.
 func (c *Controller) showProgress(ctx context.Context, title, text string) func() {
+	return c.showProgressKey(ctx, "", nil, title, text)
+}
+
+// showProgressKey is showProgress with a presentation key, so the Wails
+// overlay can word the stage in the interface language.
+func (c *Controller) showProgressKey(ctx context.Context, key string, args map[string]string, title, text string) func() {
 	if c.cfg.Progress == nil {
 		return func() {}
 	}
-	close, err := c.cfg.Progress.ShowProgress(ctx, platform.ProgressRequest{Title: title, Text: text})
+	close, err := c.cfg.Progress.ShowProgress(ctx, platform.ProgressRequest{PresentationKey: key, PresentationArgs: args, Title: title, Text: text})
 	if err != nil || close == nil {
 		return func() {}
 	}

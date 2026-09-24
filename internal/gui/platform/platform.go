@@ -66,7 +66,11 @@ type ProgressPresenter interface {
 }
 
 type ProgressRequest struct {
-	Title, Text string
+	// PresentationKey and PresentationArgs let a localized front end word the
+	// wait itself; Title and Text remain the Polish fallback.
+	PresentationKey  string
+	PresentationArgs map[string]string
+	Title, Text      string
 }
 
 // JournalBrowser renders the combined activity and error history. Rows are

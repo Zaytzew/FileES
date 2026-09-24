@@ -2226,3 +2226,91 @@ func TestControllerDoesNotCreateRepositoryWhenAuthorityIsStale(t *testing.T) {
 	default:
 	}
 }
+
+// recordingProgress keeps the presentation keys of every wait the controller
+// explained, in the order it opened them.
+type recordingProgress struct {
+	mu     sync.Mutex
+	opened []string
+	open   map[string]bool
+}
+
+func (p *recordingProgress) ShowProgress(_ context.Context, request platform.ProgressRequest) (func(), error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.open == nil {
+		p.open = map[string]bool{}
+	}
+	p.opened = append(p.opened, request.PresentationKey)
+	p.open[request.PresentationKey] = true
+	key := request.PresentationKey
+	return func() { p.mu.Lock(); delete(p.open, key); p.mu.Unlock() }, nil
+}
+
+func (p *recordingProgress) snapshot() ([]string, map[string]bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	open := map[string]bool{}
+	for key, value := range p.open {
+		open[key] = value
+	}
+	return append([]string(nil), p.opened...), open
+}
+
+// Creating the repository on the server takes tens of seconds. The wait is
+// explained from the moment the request goes out, not after it returns: on
+// Fedora (2026-09-24) the silent gap after "Create" read as a hang.
+// gatedCreator holds CreateRepository open until the test lets it return, so
+// the test sees exactly what is on screen while the server works.
+type gatedCreator struct {
+	fakeRepositoryCreator
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedCreator) CreateRepository(context.Context, string, string, string) (string, error) {
+	g.entered <- struct{}{}
+	<-g.release
+	return "op-123", nil
+}
+func TestRepositoryCreationExplainsTheWaitBeforeTheServerAnswers(t *testing.T) {
+	creator := &gatedCreator{entered: make(chan struct{}), release: make(chan struct{})}
+	progress := &recordingProgress{}
+	fake := &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: "/data/projekt"}, nil
+		},
+		PromptTextFunc: func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			return platform.PromptTextResult{Value: "Projekt A"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake, RepositoryCreator: creator, Notifier: fake, Progress: progress})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	var opened []string
+	var open map[string]bool
+	select {
+	case <-creator.entered:
+		opened, open = progress.snapshot()
+		close(creator.release)
+	case <-time.After(time.Second):
+		t.Fatal("repository creation was not requested")
+	}
+	if len(opened) == 0 || opened[0] != "progress.createRepository.server" || !open["progress.createRepository.server"] {
+		t.Fatalf("while the server works: opened=%v open=%v, want the server stage already on screen", opened, open)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		opened, open = progress.snapshot()
+		if open["progress.createRepository.import"] && !open["progress.createRepository.server"] {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("after creation: opened=%v open=%v, want the import stage replacing the server stage", opened, open)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}

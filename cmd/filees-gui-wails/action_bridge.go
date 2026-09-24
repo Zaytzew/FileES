@@ -44,6 +44,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Picker:               filePicker,
 		FolderPicker:         folderPicker,
 		Prompter:             prompter,
+		Progress:             service.progressPresenter(),
 		IntentResolver:       intentsResolver,
 		Notifier:             actionNotifier{service: service},
 		Updater:              updater,

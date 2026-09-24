@@ -508,3 +508,23 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 
 /* Keep the current angle; resume after both pause reasons are cleared. */
 #pulse-card.is-paused .pulse-orbit { animation-play-state: paused; }
+
+/* Long waits cover the whole window (progress-overlay.js); "work in the
+   background" parks them as a strip under the hero. */
+.progress-overlay { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--background) 72%, transparent); backdrop-filter: blur(6px); }
+.progress-card { width: min(520px, 100%); padding: 32px 28px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel-solid); box-shadow: var(--shadow); text-align: center; color: var(--text); }
+.progress-title { margin: 18px 0 8px; font-size: 1.35rem; }
+.progress-text { margin: 0 0 10px; color: var(--soft-text); line-height: 1.5; }
+.progress-queue { margin: 0 0 6px; font-weight: 600; color: var(--text); }
+.progress-queue:empty { display: none; }
+.progress-elapsed { margin: 0; font-family: var(--technical); color: var(--muted); font-size: .9rem; }
+.progress-background { margin-top: 20px; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--soft-text); cursor: pointer; }
+.progress-background:hover, .progress-background:focus-visible { color: var(--text); border-color: var(--filees-orange); }
+.progress-spinner { width: 48px; height: 48px; margin: 0 auto; border-radius: 50%; border: 4px solid color-mix(in srgb, var(--filees-orange) 22%, transparent); border-top-color: var(--filees-orange); animation: progress-spin 900ms linear infinite; }
+.progress-spinner.is-small { width: 16px; height: 16px; margin: 0; border-width: 2px; flex: none; }
+.progress-parking { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 18px; padding: 12px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--filees-orange) 45%, var(--line)); background: var(--panel); color: var(--text); text-align: left; cursor: pointer; }
+.progress-parking-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-parking-show { color: var(--filees-orange); font-weight: 600; }
+@keyframes progress-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .progress-spinner { animation-duration: 2400ms; } }.progress-bar { height: 8px; margin: 4px 0 10px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--filees-orange) 16%, transparent); }
+.progress-bar > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--filees-orange); transition: width 400ms ease; }

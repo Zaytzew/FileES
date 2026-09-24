@@ -8,10 +8,14 @@ import { initializeLanguageMenu } from "./language-menu.js";
 import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
 import { parseDrawers, groupDrawers, commitDrawerChange } from "./drawer-layout.js";
 import { reconcileRepositoryHTML } from "./repository-dom.js";
+import { initializeProgressOverlay } from "./progress-overlay.js";
 
 initializeTheme();
 initializeLanguage();
 initializeLanguageMenu();
+// Long waits (repository creation, first publication, first checkout) cover
+// the window; see progress-overlay.js.
+initializeProgressOverlay({ snapshot: () => currentSnapshot, bytes: (value) => bytes(value) });
 
 // Local Wails presentation event, not daemon IPC. Only the main window sends
 // the resolved language; secondary windows follow the existing preference.

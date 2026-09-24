@@ -77,11 +77,15 @@ type RepoStatus struct {
 	// because their names cannot exist unchanged on every platform this
 	// repository is used from. It is derived from the working copy on each
 	// sweep, never remembered, so it cannot drift from what is on disk.
-	UnportableNames        []UnportableName `json:"unportable_names,omitempty"`
-	LastSyncAt             string           `json:"last_sync_at,omitempty"`   // RFC3339; empty if never synced
-	LastCommitAt           string           `json:"last_commit_at,omitempty"` // SVN date of local_revision; unknown is empty, never receipt time.
-	CurrentOperation       *string          `json:"current_operation"`        // null or short description
-	Cycle                  CycleStatus      `json:"cycle"`
+	UnportableNames  []UnportableName `json:"unportable_names,omitempty"`
+	LastSyncAt       string           `json:"last_sync_at,omitempty"`   // RFC3339; empty if never synced
+	LastCommitAt     string           `json:"last_commit_at,omitempty"` // SVN date of local_revision; unknown is empty, never receipt time.
+	CurrentOperation *string          `json:"current_operation"`        // null or short description
+	Cycle            CycleStatus      `json:"cycle"`
+	// PublishProgress is the publication running right now, reported by the
+	// native commit while it sends (filees-svn commit --progress); nil when
+	// nothing is being published or the helper cannot report.
+	PublishProgress        *PublishProgress `json:"publish_progress,omitempty"`
 	Recovery               RecoveryStats    `json:"recovery"`
 	CommitRecoveryRequired bool             `json:"commit_recovery_required,omitempty"`
 	// Purpose is empty for a normal share. upload_shelf is the Upload Channel
@@ -91,6 +95,18 @@ type RepoStatus struct {
 	// Sparse: attached, but holding only paths chosen in the unattached
 	// browser. The interface must not present it as the whole folder.
 	Sparse bool `json:"sparse,omitempty"`
+}
+
+// PublishProgress measures one running publication. FilesTotal and BytesTotal
+// are the batch as queued; FilesDone counts files whose content has been sent
+// and BytesSent what the connection has moved (protocol included, so it can
+// run slightly ahead of BytesTotal and is capped there by the sender).
+type PublishProgress struct {
+	FilesDone  int    `json:"files_done"`
+	FilesTotal int    `json:"files_total"`
+	BytesSent  int64  `json:"bytes_sent"`
+	BytesTotal int64  `json:"bytes_total"`
+	StartedAt  string `json:"started_at"`
 }
 
 // UnportableName is one refused object. Kind is a stable token

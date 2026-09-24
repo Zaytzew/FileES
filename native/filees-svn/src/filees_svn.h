@@ -63,6 +63,8 @@ svn_error_t *filees_ra_update(const char *wc, svn_boolean_t live,
                               svn_boolean_t depth_is_sticky,
                               svn_revnum_t revision, svn_boolean_t make_parents,
                               svn_boolean_t adopt, apr_pool_t *pool);
+/* commit --progress: stream per-file and byte progress on stderr. */
+void filees_ra_commit_progress(svn_boolean_t enabled);
 svn_error_t *filees_ra_commit(const char *wc, svn_boolean_t live,
                               const char **rels, int n, const char *message,
                               svn_boolean_t keep_locks, const char **revprops,

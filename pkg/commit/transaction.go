@@ -345,7 +345,9 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 	if err := s.writeIntent(wc, in); err != nil {
 		return err
 	}
-	_, rev, commitErr := c.CommitWithID(ctx, wc, s.RepoURL, paths, message, s.Rules.NeedsLock, in.ID, in.FirstRevision)
+	report, endProgress := s.startPublishProgress(pending, selected)
+	_, rev, commitErr := c.CommitWithID(client.WithCommitProgress(ctx, report), wc, s.RepoURL, paths, message, s.Rules.NeedsLock, in.ID, in.FirstRevision)
+	endProgress()
 	if commitErr != nil {
 		s.Logger.Warnf("commit reply failed: transaction=%s first_revision=%d; resolving receipt before any retry: %v", in.ID, in.FirstRevision, commitErr)
 		// Same-context lookup may fail on cancellation. The next poll/startup

@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && !nocfapi
 
 // Package cloudfiles recognises Windows Cloud Files placeholders, the files and
 // folders an Explorer anchor shows before they are on this disk

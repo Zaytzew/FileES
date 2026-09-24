@@ -39,6 +39,25 @@
     <MajorUpgrade DowngradeErrorMessage="Nowsza wersja FileES jest już zainstalowana." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- FileES reaches every server through the Windows OpenSSH client: the
+         activation tunnel and each SVN connection run ssh.exe. A clean Windows
+         (Windows Sandbox, 2026-09-24) did not have it, and the installed
+         client could then do nothing but fail. Looked for where Windows puts
+         the optional feature and where the Win32-OpenSSH MSI installs it.
+         Repair and uninstall are never blocked (Installed). -->
+    <Property Id="FILEESOPENSSHSYSTEM">
+      <DirectorySearch Id="OpenSSHSystemDir" Path="[System64Folder]OpenSSH" Depth="0">
+        <FileSearch Id="OpenSSHSystemExe" Name="ssh.exe" />
+      </DirectorySearch>
+    </Property>
+    <Property Id="FILEESOPENSSHPROGRAMS">
+      <DirectorySearch Id="OpenSSHProgramsDir" Path="[ProgramFiles64Folder]OpenSSH" Depth="0">
+        <FileSearch Id="OpenSSHProgramsExe" Name="ssh.exe" />
+      </DirectorySearch>
+    </Property>
+    <Launch Condition="Installed OR FILEESOPENSSHSYSTEM OR FILEESOPENSSHPROGRAMS"
+            Message="FileES wymaga klienta OpenSSH systemu Windows. Zainstaluj go: Ustawienia &gt; System &gt; Funkcje opcjonalne &gt; Klient OpenSSH, a potem uruchom instalator ponownie. / FileES needs the Windows OpenSSH Client: Settings &gt; System &gt; Optional features &gt; OpenSSH Client." />
+
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="LocalProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="FileES" />

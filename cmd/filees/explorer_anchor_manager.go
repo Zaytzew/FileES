@@ -1,3 +1,5 @@
+//go:build !nocfapi
+
 package main
 
 import (
@@ -17,10 +19,26 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/clientprofile"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
 )
+
+// explorerAnchors wires the anchor manager into the IPC server and answers its
+// loop, or nil when the Cloud Files helper is not installed next to the daemon.
+func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store) func(context.Context) {
+	cfapi := anchorHelperPath()
+	if cfapi == "" {
+		return nil
+	}
+	anchors := &anchorManager{
+		helper: cfapi, nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
+		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
+	}
+	ipc.SetAnchorPrecheck(anchors.precheck)
+	return anchors.run
+}
 
 // anchorManager keeps every Explorer anchor of this machine connected
 // (native/filees-cfapi, implementation notes (not distributed)).

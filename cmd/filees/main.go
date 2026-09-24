@@ -271,13 +271,9 @@ func runDaemon() {
 	ipc.SetHeadService(headService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath})
 	// Explorer anchors exist only where the Cloud Files helper is installed
 	// next to the daemon (Windows); the precheck being set is the capability.
-	if cfapi := anchorHelperPath(); cfapi != "" {
-		anchors := &anchorManager{
-			helper: cfapi, nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
-			lifecycle: lifecycleStore, repos: ipc.RepoState, log: talk.With("anchor"),
-		}
-		ipc.SetAnchorPrecheck(anchors.precheck)
-		runtime.Go(ctx, func() { anchors.run(ctx) })
+	// A build tagged nocfapi (the Microsoft Store package) has no anchors at all.
+	if anchors := explorerAnchors(ipc, lifecycleStore); anchors != nil {
+		runtime.Go(ctx, func() { anchors(ctx) })
 	}
 	// An export must land outside every working copy, so it asks the lifecycle
 	// store for the current roots at the moment it begins.

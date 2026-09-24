@@ -56,6 +56,10 @@
       "The file is reserved by somebody else right now"
     ],
     "lock.invalid_path": "The selected path does not belong to this repository",
+    "lock.not_published": [
+      "“{path}” is not in the repository yet — you can borrow it after its first publication",
+      "This file is not in the repository yet — you can borrow it after its first publication"
+    ],
     "lock.operation_failed": "The daemon did not complete the file operation",
     "lock_release.decision_failed": "The decision on the release request could not be carried out",
     "lock_release.inspection_failed": "The current reservation could not be read",

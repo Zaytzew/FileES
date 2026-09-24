@@ -23,6 +23,7 @@ const (
 	KeyLockHeldByOther        Key = "lock.held_by_other"
 	KeyLockOperation          Key = "lock.operation_failed"
 	KeyLockInvalidPath        Key = "lock.invalid_path"
+	KeyLockNotPublished       Key = "lock.not_published"
 	KeyCommitFailed           Key = "commit.failed"
 	KeyCommitRecoveryHeld     Key = "commit.recovery_held"
 	KeyCommitOutdated         Key = "commit.outdated"
@@ -122,6 +123,7 @@ var specs = []Spec{
 	{CodeLockHeld, KeyLockHeldByOther, SevError, HintRequireAction, []Field{{"path", ParamPath}, {"holder", ParamText}, {"until", ParamTimestamp}}, "File locked by another user"},
 	{CodeLockHeld, KeyLockOperation, SevError, HintRequireAction, detailOnly(), "Lock operation failed"},
 	{CodeLockPath, KeyLockInvalidPath, SevError, HintRequireAction, nil, "Path is outside the working copy"},
+	{"LOCK-2003", KeyLockNotPublished, SevWarn, HintRetryLocal, []Field{{"path", ParamPath}}, "File is not in the repository yet; it can be borrowed after its first publication"},
 	{CodeCommitStale, KeyCommitOutdated, SevWarn, HintRetryLocal, nil, "Working copy out of date — update required before next commit"},
 	{CodeCommitNoVCS, KeyCommitNoVCS, SevWarn, HintRetryLocal, nil, "Path not under version control"},
 	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, detailOnly(), "Commit failed"},

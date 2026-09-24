@@ -56,6 +56,10 @@
       "Die Datei ist derzeit von einer anderen Person reserviert"
     ],
     "lock.invalid_path": "Der ausgewählte Pfad gehört nicht zu diesem Repository",
+    "lock.not_published": [
+      "„{path}“ ist noch nicht im Repository — Sie können die Datei nach der ersten Veröffentlichung ausleihen",
+      "Diese Datei ist noch nicht im Repository — Sie können sie nach der ersten Veröffentlichung ausleihen"
+    ],
     "lock.operation_failed": "Der Hintergrunddienst hat den Dateivorgang nicht abgeschlossen",
     "lock_release.decision_failed": "Die Entscheidung zur Freigabeanfrage konnte nicht ausgeführt werden",
     "lock_release.inspection_failed": "Aktuelle Reservierung konnte nicht gelesen werden",

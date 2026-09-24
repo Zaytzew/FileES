@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	whale "filees/pkg/whale/v1"
+
+	"filees/internal/svnurl"
 )
 
 const generationRevprop = "filees:whale-generation"
@@ -216,14 +218,7 @@ func (p SVNPublisher) run(ctx context.Context, binary string, args ...string) ([
 }
 
 func fileURL(path string) string {
-	slashPath := filepath.ToSlash(path)
-	// A Windows drive path must be an URL path (/C:/...), otherwise net/url
-	// interprets the drive letter as file:// host "c". This also keeps the
-	// helper testable on Windows while production uses ordinary OpenBSD paths.
-	if len(slashPath) >= 2 && slashPath[1] == ':' {
-		slashPath = "/" + slashPath
-	}
-	return (&url.URL{Scheme: "file", Path: slashPath}).String()
+	return svnurl.File(path)
 }
 
 func appendURL(root, relative string) string {

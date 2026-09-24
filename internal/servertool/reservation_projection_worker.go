@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"filees/internal/obsandbox"
+	"filees/internal/svnurl"
 	"filees/pkg/clientview"
 	"filees/pkg/repoworker"
 	reservationv1 "filees/pkg/reservation/v1"
@@ -291,14 +291,14 @@ func refreshReservationProjectionWith(store *reservationprojection.Store, repoID
 func queryLiveLocks(ctx context.Context, svnBinary, repoPath string) ([]reservationv1.Reservation, error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	// url.URL.String() percent-encodes spaces and other characters a naive
+	// svnurl.File percent-encodes spaces and other characters a naive
 	// "file://"+path concatenation would pass through unescaped, breaking
 	// svn's own URL parsing for any repositories root containing them.
 	// The trailing "@" is SVN's own separate peg-revision escape (applied
 	// after URL construction, never encoded): without it, a repository
 	// path that itself contains "@" would be misparsed as a peg-revision
 	// specifier by svn's own argument handling.
-	fileURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(repoPath)}).String() + "@"
+	fileURL := svnurl.File(repoPath) + "@"
 	cmd := exec.CommandContext(ctx, svnBinary, "info", "-r", "HEAD", "--xml", "--depth", "infinity", "--", fileURL)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

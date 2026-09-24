@@ -237,6 +237,12 @@ func TestRotateFullCycle(t *testing.T) {
 }
 
 func TestRotateRefusesActiveLocks(t *testing.T) {
+	// Missing until 2026-09-24 because the test skipped itself on Windows
+	// anyway: the broken file:// URL (file://C:/..., see internal/svnurl) made
+	// "svn lock" fail, and the skip below read as "cannot create test lock".
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	repo := buildTestRepo(t, root)

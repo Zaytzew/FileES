@@ -1579,9 +1579,6 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation finish failed after %s (server=%s address=%s): %v", time.Since(started).Round(time.Second), payload.ServerID, payload.ServerAddress, err)
-		if missingOpenSSH(err) {
-			return contract.ErrResponse(req.RequestID, "ACTIVATION-1005", "ERROR", "REQUIRE_ACTION", "activation.openssh_missing", nil)
-		}
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", map[string]string{"detail": err.Error()})
 	}
 	// Logged on success too. Silence used to mean either "still running" or
@@ -1629,20 +1626,9 @@ func (s *Server) handleActivationResume(req contract.Request) contract.Response 
 	result, err := service.Resume(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation resume (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
-		if missingOpenSSH(err) {
-			return contract.ErrResponse(req.RequestID, "ACTIVATION-1005", "ERROR", "REQUIRE_ACTION", "activation.openssh_missing", nil)
-		}
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1004", "ERROR", "RETRY", "activation.resume_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
-}
-
-// missingOpenSSH recognises the fault pkg/deploy raises before starting a
-// tunnel without ssh on PATH. It has its own answer because retrying cannot
-// help: the user has to install the Windows OpenSSH client first.
-func missingOpenSSH(err error) bool {
-	var fault errcat.Fault
-	return errors.As(err, &fault) && fault.Key == errcat.KeyActivationNoOpenSSH
 }
 
 // handleHello implements system.hello — capability negotiation (§12).

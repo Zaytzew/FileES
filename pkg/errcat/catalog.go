@@ -40,7 +40,6 @@ const (
 	KeyWhaleOffsetConflict    Key = "whale.offset_conflict"
 	KeyWhaleDigestMismatch    Key = "whale.digest_mismatch"
 	KeyWhaleInsufficientSpace Key = "whale.insufficient_space"
-	KeyActivationNoOpenSSH    Key = "activation.openssh_missing"
 )
 
 var (
@@ -290,7 +289,6 @@ var specs = []Spec{
 	{"ACTIVATION-1002", "activation.finish_failed", SevError, HintRetry, nil, "Activation could not finish"},
 	{"ACTIVATION-1003", "activation.pending_failed", SevError, HintRetry, nil, "Pending activation lookup failed"},
 	{"ACTIVATION-1004", "activation.resume_failed", SevError, HintRetry, nil, "Activation resume failed"},
-	{"ACTIVATION-1005", KeyActivationNoOpenSSH, SevError, HintRequireAction, nil, "OpenSSH client (ssh) is not installed"},
 
 	{"UPDATE-0001", "update.unavailable", SevError, HintNone, nil, "Update service is not available"},
 	{"UPDATE-1001", "update.status_failed", SevError, HintRetryBackoff, nil, "Update status failed"},

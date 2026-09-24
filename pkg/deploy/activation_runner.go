@@ -36,9 +36,6 @@ type tunnelStarter func(context.Context, TunnelSpec, []byte) error
 // RunActivation starts or resumes the client half of deployment. Every value
 // later bound by the server is durable before the one-time OTP is sent. A successful return means the remote worker command reached active.
 func RunActivation(ctx context.Context, passport OnboardPassport, opts ActivationOptions, otp []byte) error {
-	if err := requireOpenSSH(); err != nil {
-		return err
-	}
 	root, err := profileStateRoot(opts.Root, opts.ServerProfile)
 	if err != nil {
 		return err
@@ -54,9 +51,6 @@ func RunActivation(ctx context.Context, passport OnboardPassport, opts Activatio
 // The server challenges the durable reconnect key; no mail secret is retained
 // or accepted by this path.
 func ResumeActivation(ctx context.Context, passport OnboardPassport, opts ActivationOptions) error {
-	if err := requireOpenSSH(); err != nil {
-		return err
-	}
 	root, err := profileStateRoot(opts.Root, opts.ServerProfile)
 	if err != nil {
 		return err

@@ -88,6 +88,34 @@ func New(opts Options) Client {
 	return &execClient{svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
 }
 
+// sshTunnelProgram is this process's own executable when it carries the
+// "ssh-exec" command (cmd/filees): Subversion then tunnels through FileES's
+// SSH client (pkg/sshexec) instead of the system OpenSSH, which a clean
+// Windows does not have. Empty keeps OpenSSH, for programs without it.
+var (
+	sshTunnelMu      sync.RWMutex
+	sshTunnelProgram string
+)
+
+// UseSSHTunnelProgram makes every svn+ssh tunnel of this process run
+// "<program> ssh-exec". The path is quoted in SVN_SSH, so it may contain
+// spaces (C:\Program Files\WindowsApps\...) but not a double quote.
+func UseSSHTunnelProgram(program string) error {
+	if !filepath.IsAbs(program) || strings.ContainsAny(program, "\"\r\n\x00") {
+		return fmt.Errorf("ssh tunnel program must be an absolute path without quotes: %q", program)
+	}
+	sshTunnelMu.Lock()
+	defer sshTunnelMu.Unlock()
+	sshTunnelProgram = program
+	return nil
+}
+
+func currentSSHTunnelProgram() string {
+	sshTunnelMu.RLock()
+	defer sshTunnelMu.RUnlock()
+	return sshTunnelProgram
+}
+
 func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...string) string {
 	// Config validates these as absolute deployment-owned paths. Rejecting
 	// whitespace here avoids relying on shell quoting in SVN's tunnel parser.
@@ -142,14 +170,28 @@ func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...s
 		// host-key errors) — errmap.Classify recognizes it.
 		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
 	}
+	hostKeyAlias := hostName
+	if hostName != "" && port > 0 && port != 22 {
+		hostKeyAlias = fmt.Sprintf("[%s]:%d", hostName, port)
+	}
+	if program := currentSSHTunnelProgram(); program != "" {
+		// The same policy in pkg/sshexec's flags. Subversion splits SVN_SSH
+		// with quote handling (apr_tokenize_to_argv), so the program path is
+		// quoted and, like the other paths, uses forward slashes.
+		args = []string{`"` + filepath.ToSlash(program) + `"`, "ssh-exec",
+			"-i", identityFile, "-known-hosts", knownHosts, "-alive", "15", "-alive-max", "3"}
+		if port > 0 {
+			args = append(args, "-p", strconv.Itoa(port))
+		}
+		if hostName != "" {
+			args = append(args, "-host-name", hostName, "-host-key-alias", hostKeyAlias)
+		}
+		return strings.Join(args, " ")
+	}
 	if port > 0 {
 		args = append(args, "-p", strconv.Itoa(port))
 	}
 	if hostName != "" {
-		hostKeyAlias := hostName
-		if port > 0 && port != 22 {
-			hostKeyAlias = fmt.Sprintf("[%s]:%d", hostName, port)
-		}
 		args = append(args, "-o", "HostName="+hostName, "-o", "HostKeyAlias="+hostKeyAlias)
 	}
 	return strings.Join(args, " ")

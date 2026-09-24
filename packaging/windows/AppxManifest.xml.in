@@ -48,16 +48,17 @@
                                Enabled="true"
                                DisplayName="FileES Desktop" />
         </desktop:Extension>
-        <!-- OpenSSH starts filees.exe as SSH_ASKPASS during activation. From
-             outside the package Windows refuses its WindowsApps path
-             ("CreateProcessW failed error:5", clean Windows Sandbox,
-             2026-09-24); the alias is the sanctioned way in. The daemon picks
-             it in pkg/deploy askpassExecutable. -->
+        <!-- Declaring filees.exe (here as the "filees.exe" execution alias)
+             is what lets a process outside the package start it by path:
+             Windows refused the undeclared executable with "access denied"
+             (clean Windows Sandbox, 2026-09-24). Subversion's tunnel does
+             exactly that - filees-svn runs from the native runtime cache and
+             starts "filees.exe ssh-exec" (pkg/client, pkg/sshexec). -->
         <uap3:Extension Category="windows.appExecutionAlias"
                         Executable="filees.exe"
                         EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
-            <desktop:ExecutionAlias Alias="filees-askpass.exe" />
+            <desktop:ExecutionAlias Alias="filees.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
       </Extensions>

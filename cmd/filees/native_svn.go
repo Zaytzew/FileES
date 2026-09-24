@@ -20,7 +20,7 @@ import (
 var nativeRuntimeLease *nativeruntime.Lease
 
 var bundledNativeSVN = sync.OnceValues(func() (string, error) {
-	cache, err := os.UserCacheDir()
+	cache, err := nativeCacheRoot()
 	if err != nil {
 		return "", err
 	}

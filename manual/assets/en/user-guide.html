@@ -67,7 +67,7 @@
 <div class="manual-content">
 <h1 id="ch2">Chapter 2: User Guide</h1><div class="chapter-content">
 <h2 id="ch2-install">2.1 Client Installation</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>The Wails client runs live on Linux and Windows; on Windows one MSI installs the daemon and the GUI together.</span></div>
-<h4>Linux (current Wails alpha client)</h4>
+<h4>Linux (tar.gz package)</h4>
 <pre><code># Unpack the filees-client-linux-amd64 bundle
 chmod +x install-user.sh
 ./install-user.sh                     # installs to ~/.local/
@@ -78,12 +78,16 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <h4>Windows client (MSI)</h4>
 <p>One file, <code>filees-&lt;version&gt;.msi</code>, installs without administrator rights into <code>%LOCALAPPDATA%\Programs\FileES</code>. It carries the pair — the daemon <code>filees.exe</code>, which watches your files in the background, and the window <code>filees-gui-wails.exe</code> — together with the start scripts, a Start menu shortcut, a desktop shortcut and a shortcut in the Startup folder, so FileES starts by itself at the next sign-in.</p>
 <p>The installer is not yet signed with a certificate, so SmartScreen warns before running it. Continue only if you know who gave you the file. The first start writes a minimal <code>config.json</code>; no update and no uninstall touches it, your working copies or your files. Updates arrive through the signed channel (§2.7) or by installing a newer MSI over the old one.</p>
+<h4>Linux (AppImage)</h4>
+<p>The <code>FileES-&lt;version&gt;-x86_64.AppImage</code> file is the simplest route: make it executable (<code>chmod +x</code>) and run it. The AppImage uses the same installer as the package above, so it installs the daemon + GUI pair in the user session and does not overwrite an existing <code>config.json</code>. On a new installation it asks for the update channel (§2.7).</p>
+<h4>Microsoft Store</h4><div class="section-meta"><span class="status status-implemented">Implemented</span><span>The package passed acceptance on a clean Windows; the Store variant is in Microsoft certification (2026-09).</span></div>
+<p>The Microsoft Store version contains the same pair as the MSI and follows the beta channel: it is built without features in preparation, including the Windows Explorer anchor. The Store delivers its updates. The MSI and the Store version exclude each other: whichever you start second offers to remove the other, keeping your settings.</p>
 <h4>Requirements</h4>
 <div class="table-wrap"><table>
 <tr><th>Platform</th><th>Requirements</th></tr>
-<tr><td>Linux daemon</td><td><code>svn</code> and OpenSSH <code>ssh</code> in PATH, an activated FileES installation identity and pinned service host key; Go 1.25+ only when building from source</td></tr>
+<tr><td>Linux daemon</td><td>an activated FileES installation identity and pinned service host key. The SSH client and the Subversion client are built in — no system <code>ssh</code> or <code>svn</code> is needed. Go 1.25+ only when building from source</td></tr>
 <tr><td>Linux GUI</td><td>GTK4 and WebKitGTK 6.0; an SNI-compatible desktop (GNOME requires the AppIndicator extension); <code>xdg-open</code>; optional <code>notify-send</code></td></tr>
-<tr><td>Windows client</td><td>Windows 11 with WebView2 Runtime; installed from the MSI</td></tr>
+<tr><td>Windows client</td><td>Windows 10 version 2004 or later, or Windows 11, with the WebView2 Runtime (built into Windows 11); installed from the MSI or the Store. Neither OpenSSH nor VBScript is needed</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
 <p>Everyday shape of the installation is changed in Settings (§2.6), not by editing a file. The daemon still reads <code>config.json</code> from the working directory (or <code>--config</code>). An existing file is never overwritten on upgrade. Working-copy paths must be absolute and must not nest. The field table is in <a href="operations.html#ops-config">Operations</a>.</p>
@@ -93,8 +97,11 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Someone with keys on the server sends you an e-mail invitation — see <a href="administration.html#ch4-admin">invite</a>. On this computer choose <strong>Activate client on a new server…</strong>, paste the invitation from the first letter, then paste the OTP from the second. You never type a server address, port or client identifier. The GUI only presents the steps; the daemon owns the network and the files.</p>
 <p>A normal invitation opens a new realm (<strong>strefa</strong>). The application then asks once for its immutable alias. An invitation bound to an existing realm inherits that alias and its folders; you are not asked to rename it. Optional folders stay unattached until you connect them in Settings.</p>
 <p>If activation already reached <code>accepted</code> and then stopped, choose <strong>Resume</strong>. A different invitation may replace only unfinished state. An existing <code>client-profile.json</code> is a hard stop.</p>
+<h4>Trying FileES without a server: Demo</h4><div class="section-meta"><span class="status status-verified">Verified</span><span>Demo activation passed acceptance on a clean Windows (2026-09-24).</span></div>
+<p>The <strong>Demo</strong> button activates the client on the public FileES demo server without an invitation: you enter your e-mail address and type the code from the message. The demo account lasts 120 minutes with 1 GB of space; the server then removes it with its data. One demo activation is allowed per installation. On the demo server, public links and upload shelves can be viewed but transfer no files, and grants to other realms and phone pairing are disabled — on your own server they work normally.</p>
 <h4>Adding a local directory</h4>
 <p>In Settings choose the server, then <strong>Połącz z lokalnym folderem</strong> (or add a new folder you own). FileES checks that the server has room, creates the share, and publishes the first snapshot. If there is not enough room you see the required and available sizes. A failure is shown in the window; the operation does not end without an error message. The technical detail behind this operation is in <a href="operations.html#ops-provision">Operations</a>.</p>
+<p>Creating a repository and the first publication of a large folder can take a while. Meanwhile an overlay covers the window with the stage, the elapsed time and a progress bar (files and bytes sent). <strong>Work in the background</strong> collapses it into a strip above the tiles; <strong>Show</strong> brings it back. Closing the window does not stop the operation — the daemon carries it.</p>
 <h2 id="ch2-sync">2.4 Day-to-Day Sync</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Normal operation, outage accumulation, bounded shutdown and restart reconciliation tested.</span></div>
 <p>Once active, the daemon operates without user interaction:</p>
 <ul>
@@ -221,6 +228,11 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Autostart belongs to the current client installer, not a Wails command mode. On Linux it starts the daemon+GUI pair in the user session. On Windows the MSI puts a shortcut in the Startup folder, and uninstalling removes it.</p>
 <h2 id="ch2-update">2.7 Signed Desktop Updates</h2><div class="section-meta"><span class="status status-verified">Verified end to end</span><span>Signed SVN release, dry run, existing Linux installer, anti-rollback and controlled GUI restart are covered by a reproducible integration test.</span></div>
 <p>Desktop updates are opt-in. The build carries one trusted public key; Settings cannot replace it or skip the signature. The envelope and anti-rollback rules are in <a href="operations.html#ops-update">Operations</a>.</p>
+<h4>Channels: alpha and beta</h4>
+<p>Desktop releases appear in two signed channels, built from the same source revision. <strong>Alpha</strong> carries every feature, including those in preparation (such as the Windows Explorer anchor). <strong>Beta</strong> is an accepted release without features in preparation; the Microsoft Store version comes from it. A new installation asks for the channel; to change it later:</p>
+<pre><code>filees update-channel --config /path/config.json        # read
+filees update-channel beta --config /path/config.json   # change, then restart the pair</code></pre>
+<p>Changing the channel never downgrades: if the installed alpha is newer than the beta, the program waits until the beta catches up.</p>
 <h4>User flow</h4>
 <ol>
 <li>A verified newer release is shown after clicking the version pill in the panel header.</li>

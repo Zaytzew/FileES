@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -356,8 +357,18 @@ func parseLockXML(r io.Reader) ([]reservationv1.Reservation, error) {
 		if entry.Lock == nil {
 			continue
 		}
+		// relative-url is a piece of a URL: "ę" arrives as %C4%99 and a space
+		// as %20. Everything past this worker - the listing, the release that
+		// matches it against the working copy, the interface - speaks file
+		// names, so the URL form ends here. It used to travel on, and a lock on
+		// "Zdjęcia z budowy/ujęcie 009.jpg" was shown percent-encoded and could
+		// not be released (Windows Sandbox on demo.filees.space, 2026-09-24).
+		path, err := url.PathUnescape(strings.TrimPrefix(entry.RelativeURL, "^/"))
+		if err != nil {
+			return nil, fmt.Errorf("lock path %q: %w", entry.RelativeURL, err)
+		}
 		reservations = append(reservations, reservationv1.Reservation{
-			Path:      strings.TrimPrefix(entry.RelativeURL, "^/"),
+			Path:      path,
 			Token:     entry.Lock.Token,
 			OwnerID:   entry.Lock.Owner,
 			Comment:   entry.Lock.Comment,

@@ -30,6 +30,16 @@ const (
 	sessionKillGrace    = 2 * time.Second
 )
 
+// svnserveEnvironment is the whole environment svnserve gets: nothing from
+// the SSH side, only a UTF-8 character type. svnserve converts hook arguments
+// from UTF-8 to the native encoding before it starts a hook; under the empty
+// environment's "C" locale (ASCII on OpenBSD) a path such as
+// "Zdjęcia z budowy/ujęcie 008.jpg" cannot be converted, and every lock or
+// unlock of such a file failed with "Failed to start ... pre-lock hook"
+// (Windows Sandbox acceptance on demo.filees.space, 2026-09-24). Files with
+// ASCII names were unaffected, which is why earlier lock tests passed.
+var svnserveEnvironment = []string{"LC_CTYPE=C.UTF-8"}
+
 // RunClientSessionChild is an internal, one-shot process mode. Its only
 // authority is the inherited gate descriptor; it has no SSH command parsing
 // and receives no caller-controlled argv from the forced-command path.
@@ -62,7 +72,7 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 		report(stderr, "filees-client-entry child sandbox", err)
 		return ExitSoftware
 	}
-	if err := syscall.Exec(svnserve, []string{filepath.Base(svnserve), "-t", "--tunnel-user", clientID, "-r", root}, []string{}); err != nil {
+	if err := syscall.Exec(svnserve, []string{filepath.Base(svnserve), "-t", "--tunnel-user", clientID, "-r", root}, svnserveEnvironment); err != nil {
 		report(stderr, "filees-client-entry child exec", err)
 		return ExitSoftware
 	}

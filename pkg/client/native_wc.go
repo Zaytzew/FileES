@@ -178,10 +178,12 @@ func appendNativeStatus(out []StatusEntry, raw map[string]any) []StatusEntry {
 		if path == "." {
 			continue
 		}
+		conflicted, _ := row["conflicted"].(bool)
 		out = append(out, StatusEntry{
-			Path:  filepath.FromSlash(path),
-			Item:  fmt.Sprint(row["item"]),
-			Props: fmt.Sprint(row["props"]),
+			Path:       filepath.FromSlash(path),
+			Item:       fmt.Sprint(row["item"]),
+			Props:      fmt.Sprint(row["props"]),
+			Conflicted: conflicted,
 		})
 	}
 	return out

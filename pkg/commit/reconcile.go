@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -80,7 +81,7 @@ func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string)
 	ts := time.Now().Format("2006.01.02@15.04")
 	kolizjeBase := filepath.Join(wc, kolizjeDir, ts+"_lokalne")
 
-	resolved := 0
+	resolved, identical := 0, 0
 	for _, rel := range conflicted {
 		absFile := filepath.Join(wc, filepath.FromSlash(rel))
 
@@ -102,13 +103,27 @@ func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string)
 		}
 
 		out, err := s.Cli.Resolve(ctx, wc, []string{rel}, "theirs-full")
+		if err != nil && s.revertAddedOverAdded(ctx, wc, rel) {
+			err = nil
+		}
 		if err != nil {
 			s.Logger.Warnf("reconcile: svn resolve %s: %v\n%s", rel, err, out)
+			continue
+		}
+		if sameFileContents(filepath.Join(kolizjeBase, filepath.FromSlash(rel)), absFile) {
+			// The server holds exactly these bytes: nothing of the local
+			// version is lost, so no copy is kept and nobody is told to look.
+			removeConflictCopy(kolizjeBase, rel)
+			identical++
+			s.Logger.Infof("reconcile: %s — identical on both sides, resolved", rel)
 			continue
 		}
 		resolved++
 		s.Logger.Infof("reconcile: %s — server version accepted, local copy saved to %s",
 			rel, filepath.Join(kolizjeDir, ts+"_lokalne"))
+	}
+	if identical > 0 {
+		s.Logger.Infof("reconcile: %d conflict(s) with identical contents resolved without a copy", identical)
 	}
 
 	if resolved > 0 {
@@ -123,8 +138,86 @@ func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string)
 		})
 	}
 	if s.OnConflicts != nil {
-		s.OnConflicts(len(conflicted) - resolved)
+		s.OnConflicts(len(conflicted) - resolved - identical)
 	}
+}
+
+// ReconcileStandingConflicts resolves conflicts already present in the
+// working copy when the repository starts. The update that produced them may
+// predate this client (owner's KRAŃCOWA-PŁOŃSK, 2026-09-25: 93 tree conflicts
+// from August, invisible until the editing-policy migration refused a dirty
+// working copy). The same policy as after an update applies: the server
+// version wins and a differing local version is kept in !kolizje.
+func (s *Service) ReconcileStandingConflicts(ctx context.Context, wc string) {
+	entries, err := s.Cli.Status(ctx, wc, nil)
+	if err != nil {
+		s.Logger.Warnf("reconcile: status for standing conflicts: %v", err)
+		return
+	}
+	var conflicted []string
+	for _, entry := range entries {
+		if !entry.Conflicted {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(wc, entry.Path)); err != nil || !info.Mode().IsRegular() {
+			continue // a directory or missing node is not ours to settle here
+		}
+		conflicted = append(conflicted, filepath.ToSlash(entry.Path))
+	}
+	if len(conflicted) == 0 {
+		return
+	}
+	s.Logger.Warnf("reconcile: %d standing conflict(s) in the working copy — reconciling", len(conflicted))
+	s.reconcile(ctx, wc, conflicted)
+}
+
+type pathReverter interface {
+	Revert(ctx context.Context, rootDirectory string, paths []string) (string, error)
+}
+
+// revertAddedOverAdded settles the one tree conflict "theirs-full" cannot:
+// a file scheduled for addition here while the update brought the same path
+// from the server. Reverting the local addition leaves the incoming file; the
+// caller already keeps the local bytes in !kolizje. Any other tree conflict
+// (an incoming delete over a local edit, say) is left for the user.
+func (s *Service) revertAddedOverAdded(ctx context.Context, wc, rel string) bool {
+	reverter, ok := s.Cli.(pathReverter)
+	if !ok {
+		return false
+	}
+	entries, err := s.Cli.Status(ctx, wc, []string{rel})
+	if err != nil || len(entries) != 1 || !entries[0].Conflicted || entries[0].Item != "replaced" {
+		return false
+	}
+	if out, err := reverter.Revert(ctx, wc, []string{rel}); err != nil {
+		s.Logger.Warnf("reconcile: revert local addition of %s: %v\n%s", rel, err, out)
+		return false
+	}
+	after, err := s.Cli.Status(ctx, wc, []string{rel})
+	return err == nil && len(after) == 1 && !after[0].Conflicted
+}
+
+func sameFileContents(a, b string) bool {
+	left, err := os.ReadFile(a)
+	if err != nil {
+		return false
+	}
+	right, err := os.ReadFile(b)
+	return err == nil && bytes.Equal(left, right)
+}
+
+// removeConflictCopy drops a copy that turned out identical to the server's,
+// with its .meta and the directories this batch created and left empty.
+func removeConflictCopy(kolizjeBase, rel string) {
+	copyPath := filepath.Join(kolizjeBase, filepath.FromSlash(rel))
+	_ = os.Remove(copyPath)
+	_ = os.Remove(copyPath + ".meta")
+	for dir := filepath.Dir(copyPath); strings.HasPrefix(dir, kolizjeBase); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			break
+		}
+	}
+	_ = os.Remove(filepath.Dir(kolizjeBase)) // !kolizje itself, only when empty
 }
 
 // saveConflictCopy copies src to <kolizjeBase>/<rel> and writes a .meta file alongside.

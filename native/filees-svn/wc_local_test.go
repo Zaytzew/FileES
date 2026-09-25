@@ -247,3 +247,32 @@ func TestWCLocalInfoDoesNotTouchTheRepository(t *testing.T) {
 		t.Fatalf("info without a repository: %#v", got["entries"])
 	}
 }
+
+// A file added here while an update brings the same path: node status reads
+// "replaced", so without the flag the conflict was invisible to the daemon
+// (owner's working copy, 2026-09-25: 93 such conflicts).
+func TestStatusMarksAddAddTreeConflict(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	write(t, filepath.Join(f.wc, "mesh.bin"), "same bytes")
+	f.svnRun(t, "add", "mesh.bin")
+	other := filepath.Join(f.root, "incoming")
+	if err := os.Mkdir(other, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(other, "mesh.bin"), "same bytes")
+	f.svnRun(t, "import", filepath.Join(other, "mesh.bin"), f.repoURL+"/mesh.bin", "-m", "incoming add")
+	f.svnRun(t, "update")
+	rows := f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--", "mesh.bin", "old.txt")["entries"].([]any)
+	mesh, old := rows[0].(map[string]any), rows[1].(map[string]any)
+	if mesh["item"] != "replaced" || mesh["conflicted"] != true {
+		t.Fatalf("add/add conflict not marked: %#v", mesh)
+	}
+	if _, present := old["conflicted"]; present {
+		t.Fatalf("a clean row carries a conflict flag: %#v", old)
+	}
+	f.svnRun(t, "revert", "mesh.bin")
+	rows = f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--", "mesh.bin")["entries"].([]any)
+	if row := rows[0].(map[string]any); row["item"] != "normal" || row["conflicted"] != nil {
+		t.Fatalf("revert did not settle the add/add conflict: %#v", row)
+	}
+}

@@ -52,6 +52,10 @@ struct status_row {
     const char *props;
     svn_lock_t *local_lock;
     svn_lock_t *repos_lock;
+    /* Text, property or tree conflict. node_status alone reads "replaced" for
+       a local add over an incoming add, which left 93 such conflicts
+       unnoticed in an owner's working copy (2026-09-25). */
+    svn_boolean_t conflicted;
 };
 
 static svn_error_t *collect_status(void *baton, const char *path,
@@ -73,6 +77,7 @@ static svn_error_t *collect_status(void *baton, const char *path,
     row->props = filees_status_kind(status->prop_status);
     row->local_lock = status->lock ? svn_lock_dup(status->lock, b->pool) : NULL;
     row->repos_lock = status->repos_lock ? svn_lock_dup(status->repos_lock, b->pool) : NULL;
+    row->conflicted = status->conflicted;
     return SVN_NO_ERROR;
 }
 
@@ -124,6 +129,7 @@ static svn_error_t *nested_unversioned_status(svn_error_t *original,
                 row->item = ancestor->item;
                 row->props = "none";
                 row->local_lock = row->repos_lock = NULL;
+                row->conflicted = FALSE;
                 svn_error_clear(original);
                 return SVN_NO_ERROR;
             }
@@ -158,6 +164,7 @@ static svn_error_t *absent_status(svn_error_t *original, const char *path,
     row->path = rel;
     row->item = row->props = "none";
     row->local_lock = row->repos_lock = NULL;
+    row->conflicted = FALSE;
     svn_error_clear(original);
     return SVN_NO_ERROR;
 }
@@ -227,6 +234,7 @@ svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
         filees_json_string(row->item);
         printf(",\"props\":");
         filees_json_string(row->props);
+        if (row->conflicted) printf(",\"conflicted\":true");
         if (remote) {
             status_lock("local_lock", row->local_lock, pool);
             status_lock("repos_lock", row->repos_lock, pool);

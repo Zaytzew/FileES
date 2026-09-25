@@ -16,3 +16,6 @@
 .hb-local { padding: 2px 8px; border-radius: 999px; color: #b8f0cf; background: rgba(46, 160, 100, .16); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .hb-actions { display: flex; gap: 6px; }
 .hb-actions button { padding: 5px 10px; font-size: 12px; }
+.hb-loading { display: flex; align-items: center; gap: 8px; }
+.hb-spinner { width: 15px; height: 15px; flex: 0 0 auto; border: 2px solid rgba(255, 106, 0, .2); border-top-color: var(--orange); border-radius: 50%; animation: hb-spin .8s linear infinite; }
+@keyframes hb-spin { to { transform: rotate(360deg); } }

@@ -64,6 +64,11 @@ async function list(path) {
   const token = ++state.token;
   state.loading = true;
   state.path = path;
+  // The previous folder's rows must not survive into the render for this one:
+  // left clickable while the request is in flight, a fast second click reads
+  // a stale row's name against the new path and asks for a path that was
+  // never a child of it (2026-09-26, reported from real use).
+  state.entries = [];
   renderEntries();
   try {
     const result = await HeadBrowser.List(path);
@@ -102,7 +107,13 @@ function renderEntries() {
   const listNode = $("#hb-entries");
   const up = state.path ? `<button type="button" class="tm-entry tm-up" data-open-path="${escapeHTML(parentPath(state.path))}">↑ ${escapeHTML(t("headBrowser.up"))}</button>` : "";
   if (!state.entries.length) {
-    listNode.innerHTML = up + `<p class="tm-hint">${escapeHTML(t(state.loading ? "headBrowser.loading" : "headBrowser.emptyFolder"))}</p>`;
+    // A spinner, not just text: a network-bound list is exactly the interval
+    // where an impatient click would otherwise land on a row from the folder
+    // being left, so the loading state has to read as busy, not empty.
+    const hint = state.loading
+      ? `<p class="tm-hint hb-loading"><span class="hb-spinner" aria-hidden="true"></span>${escapeHTML(t("headBrowser.loading"))}</p>`
+      : `<p class="tm-hint">${escapeHTML(t("headBrowser.emptyFolder"))}</p>`;
+    listNode.innerHTML = up + hint;
     return;
   }
   const disabled = state.busy ? " disabled" : "";

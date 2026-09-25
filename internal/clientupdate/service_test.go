@@ -67,11 +67,10 @@ func TestServiceStatusPlanApplyAndPersistAntiRollback(t *testing.T) {
 	if err != nil || status.State != "restart_required" || !status.RestartRequired {
 		t.Fatalf("post-apply status = %+v, %v", status, err)
 	}
-	service.Resolver = resolverStub{resolved: resolvedRelease(1, "r1", "0.9")}
 	// A new process verifies channels again; the old process only reports its
 	// already verified pending restart, without another installation.
-	service.appliedRestart = false
-	if _, err := service.Status(context.Background()); err == nil {
+	restarted := &Service{Resolver: resolverStub{resolved: resolvedRelease(1, "r1", "0.9")}, Installer: installer, State: store, CurrentVersion: "1.1"}
+	if _, err := restarted.Status(context.Background()); err == nil {
 		t.Fatal("service accepted signed rollback")
 	}
 }
@@ -270,5 +269,41 @@ func TestANewReleaseShowsWithoutRestartingThePair(t *testing.T) {
 	}
 	if statusCacheTTL > time.Minute {
 		t.Fatalf("answer lifetime %v hides a release for too long", statusCacheTTL)
+	}
+}
+
+type slowResolver struct {
+	release  chan struct{}
+	resolved *releaseenvelope.Resolved
+}
+
+func (r slowResolver) Resolve(ctx context.Context, _, _, _ string) (*releaseenvelope.Resolved, error) {
+	select {
+	case <-r.release:
+		return r.resolved, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// Owner's station, r1566, 2026-09-25: a freshly started daemon read the
+// release channel inside the first status call; on a slow link that outlasted
+// the interface's limit on every attempt, and the interface never connected.
+// The first check runs in the background and the status call does not wait
+// for the network.
+func TestFirstStatusDoesNotWaitForASlowChannel(t *testing.T) {
+	resolver := slowResolver{release: make(chan struct{}), resolved: resolvedRelease(2, "r2", "1.1")}
+	service := &Service{Resolver: resolver, Installer: &installerStub{}, State: StateStore{Path: filepath.Join(t.TempDir(), "update.json")}, CurrentVersion: "1.0"}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	started := time.Now()
+	_, err := service.Status(ctx)
+	cancel()
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("first status waited for the channel: err=%v after %v", err, time.Since(started))
+	}
+	close(resolver.release)
+	service.refreshes.Wait()
+	if status, err := service.Status(context.Background()); err != nil || status.State != "available" {
+		t.Fatalf("status after the background check = %+v, %v", status, err)
 	}
 }

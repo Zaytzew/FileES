@@ -531,3 +531,27 @@ func TestRepositoryServiceRejectsUnscopedRequests(t *testing.T) {
 		t.Fatalf("unscoped shares = %+v, %v", shares, err)
 	}
 }
+
+// The remedy button belongs to the owner, who has the editing-policy action;
+// a guest gets the explanation and whom to ask, never a button that fails.
+func TestRepositoryServiceProjectsTheFolderProblemWithItsRemedy(t *testing.T) {
+	problem := &platform.FolderProblem{Kind: "borrow_pending", Path: "a.dwg", Code: "LOCK-2104", Remedy: "disable_editing_lock"}
+	request := platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{
+		ID: "cloud", Folders: []platform.SettingsFolder{{ID: "docs", Name: "Dokumenty", Problem: problem, CanSetEditingPolicy: true, LockRequired: true}},
+	}}}
+	snapshot, ok := projectRepositorySettings(request)
+	if !ok || snapshot.Problem == nil || snapshot.Problem.ActionID != string(platform.SettingsDialogEditingPolicy) || snapshot.Problem.Path != "a.dwg" {
+		t.Fatalf("owner problem=%+v ok=%v", snapshot.Problem, ok)
+	}
+	guest := *problem
+	guest.Remedy = "ask_owner"
+	request.Servers[0].Folders[0] = platform.SettingsFolder{ID: "docs", Name: "Dokumenty", Problem: &guest, LockRequired: true}
+	snapshot, _ = projectRepositorySettings(request)
+	if snapshot.Problem == nil || snapshot.Problem.ActionID != "" || snapshot.Problem.Remedy != "ask_owner" {
+		t.Fatalf("guest problem=%+v", snapshot.Problem)
+	}
+	request.Servers[0].Folders[0] = platform.SettingsFolder{ID: "docs", Name: "Dokumenty"}
+	if snapshot, _ = projectRepositorySettings(request); snapshot.Problem != nil {
+		t.Fatalf("problem without a cause: %+v", snapshot.Problem)
+	}
+}

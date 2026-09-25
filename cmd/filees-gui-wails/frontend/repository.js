@@ -5,6 +5,7 @@ import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, labelHTML, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, canArchive, setArchived } from "./repo-view.js";
 import { renameOffered } from "./rename-entry.js";
+import { problemCardHTML } from "./problem-card.js";
 
 initializeTheme();
 initializeLanguage();
@@ -38,6 +39,7 @@ function refreshRepositoryLabels() {
 }
 
 window.addEventListener("filees:language-changed", refreshRepositoryLabels);
+window.addEventListener("filees:language-changed", () => renderProblem());
 
 function showToast(title, message = "") {
   const toast = document.createElement("article");
@@ -147,6 +149,13 @@ function shelfTime(value) {
 	return when.toLocaleString(getLocale(), {dateStyle: "short", timeStyle: "short"});
 }
 
+function renderProblem(detailMode = currentSnapshot?.mode !== "actions") {
+  const html = detailMode ? "" : problemCardHTML(currentSnapshot?.problem, t, escapeHTML);
+  const view = $("#problem-view");
+  if (view.dataset.html !== html) { view.innerHTML = html; view.dataset.html = html; }
+  view.hidden = !html;
+}
+
 function render(snapshot) {
   if (!snapshot?.revision || !snapshot.context?.repo_id) return;
   if (renaming && (snapshot.context.server_id !== currentSnapshot?.context?.server_id || snapshot.context.repo_id !== currentSnapshot?.context?.repo_id)) renaming = null;
@@ -170,6 +179,7 @@ function render(snapshot) {
   $("#repository-editing").innerHTML = context.editing_key ? labelHTML(context.editing_key) : escapeHTML(context.editing || "—");
 	$("#repository-facts").hidden = detailMode;
 	$("#actions-view").hidden = detailMode || renaming;
+	renderProblem(detailMode);
 	$("#rename-view").hidden = detailMode || !renaming;
 	const offerRename = renameOffered(detailMode, renaming);
 	$("#rename-inline").hidden = !offerRename;
@@ -376,6 +386,10 @@ $("#rename-cancel").addEventListener("click", closeRename);
 $("#rename-inline").addEventListener("click", openRename);
 
 Events.On("filees:repository-snapshot", (event) => render(event?.data ?? event));
+$("#problem-view").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-repository-action]");
+  if (button) chooseAction(button.dataset.repositoryAction, button);
+});
 $("#repository-actions").addEventListener("click", (event) => {
   if (event.target.closest("[data-rename-view]")) {
     openRename();

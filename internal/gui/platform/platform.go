@@ -377,6 +377,14 @@ type SettingsServer struct {
 	Folders              []SettingsFolder
 }
 
+// FolderProblem is app.FolderProblem plus the one step this user can take:
+// "disable_editing_lock" for the owner (the action is in the same window),
+// "ask_owner" for everybody else.
+type FolderProblem struct {
+	Kind, Path, Since, Code, Reason, Remedy string
+	More                                    int
+}
+
 // SettingsFolder's Can* fields mirror the exact preconditions their
 // corresponding controller action (startDetachRepository, startLoadDump in
 // actions.go) checks before doing anything. Each was added after a live,
@@ -387,6 +395,9 @@ type SettingsServer struct {
 // with repositoryOwnedByCurrentRealm/CanDetachRepository/CanDeleteRepository
 // rather than reintroducing an unconditional button.
 type SettingsFolder struct {
+	// Problem explains a folder that needs attention; nil when there is
+	// nothing this window can explain.
+	Problem                            *FolderProblem
 	StateKey, AccessKey, EditingKey    string
 	LastCommitAt                       string
 	CanFoldInactive                    bool

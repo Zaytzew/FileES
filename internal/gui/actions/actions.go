@@ -1003,15 +1003,25 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			editing = "wymaga wypożyczenia"
 			editingKey = "repoState.lockEditing"
 		}
+		canSetEditingPolicy := repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached
+		var problem *platform.FolderProblem
+		if found, ok := vm.FolderProblem(repo.ID); ok {
+			remedy := "ask_owner"
+			if canSetEditingPolicy && lockRequired {
+				remedy = "disable_editing_lock"
+			}
+			problem = &platform.FolderProblem{Kind: found.Kind, Path: found.Path, Since: found.Since, Code: found.Code, Reason: found.Reason, More: found.More, Remedy: remedy}
+		}
 		row.Folders = append(row.Folders, platform.SettingsFolder{
-			ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
+			Problem: problem,
+			ID:      repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
 			StateKey: stateKey, AccessKey: accessKey, EditingKey: editingKey,
 			Editing:      editing,
 			LockRequired: lockRequired,
 			// Ownership alone, not ownedAndCreatable: whether a realm may
 			// create new repositories says nothing about its right to set
 			// the working rules of one it already owns.
-			CanSetEditingPolicy:      repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanSetEditingPolicy:      canSetEditingPolicy,
 			CanManageGrants:          repo.Purpose == "" && !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
 			CanManagePublicShares:    repo.Purpose == "" && !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
 			CanManageUploadChannels:  repo.Purpose == "" && !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,

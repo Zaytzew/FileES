@@ -102,6 +102,26 @@ tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/filees-release-sign.XXXXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 commit_paths=""
 
+pending=""
+
+# signify asks for the passphrase once per signature, and a mistyped one used
+# to end the run with the earlier signatures already moved into the working
+# copy - which then refused every later run as having local changes (owner,
+# 2026-09-25). Every signature is now made in $tmp_dir, a mistyped passphrase
+# is asked again, and the working copy changes only once all of them exist.
+sign_to() {
+	message=$1
+	out=$2
+	attempt=1
+	until "$SIGNIFY_BIN" -S -s "$SIGNIFY_SEC_KEY" -m "$message" -x "$out"; do
+		[ "$attempt" -lt 3 ] || die "not signed after 3 attempts: $message (working copy unchanged)"
+		attempt=$((attempt + 1))
+		echo "filees-release-sign: signing failed, enter the passphrase again ($attempt/3)" >&2
+	done
+	"$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$message" -x "$out" \
+		|| die "fresh signature does not verify: $message (working copy unchanged)"
+}
+
 sign_manifest() {
 	path=$1
 	sig="${path}.sig"
@@ -112,11 +132,8 @@ sign_manifest() {
 	fi
 	label=$(printf '%s' "$path" | tr '/ ' '__')
 	tmp_sig="$tmp_dir/${label}.sig"
-	"$SIGNIFY_BIN" -S -s "$SIGNIFY_SEC_KEY" -m "$path" -x "$tmp_sig"
-	"$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$path" -x "$tmp_sig" \
-		|| die "fresh signature does not verify: $path"
-	mv "$tmp_sig" "$sig"
-	commit_paths="$commit_paths $sig"
+	sign_to "$path" "$tmp_sig"
+	pending="$pending $tmp_sig=$sig"
 	echo "signed + verified: $sig"
 }
 
@@ -124,15 +141,18 @@ for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifes
 	[ -f "$manifest_path" ] || continue
 	sign_manifest "$manifest_path"
 done
+tmp_channel_sig="$tmp_dir/channel.sig"
+sign_to "$candidate" "$tmp_channel_sig"
 
+# Every signature exists and verifies; only now does the working copy change.
 # The channel is copied only after every immutable manifest has a verified
 # signature. The channel document and all new manifest signatures are then one
 # SVN commit, so HEAD never points at an unsigned release.
+for pair in $pending; do
+	mv "${pair%%=*}" "${pair#*=}"
+	commit_paths="$commit_paths ${pair#*=}"
+done
 mkdir -p "$(dirname "$channel_path")"
-tmp_channel_sig="$tmp_dir/channel.sig"
-"$SIGNIFY_BIN" -S -s "$SIGNIFY_SEC_KEY" -m "$candidate" -x "$tmp_channel_sig"
-"$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$candidate" -x "$tmp_channel_sig" \
-	|| die "fresh channel signature does not verify"
 cp "$candidate" "$channel_path"
 mv "$tmp_channel_sig" "${channel_path}.sig"
 "$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$channel_path" -x "${channel_path}.sig" \

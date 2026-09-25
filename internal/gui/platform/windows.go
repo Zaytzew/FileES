@@ -39,6 +39,8 @@ type WindowsBackend struct {
 	autostart     windowsAutostartStore
 	now           func() time.Time
 	aumid         string
+	toastMu       sync.Mutex
+	toastAppID    string
 	notifInterval time.Duration
 	notifMu       sync.Mutex
 	notifGroups   map[string]windowsNotifGroup
@@ -142,9 +144,10 @@ func powerShellUTF8OutputArgs(name string, args []string) []string {
 }
 
 // WindowsOptions contains integration identity supplied by the composition
-// root. AUMID must match the FileES Start Menu shortcut installed by packaging.
-// Without it notifications report FailureUnavailable instead of impersonating
-// another application.
+// root. AUMID is the one the MSI Start Menu shortcut carries (since
+// 2026-09-25); toasts go under whatever identifier Windows actually lists for
+// FileES (toastApplicationID), falling back to AUMID. Without it notifications
+// report FailureUnavailable instead of impersonating another application.
 type WindowsOptions struct {
 	AUMID string
 }
@@ -205,7 +208,7 @@ func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) 
 	if !b.reserveNotification(groupKey) {
 		return nil
 	}
-	script := buildToastScript(notification, windowsToastTag(groupKey), b.aumid)
+	script := buildToastScript(notification, windowsToastTag(groupKey), b.toastApplicationID(ctx, command))
 	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script); err != nil {
 		b.releaseNotification(groupKey)
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -214,6 +217,52 @@ func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) 
 		return NewOperationalFailure("notifications", err)
 	}
 	return nil
+}
+
+// toastApplicationID answers the identifier Windows knows FileES by. A toast
+// sent under an identifier no Start menu entry carries is dropped without an
+// error, and that is what happened to every Windows notification: the MSI
+// shortcuts never carried AUMID (the GUI's own ATMProjekt.FileES), so Windows
+// knew FileES only by its executable path, and the Store package is known by
+// its package family (owner's report, 2026-09-25). Windows is asked once;
+// only a found answer is kept, so a later install is picked up.
+func (b *WindowsBackend) toastApplicationID(ctx context.Context, powershell string) string {
+	b.toastMu.Lock()
+	defer b.toastMu.Unlock()
+	if b.toastAppID != "" {
+		return b.toastAppID
+	}
+	out, err := b.runner.Output(ctx, powershell, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", startAppIDScript(b.aumid))
+	if err == nil {
+		if found := strings.TrimSpace(string(out)); validToastAppID(found) {
+			b.toastAppID = found
+			return found
+		}
+	}
+	return b.aumid
+}
+
+// startAppIDScript picks FileES among the Start menu entries: the explicit
+// AUMID of a current MSI shortcut, then the Store package family, then the
+// path-derived identifier of an older shortcut to the GUI or its launcher.
+func startAppIDScript(aumid string) string {
+	return "$apps=@(Get-StartApps);" +
+		"$hit=$apps|Where-Object{$_.AppID -eq " + psString(aumid) + "}|Select-Object -First 1;" +
+		"if(-not $hit){$hit=$apps|Where-Object{$_.AppID -like 'FileES.FileESDesktop_*!*'}|Select-Object -First 1};" +
+		`if(-not $hit){$hit=$apps|Where-Object{$_.AppID -match '\\(filees-gui-wails|filees-launch)\.exe$'}|Select-Object -First 1};` +
+		"if($hit){[Console]::Out.Write($hit.AppID)}"
+}
+
+func validToastAppID(id string) bool {
+	if id == "" || len(id) > 512 {
+		return false
+	}
+	for _, r := range id {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func (b *WindowsBackend) reserveNotification(key string) bool {

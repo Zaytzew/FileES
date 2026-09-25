@@ -49,6 +49,111 @@ type Service struct {
 	cached   *contract.UpdateStatus
 	cachedAt time.Time
 	Now      func() time.Time
+
+	// The available release's bundle, fetched in the background (Downloader).
+	downloadMu sync.Mutex
+	download   *downloadJob
+}
+
+// Downloader is implemented by installers whose bundle can be fetched ahead
+// of the plan and the installation.
+type Downloader interface {
+	Download(context.Context, *releaseenvelope.Resolved) error
+	DownloadProgress(*releaseenvelope.Resolved) (have, total int64, ready bool)
+}
+
+type downloadJob struct {
+	resolved *releaseenvelope.Resolved
+	running  bool
+	err      error
+	finished time.Time
+	done     chan struct{}
+}
+
+// DownloadingError answers a plan asked for while the bundle is still being
+// fetched: at once, with the progress, instead of after the network.
+type DownloadingError struct{ Have, Total int64 }
+
+func (e *DownloadingError) Error() string {
+	return fmt.Sprintf("update bundle is still downloading: %d of %d bytes", e.Have, e.Total)
+}
+
+func (e *DownloadingError) DownloadProgress() (int64, int64) { return e.Have, e.Total }
+
+const (
+	// downloadTimeout bounds one background fetch; downloadRetryAfter spaces
+	// automatic retries after a failure (a user's plan request retries at once).
+	downloadTimeout    = 30 * time.Minute
+	downloadRetryAfter = time.Minute
+	// A resolution made by a successful download stays good for planning this
+	// long, so the plan does not read the channel over the network again.
+	downloadResolvedTTL = 30 * time.Minute
+)
+
+func sameRelease(left, right *releaseenvelope.Resolved) bool {
+	return left != nil && right != nil && left.Envelope.ReleaseID == right.Envelope.ReleaseID && left.Manifest.Version == right.Manifest.Version
+}
+
+// ensureDownload starts fetching resolved's bundle unless it is already being
+// fetched or is on disk. A failed fetch is retried automatically only after
+// downloadRetryAfter; now retries at once.
+func (service *Service) ensureDownload(resolved *releaseenvelope.Resolved, now bool) {
+	downloader, ok := service.Installer.(Downloader)
+	if !ok || resolved == nil {
+		return
+	}
+	service.downloadMu.Lock()
+	defer service.downloadMu.Unlock()
+	if job := service.download; job != nil && sameRelease(job.resolved, resolved) {
+		if job.running || job.err == nil || (!now && service.now().Sub(job.finished) < downloadRetryAfter) {
+			return
+		}
+	}
+	job := &downloadJob{resolved: resolved, running: true, done: make(chan struct{})}
+	service.download = job
+	go func() {
+		defer close(job.done)
+		ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+		err := downloader.Download(ctx, resolved)
+		cancel()
+		service.downloadMu.Lock()
+		job.running, job.err, job.finished = false, err, service.now()
+		service.downloadMu.Unlock()
+	}()
+}
+
+func (service *Service) currentDownload() (downloadJob, bool) {
+	service.downloadMu.Lock()
+	defer service.downloadMu.Unlock()
+	if service.download == nil {
+		return downloadJob{}, false
+	}
+	return *service.download, true
+}
+
+// withDownload adds the live download state to an available status. It is
+// applied to cached answers too: the cache holds the channel, not the progress.
+func (service *Service) withDownload(status contract.UpdateStatus) contract.UpdateStatus {
+	downloader, ok := service.Installer.(Downloader)
+	job, started := service.currentDownload()
+	if !ok || !started || status.State != "available" || job.resolved.Manifest.Version != status.AvailableVersion {
+		return status
+	}
+	if !job.running && job.err != nil && service.now().Sub(job.finished) >= downloadRetryAfter {
+		service.ensureDownload(job.resolved, false)
+		job, _ = service.currentDownload()
+	}
+	have, total, ready := downloader.DownloadProgress(job.resolved)
+	status.DownloadedBytes, status.DownloadTotal = have, total
+	switch {
+	case ready:
+		status.Download = "ready"
+	case job.running:
+		status.Download = "downloading"
+	case job.err != nil:
+		status.Download, status.DownloadError = "failed", job.err.Error()
+	}
+	return status
 }
 
 // statusCacheTTL bounds how old a verified channel answer may be before a
@@ -79,13 +184,13 @@ func (service *Service) storeStatus(status *contract.UpdateStatus) {
 
 func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, error) {
 	if status, ok := service.cachedStatus(true); ok {
-		return status, nil
+		return service.withDownload(status), nil
 	}
 	// Another check, a plan or an installation holds the channel: answer with
 	// the last verified status instead of queueing behind the network.
 	if !service.mu.TryLock() {
 		if status, ok := service.cachedStatus(false); ok {
-			return status, nil
+			return service.withDownload(status), nil
 		}
 		return contract.UpdateStatus{}, errors.New("update status is being checked")
 	}
@@ -112,9 +217,26 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 		status.State = "available"
 		status.AvailableVersion = resolved.Manifest.Version
 		status.RestartRequired = true
+		service.ensureDownload(resolved, false)
 	}
 	service.storeStatus(&status)
-	return status, nil
+	return service.withDownload(status), nil
+}
+
+// planResolution reuses the resolution of a completed download when it is
+// recent, so a plan asked for after the background fetch reads nothing over
+// the network. The anti-rollback state is still checked against it.
+func (service *Service) planResolution(ctx context.Context) (*releaseenvelope.Resolved, State, error) {
+	if job, ok := service.currentDownload(); ok && !job.running && job.err == nil && service.now().Sub(job.finished) < downloadResolvedTTL {
+		state, err := service.State.Load()
+		if err != nil {
+			return nil, State{}, err
+		}
+		if err := state.Check(job.resolved.Envelope); err == nil {
+			return job.resolved, state, nil
+		}
+	}
+	return service.resolve(ctx)
 }
 
 func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, error) {
@@ -127,7 +249,11 @@ func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, er
 			RestartRequired: true,
 		}, nil
 	}
-	resolved, state, err := service.resolve(ctx)
+	if job, ok := service.currentDownload(); ok && job.running {
+		have, total, _ := service.Installer.(Downloader).DownloadProgress(job.resolved)
+		return contract.UpdatePlanResult{}, &DownloadingError{Have: have, Total: total}
+	}
+	resolved, state, err := service.planResolution(ctx)
 	if err != nil {
 		return contract.UpdatePlanResult{}, err
 	}
@@ -137,6 +263,17 @@ func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, er
 			CurrentVersion: current, AvailableVersion: resolved.Manifest.Version,
 			ReleaseID: resolved.Envelope.ReleaseID,
 		}, nil
+	}
+	if downloader, ok := service.Installer.(Downloader); ok {
+		if have, total, ready := downloader.DownloadProgress(resolved); !ready {
+			// A fetch of this release that has just failed is reported, not
+			// restarted: whoever waits on the plan must see the failure.
+			if job, ok := service.currentDownload(); ok && sameRelease(job.resolved, resolved) && job.err != nil && service.now().Sub(job.finished) < downloadRetryAfter {
+				return contract.UpdatePlanResult{}, fmt.Errorf("download update bundle: %w", job.err)
+			}
+			service.ensureDownload(resolved, true)
+			return contract.UpdatePlanResult{}, &DownloadingError{Have: have, Total: total}
+		}
 	}
 	changes, restart, err := service.Installer.Plan(ctx, resolved)
 	if err != nil {

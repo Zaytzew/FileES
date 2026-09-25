@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1696,9 +1697,18 @@ func (s *Server) handleUpdatePlan(req contract.Request) contract.Response {
 	if service == nil {
 		return updateUnavailable(req.RequestID)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// The bundle is fetched in the background, so a plan is local once it is
+	// there; the limit covers reading the channel again on a slow link.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	result, err := service.Plan(ctx)
+	var downloading interface{ DownloadProgress() (int64, int64) }
+	if errors.As(err, &downloading) {
+		have, total := downloading.DownloadProgress()
+		return contract.ErrResponse(req.RequestID, "UPDATE-1004", "INFO", "RETRY_BACKOFF", "update.downloading", map[string]string{
+			"downloaded_bytes": strconv.FormatInt(have, 10), "total_bytes": strconv.FormatInt(total, 10),
+		})
+	}
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "UPDATE-1002", "ERROR", "RETRY_BACKOFF", "update.plan_failed", map[string]string{"detail": err.Error()})
 	}

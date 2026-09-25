@@ -297,6 +297,9 @@ type UpdateViewModel struct {
 	ReleaseID        string
 	Summary          string
 	RestartRequired  bool
+	// Background fetch of the available release: downloading | ready | failed.
+	Download                       string
+	DownloadedBytes, DownloadTotal int64
 }
 
 type RecoveryViewModel struct {

@@ -170,6 +170,7 @@
     "sync.working_copy_busy": "The local copy is busy in another program on this computer",
     "system.lifecycle_unavailable": "Restart and shutdown are not available right now",
     "update.apply_failed": "The update could not be applied",
+    "update.downloading": "The update is still downloading",
     "update.plan_failed": "The update plan could not be prepared",
     "update.status_failed": "FileES could not check for updates",
     "update.unavailable": "Updating is not available right now",

@@ -158,3 +158,13 @@ func validateLinuxBundle(root string) error {
 	}
 	return nil
 }
+
+// Download and DownloadProgress: see DirectoryInstaller.
+func (installer LinuxInstaller) Download(ctx context.Context, resolved *releaseenvelope.Resolved) error {
+	_, err := installer.Stager.Download(ctx, resolved)
+	return err
+}
+
+func (installer LinuxInstaller) DownloadProgress(resolved *releaseenvelope.Resolved) (int64, int64, bool) {
+	return installer.Stager.DownloadProgress(resolved)
+}

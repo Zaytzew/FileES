@@ -385,6 +385,9 @@ type UpdateProjection struct {
 	AvailableVersion string `json:"available_version,omitempty"`
 	Summary          string `json:"summary,omitempty"`
 	RestartRequired  bool   `json:"restart_required"`
+	Download         string `json:"download,omitempty"`
+	DownloadedBytes  int64  `json:"downloaded_bytes,omitempty"`
+	DownloadTotal    int64  `json:"download_total,omitempty"`
 }
 
 func newGUIService(client guiapp.DaemonClient) *GUIService {
@@ -1221,6 +1224,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			State: vm.Update.State, Channel: vm.Update.Channel, CurrentVersion: vm.Update.CurrentVersion,
 			AvailableVersion: vm.Update.AvailableVersion, Summary: vm.Update.Summary,
 			RestartRequired: vm.Update.RestartRequired,
+			Download:        vm.Update.Download, DownloadedBytes: vm.Update.DownloadedBytes, DownloadTotal: vm.Update.DownloadTotal,
 		}
 	}
 	return result

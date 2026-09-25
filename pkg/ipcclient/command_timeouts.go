@@ -59,7 +59,7 @@ var commandTimeouts = map[string]time.Duration{
 	"server.detach":                45 * time.Minute,
 	"server.set_session_timeout":   15 * time.Second,
 	"update.apply":                 15 * time.Minute,
-	"update.plan":                  30 * time.Second,
+	"update.plan":                  2 * time.Minute,
 	"update.status":                15 * time.Second,
 	"whale.cancel":                 30 * time.Second,
 	"whale.get":                    30 * time.Second,

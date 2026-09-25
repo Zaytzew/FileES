@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import { promptDetailText } from "../frontend/prompt-details.js";
 import { publicShareURL } from "../frontend/public-share-link.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
+import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
@@ -228,7 +229,7 @@ test("update UI localizes only its fallback, preserving daemon summaries and act
   };
   let locale = "en";
   const render = runInNewContext(`${extract("renderVersionDialog")}\n${extract("renderUpdate")}\n({renderVersionDialog, renderUpdate})`, {
-    $: node, t: (key, args) => translate(catalogues, locale, key, args),
+    $: node, t: (key, args) => translate(catalogues, locale, key, args), updateDownloadLine, bytes: value => `${value} B`,
   });
   render.renderVersionDialog({});
   render.renderVersionDialog({pending_actions: [{kind: "update_apply"}]});
@@ -251,6 +252,9 @@ test("update UI localizes only its fallback, preserving daemon summaries and act
   }
   render.renderVersionDialog({update: {state: "available", available_version: "r2 {current}"}});
   assert.equal(node("#version-status").textContent, "Release r2 {current} is available. Installed release: not set.");
+  locale = "en";
+  render.renderUpdate({update: {state: "available", summary: literal, available_version: "r2", download: "downloading", downloaded_bytes: 4, download_total: 10}});
+  assert.equal(node("#update-summary").textContent, `${literal} Downloading in the background: 4 B of 10 B.`);
   render.renderUpdate({update: {state: "restart_required", restart_required: true}});
   assert.equal(node("#update-title").textContent, "Restart required");
   assert.equal(node("#update-summary").textContent, "Installed version: unknown.");

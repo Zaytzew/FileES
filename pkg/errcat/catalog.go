@@ -296,4 +296,5 @@ var specs = []Spec{
 	{"UPDATE-1001", "update.status_failed", SevError, HintRetryBackoff, nil, "Update status failed"},
 	{"UPDATE-1002", "update.plan_failed", SevError, HintRetryBackoff, nil, "Update plan failed"},
 	{"UPDATE-1003", "update.apply_failed", SevError, HintRequireAction, nil, "Update apply failed"},
+	{"UPDATE-1004", "update.downloading", SevInfo, HintRetryBackoff, []Field{{"downloaded_bytes", ParamBytes}, {"total_bytes", ParamBytes}}, "Update bundle is still downloading"},
 }

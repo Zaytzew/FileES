@@ -45,10 +45,18 @@ type Service struct {
 	// interface's 10-second limit whenever the link to the release server
 	// slowed down, and the interface showed the daemon as gone, in a cycle
 	// (owner's production, 2026-09-25). Errors are never cached.
-	cacheMu  sync.Mutex
-	cached   *contract.UpdateStatus
-	cachedAt time.Time
-	Now      func() time.Time
+	//
+	// An expired answer is still returned at once while the channel is read
+	// again in the background: waiting for it put the network back on the
+	// interface's path every time the answer expired, and the five-minute
+	// lifetime r1558 gave it hid a new release until the pair restarted
+	// (owner, 2026-09-25: "earlier versions showed it instantly").
+	cacheMu    sync.Mutex
+	cached     *contract.UpdateStatus
+	cachedAt   time.Time
+	refreshing bool
+	refreshes  sync.WaitGroup // background refreshes, for tests
+	Now        func() time.Time
 
 	// The available release's bundle, fetched in the background (Downloader).
 	downloadMu sync.Mutex
@@ -156,9 +164,10 @@ func (service *Service) withDownload(status contract.UpdateStatus) contract.Upda
 	return status
 }
 
-// statusCacheTTL bounds how old a verified channel answer may be before a
-// status call reads the channel again.
-const statusCacheTTL = 5 * time.Minute
+// statusCacheTTL is how long a verified channel answer is used before the
+// channel is read again, in the background. The interface asks every 30 s,
+// so a new release shows within about a minute.
+const statusCacheTTL = 30 * time.Second
 
 func (service *Service) now() time.Time {
 	if service.Now != nil {
@@ -186,15 +195,49 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 	if status, ok := service.cachedStatus(true); ok {
 		return service.withDownload(status), nil
 	}
-	// Another check, a plan or an installation holds the channel: answer with
-	// the last verified status instead of queueing behind the network.
+	if status, ok := service.cachedStatus(false); ok {
+		service.refreshInBackground()
+		return service.withDownload(status), nil
+	}
+	// Nothing verified yet. Another check, a plan or an installation holds
+	// the channel: say so instead of queueing behind the network.
 	if !service.mu.TryLock() {
-		if status, ok := service.cachedStatus(false); ok {
-			return service.withDownload(status), nil
-		}
 		return contract.UpdateStatus{}, errors.New("update status is being checked")
 	}
 	defer service.mu.Unlock()
+	return service.checkChannel(ctx)
+}
+
+// refreshInBackground reads the channel again without anyone waiting for it;
+// one refresh at a time, and none while a plan or installation holds it.
+func (service *Service) refreshInBackground() {
+	service.cacheMu.Lock()
+	if service.refreshing {
+		service.cacheMu.Unlock()
+		return
+	}
+	service.refreshing = true
+	service.refreshes.Add(1)
+	service.cacheMu.Unlock()
+	go func() {
+		defer service.refreshes.Done()
+		defer func() {
+			service.cacheMu.Lock()
+			service.refreshing = false
+			service.cacheMu.Unlock()
+		}()
+		if !service.mu.TryLock() {
+			return
+		}
+		defer service.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, _ = service.checkChannel(ctx) // a failure keeps the previous answer
+	}()
+}
+
+// checkChannel runs with mu held.
+func (service *Service) checkChannel(ctx context.Context) (contract.UpdateStatus, error) {
 	if service.appliedRestart {
 		return contract.UpdateStatus{
 			State: "restart_required", Channel: service.Channel,

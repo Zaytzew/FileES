@@ -298,6 +298,11 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .muted { margin:0; color:var(--muted); font-size:12px; line-height:1.5; }
 .empty-state { min-height:220px; display:grid; place-items:center; align-content:center; gap:9px; color:var(--muted); text-align:center; }
 .empty-state span { color:rgba(255,106,0,.48); font-size:35px; } .empty-state p { margin:0; font-size:13px; }
+/* After an expired demo: what happened and the two ways on (app.js demoEndedHTML). */
+.empty-state.demo-ended { max-width:520px; margin:0 auto; padding:18px 12px; gap:10px; }
+.empty-state.demo-ended h3 { margin:0; color:var(--text); font-size:18px; }
+.empty-state.demo-ended p { font-size:13.5px; line-height:1.55; }
+.demo-ended-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:6px; }
 footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:#778499; font-size:11px; letter-spacing:.07em; text-transform:uppercase; }
 
 .toast-stack { position:fixed; z-index:20; right:24px; bottom:22px; width:min(400px,calc(100vw - 48px)); display:grid; gap:9px; pointer-events:none; }

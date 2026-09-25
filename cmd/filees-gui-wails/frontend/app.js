@@ -1,4 +1,4 @@
-import { Events, Window } from "/wails/runtime.js";
+import { Browser, Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowserservice.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
@@ -668,12 +668,36 @@ function serverHealthPresentation(value) {
   }
 }
 
+// After a demo realm expires the client has no server left, and the panel used
+// to say only that there were no folders - a dead end (owner's acceptance,
+// Windows Sandbox, 2026-09-24). It now says what happened, where the files
+// are, and the two ways on: an invitation, or learning what a server is.
+function demoEnded(snapshot) {
+  return (snapshot.detachments || []).some((item) => item.cause === "demo_expired");
+}
+
+function demoEndedHTML() {
+  return `<div class="empty-state demo-ended">
+    <span>◌</span>
+    <h3>${escapeHTML(t("demoEnded.title"))}</h3>
+    <p>${escapeHTML(t("demoEnded.files"))}</p>
+    <p>${escapeHTML(t("demoEnded.next"))}</p>
+    <div class="demo-ended-actions" data-global-action="activation">
+      <button class="primary-button" type="button" data-action="activate">${escapeHTML(t("demoEnded.activate"))}</button>
+      <button class="text-button" type="button" data-external-url="${FILEES_SITE}">${escapeHTML(t("demoEnded.learn"))}</button>
+    </div>
+  </div>`;
+}
+
+// The only address the panel opens in the system browser.
+const FILEES_SITE = "https://filees.space/";
+
 function renderRepositories(snapshot) {
   const root = $("#repositories");
   const repos = snapshot.repositories || [];
   const servers = [...(snapshot.servers || [])];
   if (!servers.length && !repos.length) {
-    return replaceHTMLIfChanged(root, `<div class="empty-state"><span>◌</span><p>${escapeHTML(t("repo.empty"))}</p></div>`);
+    return replaceHTMLIfChanged(root, demoEnded(snapshot) ? demoEndedHTML() : `<div class="empty-state"><span>◌</span><p>${escapeHTML(t("repo.empty"))}</p></div>`);
   }
   const known = new Set(servers.map((server) => server.id));
   repos.forEach((repo) => {
@@ -1450,6 +1474,11 @@ $("#repositories").addEventListener("click", (event) => {
     if (expandedServers.has(serverID)) expandedServers.delete(serverID);
     else expandedServers.add(serverID);
     if (renderRepositories(currentSnapshot)) scheduleWindowFit();
+    return;
+  }
+  const external = event.target.closest("[data-external-url]");
+  if (external) {
+    if (external.dataset.externalUrl === FILEES_SITE) Browser.OpenURL(FILEES_SITE).catch(() => {});
     return;
   }
   const button = event.target.closest("[data-action]");

@@ -461,13 +461,23 @@ test("all action text prompts are marked and mixed form data remain literal", ()
   assert.match(otp, /do not close FileES/);
 });
 
+test("the version-replacement question names itself above its title", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const start = source.indexOf("function modeLabelKey(");
+  const modeLabelKey = runInNewContext(`${source.slice(start, source.indexOf("\n}", start) + 2)}\nmodeLabelKey`, {});
+  // Sandbox, 2026-09-25: it showed "Wybierz serwer", the generic select label.
+  assert.equal(translate(catalogues, "pl", modeLabelKey({mode: "select", presentation_key: "select.replacePredecessor"})), "Zmiana wersji");
+  assert.equal(translate(catalogues, "pl", modeLabelKey({mode: "select", presentation_key: "select.updateChannel"})), "Kanał");
+  assert.equal(modeLabelKey({mode: "select", presentation_key: "select.server"}), "prompt.select");
+});
+
 test("marked input language refresh preserves secret value and pending controls", () => {
   const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
   const extract = name => { const start = source.indexOf(`function ${name}(`); return source.slice(start, source.indexOf("\n}", start) + 2); };
   const nodes = new Map();
   const node = key => {if (!nodes.has(key)) nodes.set(key, {}); return nodes.get(key);};
   let locale = "pl";
-  const refresh = runInNewContext(`${extract("promptText")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
+  const refresh = runInNewContext(`${extract("promptText")}\n${extract("modeLabelKey")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
     $: node, document: {}, submissionError: "", snapshot: {mode: "text", presentation_key: "input.alias", placeholder: "np. jan-k"},
     t: (key, args) => translate(catalogues, locale, key, args),
   });
@@ -491,7 +501,7 @@ test("pairing language refresh preserves server selection, PIN and pending state
   const node = key => {if (!nodes.has(key)) nodes.set(key, {}); return nodes.get(key);};
   let locale = "pl";
   const snapshot = {mode: "select", presentation_key: "select.pairingServer"};
-  const refresh = runInNewContext(`${extract("promptText")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
+  const refresh = runInNewContext(`${extract("promptText")}\n${extract("modeLabelKey")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
     $: node, document: {}, submissionError: "", snapshot,
     t: (key, args) => translate(catalogues, locale, key, args),
   });

@@ -119,6 +119,51 @@ func TestTerminateUnderEndsOnlyProcessesFromThatDirectory(t *testing.T) {
 	}
 }
 
+// The MSI supervisor is powershell.exe from System32 running a script from the
+// install directory; only a script host naming that directory is ended.
+func TestTerminateScriptsFromEndsOnlyScriptHostsNamingThatDirectory(t *testing.T) {
+	powershell := filepath.Join(systemDirectory(), `WindowsPowerShell\v1.0\powershell.exe`)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "start-filees.ps1")
+	if err := os.WriteFile(script, []byte("Start-Sleep -Seconds 60\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "elsewhere.ps1")
+	if err := os.WriteFile(other, []byte("Start-Sleep -Seconds 60\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := exec.Command(powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script)
+	unrelated := exec.Command(powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", other)
+	for _, cmd := range []*exec.Cmd{supervisor, unrelated} {
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = supervisor.Process.Kill(); _ = unrelated.Process.Kill() })
+
+	terminated, err := TerminateScriptsFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminated != 1 {
+		t.Fatalf("terminated %d script hosts, want exactly the one running %s", terminated, script)
+	}
+	done := make(chan error, 1)
+	go func() { done <- supervisor.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the supervisor script host is still running")
+	}
+	unrelatedDone := make(chan error, 1)
+	go func() { unrelatedDone <- unrelated.Wait() }()
+	select {
+	case <-unrelatedDone:
+		t.Fatal("a script host running elsewhere was ended")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
 func copyFile(t *testing.T, from, to string) {
 	t.Helper()
 	in, err := os.Open(from)

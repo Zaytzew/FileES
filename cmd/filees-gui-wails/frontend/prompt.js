@@ -19,6 +19,18 @@ function promptText(next, part, original) {
   return next.presentation_key ? t(`${next.presentation_key}.${part}`, next.presentation_args || {}) : original;
 }
 
+// The eyebrow names what is being decided. "prompt.select" reads "Choose a
+// server", which the version-replacement question showed above its title
+// (sandbox, 2026-09-25); a select about something else names it itself.
+function modeLabelKey(next) {
+  const named = {
+    "select.updateChannel": "select.updateChannel.label",
+    "select.replacePredecessor": "select.replacePredecessor.eyebrow",
+  }[next.presentation_key];
+  if (named) return named;
+  return next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm";
+}
+
 // A locale change must never call render(): it restores defaults, enables
 // buttons and selects input. Update labels only, retaining the pending RPC.
 function refreshPromptLabels() {
@@ -26,7 +38,7 @@ function refreshPromptLabels() {
   const next = snapshot;
   $("#prompt-mode").textContent = submissionError
     ? t("prompt.submitFailed", { reason: submissionError })
-    : t(next.presentation_key === "select.updateChannel" ? "select.updateChannel.label" : next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
+    : t(modeLabelKey(next));
   $("#prompt-label").textContent = next.mode === "text" ? promptText(next, "label", next.label || t("field.value")) : next.label || t("field.value");
   if (next.mode === "text") $("#prompt-value").placeholder = next.placeholder ? promptText(next, "placeholder", next.placeholder) : "";
   $("#prompt-select-label").textContent = next.mode === "select" ? promptText(next, "label", next.label || t("field.server")) : next.label || t("field.server");
@@ -54,7 +66,7 @@ function render(next) {
   const inputMode = next.mode === "text";
   const selectMode = next.mode === "select";
   const infoMode = next.mode === "info";
-  $("#prompt-mode").textContent = t(inputMode ? "prompt.input" : selectMode ? "prompt.select" : infoMode ? "prompt.info" : "prompt.confirm");
+  $("#prompt-mode").textContent = t(modeLabelKey(next));
   $("#prompt-title").textContent = next.title || "FileES";
   $("#prompt-text").textContent = next.text || "";
   $("#prompt-label").textContent = next.label || t("field.value");

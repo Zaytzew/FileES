@@ -23,6 +23,7 @@ export default {
   "info.updateChannelFailed.confirm": "Aceptar",
   "info.updateChannelFailed.cancel": "Cancelar",
   "select.replacePredecessor.title": "Versión anterior de FileES",
+  "select.replacePredecessor.eyebrow": "Cambio de versión",
   "select.replacePredecessor.text": "En este equipo también está instalado {previous}. Las dos versiones no pueden funcionar a la vez, así que se desinstalará la anterior. Los servidores, las activaciones y las carpetas no cambian.",
   "select.replacePredecessor.label": "Configuración",
   "select.replacePredecessor.confirm": "Desinstalar e iniciar",

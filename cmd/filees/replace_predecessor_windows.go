@@ -143,6 +143,12 @@ func runReplacePredecessor(ctx context.Context, args []string, out io.Writer) er
 		sourceConfig = filepath.Join(home, ".filees", "store", "config.json")
 	}
 
+	// The supervisor first: a supervisor still running after its daemon
+	// stopped would restart it, or adopt ours once we start (sandbox,
+	// 2026-09-25).
+	if _, err := predecessor.TerminateScriptsFrom(dir); err != nil {
+		return fmt.Errorf("close the previous supervisor: %w", err)
+	}
 	if err := stopPredecessorDaemon(ctx); err != nil {
 		return err
 	}

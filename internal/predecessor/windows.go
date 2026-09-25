@@ -131,6 +131,71 @@ func systemDirectory() string {
 	return dir
 }
 
+// scriptHosts run the MSI supervisor (start-filees.ps1) and its legacy shim
+// (start-filees.vbs). Their image lives in System32, so TerminateUnder never
+// sees them.
+var scriptHosts = map[string]bool{"powershell.exe": true, "pwsh.exe": true, "wscript.exe": true, "cscript.exe": true}
+
+// TerminateScriptsFrom ends script hosts of this user whose command line
+// names a file inside dir. It runs before the daemon is stopped: in the
+// sandbox acceptance of 2026-09-25 the MSI supervisor outlived the uninstall
+// and adopted the Store daemon as its own replacement (supervisor.log
+// "replacement daemon adopted" after its files were gone). Any other script
+// host - one that merely runs elsewhere - is left alone.
+func TerminateScriptsFrom(dir string) (int, error) {
+	if !filepath.IsAbs(dir) {
+		return 0, errors.New("directory must be absolute")
+	}
+	prefix := strings.ToLower(filepath.Clean(dir)) + string(filepath.Separator)
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return 0, fmt.Errorf("list processes: %w", err)
+	}
+	defer windows.CloseHandle(snapshot)
+	self := windows.GetCurrentProcessId()
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	terminated := 0
+	for err = windows.Process32First(snapshot, &entry); err == nil; err = windows.Process32Next(snapshot, &entry) {
+		if entry.ProcessID == self || entry.ProcessID == 0 || !scriptHosts[strings.ToLower(windows.UTF16ToString(entry.ExeFile[:]))] {
+			continue
+		}
+		handle, openErr := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, entry.ProcessID)
+		if openErr != nil {
+			continue
+		}
+		if line, lineErr := processCommandLine(handle); lineErr == nil && strings.Contains(strings.ToLower(line), prefix) {
+			if windows.TerminateProcess(handle, 1) == nil {
+				terminated++
+			}
+		}
+		windows.CloseHandle(handle)
+	}
+	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+		return terminated, fmt.Errorf("walk processes: %w", err)
+	}
+	return terminated, nil
+}
+
+// processCommandLine reads another process's command line
+// (ProcessCommandLineInformation, Windows 8.1+): a UNICODE_STRING whose
+// buffer follows it in the same allocation.
+func processCommandLine(handle windows.Handle) (string, error) {
+	buf := make([]byte, 4096)
+	for {
+		var needed uint32
+		err := windows.NtQueryInformationProcess(handle, windows.ProcessCommandLineInformation, unsafe.Pointer(&buf[0]), uint32(len(buf)), &needed)
+		if err == nil {
+			text := (*windows.NTUnicodeString)(unsafe.Pointer(&buf[0]))
+			return text.String(), nil
+		}
+		if !errors.Is(err, windows.STATUS_INFO_LENGTH_MISMATCH) || needed <= uint32(len(buf)) || needed > 1<<20 {
+			return "", err
+		}
+		buf = make([]byte, needed)
+	}
+}
+
 // TerminateUnder ends every process of this user whose image lies inside dir,
 // except the caller. It runs after the daemon has been asked to stop and has
 // stopped; what is left is the other variant's window and supervisor, which

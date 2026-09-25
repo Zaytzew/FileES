@@ -40,6 +40,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "android" {
+		return runAndroid(args[1:])
+	}
 	flags := flag.NewFlagSet("filees-site-download", flag.ContinueOnError)
 	configPath := flags.String("config", "", "download.json: channel, key ID and release notes")
 	keyPath := flags.String("key", "", "signify public key of the release key (release-key.pub)")
@@ -104,6 +107,59 @@ func run(args []string) error {
 		fmt.Printf("published %s (%s, %s)\n", strings.Join(result.Installers, ", "), result.Version, result.ReleaseID)
 	} else if !*quiet {
 		fmt.Printf("up to date: %s (%s, %s)\n", strings.Join(result.Installers, ", "), result.Version, result.ReleaseID)
+	}
+	return nil
+}
+
+func runAndroid(args []string) error {
+	flags := flag.NewFlagSet("filees-site-download android", flag.ContinueOnError)
+	keyPath := flags.String("key", "", "signify public key of the release key (release-key.pub)")
+	outDir := flags.String("out", "", "android publication directory")
+	statePath := flags.String("state", "", "state file remembering the published android release")
+	repoURL := flags.String("repo", "svn://cloud.atmprojekt.pl/FILEES-BIN", "FILEES-BIN URL")
+	svnProgram := flags.String("svn", "svn", "svn command")
+	quiet := flags.Bool("quiet", false, "print nothing when the publication is already current or the channel does not exist yet")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	for name, value := range map[string]string{"-key": *keyPath, "-out": *outDir, "-state": *statePath} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+	keyData, err := os.ReadFile(*keyPath)
+	if err != nil {
+		return err
+	}
+	key, err := releaseenvelope.CanonicalSignifyPublicKey(keyData)
+	if err != nil {
+		return fmt.Errorf("%s: %w", *keyPath, err)
+	}
+	out, err := filepath.Abs(*outDir)
+	if err != nil {
+		return err
+	}
+	state, err := filepath.Abs(*statePath)
+	if err != nil {
+		return err
+	}
+	fetcher := svnfetch.SVN{Program: *svnProgram, RepoURL: *repoURL, Timeout: 5 * time.Minute}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	changed, err := publishAndroid(ctx, fetcher, releaseenvelope.Ed25519Verifier{Keys: map[string][]byte{"release-2026-a": key}}, "release-2026-a", out, state)
+	if errors.Is(err, errAndroidUnpublished) {
+		if !*quiet {
+			fmt.Println("android channel is not published yet")
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if changed {
+		fmt.Println("published android channel")
+	} else if !*quiet {
+		fmt.Println("android channel is up to date")
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/androidrelease"
 	"filees/internal/releaseenvelope"
 )
 
@@ -16,7 +17,7 @@ import (
 // channels/beta.json and the desktop has channels/beta.v2.json. It does not
 // read the desktop envelope. filees.space only mirrors the bytes; the
 // signature is checked here with the release key pinned in this binary.
-const updateChannel = "channels/android.json"
+const updateChannel = androidrelease.ChannelPath
 
 var (
 	updateBaseURL    = "https://filees.space/android/"
@@ -71,7 +72,7 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 	if err := verifier.Verify(ctx, updateKeyID, channelBody, channelSig); err != nil {
 		return UpdateOffer{}, err
 	}
-	channel, err := parseAndroidChannel(channelBody)
+	channel, err := androidrelease.ParseChannel(channelBody)
 	if err != nil {
 		return UpdateOffer{}, err
 	}
@@ -89,7 +90,7 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 	if err := verifier.Verify(ctx, updateKeyID, manifestBody, manifestSig); err != nil {
 		return UpdateOffer{}, err
 	}
-	manifest, err := parseAndroidManifest(manifestBody)
+	manifest, err := androidrelease.ParseManifest(manifestBody)
 	if err != nil {
 		return UpdateOffer{}, err
 	}
@@ -120,60 +121,6 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 		offer.Size = 0
 	}
 	return offer, nil
-}
-
-type androidChannel struct {
-	SchemaVersion int    `json:"schema_version"`
-	ReleaseID     string `json:"release_id"`
-	Manifest      string `json:"manifest"`
-	Sequence      uint64 `json:"sequence"`
-	SecurityEpoch uint64 `json:"security_epoch"`
-}
-
-type androidManifest struct {
-	SchemaVersion int    `json:"schema_version"`
-	ReleaseID     string `json:"release_id"`
-	Platform      string `json:"platform"`
-	Sequence      uint64 `json:"sequence"`
-	SecurityEpoch uint64 `json:"security_epoch"`
-	Version       string `json:"version"`
-	APK           struct {
-		Source string `json:"source"`
-		SHA256 string `json:"sha256"`
-		Size   int64  `json:"size"`
-	} `json:"apk"`
-}
-
-func parseAndroidChannel(data []byte) (androidChannel, error) {
-	var channel androidChannel
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&channel); err != nil {
-		return androidChannel{}, fmt.Errorf("android channel: %w", err)
-	}
-	if channel.SchemaVersion != 1 || channel.Sequence == 0 || channel.SecurityEpoch == 0 {
-		return androidChannel{}, fmt.Errorf("android channel is not schema 1 with a positive sequence")
-	}
-	if channel.ReleaseID == "" || !strings.HasPrefix(channel.Manifest, "releases/") || !strings.HasSuffix(channel.Manifest, "/manifest.json") || strings.Contains(channel.Manifest, "..") {
-		return androidChannel{}, fmt.Errorf("android channel manifest path is invalid")
-	}
-	return channel, nil
-}
-
-func parseAndroidManifest(data []byte) (androidManifest, error) {
-	var manifest androidManifest
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&manifest); err != nil {
-		return androidManifest{}, fmt.Errorf("android manifest: %w", err)
-	}
-	if manifest.SchemaVersion != 1 || manifest.Platform != "android" || manifest.Sequence == 0 || manifest.SecurityEpoch == 0 {
-		return androidManifest{}, fmt.Errorf("android manifest is not a schema 1 android release")
-	}
-	if manifest.Version == "" || manifest.APK.Size <= 0 || len(manifest.APK.SHA256) != 64 || strings.Contains(manifest.APK.Source, "/") || !strings.HasSuffix(manifest.APK.Source, ".apk") {
-		return androidManifest{}, fmt.Errorf("android manifest apk is invalid")
-	}
-	return manifest, nil
 }
 
 type httpsFetcher struct{ base string }

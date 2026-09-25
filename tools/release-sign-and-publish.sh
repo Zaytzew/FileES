@@ -21,9 +21,9 @@ case "$RELEASE_ID" in
 	*[!A-Za-z0-9._-]*|'') die "invalid or missing RELEASE_ID" ;;
 esac
 case "$CHANNEL" in
-	alpha|beta|stable) ;;
-	'') die "missing CHANNEL (choose alpha, beta or stable)" ;;
-	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta or stable)" ;;
+	alpha|beta|stable|android) ;;
+	'') die "missing CHANNEL (choose alpha, beta, stable or android)" ;;
+	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta, stable or android)" ;;
 esac
 
 command -v "$SIGNIFY_BIN" >/dev/null 2>&1 || die "signify not found: $SIGNIFY_BIN"
@@ -38,8 +38,20 @@ svn update --quiet
 
 release_root="releases/$RELEASE_ID"
 [ -d "$release_root" ] || die "release directory not found: $release_root"
-candidate="$release_root/channel.v2.json"
-channel_path="channels/${CHANNEL}.v2.json"
+# Android is its own track. channel-android.json must never be promoted by
+# the server's channel.json rule, and a desktop envelope must never be
+# promoted as the phone channel.
+if [ "$CHANNEL" = android ]; then
+	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] \
+		|| die "android release $RELEASE_ID also carries a server or desktop channel candidate"
+	candidate="$release_root/channel-android.json"
+	channel_path="channels/android.json"
+else
+	[ ! -f "$release_root/channel-android.json" ] \
+		|| die "release $RELEASE_ID is an android release; sign it with CHANNEL=android"
+	candidate="$release_root/channel.v2.json"
+	channel_path="channels/${CHANNEL}.v2.json"
+fi
 if [ ! -f "$candidate" ]; then
 	candidate="$release_root/channel.json"
 	channel_path="channels/${CHANNEL}.json"

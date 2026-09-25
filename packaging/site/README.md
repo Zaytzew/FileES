@@ -48,6 +48,21 @@ and template together (stage command below). Copying only the HTML would be
 replaced by the old cron publisher. No new release signing or binary build is
 needed to add the already published server release.
 
+## Android companion
+
+The phone does not read the desktop envelope or the server channel. Its
+document is `channels/android.json` (schema 1, its own sequence), prepared by
+`tools/prepare-android-release.sh` and promoted with
+`CHANNEL=android`, which writes `channels/android.json` and will not replace
+`channels/beta.json` or `channels/beta.v2.json`.
+
+Cron publishes that tree to `/var/lib/filees-site/site/android`, linked from
+the web root as `/android/`. The phone fetches
+`https://filees.space/android/channels/android.json` and the APK named by the
+signed manifest. Until the first android release is signed, this step does
+nothing and does not fail the desktop page. Rollback state is
+`/var/lib/filees-site/state-android.json`.
+
 ## How it works
 
 `cmd/filees-site-download` runs from cron on the web server as the system user

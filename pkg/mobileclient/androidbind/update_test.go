@@ -58,12 +58,15 @@ func TestInspectMobileUpdateOffersTheSignedAPK(t *testing.T) {
 	}
 }
 
-func TestSameAndroidReleaseCollapsesPlusR(t *testing.T) {
-	if !sameAndroidRelease("0.1.17+r1585", "0.1.17.1585") {
-		t.Fatal("installed +r and published dotted revision must be one release")
+func TestChannelReleaseNewerThanInstall(t *testing.T) {
+	if channelReleaseIsNewer("0.1.17+r1585", "0.1.17.1585") {
+		t.Fatal("the installed revision must not download itself")
 	}
-	if sameAndroidRelease("0.1.17+r1585", "0.1.17.1584") {
-		t.Fatal("a different revision must still be offered")
+	if channelReleaseIsNewer("0.1.17+r1590", "0.1.17.1585") {
+		t.Fatal("an older channel must not be downloaded over a newer install")
+	}
+	if !channelReleaseIsNewer("0.1.17+r1585", "0.1.17.1590") {
+		t.Fatal("a later channel revision is an update")
 	}
 }
 

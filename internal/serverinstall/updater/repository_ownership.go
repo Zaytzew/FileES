@@ -54,10 +54,12 @@ const repositoryOwnershipReportLimit = 20
 // is not corrected silently. A dry run only reports.
 func (r *Runner) correctRepositoryOwnership(root string, dryRun bool) error {
 	if root == "" {
+		fmt.Fprintln(r.Out, "[REPO-OWNER] repositories.root is not set in server.json; repository ownership not checked")
 		return nil
 	}
 	info, err := os.Lstat(root)
 	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(r.Out, "[REPO-OWNER] %s does not exist yet; repository ownership not checked\n", root)
 		return nil
 	}
 	if err != nil {
@@ -104,8 +106,12 @@ func (r *Runner) correctRepositoryOwnership(root string, dryRun bool) error {
 		}
 		return nil
 	})
-	if corrected > 0 || r.Config.Talkative {
+	// Always said, also when nothing needed correcting: silence could not tell
+	// "checked, all correct" from "not checked" (spot, r1571, 2026-09-25).
+	if corrected > 0 {
 		fmt.Fprintf(r.Out, "[REPO-OWNER] %s %d of %d entries under %s\n", verb, corrected, inspected, root)
+	} else if err == nil {
+		fmt.Fprintf(r.Out, "[REPO-OWNER] checked %d entries under %s: all owned by uid %d\n", inspected, root, want.UID)
 	}
 	return err
 }

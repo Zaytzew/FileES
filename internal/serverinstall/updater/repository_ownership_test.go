@@ -88,8 +88,13 @@ func TestInstallerGivesForeignOwnedRepositoryFilesBackToTheWorker(t *testing.T) 
 
 	out.Reset()
 	owners.applied = map[string]platform.Ownership{}
-	if err := r.correctRepositoryOwnership(root2, false); err != nil || len(owners.applied) != 0 || out.Len() != 0 {
+	if err := r.correctRepositoryOwnership(root2, false); err != nil || len(owners.applied) != 0 || !strings.Contains(out.String(), "checked 8 entries") || !strings.Contains(out.String(), "all owned by uid 1006") {
 		t.Fatalf("second pass: applied=%v out=%q err=%v", owners.applied, out.String(), err)
+	}
+
+	out.Reset()
+	if err := r.correctRepositoryOwnership("", false); err != nil || !strings.Contains(out.String(), "not set") {
+		t.Fatalf("unset root: out=%q err=%v", out.String(), err)
 	}
 
 	// A root-owned repositories root names no worker account to restore.

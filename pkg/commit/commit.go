@@ -1303,6 +1303,13 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		op  watcher.OpType
 	}
 	var reconciled []reconciledPath
+	// Only this working copy's own anchor makes placeholders that are not the
+	// person's work. Under another provider - Nextcloud's virtual files with
+	// the copy inside the Nextcloud folder - every file the person saves
+	// becomes that provider's placeholder within seconds, fully on disk.
+	// Treating those as anchor placeholders dropped every new file from
+	// publication without a word (owner's production, 2026-09-25).
+	anchored := cloudfiles.IsSyncRoot(wc)
 	for _, p := range addPaths {
 		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -1318,14 +1325,21 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		// HEAD. They are the repository's own files not yet on this disk, not
 		// new work: adding one would publish an empty copy and, on the way,
 		// download it. It joins the copy only when someone opens it.
-		if cloudfiles.IsPlaceholder(filepath.Join(wc, filepath.FromSlash(p))) {
+		abs := filepath.Join(wc, filepath.FromSlash(p))
+		switch placeholderAdd(anchored, cloudfiles.IsPlaceholder(abs), cloudfiles.NotOnDisk(abs)) {
+		case placeholderDrop:
 			s.Logger.Debugf("skip add %s (placeholder not on this disk)", p)
 			s.removePendingIfUnchanged(p, pending)
 			s.forgetActivity(p)
 			continue
+		case placeholderWait:
+			// Another provider holds its bytes elsewhere: reading it would
+			// download it. It stays queued until it is back on this disk.
+			s.Logger.Warnf("defer add %s (another cloud provider keeps it off this disk)", p)
+			continue
 		}
 		item := st[p]
-		if item == "" && hasUnversionedAncestor(p, st) && placeholderAncestor(wc, p) {
+		if item == "" && hasUnversionedAncestor(p, st) && anchored && placeholderAncestor(wc, p) {
 			// A new file saved inside a folder that is still a placeholder
 			// would make FileES add that folder - which already exists on the
 			// server. It waits until the folder itself is brought in.
@@ -2342,6 +2356,29 @@ func dedup(in []string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+type placeholderAddAction int
+
+const (
+	placeholderAddIt placeholderAddAction = iota
+	placeholderDrop
+	placeholderWait
+)
+
+// placeholderAdd decides what a new path's Cloud Files state means. In an
+// anchored copy a placeholder is a repository file not yet opened here, never
+// new work. Anywhere else it is another provider's (Nextcloud) and still the
+// person's file: added when its bytes are on disk, kept waiting when not.
+func placeholderAdd(anchored, placeholder, notOnDisk bool) placeholderAddAction {
+	switch {
+	case anchored && placeholder:
+		return placeholderDrop
+	case !anchored && notOnDisk:
+		return placeholderWait
+	default:
+		return placeholderAddIt
+	}
 }
 
 // placeholderAncestor reports whether a folder above rel is still a Cloud

@@ -101,15 +101,27 @@ func (m *Manager) reconcilePathAccess(ctx context.Context, wc, realmID string) e
 		if !candidates[rel] {
 			return nil
 		}
+		// A confirmed, unexpired passport keeps its file writable whatever the
+		// observation says, unless the observation shows another realm holding
+		// it. Owner's production, 2026-09-25 (KRAŃCOWA-PŁOŃSK): after each of
+		// his own commits the view was unknown until the server's projection
+		// reached the new revision, and after each heartbeat it still carried
+		// the previous token - both removed write access from the drawing he
+		// held and had open, and BricsCAD refused to save it as read-only.
+		// Losing the lock itself is detected by heartbeat and publication, which
+		// inspect the repository, not by this projection.
+		pass, hasPass := local[p]
+		if hasPass && pass.State == StatePending && pass.Pending != nil && pass.Pending.Mode == "renew" {
+			return nil // renewing a held passport: neither grant nor revoke meanwhile
+		}
+		hold, held := view.Holds[rel]
 		rw := false
-		if observationErr == nil {
-			hold, held := view.Holds[rel]
-			if pass, ok := local[p]; ok && pass.State == StateActive && pass.FencingToken == hold.Token && hold.Token != "" && m.cfg.Now().Before(pass.ExpiresAt) {
-				rw = true
-			}
-			if pass, ok := local[p]; (!ok || pass.State != StatePending) && realmID != "" && view.Owners[rel] == realmID && (!held || hold.RealmID == realmID) {
-				rw = true
-			}
+		if hasPass && pass.State == StateActive && m.cfg.Now().Before(pass.ExpiresAt) {
+			foreign := observationErr == nil && held && hold.Token != pass.FencingToken && hold.RealmID != pass.RealmID && hold.RealmID != realmID
+			rw = !foreign
+		}
+		if observationErr == nil && (!hasPass || pass.State != StatePending) && realmID != "" && view.Owners[rel] == realmID && (!held || hold.RealmID == realmID) {
+			rw = true
 		}
 		mode := info.Mode().Perm() &^ 0222
 		if rw {

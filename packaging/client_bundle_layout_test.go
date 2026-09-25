@@ -130,3 +130,52 @@ func TestWindowsShortcutsStartTheSupervisedPair(t *testing.T) {
 		t.Fatalf("missing supervised shortcuts: %v", want)
 	}
 }
+
+// 2026-09-25: the r1558 MSI registered the new version over a self-updated
+// pair, kept the old binaries (unversioned, "modified since install") and
+// stopped on the daemon's open log. Every install now rewrites all files,
+// stops the pair before the files-in-use check and starts it afterwards.
+func TestWindowsMSIReplacesSelfUpdatedFilesAndRestartsThePair(t *testing.T) {
+	raw, err := os.ReadFile("windows/filees.wxs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Package struct {
+			Properties []struct {
+				ID    string `xml:"Id,attr"`
+				Value string `xml:"Value,attr"`
+			} `xml:"Property"`
+			Actions []struct {
+				ID      string `xml:"Id,attr"`
+				Command string `xml:"ExeCommand,attr"`
+				Return  string `xml:"Return,attr"`
+			} `xml:"CustomAction"`
+		} `xml:"Package"`
+	}
+	if err := xml.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	reinstall := ""
+	for _, property := range document.Package.Properties {
+		if property.ID == "REINSTALLMODE" {
+			reinstall = property.Value
+		}
+	}
+	if !strings.Contains(reinstall, "a") {
+		t.Fatalf("REINSTALLMODE=%q does not force every file", reinstall)
+	}
+	commands := map[string]string{}
+	for _, action := range document.Package.Actions {
+		commands[action.ID] = action.Command + " return=" + action.Return
+	}
+	if commands["StopFileESPair"] != `"[INSTALLFOLDER]filees.exe" shutdown return=ignore` {
+		t.Fatalf("stop action: %q", commands["StopFileESPair"])
+	}
+	if commands["StartFileESPair"] != `"[INSTALLFOLDER]filees-launch.exe" return=asyncNoWait` {
+		t.Fatalf("start action: %q", commands["StartFileESPair"])
+	}
+	if !strings.Contains(string(raw), `<Custom Action="StopFileESPair" Before="InstallValidate"`) || !strings.Contains(string(raw), `<Custom Action="StartFileESPair" After="InstallFinalize"`) {
+		t.Fatal("pair actions are not scheduled around the file replacement")
+	}
+}

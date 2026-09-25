@@ -50,6 +50,15 @@
     <string name="notification_channel_watch_description">Avisos de archivos enviados automáticamente desde carpetas vigiladas.</string>
     <string name="notification_watch_sent">Enviado desde una carpeta vigilada</string>
     <string name="notification_watch_sent_text">%1$d archivos a «%2$s»</string>
+    <plurals name="journal_watch_sent">
+        <item quantity="one">Se envió %1$d archivo.</item>
+        <item quantity="other">Se enviaron %1$d archivos.</item>
+    </plurals>
+    <plurals name="journal_watch_waiting">
+        <item quantity="one">%1$d archivo espera una decisión.</item>
+        <item quantity="other">%1$d archivos esperan una decisión.</item>
+    </plurals>
+    <string name="journal_watch_failed">El envío desde la carpeta vigilada no llegó.</string>
     <string name="browse_root">Recurso</string>
     <string name="browse_directory">carpeta</string>
     <string name="browse_file_size">%1$d B</string>

@@ -54,6 +54,19 @@
     <string name="notification_channel_watch_description">Powiadomienia o plikach wysłanych automatycznie z obserwowanych folderów.</string>
     <string name="notification_watch_sent">Wysłano ze śledzonego folderu</string>
     <string name="notification_watch_sent_text">%1$d plików do „%2$s”</string>
+    <plurals name="journal_watch_sent">
+        <item quantity="one">Wysłano %1$d plik.</item>
+        <item quantity="few">Wysłano %1$d pliki.</item>
+        <item quantity="many">Wysłano %1$d plików.</item>
+        <item quantity="other">Wysłano %1$d plików.</item>
+    </plurals>
+    <plurals name="journal_watch_waiting">
+        <item quantity="one">%1$d plik czeka na decyzję.</item>
+        <item quantity="few">%1$d pliki czekają na decyzję.</item>
+        <item quantity="many">%1$d plików czeka na decyzję.</item>
+        <item quantity="other">%1$d plików czeka na decyzję.</item>
+    </plurals>
+    <string name="journal_watch_failed">Wysyłka ze śledzonego folderu nie doszła.</string>
     <string name="browse_root">Udział</string>
     <string name="browse_directory">folder</string>
     <string name="browse_file_size">%1$d B</string>

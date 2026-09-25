@@ -52,6 +52,15 @@
     <string name="notification_channel_watch_description">Notifications about files sent automatically from watched folders.</string>
     <string name="notification_watch_sent">Sent from a watched folder</string>
     <string name="notification_watch_sent_text">%1$d files to “%2$s”</string>
+    <plurals name="journal_watch_sent">
+        <item quantity="one">Sent %1$d file.</item>
+        <item quantity="other">Sent %1$d files.</item>
+    </plurals>
+    <plurals name="journal_watch_waiting">
+        <item quantity="one">%1$d file needs a decision.</item>
+        <item quantity="other">%1$d files need a decision.</item>
+    </plurals>
+    <string name="journal_watch_failed">The watched-folder send did not arrive.</string>
     <string name="browse_root">Share</string>
     <string name="browse_directory">folder</string>
     <string name="browse_file_size">%1$d B</string>

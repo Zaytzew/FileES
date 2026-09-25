@@ -146,6 +146,14 @@ var (
 		"name or service not known", "temporary failure in name resolution",
 		"e170013", "e730047",
 		"anulowana/przekroczono czas", // timeout wrapper from client.go
+		// The built-in SSH client (ssh-exec, activation tunnel; 2026-09-24)
+		// reports dial failures in Go's words, not OpenSSH's: "dial tcp ...:
+		// i/o timeout", "lookup host: no such host", Windows "actively refused
+		// it" / "failed to respond". Without these they were "unknown". A bare
+		// "i/o timeout" is deliberately absent: a local daemon socket times out
+		// the same way and is not the network.
+		"ssh: connect to host", "dial tcp", "no such host",
+		"actively refused", "failed to respond",
 	}
 	// connDroppedNeedles matches OpenSSH's own ServerAlive-timeout message
 	// (pkg/client's ssh -o ServerAliveInterval/ServerAliveCountMax), folded

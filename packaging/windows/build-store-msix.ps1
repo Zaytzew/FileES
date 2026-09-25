@@ -103,9 +103,16 @@ try {
 
 # Embed before packaging/signing. An AppxManifest does not declare the Win32
 # process DPI context; WACK inspects the executable's RT_MANIFEST resource.
-foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'filees-gui-wails.exe')) {
+# filees.exe has no window, but the package declares it as an application (the
+# execution alias), so WACK checks it too: without a manifest it warned "not
+# DPI aware" (DPIAwarenessValidation, 2026-09-24).
+foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'filees-gui-wails.exe', 'filees.exe')) {
     $exe = Join-Path $payload $name
-    $win32Manifest = if ($name -eq 'filees-gui-wails.exe') { 'filees-gui.exe.manifest' } else { 'filees-store-launcher.exe.manifest' }
+    $win32Manifest = switch ($name) {
+        'filees-gui-wails.exe' { 'filees-gui.exe.manifest' }
+        'filees.exe' { 'filees-daemon.exe.manifest' }
+        default { 'filees-store-launcher.exe.manifest' }
+    }
     & $mt -nologo -manifest (Join-Path $PSScriptRoot $win32Manifest) "-outputresource:$exe;#1"
     if ($LASTEXITCODE -ne 0) { throw "Win32 manifest embedding failed: $name" }
     $extracted = Join-Path $output "$name.manifest"

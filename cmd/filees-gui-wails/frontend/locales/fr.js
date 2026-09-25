@@ -174,6 +174,11 @@ export default {
     "many": "dépôts",
     "other": "dépôts"
   },
+  "count.files": {
+    "one": "fichier",
+    "many": "fichiers",
+    "other": "fichiers"
+  },
   "count.folders": {
     "one": "{count} dossier",
     "many": "{count} dossiers",
@@ -1350,7 +1355,7 @@ export default {
   "feedback.publishedBody": "Les modifications ont été enregistrées sous la révision r%d. L’équipe verra le commentaire après actualisation.",
   "feedback.closedRequest": "Demande clôturée",
   "feedback.releasedLock": "Verrou libéré",
-  "feedback.fileCount": "%s · fichiers : %d",
+  "feedback.fileCount": "%s : %d %s",
   "feedback.releasedCount": "Réservations libérées : %d.",
   "feedback.failedCount": " Non libérées : %d.",
   "feedback.freeEditing": "Les fichiers peuvent de nouveau être modifiés sans réservation.",

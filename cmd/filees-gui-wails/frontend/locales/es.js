@@ -174,6 +174,11 @@ export default {
     "many": "repositorios",
     "other": "repositorios"
   },
+  "count.files": {
+    "one": "archivo",
+    "many": "archivos",
+    "other": "archivos"
+  },
   "count.folders": {
     "one": "{count} carpeta",
     "many": "{count} carpetas",
@@ -1350,7 +1355,7 @@ export default {
   "feedback.publishedBody": "Los cambios se guardaron como revisión r%d. El equipo verá el comentario tras actualizar.",
   "feedback.closedRequest": "Solicitud cerrada",
   "feedback.releasedLock": "Bloqueo liberado",
-  "feedback.fileCount": "%s · archivos: %d",
+  "feedback.fileCount": "%s: %d %s",
   "feedback.releasedCount": "Reservas liberadas: %d.",
   "feedback.failedCount": " No liberadas: %d.",
   "feedback.freeEditing": "Los archivos pueden volver a editarse sin reservas.",

@@ -177,6 +177,12 @@ export default {
     "many": "repozytoriów",
     "other": "repozytorium"
   },
+  "count.files": {
+    "one": "plik",
+    "few": "pliki",
+    "many": "plików",
+    "other": "pliku"
+  },
   "count.folders": {
     "one": "{count} folder",
     "few": "{count} foldery",
@@ -1362,7 +1368,7 @@ export default {
   "feedback.publishedBody": "Zmiany zapisano jako rewizję r%d. Zespół zobaczy komentarz po aktualizacji.",
   "feedback.closedRequest": "Prośba została zamknięta",
   "feedback.releasedLock": "Blokada została zwolniona",
-  "feedback.fileCount": "%s %d plik(ów)",
+  "feedback.fileCount": "%s %d %s",
   "feedback.releasedCount": "Zwolniono %d rezerwacji.",
   "feedback.failedCount": " Nie zwolniono: %d.",
   "feedback.freeEditing": "Pliki są znów edytowalne bez wypożyczania.",

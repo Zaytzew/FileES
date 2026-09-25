@@ -576,7 +576,18 @@ func (coordinator *reservationProjectionCoordinator) snapshot(ctx context.Contex
 	coordinator.mu.RLock()
 	cached := coordinator.results[key]
 	overlay, attached := coordinator.overlays[key]
+	view, hasView := coordinator.views[key.ServerID]
 	coordinator.mu.RUnlock()
+	// The refresh asks only about repositories the view calls active. One the
+	// view lists in another state (its first publication still running) was
+	// never asked and cannot hold our reservations: say so, not "unknown".
+	if !cached.present && hasView {
+		for _, repo := range view.Repositories {
+			if repo.RepoID == key.RepoID && repo.State != "active" {
+				return ipcserver.ReservationSnapshot{NotActive: true}, nil
+			}
+		}
+	}
 	if cached.detached && (!cached.present || cached.result.Unknown) {
 		return ipcserver.ReservationSnapshot{Detached: true}, nil
 	}

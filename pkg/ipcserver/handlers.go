@@ -467,6 +467,9 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 			result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: contract.ReservationSourceUnknown})
 			continue
 		}
+		if snap.NotActive {
+			continue
+		}
 		if snap.Unknown {
 			result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: contract.ReservationSourceUnknown})
 			continue

@@ -507,6 +507,13 @@ type ReservationSnapshot struct {
 	// revocation as unreachability sends the reader to fix something that is
 	// not broken.
 	Detached bool
+	// NotActive means the server's view lists the repository but not as
+	// active - typically while its first publication still runs. The state
+	// lane never asks about such a repository and no reservation can exist
+	// for it, so it is no source at all rather than an unknown one: a single
+	// new repository used to turn a server's lock tile into "0+?" for the
+	// whole initial import (Windows Sandbox, 2026-09-24).
+	NotActive bool
 	// Unknown means the source has neither fresh data nor any prior
 	// artifact to fall back to. Reservations must be empty; callers must
 	// never treat Unknown as a confirmed zero.

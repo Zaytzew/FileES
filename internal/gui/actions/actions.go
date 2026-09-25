@@ -365,6 +365,9 @@ type presentationError interface {
 type Config struct {
 	// GUI-only catalogue lookup. Never use for daemon messages or identifiers.
 	Text func(key, fallback string) string
+	// Plural answers the counted form of a catalogue entry for count; nil
+	// keeps the Polish fallback.
+	Plural func(key string, count int, fallback string) string
 	// DomainText renders a daemon message from its key and structured
 	// arguments. The daemon owns these sentences and serves them per locale,
 	// so the composition supplies this hook rather than the controller
@@ -4208,7 +4211,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 	c.notify(ctx, platform.Notification{
 		ID:      opName + "." + repoID,
 		Group:   opName + "." + repoID,
-		Title:   fmt.Sprintf(c.uiText("feedback.fileCount", "%s %d plik(ów)"), successNoun, len(paths)),
+		Title:   fmt.Sprintf(c.uiText("feedback.fileCount", "%s %d %s"), successNoun, len(paths), c.uiPlural("count.files", len(paths), polishFiles(len(paths)))),
 		Body:    lockNotificationPaths(repo.LocalPath, paths),
 		Urgency: platform.UrgencyLow,
 	})
@@ -4633,6 +4636,25 @@ func (c *Controller) uiText(key, fallback string) string {
 		return c.cfg.Text(key, fallback)
 	}
 	return fallback
+}
+
+func (c *Controller) uiPlural(key string, count int, fallback string) string {
+	if c.cfg.Plural != nil {
+		return c.cfg.Plural(key, count, fallback)
+	}
+	return fallback
+}
+
+// polishFiles is the Polish fallback for count.files.
+func polishFiles(n int) string {
+	switch {
+	case n == 1:
+		return "plik"
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 12 || n%100 > 14):
+		return "pliki"
+	default:
+		return "plików"
+	}
 }
 
 // reportActionError keeps an explicitly initiated foreground workflow from

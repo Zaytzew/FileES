@@ -3380,9 +3380,7 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("update")
-		planCtx, cancelPlan := context.WithTimeout(ctx, 2*time.Minute)
-		plan, err := c.cfg.Updater.UpdatePlan(planCtx)
-		cancelPlan()
+		plan, err := c.updatePlanWhenDownloaded(ctx)
 		if err != nil {
 			c.updateFailure(ctx, c.uiText("update.planFailed", "Nie można przygotować planu aktualizacji"), err)
 			return
@@ -3438,6 +3436,55 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 			c.cfg.Restart()
 		}
 	}()
+}
+
+// How often a plan is asked for again while the release downloads, and for
+// how long; a variable so tests need not wait seconds.
+var updateDownloadPoll = 3 * time.Second
+
+const updateDownloadWait = 30 * time.Minute
+
+// updatePlanWhenDownloaded asks for the plan and, while the daemon is still
+// fetching the release in the background (UPDATE-1004), says so and waits for
+// it instead of failing. Owner's station, 2026-09-25: the plan fetched the
+// whole bundle inside one call and ended in "context deadline exceeded" on a
+// slow link.
+func (c *Controller) updatePlanWhenDownloaded(ctx context.Context) (*UpdatePlan, error) {
+	actionID, announced := "", false
+	defer func() { c.finishProjectedAction(actionID) }()
+	deadline := time.Now().Add(updateDownloadWait)
+	for {
+		planCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		plan, err := c.cfg.Updater.UpdatePlan(planCtx)
+		cancel()
+		if !updateStillDownloading(err) || time.Now().After(deadline) {
+			return plan, err
+		}
+		if !announced {
+			announced = true
+			actionID = c.startProjectedAction(app.PendingAction{Kind: "update_apply", Label: c.uiText("update.downloadingLabel", "Pobieranie aktualizacji")})
+			c.notify(ctx, platform.Notification{ID: "update", Group: "update",
+				Title: c.uiText("update.downloadingTitle", "Pobieram aktualizację"),
+				Body:  c.uiText("update.downloadingBody", "Postęp widać w oknie wersji. Zapytam o instalację, gdy pobieranie się skończy."), Urgency: platform.UrgencyLow})
+		}
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh() // the version window shows the progress from the status
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(updateDownloadPoll):
+		}
+	}
+}
+
+func updateStillDownloading(err error) bool {
+	var presented presentationError
+	if !errors.As(err, &presented) {
+		return false
+	}
+	code, _, _, _ := presented.PresentationError()
+	return code == "UPDATE-1004"
 }
 
 func updatePlanPresentation(plan *UpdatePlan) map[string]string {

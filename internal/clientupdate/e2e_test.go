@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"filees/internal/svnurl"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"filees/internal/releaseenvelope"
 	"filees/internal/releasepublish"
 	"filees/internal/serverinstall/svnfetch"
+	contract "filees/pkg/contract/v1"
 )
 
 func TestSignedSVNReleaseEndToEnd(t *testing.T) {
@@ -104,7 +106,9 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 	installer := LinuxInstaller{
 		Stager: BundleStager{Fetcher: fetcher, Root: stage},
 		Paths:  LinuxPaths{Home: home, Prefix: filepath.Join(home, ".local"), DataHome: filepath.Join(home, ".local", "share"), ConfigHome: filepath.Join(home, ".config")},
-		Runner: ExecRunner{Env: []string{"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH")}},
+		// A new installation must name its channel (install-user.sh refuses to
+		// guess); a real self-update runs over a configuration that has one.
+		Runner: ExecRunner{Env: []string{"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"), "FILEES_UPDATE_CHANNEL=alpha"}},
 	}
 	service := &Service{
 		Resolver: resolver, Installer: installer, State: StateStore{Path: filepath.Join(home, ".local", "state", "filees", "update.json")},
@@ -115,7 +119,7 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 	if err != nil || status.State != "available" || status.AvailableVersion != "2.0.0" {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
-	plan, err := service.Plan(ctx)
+	plan, err := planWhenDownloaded(t, service)
 	if err != nil || !plan.RestartRequired || len(plan.Changes) != 7 {
 		t.Fatalf("plan = %+v, %v", plan, err)
 	}
@@ -160,11 +164,34 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 				ChannelPath: "channels/" + test.channel + ".v2.json",
 				Component:   "desktop", Platform: "linux-amd64", CurrentVersion: "0.9.0",
 			}
-			_, err := fresh.Plan(ctx)
+			// Downloads are kept by SHA-256, and the corrupt release names the
+			// good bundle's digest: with the verified copy still on disk nothing
+			// would be fetched at all. Removed so the corrupt bytes are fetched
+			// and must be rejected.
+			if err := os.RemoveAll(filepath.Join(stage, "downloads")); err != nil {
+				t.Fatal(err)
+			}
+			_, err := planWhenDownloaded(t, fresh)
 			if err == nil || !strings.Contains(err.Error(), test.contains) {
 				t.Fatalf("error = %v, want substring %q", err, test.contains)
 			}
 		})
+	}
+}
+
+// planWhenDownloaded asks for the plan the way the interface does: while the
+// bundle is still being fetched in the background the answer is the progress,
+// so it asks again.
+func planWhenDownloaded(t *testing.T, service *Service) (contract.UpdatePlanResult, error) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for {
+		plan, err := service.Plan(context.Background())
+		var downloading *DownloadingError
+		if !errors.As(err, &downloading) || time.Now().After(deadline) {
+			return plan, err
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -185,7 +212,9 @@ func makeE2EBundle(t *testing.T, root string) string {
 	copyFile("packaging/linux/filees.service", "share/systemd/user/filees.service", 0o644)
 	copyFile("packaging/linux/config.example.json", "share/filees/config.example.json", 0o644)
 	copyFile("branded-assets/filees-space-symbol-square.svg", "share/icons/hicolor/scalable/apps/filees-gui.svg", 0o644)
-	writeE2EFile(t, filepath.Join(payload, "bin/filees"), []byte("#!/bin/sh\n[ \"$1\" = config-check ]\n"), 0o755)
+	// install-user.sh sets a new installation's channel through the daemon
+	// (update-channel <name> --config <file>) and then checks the file.
+	writeE2EFile(t, filepath.Join(payload, "bin/filees"), []byte("#!/bin/sh\ncase \"$1\" in\nconfig-check) exit 0 ;;\nupdate-channel) printf '{\"update\":{\"channel\":\"%s\"}}\\n' \"$2\" > \"$4\" ;;\n*) exit 1 ;;\nesac\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "bin/filees-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "bin/filees-pair-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	writeE2EFile(t, filepath.Join(payload, "bin/filees-svn"), []byte("#!/bin/sh\nexit 0\n"), 0o755)

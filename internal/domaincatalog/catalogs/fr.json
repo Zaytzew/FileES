@@ -170,6 +170,7 @@
     "sync.working_copy_busy": "La copie locale est occupée par un autre programme sur cet ordinateur",
     "system.lifecycle_unavailable": "Le redémarrage et l’arrêt sont indisponibles pour le moment",
     "update.apply_failed": "Impossible d’appliquer la mise à jour",
+    "update.downloading": "La mise à jour est encore en cours de téléchargement",
     "update.plan_failed": "Impossible de préparer le plan de mise à jour",
     "update.status_failed": "FileES n’a pas pu rechercher les mises à jour",
     "update.unavailable": "La mise à jour est indisponible pour le moment",

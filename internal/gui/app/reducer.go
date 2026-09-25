@@ -428,6 +428,7 @@ func (s appState) viewModel() ViewModel {
 			State: update.State, Channel: update.Channel, CurrentVersion: update.CurrentVersion,
 			AvailableVersion: update.AvailableVersion, ReleaseID: update.ReleaseID,
 			Summary: update.Summary, RestartRequired: update.RestartRequired,
+			Download: update.Download, DownloadedBytes: update.DownloadedBytes, DownloadTotal: update.DownloadTotal,
 		}
 	}
 	if s.connected && s.stale {

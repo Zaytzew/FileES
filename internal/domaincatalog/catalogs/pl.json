@@ -170,6 +170,7 @@
     "sync.working_copy_busy": "Kopia robocza jest chwilowo zajęta przez inny lokalny proces",
     "system.lifecycle_unavailable": "Restart i zamknięcie są teraz niedostępne",
     "update.apply_failed": "Zastosowanie aktualizacji nie powiodło się",
+    "update.downloading": "Aktualizacja jeszcze się pobiera",
     "update.plan_failed": "Nie udało się przygotować planu aktualizacji",
     "update.status_failed": "Nie udało się sprawdzić aktualizacji",
     "update.unavailable": "Aktualizacja jest teraz niedostępna",

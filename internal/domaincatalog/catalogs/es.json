@@ -170,6 +170,7 @@
     "sync.working_copy_busy": "Otro programa de este equipo está utilizando la copia local",
     "system.lifecycle_unavailable": "El reinicio y el cierre no están disponibles ahora",
     "update.apply_failed": "No se pudo aplicar la actualización",
+    "update.downloading": "La actualización todavía se está descargando",
     "update.plan_failed": "No se pudo preparar el plan de actualización",
     "update.status_failed": "FileES no pudo buscar actualizaciones",
     "update.unavailable": "La actualización no está disponible ahora",

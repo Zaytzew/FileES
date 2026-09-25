@@ -315,3 +315,14 @@ func RequiredBundleFiles() []string {
 	sort.Strings(required)
 	return required
 }
+
+// Download and DownloadProgress let the update service fetch the bundle
+// before the user asks for a plan (Downloader).
+func (installer DirectoryInstaller) Download(ctx context.Context, resolved *releaseenvelope.Resolved) error {
+	_, err := installer.Stager.Download(ctx, resolved)
+	return err
+}
+
+func (installer DirectoryInstaller) DownloadProgress(resolved *releaseenvelope.Resolved) (int64, int64, bool) {
+	return installer.Stager.DownloadProgress(resolved)
+}

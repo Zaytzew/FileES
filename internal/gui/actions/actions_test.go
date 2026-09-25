@@ -1544,6 +1544,70 @@ func TestControllerUpdateDryRunAndConfirmedApply(t *testing.T) {
 	}
 }
 
+type downloadingPlanError struct{}
+
+func (downloadingPlanError) Error() string { return "update bundle is still downloading" }
+func (downloadingPlanError) PresentationError() (string, string, string, string) {
+	return "UPDATE-1004", "INFO", "RETRY_BACKOFF", "update.downloading"
+}
+func (downloadingPlanError) PresentationDetails() map[string]string {
+	return map[string]string{"downloaded_bytes": "4", "total_bytes": "10"}
+}
+
+type downloadingUpdater struct {
+	fakeUpdater
+	pending int
+}
+
+func (updater *downloadingUpdater) UpdatePlan(ctx context.Context) (*actions.UpdatePlan, error) {
+	if updater.pending > 0 {
+		updater.pending--
+		updater.planCalls <- struct{}{}
+		return nil, downloadingPlanError{}
+	}
+	return updater.fakeUpdater.UpdatePlan(ctx)
+}
+
+// Owner's station, 2026-09-25: "Aktualizuj" ended in "context deadline
+// exceeded" while the plan fetched the bundle. A plan answered with "still
+// downloading" is waited for, shown, and followed by the usual confirmation.
+func TestControllerUpdateWaitsForTheBackgroundDownload(t *testing.T) {
+	defer actions.SetUpdateDownloadPoll(actions.SetUpdateDownloadPoll(time.Millisecond))
+	updater := &downloadingUpdater{fakeUpdater: fakeUpdater{planCalls: make(chan struct{}, 4), applyCalls: make(chan struct{}, 1)}, pending: 2}
+	platformFake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }}
+	refreshed := make(chan struct{}, 4)
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: platformFake,
+		Notifier: platformFake, Updater: updater, Restart: func() {},
+		Refresh: func() { refreshed <- struct{}{} },
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentUpdateApply})
+	for _, step := range []string{"first plan: downloading", "second plan: downloading", "plan once downloaded"} {
+		awaitCh(t, updater.planCalls, step)
+	}
+	awaitCh(t, updater.applyCalls, "confirmed apply")
+	if len(refreshed) != 2 {
+		t.Fatalf("view refreshed %d times while waiting", len(refreshed))
+	}
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.ConfirmRequests) != 1 {
+		t.Fatalf("confirmations = %d", len(snapshot.ConfirmRequests))
+	}
+	downloading := 0
+	for _, notification := range snapshot.Notifications {
+		if notification.Title == "Pobieram aktualizację" {
+			downloading++
+		}
+		if notification.Urgency == platform.UrgencyCritical {
+			t.Fatalf("the wait was reported as a failure: %+v", notification)
+		}
+	}
+	if downloading != 1 {
+		t.Fatalf("download notice shown %d times", downloading)
+	}
+}
+
 func TestControllerServerInformationContainsPermissions(t *testing.T) {
 	platformFake := &platformtest.Fake{}
 	view := app.ViewModel{Servers: []app.ServerViewModel{{

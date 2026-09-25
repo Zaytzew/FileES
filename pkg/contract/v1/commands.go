@@ -370,6 +370,13 @@ type UpdateStatus struct {
 	ReleaseID        string `json:"release_id,omitempty"`
 	Summary          string `json:"summary,omitempty"`
 	RestartRequired  bool   `json:"restart_required"`
+	// The available release's bundle, fetched in the background once the
+	// update is seen so that planning and installing no longer wait on the
+	// network: downloading | ready | failed; empty when nothing is fetched.
+	Download        string `json:"download,omitempty"`
+	DownloadedBytes int64  `json:"downloaded_bytes,omitempty"`
+	DownloadTotal   int64  `json:"download_total,omitempty"`
+	DownloadError   string `json:"download_error,omitempty"`
 }
 
 type UpdateChange struct {

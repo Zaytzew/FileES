@@ -9,6 +9,7 @@ import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
 import { parseDrawers, groupDrawers, commitDrawerChange } from "./drawer-layout.js";
 import { reconcileRepositoryHTML, repoToolsWidth } from "./repository-dom.js";
 import { initializeProgressOverlay } from "./progress-overlay.js";
+import { updateDownloadLine } from "./update-download.js";
 
 initializeTheme();
 initializeLanguage();
@@ -1217,7 +1218,7 @@ function renderVersionDialog(snapshot) {
   } else if (update.state === "restart_required") {
     $("#version-status").textContent = update.summary || t("version.restartSummary");
   } else if (available) {
-    $("#version-status").textContent = update.summary || t("version.availableSummary", { available: availableRelease, current: currentRelease || t("version.unknownRelease") });
+    $("#version-status").textContent = [update.summary || t("version.availableSummary", { available: availableRelease, current: currentRelease || t("version.unknownRelease") }), updateDownloadLine(update, t, bytes)].filter(Boolean).join(" ");
   } else {
     $("#version-status").textContent = update.summary || t("version.currentSummary");
   }
@@ -1247,7 +1248,7 @@ function renderUpdate(snapshot) {
 	$("#update-actions").hidden = restart;
 	$("#update-restart-actions").hidden = !restart;
 	$("#update-version").textContent = update.available_version;
-	$("#update-summary").textContent = update.summary || t("version.installedSummary", { current: update.current_version || t("version.unknownClient") });
+	$("#update-summary").textContent = [update.summary || t("version.installedSummary", { current: update.current_version || t("version.unknownClient") }), restart ? "" : updateDownloadLine(update, t, bytes)].filter(Boolean).join(" ");
 }
 
 window.setInterval(updateRetentionCountdowns, 1000);

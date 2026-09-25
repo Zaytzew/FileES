@@ -84,7 +84,7 @@
     "passport.replacement_stale": "Wypożyczenie uległo zmianie — odśwież jego stan",
     "passport.replacement_unavailable": "Serwer nie wydaje teraz wypożyczeń",
     "passport.replacement_uncertain": "Wynik wypożyczenia jest niepewny — uzgodnij jego stan przed dalszą pracą",
-    "policy.deferred": "Zmiana polityki blokad czeka na czystą kopię roboczą",
+    "policy.deferred": "Zmiana zasad wypożyczania dokończy się po opublikowaniu lokalnych zmian",
     "proto.invalid_envelope": "Daemon odrzucił nieprawidłową kopertę",
     "proto.invalid_payload": "Daemon odrzucił nieprawidłowe dane operacji",
     "proto.missing_repo_id": "Brak identyfikatora repozytorium",

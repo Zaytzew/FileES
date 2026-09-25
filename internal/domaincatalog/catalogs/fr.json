@@ -84,7 +84,7 @@
     "passport.replacement_stale": "La réservation a changé. Actualisez son état",
     "passport.replacement_unavailable": "Le serveur n’accorde pas de réservations pour le moment",
     "passport.replacement_uncertain": "Le résultat de la modification de réservation est incertain. Clarifiez son état avant de poursuivre",
-    "policy.deferred": "La modification des règles de réservation attend une copie locale sans changements",
+    "policy.deferred": "La modification des règles de réservation se terminera une fois les modifications locales publiées",
     "proto.invalid_envelope": "Le service a rejeté une enveloppe de message mal formée",
     "proto.invalid_payload": "Le service a rejeté des données d’opération mal formées",
     "proto.missing_repo_id": "L’identifiant du dépôt manque",

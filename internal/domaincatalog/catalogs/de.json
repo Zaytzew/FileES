@@ -84,7 +84,7 @@
     "passport.replacement_stale": "Die Reservierung hat sich geändert. Aktualisieren Sie ihren Status",
     "passport.replacement_unavailable": "Der Server vergibt gerade keine Reservierungen",
     "passport.replacement_uncertain": "Das Ergebnis der Reservierungsänderung ist unklar. Klären Sie ihren Zustand, bevor Sie weiterarbeiten",
-    "policy.deferred": "Die Änderung der Reservierungsrichtlinie wartet auf eine lokale Kopie ohne Änderungen",
+    "policy.deferred": "Die Änderung der Reservierungsrichtlinie wird abgeschlossen, sobald lokale Änderungen veröffentlicht sind",
     "proto.invalid_envelope": "Der Hintergrunddienst hat eine fehlerhafte Nachrichtenhülle abgewiesen",
     "proto.invalid_payload": "Der Hintergrunddienst hat fehlerhafte Vorgangsdaten abgewiesen",
     "proto.missing_repo_id": "Die Repository-Kennung fehlt",

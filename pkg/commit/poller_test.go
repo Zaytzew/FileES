@@ -51,6 +51,9 @@ type revisionClient struct {
 	accept                                    string
 	status                                    []client.StatusEntry
 	remoteErr, localErr, updateErr, statusErr error
+	// theirs, when set, is what "theirs-full" writes into a resolved file,
+	// as Subversion does with the server version.
+	theirs string
 }
 
 func (c *revisionClient) Revision(_ context.Context, target string) (int64, error) {
@@ -116,9 +119,16 @@ func (*revisionClient) PropList(context.Context, string, string) (map[string]boo
 	return nil, nil
 }
 
-func (c *revisionClient) Resolve(_ context.Context, _ string, paths []string, accept string) (string, error) {
+func (c *revisionClient) Resolve(_ context.Context, wc string, paths []string, accept string) (string, error) {
 	c.resolved = append(c.resolved, paths...)
 	c.accept = accept
+	if c.theirs != "" {
+		for _, rel := range paths {
+			if err := os.WriteFile(filepath.Join(wc, filepath.FromSlash(rel)), []byte(c.theirs), 0o644); err != nil {
+				return "", err
+			}
+		}
+	}
 	return "", nil
 }
 
@@ -132,7 +142,7 @@ func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {
 	if err := os.WriteFile(abs, []byte("local version"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cli := &revisionClient{}
+	cli := &revisionClient{theirs: "server version"}
 	unresolved := -1
 	service := &Service{Cli: cli, Logger: talk.With("startup-reconcile-test"), OnConflicts: func(n int) { unresolved = n }}
 

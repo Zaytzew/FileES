@@ -84,7 +84,7 @@
     "passport.replacement_stale": "La reserva ha cambiado. Actualice su estado",
     "passport.replacement_unavailable": "El servidor no concede reservas en este momento",
     "passport.replacement_uncertain": "El resultado del cambio de reserva es incierto. Aclare su estado antes de continuar",
-    "policy.deferred": "El cambio de las reglas de reserva está esperando una copia local sin cambios",
+    "policy.deferred": "El cambio de las reglas de reserva terminará cuando se publiquen los cambios locales",
     "proto.invalid_envelope": "El servicio rechazó un sobre de mensaje mal formado",
     "proto.invalid_payload": "El servicio rechazó datos de operación mal formados",
     "proto.missing_repo_id": "Falta el identificador del repositorio",

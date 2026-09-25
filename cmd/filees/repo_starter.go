@@ -431,6 +431,11 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service.AcknowledgePublication = scanner.AcknowledgePublication
 	service.EventAcknowledged = scanner.EventAcknowledged
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
+	if recovered {
+		// Conflicts an older update left behind block the migration below
+		// and every commit of their paths; settle them first.
+		service.ReconcileStandingConflicts(ctx, wc)
+	}
 	migrationDeferred := applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	// A deferred migration is retried after each confirmed publication rather
 	// than only at the next start: the change that blocked it has just gone
@@ -914,9 +919,11 @@ func reportEditingPolicyBlocked(err error, direction string, sink *errmap.Sink, 
 				Code:     errmap.CodePolicyDeferred,
 				Key:      "policy.deferred",
 				Severity: errmap.SevWarn,
-				Hint:     errmap.HintRequireAction,
-				Msg:      "Zmiana polityki blokad czeka na opublikowanie lokalnych zmian",
-				Details:  err.Error(),
+				// Not an action: the migration retries after each publication
+				// and standing conflicts are settled at start (2026-09-25).
+				Hint:    errmap.HintRetryBackoff,
+				Msg:     "Zmiana polityki blokad czeka na opublikowanie lokalnych zmian",
+				Details: err.Error(),
 			})
 		}
 		return

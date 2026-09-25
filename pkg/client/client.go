@@ -203,6 +203,9 @@ type StatusEntry struct {
 	Path  string
 	Item  string
 	Props string
+	// Conflicted covers text, property and tree conflicts. Item alone reads
+	// "replaced" for a local add over an incoming add.
+	Conflicted bool
 }
 
 // LockInfo is the repository lock attached to a working-copy path. Token is
@@ -377,8 +380,9 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 			Entries []struct {
 				Path     string `xml:"path,attr"`
 				WCStatus struct {
-					Item  string `xml:"item,attr"`
-					Props string `xml:"props,attr"`
+					Item           string `xml:"item,attr"`
+					Props          string `xml:"props,attr"`
+					TreeConflicted bool   `xml:"tree-conflicted,attr"`
 				} `xml:"wc-status"`
 			} `xml:"entry"`
 		} `xml:"target"`
@@ -393,7 +397,8 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 			if rel, err := filepath.Rel(rootDirectory, path); err == nil {
 				path = rel
 			}
-			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item, Props: e.WCStatus.Props})
+			conflicted := e.WCStatus.TreeConflicted || e.WCStatus.Item == "conflicted" || e.WCStatus.Props == "conflicted"
+			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item, Props: e.WCStatus.Props, Conflicted: conflicted})
 		}
 	}
 	return out, nil

@@ -11,6 +11,9 @@ data class WalkedFile(
     val filename: String,
     val contentType: String,
     val size: Long,
+    // DocumentsContract last-modified, epoch millis. 0 when the provider
+    // does not say. A timed watch depth then leaves the file behind.
+    val modifiedAt: Long = 0L,
 )
 
 object DocumentWalk {
@@ -43,12 +46,14 @@ object DocumentWalk {
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
         resolver.query(children, projection, null, null, null)?.use { cursor ->
             val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
             val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
             val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            val modifiedCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
             while (cursor.moveToNext()) {
                 val id = cursor.getString(idCol) ?: continue
                 val name = cursor.getString(nameCol) ?: continue
@@ -58,12 +63,14 @@ object DocumentWalk {
                     out += walk(resolver, treeUri, id, "$relDir/$name")
                 } else {
                     val size = if (sizeCol >= 0 && !cursor.isNull(sizeCol)) cursor.getLong(sizeCol) else 0L
+                    val modified = if (modifiedCol >= 0 && !cursor.isNull(modifiedCol)) cursor.getLong(modifiedCol) else 0L
                     out += WalkedFile(
                         uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id),
                         relativeDir = relDir,
                         filename = name,
                         contentType = mime,
                         size = size,
+                        modifiedAt = modified,
                     )
                 }
             }

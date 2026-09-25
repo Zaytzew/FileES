@@ -449,6 +449,7 @@ export default {
   "repoAction.disable_editing_lock.label": "Reservierungspflicht aufheben",
   "repoAction.disable_editing_lock.description": "Erlauben Sie die Bearbeitung ohne verpflichtende Sperre.",
   "problem.eyebrow": "Was passiert",
+  "problem.heldBy": "Die Datei ist derzeit reserviert von {holder}.",
   "problem.borrowPending.title": "Änderungen warten auf eine Dateireservierung",
   "problem.borrowPending.text": "FileES kann die Änderungen an {path} nicht veröffentlichen. In diesem Ordner muss eine Datei vor dem Speichern reserviert werden, und der Server vergibt die Reservierung gerade nicht. Ihre Änderungen sind auf diesem Laufwerk sicher.",
   "problem.borrowPending.more": {

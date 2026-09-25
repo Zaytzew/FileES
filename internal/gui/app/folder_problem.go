@@ -21,6 +21,10 @@ type FolderProblem struct {
 	// sentence. Older reasons are not repeated; the journal keeps them.
 	Code   string
 	Reason string
+	// Holder names whoever else has the waiting file reserved, when the
+	// reservation list shows it: the actual reason the passport is refused
+	// (KRAŃCOWA-PŁOŃSK, 2026-09-25 - the card said "owner unknown").
+	Holder, HolderSince string
 }
 
 // FolderProblem reports the problem of one repository, if it has one this
@@ -56,5 +60,12 @@ func (vm ViewModel) FolderProblem(repoID string) (FolderProblem, bool) {
 	}
 	problem.Kind = FolderProblemBorrowPending
 	problem.More = waiting - 1
+	want := strings.TrimPrefix(strings.ReplaceAll(problem.Path, "\\", "/"), "/")
+	for _, reservation := range vm.Reservations {
+		if reservation.RepoID == repoID && !reservation.CanRelease && strings.TrimPrefix(strings.ReplaceAll(reservation.Path, "\\", "/"), "/") == want {
+			problem.Holder, problem.HolderSince = reservation.OwnerLabel, reservation.CreatedAt
+			break
+		}
+	}
 	return problem, true
 }

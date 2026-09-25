@@ -34,3 +34,20 @@ func TestFolderProblemNamesTheWaitingFileAndTheLatestReason(t *testing.T) {
 		t.Fatal("old journal errors produced a problem after recovery")
 	}
 }
+
+// KRAŃCOWA-PŁOŃSK, 2026-09-25: another client had the file reserved, and the
+// card said only that the owner could not be confirmed.
+func TestFolderProblemNamesWhoElseHoldsTheFile(t *testing.T) {
+	vm := ViewModel{
+		Errors: []ErrorViewModel{{ID: "passport:cloud:krc:a", RepoID: "krc", Timestamp: "2026-09-25T16:40:00Z", MessageDetail: "01_PROJEKT-BUDOWLANY/KRCPL_komplet.dwg"}},
+		Reservations: []Reservation{
+			{RepoID: "krc", Path: "01_PROJEKT-BUDOWLANY/KRCPL_komplet.dwg", OwnerLabel: "mine", CanRelease: true},
+			{RepoID: "other", Path: "01_PROJEKT-BUDOWLANY/KRCPL_komplet.dwg", OwnerLabel: "elsewhere"},
+			{RepoID: "krc", Path: "/01_PROJEKT-BUDOWLANY/KRCPL_komplet.dwg", OwnerLabel: "biuro:jan", CreatedAt: "2026-09-25T16:30:00Z"},
+		},
+	}
+	problem, ok := vm.FolderProblem("krc")
+	if !ok || problem.Holder != "biuro:jan" || problem.HolderSince != "2026-09-25T16:30:00Z" {
+		t.Fatalf("holder: %+v", problem)
+	}
+}

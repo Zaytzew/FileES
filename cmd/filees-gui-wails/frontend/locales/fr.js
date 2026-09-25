@@ -461,6 +461,7 @@ export default {
   "repoAction.disable_editing_lock.label": "Désactiver la réservation obligatoire",
   "repoAction.disable_editing_lock.description": "Autorisez la modification sans verrou obligatoire.",
   "problem.eyebrow": "Ce qui se passe",
+  "problem.heldBy": "Le fichier est actuellement réservé par {holder}.",
   "problem.borrowPending.title": "Les modifications attendent la réservation d'un fichier",
   "problem.borrowPending.text": "FileES ne peut pas publier les modifications de {path}. Dans ce dossier, un fichier doit être réservé avant d'être enregistré, et le serveur n'accorde pas la réservation pour le moment. Vos modifications sont en sécurité sur ce disque.",
   "problem.borrowPending.more": {

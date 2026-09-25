@@ -130,6 +130,7 @@ type RepositoryProblemProjection struct {
 	Since    string `json:"since,omitempty"`
 	Code     string `json:"code,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	Holder   string `json:"holder,omitempty"`
 	Remedy   string `json:"remedy"`
 	ActionID string `json:"action_id,omitempty"`
 }
@@ -970,7 +971,7 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogEditingPolicy), LabelKey: label, DescriptionKey: description, Tone: "warning"})
 	}
 	if problem := folder.Problem; problem != nil {
-		snapshot.Problem = &RepositoryProblemProjection{Kind: problem.Kind, Path: problem.Path, More: problem.More, Since: problem.Since, Code: problem.Code, Reason: problem.Reason, Remedy: problem.Remedy}
+		snapshot.Problem = &RepositoryProblemProjection{Kind: problem.Kind, Path: problem.Path, More: problem.More, Since: problem.Since, Code: problem.Code, Reason: problem.Reason, Holder: problem.Holder, Remedy: problem.Remedy}
 		if problem.Remedy == "disable_editing_lock" && folder.CanSetEditingPolicy && folder.LockRequired {
 			snapshot.Problem.ActionID = string(platform.SettingsDialogEditingPolicy)
 		}

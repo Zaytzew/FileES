@@ -10,6 +10,7 @@ export function problemCardHTML(problem, t, escapeHTML) {
   if (!problem || problem.kind !== "borrow_pending") return "";
   const path = problem.path || "—";
   const lines = [`<p>${escapeHTML(t("problem.borrowPending.text", { path }))}</p>`];
+  if (problem.holder) lines.push(`<p class="problem-holder">${escapeHTML(t("problem.heldBy", { holder: problem.holder }))}</p>`);
   if (problem.more > 0) lines.push(`<p>${escapeHTML(t("problem.borrowPending.more", { count: problem.more }))}</p>`);
   if (problem.reason && problem.code) lines.push(`<p class="problem-reason">${escapeHTML(t("problem.reason", { reason: problem.reason, code: problem.code }))}</p>`);
   else if (problem.code) lines.push(`<p class="problem-reason">${escapeHTML(t("problem.code", { code: problem.code }))}</p>`);

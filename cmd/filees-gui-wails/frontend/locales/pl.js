@@ -473,6 +473,7 @@ export default {
   "repoAction.disable_editing_lock.label": "Wyłącz wypożyczanie plików",
   "repoAction.disable_editing_lock.description": "Przywróć swobodną edycję bez obowiązkowej blokady.",
   "problem.eyebrow": "Co się dzieje",
+  "problem.heldBy": "Plik ma teraz wypożyczony: {holder}.",
   "problem.borrowPending.title": "Zmiany czekają na wypożyczenie pliku",
   "problem.borrowPending.text": "FileES nie może opublikować zmian w pliku {path}. W tym folderze plik trzeba wypożyczyć przed zapisem, a serwer teraz go nie wydaje. Twoje zmiany są bezpieczne na tym dysku.",
   "problem.borrowPending.more": {

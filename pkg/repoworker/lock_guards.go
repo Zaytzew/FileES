@@ -98,6 +98,21 @@ func InspectLockGuards(repository, executable string) ([]LockGuardStatus, error)
 	return result, nil
 }
 
+// lockGuardsMissing reports a repository with no foreign hook and at least
+// one guard absent: the state InstallLockGuards may complete on its own.
+func lockGuardsMissing(states []LockGuardStatus) bool {
+	missing := false
+	for _, state := range states {
+		switch state.State {
+		case "foreign":
+			return false
+		case "missing":
+			missing = true
+		}
+	}
+	return missing
+}
+
 // InstallLockGuards never overwrites or chains an operator's existing hook.
 // Caller holds the worker/service-WC locks. A private lock serializes this
 // installation too; atomic no-replace links protect against outside writers.

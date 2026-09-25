@@ -242,17 +242,30 @@ func (s PassportExecutions) Handle(ctx context.Context, session Session, ticket 
 	}
 	if ticket.Type == control.TicketArmPassportAcquisition {
 		// Link presence alone is insufficient: reject an old executable too.
+		if err := checkExecutionGuardExecutable(s.GuardExecutable); err != nil {
+			return failure(errcat.KeyPassportUnavailable)
+		}
 		states, err := InspectLockGuards(repo, s.GuardExecutable)
 		if err != nil {
 			return failure(errcat.KeyPassportUnavailable)
+		}
+		// A repository created before r914 has no guards unless an admin
+		// applied them. Missing guards are installed here, under the worker
+		// lock this handler already runs in; a foreign hook is never touched
+		// and still refuses (owner's production, 2026-09-25: every passport
+		// of such a repository was refused as "unavailable").
+		if lockGuardsMissing(states) {
+			if err := InstallLockGuards(repo, s.GuardExecutable); err != nil {
+				return failure(errcat.KeyPassportUnavailable)
+			}
+			if states, err = InspectLockGuards(repo, s.GuardExecutable); err != nil {
+				return failure(errcat.KeyPassportUnavailable)
+			}
 		}
 		for _, state := range states {
 			if state.State != "installed" {
 				return failure(errcat.KeyPassportUnavailable)
 			}
-		}
-		if err := checkExecutionGuardExecutable(s.GuardExecutable); err != nil {
-			return failure(errcat.KeyPassportUnavailable)
 		}
 	}
 	generation, err := executionRepositoryUUID(repo)

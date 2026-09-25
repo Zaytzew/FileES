@@ -749,6 +749,18 @@ func (p ServicePublisher) SetRepositoryEditingPolicy(ctx context.Context, realmI
 	if err != nil {
 		return "", err
 	}
+	// Borrowing is enforced by the repository's lock guards. Guards arrive
+	// with repositories created since r914; older ones had them only after an
+	// explicit admin apply, and a policy accepted without them left every
+	// passport refused as "unavailable" while the client waited forever
+	// (owner's production, 2026-09-25). Install them first; refuse the policy
+	// with the reason when an operator's own hook is in the way. Also when the
+	// policy is already set: that is how an owner repairs such a repository.
+	if policy == clientview.EditingLockRequired && p.EnsureLockGuards != nil {
+		if err := p.EnsureLockGuards(repoID); err != nil {
+			return "", fmt.Errorf("lock guards: %w", err)
+		}
+	}
 	if record.EditingPolicy == policy {
 		return policy, nil // already there; nothing to publish
 	}

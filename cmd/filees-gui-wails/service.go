@@ -197,8 +197,12 @@ type RepoProjection struct {
 	CanDismissRecovery  bool            `json:"can_dismiss_recovery,omitempty"`
 	RecoveryPending     bool            `json:"recovery_pending,omitempty"`
 	CleanupError        string          `json:"cleanup_error,omitempty"`
-	Purpose             string          `json:"purpose,omitempty"`
-	ParentRepoID        string          `json:"parent_repo_id,omitempty"`
+	// A deletion stopped on an error resumes from the row: the folder window
+	// that offers the same retry is not reachable for a deleted repository,
+	// which left such rows with no action at all (seam register A12).
+	CanRetryLifecycle bool   `json:"can_retry_lifecycle,omitempty"`
+	Purpose           string `json:"purpose,omitempty"`
+	ParentRepoID      string `json:"parent_repo_id,omitempty"`
 }
 
 // UnportableNameProjection is one object FileES declines to take under
@@ -851,6 +855,8 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentDismissRecovery):
 		allowed := vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
 		return tray.Intent{Kind: tray.IntentDismissRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
+	case string(tray.IntentRetryLifecycle):
+		return tray.Intent{Kind: tray.IntentRetryLifecycle, RepoID: repo.ID, ServerID: repo.ServerID}, canRetryDeletion(vm, repo)
 	case string(tray.IntentOpenFolder):
 		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 	case string(tray.IntentAttachRepository):
@@ -871,6 +877,11 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	default:
 		return tray.Intent{}, false
 	}
+}
+
+// canRetryDeletion: a deleted repository whose deletion stopped on an error.
+func canRetryDeletion(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
+	return repo.ServerDeleted && repo.CanRetryLifecycle && repo.LifecycleOperationID != "" && vm.CanRepairRepositoryLifecycle()
 }
 
 func projectedNotice(vm guiapp.ViewModel, noticeID string) bool {
@@ -1103,7 +1114,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			LocalCopyPreserved: repo.LocalCopyPreserved,
 			LocalCopyStatus:    repo.LocalCopyStatus,
 			RetainUntil:        repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
-			RecoveryAvailable: repo.RecoveryAvailable, CanDismissRecovery: vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != "", RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
+			RecoveryAvailable: repo.RecoveryAvailable, CanDismissRecovery: vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != "", RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError, CanRetryLifecycle: canRetryDeletion(vm, repo),
 			Purpose:      repo.Purpose,
 			ParentRepoID: repo.ParentRepoID,
 		})

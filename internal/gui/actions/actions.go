@@ -539,6 +539,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startRecoveryDownload(ctx, intent.RecoveryOperationID)
 	case tray.IntentDismissRecovery:
 		c.startRecoveryDismiss(ctx, intent.ServerID, intent.RepoID, intent.RecoveryOperationID)
+	case tray.IntentRetryLifecycle:
+		c.startRepairRepositoryLifecycle(ctx, intent.ServerID, intent.RepoID, "retry")
 	case tray.IntentReservations:
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:

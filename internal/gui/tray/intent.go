@@ -21,6 +21,9 @@ const (
 	IntentRecoveries         IntentKind = "recoveries"
 	IntentDownloadRecovery   IntentKind = "download_recovery"
 	IntentDismissRecovery    IntentKind = "dismiss_recovery"
+	// Resumes a repository deletion stopped on an error (server deletion,
+	// archive issuance or local cleanup) from its row.
+	IntentRetryLifecycle     IntentKind = "retry_lifecycle"
 	IntentJournal            IntentKind = "journal"
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"

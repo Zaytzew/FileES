@@ -282,6 +282,12 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
     assert.ok(html.includes("Projekt &lt;DWG>"));
     assert.ok(html.includes(catalogues[locale]["repo.lock"]));
     assert.ok(render.renderRepo({...repo, server_deleted: true, cleanup_error: "Błąd <raw>"}).includes("Błąd &lt;raw>"));
+    // A12: a stalled deletion resumes from its row; a live row keeps the retry
+    // in its folder window.
+    const stalled = render.renderRepo({...repo, can_lock: false, server_deleted: true, recovery_pending: true, can_retry_lifecycle: true});
+    assert.ok(stalled.includes('data-action="retry_lifecycle"'));
+    assert.ok(stalled.includes(catalogues[locale]["repoAction.retry_lifecycle.label"]));
+    assert.ok(!render.renderRepo({...repo, can_retry_lifecycle: true}).includes('data-action="retry_lifecycle"'));
     assert.equal(render.serverHealthPresentation("current").className, "health-current");
     assert.equal(render.serverHealthPresentation("current").label, catalogues[locale]["server.health.current"]);
     const cases = [

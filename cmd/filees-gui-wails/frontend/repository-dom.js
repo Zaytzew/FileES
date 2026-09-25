@@ -1,3 +1,12 @@
+// Width of one row's action buttons. A row inside a closed group has no box,
+// so in a WebView without content-visibility for <details> its buttons
+// measure 0; the CSS size of .repo-icon-action stands in for them.
+export function repoToolsWidth(buttonWidths, fallback = 34, gap = 5) {
+  if (!buttonWidths.length) return 0;
+  const total = buttonWidths.reduce((sum, width) => sum + (width > 0 ? width : fallback), 0);
+  return Math.ceil(total + (buttonWidths.length - 1) * gap);
+}
+
 // Reconcile the repository panel without recreating its controls on every
 // snapshot. Keys are presentation identities, never authority or filesystem paths.
 function key(node) {

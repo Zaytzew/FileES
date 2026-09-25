@@ -74,6 +74,19 @@ func (f *fakeWindowsRunner) Output(ctx context.Context, name string, args ...str
 	return nil, nil
 }
 
+// RunCalls counts toasts actually sent; the Start menu lookup is an Output.
+func (f *fakeWindowsRunner) RunCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, call := range f.calls {
+		if call.method == "run" {
+			count++
+		}
+	}
+	return count
+}
+
 func (f *fakeWindowsRunner) Calls() []windowsCommandCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -245,7 +258,7 @@ func TestWindowsNotificationsRateLimitByGroup(t *testing.T) {
 	if err := backend.Notify(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(runner.Calls()); got != 1 {
+	if got := runner.RunCalls(); got != 1 {
 		t.Fatalf("rate-limited calls = %d, want 1", got)
 	}
 
@@ -253,7 +266,7 @@ func TestWindowsNotificationsRateLimitByGroup(t *testing.T) {
 	if err := backend.Notify(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(runner.Calls()); got != 2 {
+	if got := runner.RunCalls(); got != 2 {
 		t.Fatalf("calls after interval = %d, want 2", got)
 	}
 }
@@ -269,7 +282,7 @@ func TestWindowsNotificationFailureReleasesRateLimit(t *testing.T) {
 			t.Fatalf("Notify() error = %v", err)
 		}
 	}
-	if got := len(runner.Calls()); got != 2 {
+	if got := runner.RunCalls(); got != 2 {
 		t.Fatalf("calls after failures = %d, want 2", got)
 	}
 }
@@ -482,9 +495,56 @@ func TestWindowsConcurrentNotificationsSameGroupSendOnce(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if got := len(runner.Calls()); got != 1 {
+	if got := runner.RunCalls(); got != 1 {
 		t.Fatalf("notification commands = %d, want 1", got)
 	}
 }
 
 func contains(s, substr string) bool { return strings.Contains(s, substr) }
+
+// Windows drops a toast sent under an identifier no Start menu entry carries,
+// without an error. The backend asks Windows once which identifier FileES has
+// - an older MSI shortcut is known only by its executable path - and keeps a
+// found answer; with none it falls back to the AUMID and asks again next time
+// (owner's report, 2026-09-25).
+func TestWindowsNotificationUsesTheStartMenuIdentifier(t *testing.T) {
+	const pathID = `C:\Users\Jan Kowalski\AppData\Local\Programs\FileES\filees-gui-wails.exe`
+	answer := ""
+	lookups := 0
+	var script string
+	runner := &fakeWindowsRunner{
+		output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+			lookups++
+			if !contains(args[len(args)-1], "Get-StartApps") {
+				t.Fatalf("unexpected output command: %v", args)
+			}
+			return []byte(answer), nil
+		},
+		run: func(_ context.Context, _ string, args []string) error {
+			script = args[len(args)-1]
+			return nil
+		},
+	}
+	backend := newTestWindowsBackend(runner, time.Now)
+	backend.notifInterval = 0
+
+	if err := backend.Notify(context.Background(), Notification{Group: "a", Title: "T"}); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(script, "CreateToastNotifier('ATMProjekt.FileES')") {
+		t.Fatalf("without a Start menu answer the AUMID must be used: %s", script)
+	}
+	answer = pathID
+	if err := backend.Notify(context.Background(), Notification{Group: "b", Title: "T"}); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(script, "CreateToastNotifier('"+pathID+"')") {
+		t.Fatalf("the Start menu identifier was not used: %s", script)
+	}
+	if err := backend.Notify(context.Background(), Notification{Group: "c", Title: "T"}); err != nil {
+		t.Fatal(err)
+	}
+	if lookups != 2 {
+		t.Fatalf("Start menu asked %d times; a found identifier must be kept", lookups)
+	}
+}

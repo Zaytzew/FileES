@@ -77,12 +77,17 @@
       <File Id="FileESLauncherExe" Source="$(var.SourceDir)\filees-launch.exe" KeyPath="yes" />
       <!-- All entry points start the pair through its singleton supervisor.
            Interactive launches also raise an already-running Wails window. -->
+      <!-- The Start menu entry carries the AUMID the GUI sends its toasts
+           under (internal/gui/identity). Without it Windows drops every
+           FileES notification silently (owner's report, 2026-09-25). -->
       <Shortcut Id="FileESStartMenuShortcut"
                 Directory="ProgramMenuFolder" Name="FileES"
                 Description="Pilnuje Twoich plików" Icon="FileESIcon"
                 Advertise="no" Target="[INSTALLFOLDER]filees-launch.exe"
                 Arguments="--show"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="ATMProjekt.FileES" />
+      </Shortcut>
       <Shortcut Id="FileESDesktopShortcut"
                 Directory="DesktopFolder" Name="FileES"
                 Description="Pilnuje Twoich plików" Icon="FileESIcon"

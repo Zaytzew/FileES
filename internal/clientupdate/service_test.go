@@ -238,7 +238,37 @@ func TestStatusReusesTheVerifiedAnswerAndDoesNotQueueBehindTheChannel(t *testing
 	if err != nil || status.State != "available" || resolver.calls != 1 {
 		t.Fatalf("busy channel: status=%+v err=%v calls=%d", status, err, resolver.calls)
 	}
-	if _, err := service.Status(context.Background()); err != nil || resolver.calls != 2 {
-		t.Fatalf("expired answer was not refreshed: calls=%d err=%v", resolver.calls, err)
+	// Expired: answered at once from memory, refreshed in the background.
+	if _, err := service.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	service.refreshes.Wait()
+	if resolver.calls != 2 {
+		t.Fatalf("expired answer was not refreshed: calls=%d", resolver.calls)
+	}
+}
+
+// Owner, 2026-09-25: with r1558's five-minute answer a release published
+// while the pair ran showed only after a restart. It shows on the first
+// status after the answer's short lifetime, without anyone waiting on the
+// channel.
+func TestANewReleaseShowsWithoutRestartingThePair(t *testing.T) {
+	now := time.Date(2026, 9, 25, 20, 0, 0, 0, time.UTC)
+	resolver := &countingResolver{resolved: resolvedRelease(2, "r2", "1.0")}
+	service := &Service{Resolver: resolver, Installer: &installerStub{}, State: StateStore{Path: filepath.Join(t.TempDir(), "update.json")}, CurrentVersion: "1.0", Now: func() time.Time { return now }}
+	if status, err := service.Status(context.Background()); err != nil || status.State != "current" {
+		t.Fatalf("status = %+v, %v", status, err)
+	}
+	resolver.resolved = resolvedRelease(3, "r3", "1.1") // published meanwhile
+	now = now.Add(statusCacheTTL)
+	if status, _ := service.Status(context.Background()); status.State != "current" {
+		t.Fatalf("expired answer should be returned at once: %+v", status)
+	}
+	service.refreshes.Wait()
+	if status, _ := service.Status(context.Background()); status.State != "available" || status.AvailableVersion != "1.1" {
+		t.Fatalf("new release not seen: %+v", status)
+	}
+	if statusCacheTTL > time.Minute {
+		t.Fatalf("answer lifetime %v hides a release for too long", statusCacheTTL)
 	}
 }

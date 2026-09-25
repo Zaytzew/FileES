@@ -245,6 +245,36 @@ func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 	}
 }
 
+// Seam register A12: a deletion stopped while the archive was being issued
+// left the row with no action; the retry lived in the folder window, which a
+// deleted repository does not open.
+func TestStalledDeletionOffersRetryOnItsRow(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapRepoLifecycleRepair: true},
+		Servers: []guiapp.ServerViewModel{{ID: "cloud"}},
+		Repos: []guiapp.RepoViewModel{{
+			ID: "gone", ServerID: "cloud", DisplayName: "Archiwum", State: "deleted",
+			ServerDeleted: true, RecoveryPending: true, CleanupError: "prepare repository archive download: refused",
+			LifecycleOperationID: "op-1", CanRetryLifecycle: true,
+		}},
+	}
+	if repo := projectViewModel(vm, journal.Texts{}).Repositories[0]; !repo.CanRetryLifecycle {
+		t.Fatalf("stalled deletion projected without its retry: %+v", repo)
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentRetryLifecycle), RepoID: "gone"})
+	if !allowed || intent.Kind != tray.IntentRetryLifecycle || intent.ServerID != "cloud" || intent.RepoID != "gone" {
+		t.Fatalf("retry intent=%+v allowed=%v", intent, allowed)
+	}
+	vm.Repos[0].CanRetryLifecycle = false // running, or nothing to retry
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentRetryLifecycle), RepoID: "gone"}); allowed {
+		t.Fatal("retry accepted without a stalled operation")
+	}
+	vm.Repos[0].CanRetryLifecycle, vm.Repos[0].ServerDeleted = true, false
+	if repo := projectViewModel(vm, journal.Texts{}).Repositories[0]; repo.CanRetryLifecycle {
+		t.Fatal("a live repository's retry belongs to its folder window, not the row")
+	}
+}
+
 func TestPreservedCopyDetachCapabilityAndStateGuards(t *testing.T) {
 	vm := guiapp.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoDetach: true, contract.CapRepoDetachDeletedCopy: true},
 		Repos: []guiapp.RepoViewModel{{ID: "copy", ServerID: "lab", ServerDeleted: true, LocalCopyPreserved: true}}}

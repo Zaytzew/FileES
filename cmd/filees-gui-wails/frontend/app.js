@@ -439,6 +439,7 @@ function updateRetentionCountdowns() {
 }
 
 const repoIcons = {
+  retry: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg>',
   lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   unlock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M9 10V7a4 4 0 0 1 7.5-2"/></svg>',
@@ -604,6 +605,9 @@ function renderRepo(repo) {
     repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", t("repo.recovery"), repoIcons.recovery, "recovery") : "",
     repo.can_dismiss_recovery ? repoAction("dismiss_recovery", t("repo.dismissRecovery"), repoIcons.remove, "recovery-dismiss") : "",
+    // A deletion stopped on an error: the folder window that offers this is
+    // not reachable for a deleted row, which had no action at all (A12).
+    deleted && repo.can_retry_lifecycle ? repoAction("retry_lifecycle", t("repoAction.retry_lifecycle.label"), repoIcons.retry, "mutate") : "",
     repo.can_review_quarantine ? repoAction("review_quarantine", t("repo.quarantine"), repoIcons.quarantine, "quarantine") : "",
     repo.can_lock ? repoAction("lock", t("repo.lock"), repoIcons.lock, "mutate") : "",
     repo.can_unlock ? repoAction("unlock", t("repo.unlock"), repoIcons.unlock, "mutate") : "",

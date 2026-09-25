@@ -9,6 +9,7 @@ import (
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"filees/public-shares/channel"
+	"github.com/google/uuid"
 	"io"
 	"path/filepath"
 	"time"
@@ -43,6 +44,12 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
 	pathOwners := repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy}
 	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, PublicShareStateRoot: config.PublicShares.EffectiveStateRoot(r.ResultsRoot), Runner: runner, RepositoryHead: pathOwners.Head}
+	publisher.EnsureLockGuards = func(repoID string) error {
+		if _, err := uuid.Parse(repoID); err != nil {
+			return err
+		}
+		return repoworker.InstallLockGuards(filepath.Join(r.Root, repoID), repositoryWorkerPath)
+	}
 	effects := repoworker.ServerEffects{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root, DataAuthzFile: r.DataAuthzFile, DeletionArchiveRoot: archiveRoot, DeletionRetentionDays: r.EffectiveDeletionRetentionDays(), Authority: publisher, RealmQuotaBytes: config.Demo.RealmQuota}
 	effects.LockGuardExecutable = repositoryWorkerPath
 	backend := &repoworker.DurableBackend{Root: filepath.Join(r.ResultsRoot, "backend"), URLPrefix: r.URLPrefix, Effects: effects}

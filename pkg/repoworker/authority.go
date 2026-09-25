@@ -73,6 +73,10 @@ type ServicePublisher struct {
 	RepositoryHead           func(context.Context, string) (RepositoryRevision, error)
 	Runner                   PublishRunner
 	Now                      func() time.Time
+	// EnsureLockGuards installs the pre-lock/pre-unlock guards of one
+	// repository, never overwriting a foreign hook. Nil in tools that do not
+	// switch editing policies.
+	EnsureLockGuards func(repoID string) error
 }
 
 // SnapshotRealmScope derives repository scope only from the canonical service

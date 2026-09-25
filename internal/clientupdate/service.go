@@ -54,7 +54,8 @@ type Service struct {
 	cacheMu    sync.Mutex
 	cached     *contract.UpdateStatus
 	cachedAt   time.Time
-	refreshing bool
+	refreshing chan struct{}  // the running background check, closed when it ends
+	refreshErr error          // the last check's failure, reported while nothing is known
 	refreshes  sync.WaitGroup // background refreshes, for tests
 	Now        func() time.Time
 
@@ -199,53 +200,82 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 		service.refreshInBackground()
 		return service.withDownload(status), nil
 	}
-	// Nothing verified yet. Another check, a plan or an installation holds
-	// the channel: say so instead of queueing behind the network.
-	if !service.mu.TryLock() {
-		return contract.UpdateStatus{}, errors.New("update status is being checked")
+	// Nothing verified yet, as after every start. The check runs in the
+	// background under its own limit and is waited for only briefly: done
+	// inside the status call, with the interface's own 10-second limit, a slow
+	// link to the release server failed every attempt and the interface never
+	// connected to a freshly started daemon (owner's station, r1566,
+	// 2026-09-25: only "Połącz ponownie" at a lucky moment helped).
+	done := service.refreshInBackground()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	case <-time.After(statusFirstWait):
 	}
-	defer service.mu.Unlock()
-	return service.checkChannel(ctx)
+	if status, ok := service.cachedStatus(false); ok {
+		return service.withDownload(status), nil
+	}
+	service.cacheMu.Lock()
+	err := service.refreshErr
+	service.cacheMu.Unlock()
+	if err == nil {
+		err = errors.New("update status is being checked")
+	}
+	return contract.UpdateStatus{}, err
 }
 
+// statusFirstWait is how long a status call waits for the first check.
+const statusFirstWait = 3 * time.Second
+
 // refreshInBackground reads the channel again without anyone waiting for it;
-// one refresh at a time, and none while a plan or installation holds it.
-func (service *Service) refreshInBackground() {
+// one check at a time, and none while a plan or installation holds it. The
+// returned channel closes when the running check ends.
+func (service *Service) refreshInBackground() <-chan struct{} {
 	service.cacheMu.Lock()
-	if service.refreshing {
+	if service.refreshing != nil {
+		done := service.refreshing
 		service.cacheMu.Unlock()
-		return
+		return done
 	}
-	service.refreshing = true
+	done := make(chan struct{})
+	service.refreshing = done
 	service.refreshes.Add(1)
 	service.cacheMu.Unlock()
 	go func() {
+		var err error
 		defer service.refreshes.Done()
 		defer func() {
 			service.cacheMu.Lock()
-			service.refreshing = false
+			service.refreshing = nil
+			if err != nil {
+				service.refreshErr = err
+			}
 			service.cacheMu.Unlock()
+			close(done)
 		}()
 		if !service.mu.TryLock() {
-			return
+			return // a plan or installation holds the channel
 		}
 		defer service.mu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		_, _ = service.checkChannel(ctx) // a failure keeps the previous answer
+		_, err = service.checkChannel(ctx) // a failure keeps the previous answer
 	}()
+	return done
 }
 
 // checkChannel runs with mu held.
 func (service *Service) checkChannel(ctx context.Context) (contract.UpdateStatus, error) {
 	if service.appliedRestart {
-		return contract.UpdateStatus{
+		status := contract.UpdateStatus{
 			State: "restart_required", Channel: service.Channel,
 			CurrentVersion:   canonicalClientVersion(service.CurrentVersion),
 			AvailableVersion: service.appliedVersion, ReleaseID: service.appliedReleaseID,
 			Summary:         "Aktualizacja jest zainstalowana. Uruchom FileES ponownie, aby używać nowej wersji.",
 			RestartRequired: true,
-		}, nil
+		}
+		service.storeStatus(&status) // status is answered from memory only
+		return status, nil
 	}
 	resolved, state, err := service.resolve(ctx)
 	if err != nil {

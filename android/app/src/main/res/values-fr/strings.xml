@@ -213,12 +213,12 @@
     <string name="about_channel">Canal de mise à jour</string>
     <string name="about_release">Version de distribution</string>
     <string name="about_unknown">inconnue</string>
-    <string name="about_channel_apk">beta</string>
-    <string name="about_status_apk">Les mises à jour viennent du canal beta signé, le même que le bureau. Pas de Play Store.</string>
+    <string name="about_channel_apk">android</string>
+    <string name="about_status_apk">Les mises à jour viennent de leur propre canal signé, à part des versions bureau. La même clé de publication. Pas de Play Store.</string>
     <string name="update_check">Vérifier les mises à jour</string>
-    <string name="update_checking">Vérification du canal beta…</string>
-    <string name="update_current">Vous avez la version beta actuelle.</string>
-    <string name="update_absent">Le canal beta ne contient pas encore de version Android.</string>
+    <string name="update_checking">Vérification du canal Android…</string>
+    <string name="update_current">Vous avez la version actuelle du canal Android.</string>
+    <string name="update_absent">Le canal Android n’a pas encore de version.</string>
     <string name="update_available">La version %1$s est disponible.</string>
     <string name="update_install">Installer</string>
     <string name="update_downloading">Téléchargement…</string>

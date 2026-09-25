@@ -11,8 +11,8 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 38
-        versionName = "0.1.16+r1579"
+        versionCode = 39
+        versionName = "0.1.16+r1581"
     }
 
     buildTypes {

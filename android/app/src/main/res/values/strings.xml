@@ -228,12 +228,12 @@
     <string name="about_channel">Kanał aktualizacji</string>
     <string name="about_release">Wydanie dystrybucyjne</string>
     <string name="about_unknown">nieznana</string>
-    <string name="about_channel_apk">beta</string>
-    <string name="about_status_apk">Aktualizacje przychodzą podpisanym kanałem beta, tym samym co desktop. Bez Sklepu Play.</string>
+    <string name="about_channel_apk">android</string>
+    <string name="about_status_apk">Aktualizacje przychodzą własnym podpisanym kanałem, osobno od wydań pulpitu. Ten sam klucz wydania. Bez Sklepu Play.</string>
     <string name="update_check">Sprawdź aktualizację</string>
-    <string name="update_checking">Sprawdzam kanał beta…</string>
-    <string name="update_current">Masz aktualne wydanie kanału beta.</string>
-    <string name="update_absent">Kanał beta nie zawiera jeszcze wydania Androida.</string>
+    <string name="update_checking">Sprawdzam kanał Androida…</string>
+    <string name="update_current">Masz aktualne wydanie kanału Androida.</string>
+    <string name="update_absent">Kanał Androida nie ma jeszcze wydania.</string>
     <string name="update_available">Jest wydanie %1$s.</string>
     <string name="update_install">Zainstaluj</string>
     <string name="update_downloading">Pobieranie…</string>

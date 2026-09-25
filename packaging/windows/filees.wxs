@@ -39,6 +39,32 @@
     <MajorUpgrade DowngradeErrorMessage="Nowsza wersja FileES jest już zainstalowana." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Every file is written on every install. The executables carry no
+         version resource, and Windows Installer keeps an unversioned file
+         that changed after it was installed as "modified by the user" - which
+         is what self-update does to all of them. On 2026-09-25 the r1558 MSI
+         registered 0.1.17.1558 over a self-updated pair and left the r1554
+         binaries in place; msiexec /fa was the repair. -->
+    <Property Id="REINSTALLMODE" Value="amus" />
+
+    <!-- The running pair is stopped before Windows Installer checks for files
+         in use: the daemon's open log stopped the same upgrade with error 1306
+         and left the daemon down. `filees shutdown` is the clean stop (last
+         scan, then exit); the supervisor exits with it. A missing or older
+         binary that cannot answer is not a reason to fail the install. -->
+    <CustomAction Id="StopFileESPair" Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]filees.exe&quot; shutdown"
+                  Execute="immediate" Return="ignore" />
+    <!-- And started again once the new files are in place, as the Startup
+         shortcut would at the next logon. -->
+    <CustomAction Id="StartFileESPair" Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]filees-launch.exe&quot;"
+                  Execute="immediate" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="StopFileESPair" Before="InstallValidate" Condition="WIX_UPGRADE_DETECTED OR REINSTALL OR Installed" />
+      <Custom Action="StartFileESPair" After="InstallFinalize" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
+    </InstallExecuteSequence>
+
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="LocalProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="FileES" />

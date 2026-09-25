@@ -461,6 +461,7 @@ export default {
   "repoAction.disable_editing_lock.label": "Desactivar reservas obligatorias",
   "repoAction.disable_editing_lock.description": "Permita la edición sin bloqueo obligatorio.",
   "problem.eyebrow": "Qué está pasando",
+  "problem.heldBy": "El archivo está reservado ahora por {holder}.",
   "problem.borrowPending.title": "Los cambios esperan la reserva de un archivo",
   "problem.borrowPending.text": "FileES no puede publicar los cambios de {path}. En esta carpeta hay que reservar un archivo antes de guardarlo, y el servidor no concede la reserva en este momento. Tus cambios están a salvo en este disco.",
   "problem.borrowPending.more": {

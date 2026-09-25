@@ -1006,11 +1006,14 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 		canSetEditingPolicy := repo.Purpose == "" && !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached
 		var problem *platform.FolderProblem
 		if found, ok := vm.FolderProblem(repo.ID); ok {
+			// The owner's wording follows ownership, not whether the
+			// action can run this moment: a stale projection told the owner
+			// to ask the owner (2026-09-25). The button still needs the action.
 			remedy := "ask_owner"
-			if canSetEditingPolicy && lockRequired {
+			if server.Owns(repo) && lockRequired {
 				remedy = "disable_editing_lock"
 			}
-			problem = &platform.FolderProblem{Kind: found.Kind, Path: found.Path, Since: found.Since, Code: found.Code, Reason: found.Reason, More: found.More, Remedy: remedy}
+			problem = &platform.FolderProblem{Kind: found.Kind, Path: found.Path, Since: found.Since, Code: found.Code, Reason: found.Reason, Holder: found.Holder, HolderSince: found.HolderSince, More: found.More, Remedy: remedy}
 		}
 		row.Folders = append(row.Folders, platform.SettingsFolder{
 			Problem: problem,

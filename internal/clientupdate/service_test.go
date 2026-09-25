@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/internal/releaseenvelope"
 	contract "filees/pkg/contract/v1"
@@ -201,5 +202,43 @@ func TestRestartLatchSurvivesOfflineReadsAndRepeatedApplyUntilNewProcess(t *test
 	status, err := restarted.Status(ctx)
 	if err != nil || status.RestartRequired || status.State != "current" {
 		t.Fatalf("restarted=%+v, %v", status, err)
+	}
+}
+
+type countingResolver struct {
+	resolved *releaseenvelope.Resolved
+	calls    int
+}
+
+func (r *countingResolver) Resolve(context.Context, string, string, string) (*releaseenvelope.Resolved, error) {
+	r.calls++
+	return r.resolved, nil
+}
+
+// Owner's production, 2026-09-25: every repo/system status read the channel
+// four times behind the service mutex, and the interface lost the daemon in a
+// cycle whenever the release server was slow. The verified answer is reused
+// for a while, and a busy channel is not waited for.
+func TestStatusReusesTheVerifiedAnswerAndDoesNotQueueBehindTheChannel(t *testing.T) {
+	now := time.Date(2026, 9, 25, 18, 0, 0, 0, time.UTC)
+	resolver := &countingResolver{resolved: resolvedRelease(2, "r2", "1.1")}
+	service := &Service{Resolver: resolver, Installer: &installerStub{}, State: StateStore{Path: filepath.Join(t.TempDir(), "update.json")}, CurrentVersion: "1.0", Now: func() time.Time { return now }}
+	for i := 0; i < 3; i++ {
+		if status, err := service.Status(context.Background()); err != nil || status.State != "available" {
+			t.Fatalf("status %d = %+v, %v", i, status, err)
+		}
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("channel read %d times within the cache period", resolver.calls)
+	}
+	now = now.Add(statusCacheTTL)
+	service.mu.Lock() // a plan or installation holds the channel
+	status, err := service.Status(context.Background())
+	service.mu.Unlock()
+	if err != nil || status.State != "available" || resolver.calls != 1 {
+		t.Fatalf("busy channel: status=%+v err=%v calls=%d", status, err, resolver.calls)
+	}
+	if _, err := service.Status(context.Background()); err != nil || resolver.calls != 2 {
+		t.Fatalf("expired answer was not refreshed: calls=%d err=%v", resolver.calls, err)
 	}
 }

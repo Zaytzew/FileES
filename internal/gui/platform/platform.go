@@ -382,6 +382,7 @@ type SettingsServer struct {
 // "ask_owner" for everybody else.
 type FolderProblem struct {
 	Kind, Path, Since, Code, Reason, Remedy string
+	Holder, HolderSince                     string
 	More                                    int
 }
 

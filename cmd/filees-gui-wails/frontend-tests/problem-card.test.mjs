@@ -26,3 +26,8 @@ test("no problem, or one this card does not know, renders nothing", () => {
   assert.equal(problemCardHTML(null, t, esc), "");
   assert.equal(problemCardHTML({kind: "future_kind"}, t, esc), "");
 });
+
+test("the card names who else holds the file", () => {
+  const html = problemCardHTML({kind: "borrow_pending", path: "a.dwg", holder: "biuro:<jan>", remedy: "ask_owner"}, t, esc);
+  assert.match(html, /problem\.heldBy\{&quot;holder&quot;:&quot;biuro:&lt;jan&gt;&quot;\}/);
+});

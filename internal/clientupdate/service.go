@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"filees/internal/releaseenvelope"
@@ -37,10 +38,57 @@ type Service struct {
 	appliedVersion   string
 	appliedReleaseID string
 	appliedRestart   bool
+
+	// The last verified status. repo and system status answers carry it, and
+	// the interface asks for those after every event: reading the channel
+	// (four remote reads) each time, behind mu, stacked the calls past the
+	// interface's 10-second limit whenever the link to the release server
+	// slowed down, and the interface showed the daemon as gone, in a cycle
+	// (owner's production, 2026-09-25). Errors are never cached.
+	cacheMu  sync.Mutex
+	cached   *contract.UpdateStatus
+	cachedAt time.Time
+	Now      func() time.Time
+}
+
+// statusCacheTTL bounds how old a verified channel answer may be before a
+// status call reads the channel again.
+const statusCacheTTL = 5 * time.Minute
+
+func (service *Service) now() time.Time {
+	if service.Now != nil {
+		return service.Now()
+	}
+	return time.Now()
+}
+
+func (service *Service) cachedStatus(fresh bool) (contract.UpdateStatus, bool) {
+	service.cacheMu.Lock()
+	defer service.cacheMu.Unlock()
+	if service.cached == nil || (fresh && service.now().Sub(service.cachedAt) >= statusCacheTTL) {
+		return contract.UpdateStatus{}, false
+	}
+	return *service.cached, true
+}
+
+func (service *Service) storeStatus(status *contract.UpdateStatus) {
+	service.cacheMu.Lock()
+	defer service.cacheMu.Unlock()
+	service.cached, service.cachedAt = status, service.now()
 }
 
 func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, error) {
-	service.mu.Lock()
+	if status, ok := service.cachedStatus(true); ok {
+		return status, nil
+	}
+	// Another check, a plan or an installation holds the channel: answer with
+	// the last verified status instead of queueing behind the network.
+	if !service.mu.TryLock() {
+		if status, ok := service.cachedStatus(false); ok {
+			return status, nil
+		}
+		return contract.UpdateStatus{}, errors.New("update status is being checked")
+	}
 	defer service.mu.Unlock()
 	if service.appliedRestart {
 		return contract.UpdateStatus{
@@ -65,6 +113,7 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 		status.AvailableVersion = resolved.Manifest.Version
 		status.RestartRequired = true
 	}
+	service.storeStatus(&status)
 	return status, nil
 }
 
@@ -126,6 +175,7 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	service.appliedVersion = resolved.Manifest.Version
 	service.appliedReleaseID = resolved.Envelope.ReleaseID
 	service.appliedRestart = restart
+	service.storeStatus(nil) // the installed files changed; verify again
 	next, err := state.Advance(resolved.Envelope, resolved.Manifest.Version)
 	if err != nil {
 		return contract.UpdateApplyResult{}, err

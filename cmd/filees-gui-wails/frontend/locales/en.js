@@ -449,6 +449,7 @@ export default {
   "repoAction.disable_editing_lock.label": "Disable required reservations",
   "repoAction.disable_editing_lock.description": "Allow editing without a mandatory lock.",
   "problem.eyebrow": "What is happening",
+  "problem.heldBy": "The file is currently reserved by {holder}.",
   "problem.borrowPending.title": "Changes are waiting for a file reservation",
   "problem.borrowPending.text": "FileES cannot publish the changes to {path}. In this folder a file has to be reserved before it is saved, and the server is not issuing the reservation right now. Your changes are safe on this disk.",
   "problem.borrowPending.more": {

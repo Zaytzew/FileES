@@ -13,10 +13,17 @@ The main-page header reads each lane's `release.json` without browser cache:
 of the website sources or the independently released server. The publisher
 replaces this small public JSON together with the page and verified downloads;
 a failed run leaves the previous number in place. No history is accumulated.
-Install the updated publisher and deploy `index.html` plus `release-badge.js`
-from the site package once. Later cron runs need no write access to the root
-page. An unavailable JSON leaves a plain channel link rather than a guessed
-revision. Numbers refresh on page load; an already open tab needs a reload.
+Install the updated publisher and deploy `index.html`, `release-badge.js` and
+`android-badge.js` from the site package once. Later cron runs need no write
+access to the root page. An unavailable JSON leaves a plain channel link
+rather than a guessed revision. Numbers refresh on page load; an already open
+tab needs a reload.
+
+`android-badge.js` follows the same rule for the mobile companion's caption
+on the root page: it reads `./android/channels/android.json` and the manifest
+it names, the same tree the download page's own Android card reads from
+`../android/`. Until the first Android release is signed and mirrored, both
+show their static "in preparation" text; nothing here fails or blocks on it.
 
 ## Server bundle
 

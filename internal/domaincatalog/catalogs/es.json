@@ -82,7 +82,7 @@
     "passport.replacement_denied": "No tiene permiso para asumir esta reserva",
     "passport.replacement_request_conflict": "Este ID de operación de reserva pertenece a otra solicitud",
     "passport.replacement_stale": "La reserva ha cambiado. Actualice su estado",
-    "passport.replacement_unavailable": "El servicio de transferencia de reservas no está disponible",
+    "passport.replacement_unavailable": "El servidor no concede reservas en este momento",
     "passport.replacement_uncertain": "El resultado del cambio de reserva es incierto. Aclare su estado antes de continuar",
     "policy.deferred": "El cambio de las reglas de reserva está esperando una copia local sin cambios",
     "proto.invalid_envelope": "El servicio rechazó un sobre de mensaje mal formado",

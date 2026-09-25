@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -76,6 +77,20 @@ func (f *NativeFailure) Error() string {
 }
 
 func (f *NativeFailure) Unwrap() error { return f.Exit }
+
+// ErrCommitNotSent marks a commit the helper proved never reached the server:
+// it failed before Subversion asked for the log message, which comes before
+// the commit editor that creates the server transaction. Nothing needs
+// recovering, and the helper has already released its writer record.
+var ErrCommitNotSent = errors.New("commit failed locally before anything was sent")
+
+// commitNotSentMarker is FILEES_COMMIT_NOT_SENT in native/filees-svn.
+const commitNotSentMarker = "filees.commit-not-sent"
+
+// Is reports ErrCommitNotSent when the helper said so first in its chain.
+func (f *NativeFailure) Is(target error) bool {
+	return target == ErrCommitNotSent && len(f.Entries) > 0 && f.Entries[0].Message == commitNotSentMarker
+}
 
 // Codes returns the chain as reported, outermost first.
 func (f *NativeFailure) Codes() []int {

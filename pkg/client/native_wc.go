@@ -300,6 +300,21 @@ func (c *execClient) nativeRevert(ctx context.Context, wc string, paths []string
 	return "", nil
 }
 
+// ReleaseCommitWriter frees the helper's record of one commit that has been
+// proven to have had no effect, so later commits are not refused with
+// "unfinished native commit requires receipt recovery". Only that commit's
+// record is released. A helper without the verb reports ErrUnsupported.
+func (c *execClient) ReleaseCommitWriter(ctx context.Context, wc, commitID string) error {
+	if !nativeWCOps(c) {
+		return nil // the CLI path keeps no writer record
+	}
+	if err := c.nativeRequireFeature(ctx, "writer_release_v1"); err != nil {
+		return errors.Join(errors.ErrUnsupported, err)
+	}
+	_, err := c.nativeRun(ctx, wc, "writer-release", "--wc", wc, "--commit-id", commitID)
+	return err
+}
+
 func (c *execClient) nativeResolve(ctx context.Context, wc string, paths []string, accept string) (string, error) {
 	rels, err := nativeRelatives(wc, paths)
 	if err != nil {

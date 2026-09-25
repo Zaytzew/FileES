@@ -598,6 +598,24 @@ static svn_error_t *repair_keep_text(svn_wc_conflict_result_t **result,
     return SVN_NO_ERROR;
 }
 
+/* Releases the writer record of one commit a caller has proven had no effect
+ * (the repository never reached the revision it would have made). Only the
+ * named commit's record is released; any other stays for its own recovery. */
+svn_error_t *filees_writer_release(const char *wc_arg, svn_boolean_t live,
+                                   const char *marker, apr_pool_t *pool)
+{
+    const char *wc, *pending;
+    svn_client_ctx_t *ctx;
+    apr_file_t *writer;
+    if (!marker || !*marker) return filees_refuse("writer-release requires --commit-id");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_open(&writer, &pending, wc, pool));
+    if (pending && strcmp(pending, marker)) return filees_refuse("writer record belongs to another commit");
+    if (pending) SVN_ERR(filees_writer_set(writer, NULL, pool));
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"released\":%s}\n", pending ? "true" : "false");
+    return SVN_NO_ERROR;
+}
+
 /* A deliberately narrow receipt repair, NOT a general update/resolve mode.
  * Only plain, nonempty, no-property additions are admitted, and only if the
  * exact revision/UUID proves their creation without copy history. Other
@@ -795,13 +813,25 @@ static void print_lock_receipt(const char *field, apr_array_header_t *results)
     puts("]}");
 }
 
+/* Subversion asks for the message after harvesting the targets and before it
+ * opens the commit editor, which is what creates the server transaction. A
+ * commit that fails without having asked therefore sent nothing (2026-09-25:
+ * E200009 on an unversioned target left the writer record behind, and every
+ * later commit was refused until a person untangled it). */
+struct log_message_baton {
+    const char *message;
+    svn_boolean_t requested;
+};
+
 static svn_error_t *supply_log_message(const char **log_msg, const char **tmp_file,
                                       const apr_array_header_t *commit_items,
                                       void *baton, apr_pool_t *pool)
 {
+    struct log_message_baton *b = baton;
     (void)commit_items;
     (void)pool;
-    *log_msg = baton;
+    b->requested = TRUE;
+    *log_msg = b->message;
     *tmp_file = NULL;
     return SVN_NO_ERROR;
 }
@@ -898,6 +928,8 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
     apr_file_t *writer;
     const char *pending;
     const svn_string_t *marker = NULL;
+    struct log_message_baton log_message;
+    svn_error_t *err;
     int i;
 
     if (n < 1) return filees_refuse("commit requires at least one path");
@@ -935,8 +967,10 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
      * any message at all, when every commit succeeded with an empty svn:log,
      * which would have silently emptied the Shouting Commit lane because
      * announcements ride in exactly that property. */
+    log_message.message = message;
+    log_message.requested = FALSE;
     ctx->log_msg_func3 = supply_log_message;
-    ctx->log_msg_baton3 = (void *)message;
+    ctx->log_msg_baton3 = &log_message;
 
     if (commit_progress_enabled) {
         ctx->notify_func2 = commit_progress_notify;
@@ -949,13 +983,20 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
     commit.date = NULL;
     commit.author = NULL;
     commit.pool = pool;
-    SVN_ERR(svn_client_commit6(paths, svn_depth_empty, keep_locks,
-                               FALSE /* keep_changelists */,
-                               TRUE /* commit_as_operations */,
-                               FALSE /* include_file_externals */,
-                               FALSE /* include_dir_externals */,
-                               NULL /* changelists */, revprop_table,
-                               collect_commit, &commit, ctx, pool));
+    err = svn_client_commit6(paths, svn_depth_empty, keep_locks,
+                             FALSE /* keep_changelists */,
+                             TRUE /* commit_as_operations */,
+                             FALSE /* include_file_externals */,
+                             FALSE /* include_dir_externals */,
+                             NULL /* changelists */, revprop_table,
+                             collect_commit, &commit, ctx, pool);
+    if (err && !log_message.requested) {
+        /* Nothing reached the server: release the record, and say so first
+         * in the chain so the caller need not hold the queue for recovery. */
+        if (marker) err = svn_error_compose_create(err, filees_writer_set(writer, NULL, pool));
+        return svn_error_create(err->apr_err, err, FILEES_COMMIT_NOT_SENT);
+    }
+    SVN_ERR(err);
     if (marker) SVN_ERR(filees_writer_set(writer, NULL, pool));
 
     printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":");

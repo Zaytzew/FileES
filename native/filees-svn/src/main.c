@@ -21,7 +21,7 @@
 static const char *const k_verbs[] = {
     "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
-    "propdel", "cleanup", "revert", "resolve", "recover-commit", "list",
+    "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "list",
     "fetch-file", "list-tree", "fetch-tree", NULL
 };
 
@@ -36,7 +36,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\",\"commit_not_sent_v1\",\"writer_release_v1\",\"status_conflicted_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -452,6 +452,22 @@ static svn_error_t *run_recover_commit(int argc, const char **argv, apr_pool_t *
     return filees_recover_commit(wc, live, url, marker, revision, paths, n, pool);
 }
 
+static svn_error_t *run_writer_release(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *wc = NULL, *marker = NULL;
+    svn_boolean_t live = TRUE;
+    int i;
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live)); continue;
+        }
+        if (!strcmp(argv[i], "--commit-id") && i + 1 < argc) { marker = argv[++i]; continue; }
+        return filees_refuse("invalid writer-release arguments");
+    }
+    if (!wc || !marker) return filees_refuse("writer-release requires WC and commit-id");
+    return filees_writer_release(wc, live, marker, pool);
+}
+
 static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
                              apr_pool_t *pool)
 {
@@ -533,6 +549,7 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
     if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
     if (!strcmp(verb, "recover-commit")) return run_recover_commit(argc, argv, pool);
+    if (!strcmp(verb, "writer-release")) return run_writer_release(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
     if (!strcmp(verb, "info")) return run_info(argc, argv, pool);
 

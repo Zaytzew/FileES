@@ -3,6 +3,7 @@ package commit
 import (
 	"context"
 	"errors"
+	"filees/pkg/client"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,13 @@ type transactionFake struct {
 	mutations, lookups   int
 	failLookup, noEffect bool
 	before               func()
+	notSent              bool     // the helper refuses before sending anything
+	released             []string // commit ids whose native writer record was released
+}
+
+func (c *transactionFake) ReleaseCommitWriter(_ context.Context, _, commitID string) error {
+	c.released = append(c.released, commitID)
+	return nil
 }
 
 func TestIntentBusyOwnership(t *testing.T) {
@@ -71,11 +79,35 @@ func TestDurableWatcherAckFailureRetainsReceipt(t *testing.T) {
 	}
 }
 
+// CEMPKOWO-HALA, 2026-09-25: a commit the helper refused before sending
+// anything was held for recovery, and every retry hit the kept writer record.
+// A proven unsent commit closes its intent and keeps the queue for a retry.
+func TestDurableCommitNotSentClosesTheIntentWithoutRecovery(t *testing.T) {
+	s, c, _, wc := transactionFixture(t)
+	c.notSent = true
+	if _, err := s.RequestPublish(t.Context(), wc, "unsent"); err == nil || !errors.Is(err, client.ErrCommitNotSent) {
+		t.Fatalf("refusal lost its meaning: %v", err)
+	}
+	in, err := s.readIntent(wc)
+	if err != nil || in == nil || in.Phase != "done" {
+		t.Fatalf("intent=%+v err=%v", in, err)
+	}
+	if c.lookups != 0 || HasUnresolvedCommit(wc) || s.CommitRecoveryRequired() {
+		t.Fatalf("an unsent commit went to recovery: lookups=%d", c.lookups)
+	}
+	if len(s.staging) != 1 {
+		t.Fatalf("queue lost: %d entries", len(s.staging))
+	}
+}
+
 func (c *transactionFake) CommitHead(context.Context, string) (int64, error) { return 4, nil }
 func (c *transactionFake) CommitWithID(_ context.Context, _, _ string, _ []string, _ string, _ bool, _ string, _ int64) (string, int64, error) {
 	c.mutations++
 	if c.before != nil {
 		c.before()
+	}
+	if c.notSent {
+		return "", 0, &client.NativeFailure{Verb: "commit", Entries: []client.NativeErrorEntry{{Code: 200009, Message: "filees.commit-not-sent"}, {Code: 200009, Message: "'a.txt' is not under version control"}}}
 	}
 	if !HasUnresolvedCommit(c.wc) {
 		panic("mutation started without durable intent")
@@ -256,5 +288,18 @@ func TestDurableCommitCompletedReceiptAllowsRelocatedWC(t *testing.T) {
 	}
 	if _, err := s.recoverCommit(t.Context(), wc); err == nil {
 		t.Fatal("unfinished foreign receipt accepted")
+	}
+}
+
+// CEMPKOWO-HALA, 2026-09-25: a new file sat in the queue as a modification
+// and each commit of it failed with E200009. SVN's word decides: an unknown
+// path is added.
+func TestQueuedModificationOfAnUnversionedFileIsAdded(t *testing.T) {
+	s, c, _, wc := transactionFixture(t)
+	c.statuses["a.txt"] = "unversioned"
+	c.notSent = true // stop right after staging; the add is what is checked
+	_, _ = s.RequestPublish(t.Context(), wc, "new file")
+	if c.adds == 0 || len(c.addPaths) != 1 || c.addPaths[0] != "a.txt" {
+		t.Fatalf("unversioned path was not added: adds=%d paths=%v", c.adds, c.addPaths)
 	}
 }

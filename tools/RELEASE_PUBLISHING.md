@@ -203,3 +203,19 @@ repo SVN, podpisuje release testowym kluczem w formacie OpenBSD signify, wykonuj
 rzeczywisty `packaging/linux/install-user.sh` w izolowanym HOME i potwierdza
 odmowę rollbacku, złego podpisu oraz artefaktu o niezgodnym SHA-256. Testowy
 klucz powstaje wyłącznie w katalogu tymczasowym i nie jest trust rootem wydania.
+
+## Podpis: pomyłka w haśle i rozmiar WC (2026-09-25)
+
+`release-sign-and-publish.sh` robi wszystkie podpisy w katalogu tymczasowym;
+błędne hasło jest pytane ponownie (3 próby na podpis), a WC zmienia się
+dopiero, gdy istnieją i weryfikują się wszystkie. Pomyłka nie zostawia już
+WC w stanie, którego skrypt odmawia („local or unversioned changes”). Gdyby
+jednak WC zostało zmienione: `svn revert -R .` i usunięcie plików `?`
+wskazanych przez `svn status`.
+
+`tools/prune-release-history.sh` trzyma w HEAD FILEES-BIN 10 najnowszych
+wydań każdego rodzaju (desktop, `-server`, `-beta`…) oraz każde wskazane przez
+kanał; starsze usuwa z HEAD (historia repozytorium je zachowuje; przywrócenie:
+`svn copy URL/releases/rNNNN@REV URL/releases/rNNNN`). Domyślnie próba,
+`APPLY=1` usuwa i zatwierdza. Pierwsze przycięcie: FILEES-BIN r180, 80 → 22
+wydań, `releases/` 7,2 → 2,4 GB.

@@ -46,7 +46,7 @@ func TestVanishedRenameDestinationsDoNotLeaveParentOnlyCommitTargets(t *testing.
 }
 
 func TestCommitRecoveryDecisionRetiresOnlyProvenNoEffectAttempt(t *testing.T) {
-	s, _, _, wc := transactionFixture(t)
+	s, c, _, wc := transactionFixture(t)
 	in := &commitIntent{Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc, Phase: "attempting", FirstRevision: 5, Paths: []string{"a.txt"}, BusyMarker: "transaction=test\npid=1\n"}
 	if err := s.writeStateString(filepath.Join(wc, ".filees", "state", "commit.busy"), in.BusyMarker); err != nil {
 		t.Fatal(err)
@@ -68,6 +68,11 @@ func TestCommitRecoveryDecisionRetiresOnlyProvenNoEffectAttempt(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(wc, ".filees", "state", "commit.busy")); !os.IsNotExist(err) {
 		t.Fatalf("busy marker retained: %v", err)
+	}
+	// Retiring the attempt also frees the helper's record of it, or the next
+	// commit is refused as unfinished (CEMPKOWO-HALA loop, 2026-09-25).
+	if len(c.released) != 1 || c.released[0] != in.ID {
+		t.Fatalf("native writer record not released for %s: %v", in.ID, c.released)
 	}
 }
 

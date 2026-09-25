@@ -536,3 +536,53 @@ func TestRAAdoptTakesOverFilesAlreadyOnDisk(t *testing.T) {
 	// Narrow on purpose: without a pinned revision nobody vouches for the bytes.
 	f.jsonCall(t, false, "update", "--wc", anchor("unpinned"), "--set-depth", "infinity", "--adopt", "--", "occupied.txt")
 }
+
+// CEMPKOWO-HALA, 2026-09-25: a commit refused before anything was sent (an
+// unversioned target, E200009) kept the writer record, and every later
+// commit was refused as unfinished. Now the refusal says it sent nothing and
+// the next commit goes through.
+func TestRACommitRefusedBeforeSendingReleasesTheWriterRecord(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "unsent")
+	write(t, filepath.Join(other, "new.dwg"), "never added\n")
+
+	failed := f.jsonCall(t, false, "commit", "--disposable-wc", other, "-m", "nie wyjdzie",
+		"--revprop", "filees:commit-id=UNSENT-1", "--", "new.dwg")
+	errs, _ := failed["errors"].([]any)
+	if len(errs) == 0 || errs[0].(map[string]any)["message"] != "filees.commit-not-sent" {
+		t.Fatalf("refusal does not say nothing was sent: %#v", failed["errors"])
+	}
+	record := filepath.Join(other, ".svn", "filees-native-writer-v1")
+	if info, err := os.Stat(record); err == nil && info.Size() != 0 {
+		t.Fatalf("writer record kept after a commit that sent nothing (%d bytes)", info.Size())
+	}
+
+	write(t, filepath.Join(other, "occupied.txt"), "next commit\n")
+	got := f.jsonCall(t, true, "commit", "--disposable-wc", other, "-m", "następny",
+		"--revprop", "filees:commit-id=NEXT-1", "--", "occupied.txt")
+	if revision, _ := got["revision"].(float64); revision != 2 {
+		t.Fatalf("next commit after the refusal: %#v", got)
+	}
+}
+
+// Releasing a writer record needs the exact commit it belongs to.
+func TestWriterReleaseFreesOnlyTheNamedCommit(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	record := filepath.Join(f.wc, ".svn", "filees-native-writer-v1")
+	write(t, record, "filees.native-writer/v1\nHELD-1\n")
+
+	f.jsonCall(t, false, "writer-release", "--disposable-wc", f.wc, "--commit-id", "OTHER-2")
+	if raw, _ := os.ReadFile(record); string(raw) != "filees.native-writer/v1\nHELD-1\n" {
+		t.Fatalf("another commit's record was touched: %q", raw)
+	}
+	got := f.jsonCall(t, true, "writer-release", "--disposable-wc", f.wc, "--commit-id", "HELD-1")
+	if got["released"] != true {
+		t.Fatalf("release answer: %#v", got)
+	}
+	if info, err := os.Stat(record); err != nil || info.Size() != 0 {
+		t.Fatalf("record not released: %v %v", info, err)
+	}
+	if again := f.jsonCall(t, true, "writer-release", "--disposable-wc", f.wc, "--commit-id", "HELD-1"); again["released"] != false {
+		t.Fatalf("second release: %#v", again)
+	}
+}

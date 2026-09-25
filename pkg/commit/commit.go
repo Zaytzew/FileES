@@ -1294,6 +1294,27 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	}
 	renamedItems = validRenamed
 
+	// A modification of a path SVN does not know is a new file: committing it
+	// as a change fails with E200009 before anything is sent (CEMPKOWO-HALA,
+	// 2026-09-25, which then held publication for recovery). Add it instead.
+	keptModified := modifiedPaths[:0]
+	for _, p := range modifiedPaths {
+		if st[p] != "unversioned" {
+			keptModified = append(keptModified, p)
+			continue
+		}
+		s.Logger.Infof("publish %s as new: queued as modified, unknown to SVN", p)
+		s.mu.Lock()
+		for _, pe := range pending {
+			if pe.item.Rel == p && pe.item.Op == watcher.Modified {
+				pe.item.Op = watcher.Added
+			}
+		}
+		s.mu.Unlock()
+		addPaths = append(addPaths, p)
+	}
+	modifiedPaths = keptModified
+
 	// ADD: tylko istniejące i unversioned. The existence check is repeated
 	// immediately before staging to close the debounce/status race window.
 	toSvnAdd := make([]string, 0, len(addPaths))

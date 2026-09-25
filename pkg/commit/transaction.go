@@ -94,6 +94,14 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	if err != nil || head != plan.headRevision || head >= in.FirstRevision {
 		return nil, errors.New("repository changed after the recovery plan")
 	}
+	// The plan proved the attempt had no effect; the native helper still
+	// holds its record and would refuse every later commit (E200004) until
+	// released. Only this attempt's record is released.
+	if releaser, ok := s.Cli.(commitWriterReleaser); ok {
+		if err := releaser.ReleaseCommitWriter(ctx, s.wc, in.ID); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+			return nil, fmt.Errorf("release the native commit record: %w", err)
+		}
+	}
 	in.Phase = "done"
 	if err := s.writeIntent(s.wc, in); err != nil {
 		return nil, err
@@ -103,6 +111,12 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	}
 	s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = "", time.Time{}
 	return &contract.CommitRecoveryApplyResult{PlanID: planID, State: "queued"}, nil
+}
+
+// commitWriterReleaser frees the native helper's record of one commit proven
+// to have had no effect (client.execClient).
+type commitWriterReleaser interface {
+	ReleaseCommitWriter(ctx context.Context, wc, commitID string) error
 }
 
 const transactionSchema = "filees.commit-intent/v1"
@@ -360,6 +374,18 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 	report, endProgress := s.startPublishProgress(pending, selected)
 	_, rev, commitErr := c.CommitWithID(client.WithCommitProgress(ctx, report), wc, s.RepoURL, paths, message, s.Rules.NeedsLock, in.ID, in.FirstRevision)
 	endProgress()
+	if commitErr != nil && errors.Is(commitErr, client.ErrCommitNotSent) {
+		// Proven: the server never saw this transaction, and the helper has
+		// released its writer record. Close the intent and keep the queue for
+		// an ordinary retry; holding it for recovery was the loop the owner
+		// kept answering with "Uzgodnij publikację" (2026-09-25).
+		s.Logger.Warnf("commit refused locally before anything was sent: transaction=%s: %v", in.ID, commitErr)
+		in.Phase = "done"
+		if err := s.writeIntent(wc, in); err != nil {
+			return errors.Join(commitErr, err)
+		}
+		return errors.Join(commitErr, releaseIntentBusy(wc, in))
+	}
 	if commitErr != nil {
 		s.Logger.Warnf("commit reply failed: transaction=%s first_revision=%d; resolving receipt before any retry: %v", in.ID, in.FirstRevision, commitErr)
 		// Same-context lookup may fail on cancellation. The next poll/startup

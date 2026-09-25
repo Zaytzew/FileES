@@ -171,6 +171,10 @@ export default {
     "one": "repository",
     "other": "repositories"
   },
+  "count.files": {
+    "one": "file",
+    "other": "files"
+  },
   "count.folders": {
     "one": "{count} folder",
     "other": "{count} folders"
@@ -1340,7 +1344,7 @@ export default {
   "feedback.publishedBody": "Changes were saved as revision r%d. The team will see the comment after updating.",
   "feedback.closedRequest": "Request closed",
   "feedback.releasedLock": "Lock released",
-  "feedback.fileCount": "%s %d file(s)",
+  "feedback.fileCount": "%s %d %s",
   "feedback.releasedCount": "Released %d reservations.",
   "feedback.failedCount": " Not released: %d.",
   "feedback.freeEditing": "Files can be edited again without reservations.",

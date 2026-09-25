@@ -23,7 +23,7 @@ func TestParseReplaceOptions(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{},
-		{"--from", "msi", "--settings", "keep"},                                  // no target
+		{"--from", "msi", "--settings", "keep"}, // no target
 		{"--from", "msi", "--settings", "keep", "--config", "config.json"},       // relative
 		{"--from", "winget", "--settings", "keep", "--config", `C:\c.json`},      // unknown variant
 		{"--from", "msi", "--settings", "maybe", "--config", `C:\c.json`},        // unknown choice

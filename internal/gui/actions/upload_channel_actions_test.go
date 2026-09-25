@@ -29,13 +29,13 @@ func (r *recordingUploadChannels) CreateUploadChannel(_ context.Context, _ strin
 	r.creates = append(r.creates, declaration)
 	return nil
 }
-func (recordingUploadChannels) UpdateUploadChannel(context.Context, string, string, actions.UploadChannelDeclaration) error {
+func (*recordingUploadChannels) UpdateUploadChannel(context.Context, string, string, actions.UploadChannelDeclaration) error {
 	return nil
 }
-func (recordingUploadChannels) RevokeUploadChannel(context.Context, string, string, string) error {
+func (*recordingUploadChannels) RevokeUploadChannel(context.Context, string, string, string) error {
 	return nil
 }
-func (recordingUploadChannels) DeleteUploadChannel(context.Context, string, string, string) error {
+func (*recordingUploadChannels) DeleteUploadChannel(context.Context, string, string, string) error {
 	return nil
 }
 

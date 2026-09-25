@@ -38,8 +38,8 @@ func init() {
 	}
 }
 
-func SetLevel(l Level)           { curLevel.Store(int32(l)) }
-func SetOutput(w io.Writer)      { outMu.Lock(); out = w; outMu.Unlock() }
+func SetLevel(l Level)      { curLevel.Store(int32(l)) }
+func SetOutput(w io.Writer) { outMu.Lock(); out = w; outMu.Unlock() }
 func SetLevelString(s string) {
 	switch strings.ToLower(s) {
 	case "silent", "off", "0":
@@ -73,22 +73,33 @@ func With(scope string, tags ...[2]string) Logger {
 }
 
 func (l Logger) logf(lv Level, emoji, format string, args ...any) {
-	if lv > Level(curLevel.Load()) { return }
+	if lv > Level(curLevel.Load()) {
+		return
+	}
 	ts := time.Now().UTC().Format("15:04:05")
 	tagStr := ""
 	if len(l.tags) > 0 {
 		first := true
 		for k, v := range l.tags {
-			if first { tagStr += " " ; first = false }
+			if first {
+				tagStr += " "
+				first = false
+			}
 			tagStr += k + "=" + v + " "
 		}
 		tagStr = strings.TrimSpace(tagStr)
-		if tagStr != "" { tagStr = " [" + tagStr + "]" }
+		if tagStr != "" {
+			tagStr = " [" + tagStr + "]"
+		}
 	}
 	scope := ""
-	if l.scope != "" { scope = " " + l.scope }
+	if l.scope != "" {
+		scope = " " + l.scope
+	}
 	pfx := ""
-	if prefix != "" { pfx = prefix + " " }
+	if prefix != "" {
+		pfx = prefix + " "
+	}
 	line := fmt.Sprintf("%s %s%s%s: %s\n", ts, pfx, emoji, scope, tagStr+" "+fmt.Sprintf(format, args...))
 	outMu.Lock()
 	fmt.Fprint(out, line)
@@ -96,8 +107,8 @@ func (l Logger) logf(lv Level, emoji, format string, args ...any) {
 }
 
 func (l Logger) Errorf(f string, a ...any) { l.logf(Error, "❌", f, a...) }
-func (l Logger) Warnf(f string, a ...any)  { l.logf(Warn,  "⚠️", f, a...) }
-func (l Logger) Infof(f string, a ...any)  { l.logf(Info,  "ℹ️", f, a...) }
+func (l Logger) Warnf(f string, a ...any)  { l.logf(Warn, "⚠️", f, a...) }
+func (l Logger) Infof(f string, a ...any)  { l.logf(Info, "ℹ️", f, a...) }
 func (l Logger) Debugf(f string, a ...any) { l.logf(Debug, "🐞", f, a...) }
 func (l Logger) Tracef(f string, a ...any) { l.logf(Trace, "🔬", f, a...) }
 

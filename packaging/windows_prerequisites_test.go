@@ -50,6 +50,33 @@ func TestStorePackageVersionHasZeroRevision(t *testing.T) {
 	}
 }
 
+// Every executable the package declares carries a DPI-aware Win32 manifest,
+// the windowless daemon included: WACK warned about filees.exe (2026-09-24).
+func TestStorePackageEmbedsManifestInEveryDeclaredExecutable(t *testing.T) {
+	raw, err := os.ReadFile("windows/build-store-msix.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, required := range []string{
+		`'filees-store-launcher.exe', 'filees-store-startup.exe', 'filees-gui-wails.exe', 'filees.exe'`,
+		`'filees.exe' { 'filees-daemon.exe.manifest' }`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("build-store-msix.ps1 lacks %q", required)
+		}
+	}
+	manifest, err := os.ReadFile("windows/filees-daemon.exe.manifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`level="asInvoker"`, `>PerMonitorV2<`, `>true/pm<`} {
+		if !strings.Contains(string(manifest), required) {
+			t.Fatalf("filees-daemon.exe.manifest lacks %s", required)
+		}
+	}
+}
+
 // Beta and stable desktop bundles are the nocfapi build of the revision; alpha
 // keeps every feature. The channel decides, and a beta daemon that still holds
 // Cloud Files code stops the build (owner's decision, 2026-09-24).

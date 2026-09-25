@@ -665,8 +665,11 @@ func TestEditingPolicyMigrationDefersOnDirtyWorkingCopyWithoutFailingStart(t *te
 	}
 	svn := &policyMigrationClient{props: map[string]bool{}, status: []client.StatusEntry{{Path: "wip.bin", Item: "modified"}}}
 
-	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test"))
+	deferred := applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test"))
 
+	if !deferred {
+		t.Fatal("a dirty working copy was not reported as deferred, so nothing retries it")
+	}
 	if svn.commits != 0 {
 		t.Fatalf("dirty working copy was committed: commits=%d", svn.commits)
 	}
@@ -686,7 +689,9 @@ func TestEditingPolicyMigrationRecordsOptInSoRollbackCanTell(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test"))
+	if applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test")) {
+		t.Fatal("a completed migration was reported as deferred")
+	}
 
 	if len(svn.sets) != 1 || svn.commits != 1 {
 		t.Fatalf("forward migration did not run: sets=%#v commits=%d", svn.sets, svn.commits)

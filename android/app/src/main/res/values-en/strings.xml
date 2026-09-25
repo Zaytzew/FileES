@@ -219,12 +219,12 @@
     <string name="about_channel">Update channel</string>
     <string name="about_release">Distribution release</string>
     <string name="about_unknown">unknown</string>
-    <string name="about_channel_apk">beta</string>
-    <string name="about_status_apk">Updates come from the signed beta channel, the same one as the desktop. No Play Store.</string>
+    <string name="about_channel_apk">android</string>
+    <string name="about_status_apk">Updates come from their own signed channel, separate from desktop releases. The same release key. No Play Store.</string>
     <string name="update_check">Check for updates</string>
-    <string name="update_checking">Checking the beta channel…</string>
-    <string name="update_current">You have the current beta release.</string>
-    <string name="update_absent">The beta channel does not carry an Android release yet.</string>
+    <string name="update_checking">Checking the Android channel…</string>
+    <string name="update_current">You have the current Android-channel release.</string>
+    <string name="update_absent">The Android channel has no release yet.</string>
     <string name="update_available">Release %1$s is available.</string>
     <string name="update_install">Install</string>
     <string name="update_downloading">Downloading…</string>

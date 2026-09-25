@@ -99,7 +99,6 @@ var placeholderPattern = regexp.MustCompile(`\{\{[A-Z_0-9]+\}\}`)
 var installerNamePatterns = map[string]*regexp.Regexp{
 	"windows-amd64": regexp.MustCompile(`^filees-[0-9][0-9.]*\.msi$`),
 	"linux-amd64":   regexp.MustCompile(`^FileES-[0-9][0-9.]*-x86_64\.AppImage$`),
-	"android":       regexp.MustCompile(`^filees-mobile-.+\.apk$`),
 }
 
 // platformDownload is one platform's verified installer within one release.
@@ -213,24 +212,11 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 		result.Installers = append(result.Installers, download.Installer.Source)
 	}
 
-	if upToDate(p.OutDir, p.Config.Channel, allDownloads, page, sums, metadata) {
+	if upToDate(p.OutDir, allDownloads, page, sums, metadata) {
 		return result, p.saveState(envelope, downloads, server)
 	}
 
 	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page, "release.json": metadata}
-	channelBody, err := p.Fetcher.Cat(ctx, channelPath)
-	if err != nil {
-		return Result{}, fmt.Errorf("fetch channel for the phone mirror: %w", err)
-	}
-	channelSig, err := p.Fetcher.Cat(ctx, channelPath+".sig")
-	if err != nil {
-		return Result{}, fmt.Errorf("fetch channel signature for the phone mirror: %w", err)
-	}
-	files[channelPath] = channelBody
-	files[channelPath+".sig"] = channelSig
-	if err := p.mirrorAndroid(ctx, files, channelPath); err != nil {
-		return Result{}, err
-	}
 	for _, download := range downloads {
 		data, err := p.Fetcher.Cat(ctx, path.Join(path.Dir(download.Manifest), download.Installer.Source))
 		if err != nil {
@@ -341,53 +327,7 @@ func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads [
 	return []byte(page), nil
 }
 
-// mirrorAndroid publishes the mobile/android installer next to the channel
-// envelope when that component exists. A channel that has no Android build
-// is normal and does not stop the desktop page. A channel that names one
-// and then fails verification does: the phone would otherwise see a signed
-// pointer to bytes this mirror does not serve.
-func (p Publisher) mirrorAndroid(ctx context.Context, files map[string][]byte, channelPath string) error {
-	resolved, err := p.Resolver.Resolve(ctx, channelPath, "mobile", "android")
-	if err != nil {
-		if strings.Contains(err.Error(), "no component mobile/android") {
-			return nil
-		}
-		return err
-	}
-	installer, err := selectInstaller("android", resolved.Manifest.Artifacts)
-	if err != nil {
-		return err
-	}
-	manifestBody, err := p.Fetcher.Cat(ctx, resolved.Component.Manifest)
-	if err != nil {
-		return fmt.Errorf("fetch android manifest: %w", err)
-	}
-	manifestSig, err := p.Fetcher.Cat(ctx, resolved.Component.Manifest+".sig")
-	if err != nil {
-		return fmt.Errorf("fetch android manifest signature: %w", err)
-	}
-	apkPath := path.Join(path.Dir(resolved.Component.Manifest), installer.Source)
-	apk, err := p.Fetcher.Cat(ctx, apkPath)
-	if err != nil {
-		return fmt.Errorf("fetch android apk: %w", err)
-	}
-	if int64(len(apk)) != installer.Size {
-		return fmt.Errorf("android apk size mismatch: got %d, signed manifest says %d", len(apk), installer.Size)
-	}
-	digest := sha256.Sum256(apk)
-	if hex.EncodeToString(digest[:]) != installer.SHA256 {
-		return errors.New("android apk does not match the signed manifest")
-	}
-	files[resolved.Component.Manifest] = manifestBody
-	files[resolved.Component.Manifest+".sig"] = manifestSig
-	files[apkPath] = apk
-	return nil
-}
-
-func upToDate(dir, channel string, downloads []platformDownload, page, sums, metadata []byte) bool {
-	if _, err := os.Stat(filepath.Join(dir, "channels", channel+".v2.json")); err != nil {
-		return false
-	}
+func upToDate(dir string, downloads []platformDownload, page, sums, metadata []byte) bool {
 	currentMetadata, err := os.ReadFile(filepath.Join(dir, "release.json"))
 	if err != nil || !bytes.Equal(currentMetadata, metadata) {
 		return false

@@ -16,11 +16,12 @@ import (
 	"filees/internal/releaseenvelope"
 )
 
-func TestInspectMobileUpdateAbsentWithoutAndroidComponent(t *testing.T) {
+func TestInspectMobileUpdateAbsentWhenTheAndroidChannelIsMissing(t *testing.T) {
 	key := newUpdateSigner(t)
 	srv := serveUpdate(key)
 	defer srv.Close()
-	key.publishDesktopOnly()
+	// A desktop envelope on another path must not count as an Android release.
+	key.files["channels/beta.v2.json"] = []byte(`{"schema_version":2}`)
 	offer, err := inspectMobileUpdate(context.Background(), srv.URL, "0.1.16+r1", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -102,44 +103,24 @@ func newUpdateSigner(t *testing.T) *updateSigner {
 	}
 }
 
-func (s *updateSigner) publishDesktopOnly() {
-	s.putRelease(nil)
-}
-
 func (s *updateSigner) publishAndroid(apk []byte) {
-	s.putRelease(apk)
-}
-
-func (s *updateSigner) putRelease(apk []byte) {
-	components := []map[string]string{{
-		"name": "desktop", "platform": "linux-amd64",
-		"manifest": "releases/r9/desktop/linux-amd64/manifest.json",
-	}}
-	if apk != nil {
-		sum := sha256.Sum256(apk)
-		base := "releases/r9/mobile/android/"
-		name := "filees-mobile-0.1.16.r9.apk"
-		manifest, _ := json.Marshal(map[string]any{
-			"schema_version": 2, "release_id": "r9", "sequence": 9, "security_epoch": 1,
-			"key_id": "release-test", "component": "mobile", "platform": "android", "version": "0.1.16.r9",
-			"artifacts": []map[string]any{{
-				"source": name, "sha256": hex.EncodeToString(sum[:]), "size": len(apk), "kind": "installer",
-			}},
-		})
-		s.files[base+"manifest.json"] = manifest
-		s.files[base+"manifest.json.sig"] = s.sign(manifest)
-		s.files[base+name] = apk
-		components = append(components, map[string]string{
-			"name": "mobile", "platform": "android", "manifest": base + "manifest.json",
-		})
-	}
-	envelope, _ := json.Marshal(map[string]any{
-		"schema_version": 2, "release_id": "r9", "sequence": 9, "security_epoch": 1,
-		"key_id": "release-test", "expires_at": "2099-01-01T00:00:00Z", "components": components,
+	sum := sha256.Sum256(apk)
+	base := "releases/r9/android/"
+	name := "filees-mobile-0.1.16.r9.apk"
+	manifest, _ := json.Marshal(map[string]any{
+		"schema_version": 1, "release_id": "r9", "platform": "android",
+		"sequence": 9, "security_epoch": 1, "version": "0.1.16.r9",
+		"apk": map[string]any{
+			"source": name, "sha256": hex.EncodeToString(sum[:]), "size": len(apk),
+		},
 	})
-	s.files[updateChannel] = envelope
-	s.files[updateChannel+".sig"] = s.sign(envelope)
-	desk := []byte(`{"schema_version":2,"release_id":"r9","sequence":9,"security_epoch":1,"key_id":"release-test","component":"desktop","platform":"linux-amd64","version":"0.1.16+r9","artifacts":[{"source":"filees-client.tar.gz","sha256":"` + strings.Repeat("a", 64) + `","size":10,"kind":"bundle"}]}`)
-	s.files["releases/r9/desktop/linux-amd64/manifest.json"] = desk
-	s.files["releases/r9/desktop/linux-amd64/manifest.json.sig"] = s.sign(desk)
+	s.files[base+"manifest.json"] = manifest
+	s.files[base+"manifest.json.sig"] = s.sign(manifest)
+	s.files[base+name] = apk
+	channel, _ := json.Marshal(map[string]any{
+		"schema_version": 1, "release_id": "r9",
+		"manifest": base + "manifest.json", "sequence": 9, "security_epoch": 1,
+	})
+	s.files[updateChannel] = channel
+	s.files[updateChannel+".sig"] = s.sign(channel)
 }

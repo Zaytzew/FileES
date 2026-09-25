@@ -9,7 +9,7 @@ const root=path.resolve(here,'..','..');
 const out=path.join(root,'dist','site-publisher');
 await rm(out,{recursive:true,force:true});
 await mkdir(out,{recursive:true});
-execFileSync('go',['build','-trimpath','-o',path.join(out,'filees-site-download'),'./cmd/filees-site-download'],
+execFileSync('go',['build','-trimpath','-buildvcs=false','-o',path.join(out,'filees-site-download'),'./cmd/filees-site-download'],
   {cwd:root,stdio:'inherit',env:{...process.env,GOOS:'linux',GOARCH:'amd64',CGO_ENABLED:'0'}});
 await copyFile(path.join(root,'landing','download.json'),path.join(out,'download.json'));
 const alpha=JSON.parse(await readFile(path.join(root,'landing','download.json'),'utf8'));

@@ -431,7 +431,24 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service.AcknowledgePublication = scanner.AcknowledgePublication
 	service.EventAcknowledged = scanner.EventAcknowledged
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
-	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+	migrationDeferred := applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+	// A deferred migration is retried after each confirmed publication rather
+	// than only at the next start: the change that blocked it has just gone
+	// out (owner's production, 2026-09-25).
+	var migrationWake chan struct{}
+	if migrationDeferred {
+		migrationWake = make(chan struct{}, 1)
+		previous := service.OnBatchPublished
+		service.OnBatchPublished = func() {
+			if previous != nil {
+				previous()
+			}
+			select {
+			case migrationWake <- struct{}{}:
+			default:
+			}
+		}
+	}
 	if recovered {
 		// Migration may have made files read-only again. Reconcile only after
 		// it finishes, and never after failed or deferred startup recovery.
@@ -486,6 +503,17 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
+		if migrationWake != nil {
+			migrationCtx, cancelMigration := context.WithCancel(runCtx)
+			migrationDone := make(chan struct{})
+			go func() {
+				defer close(migrationDone)
+				retryEditingPolicyMigration(migrationCtx, migrationWake, deps.gate, deps.mutex, repo.RepoURL, func(ctx context.Context) bool {
+					return applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+				}, logger)
+			}()
+			defer func() { cancelMigration(); <-migrationDone }()
+		}
 		if deps.ipc != nil {
 			claimCtx, cancelClaims := context.WithCancel(runCtx)
 			claimsDone := make(chan struct{})
@@ -779,7 +807,11 @@ func readAppliedEditingPolicy(stateDir string) string {
 // says so, because the alternative - returning an error from startReadWrite -
 // takes the repository down silently and removes the very access the user
 // needs to clear the blockage.
-func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn client.Client, wc, stateDir, clientUUID string, passportsOn bool, sink *errmap.Sink, logger talk.Logger) {
+//
+// It reports whether the migration waits for this working copy to become
+// clean or for held paths to be released: the caller retries it after the
+// next confirmed publication.
+func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn client.Client, wc, stateDir, clientUUID string, passportsOn bool, sink *errmap.Sink, logger talk.Logger) (deferred bool) {
 	batch := intOrDefault(repo.MaxBatchFiles, 100)
 	applied := readAppliedEditingPolicy(stateDir)
 
@@ -789,14 +821,14 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 		skipped, err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, batch)
 		if err != nil {
 			reportEditingPolicyBlocked(err, "włączenie", sink, logger)
-			return
+			return errors.Is(err, passport.ErrWorkingCopyDirty)
 		}
 		if skipped > 0 {
 			reportEditingPolicyPartial(skipped, "włączenie", stateDir, logger)
-			return
+			return true
 		}
 		writeAppliedEditingPolicy(stateDir, clientview.EditingLockRequired, logger)
-		return
+		return false
 	}
 
 	// Rolling back only on a real transition matters for more than cost. The
@@ -805,18 +837,55 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 	// this policy may carry the property legitimately, and clearing it
 	// speculatively would destroy that.
 	if applied != clientview.EditingLockRequired {
-		return
+		return false
 	}
 	skipped, err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch)
 	if err != nil {
 		reportEditingPolicyBlocked(err, "wyłączenie", sink, logger)
-		return
+		return errors.Is(err, passport.ErrWorkingCopyDirty)
 	}
 	if skipped > 0 {
 		reportEditingPolicyPartial(skipped, "wyłączenie", stateDir, logger)
-		return
+		return true
 	}
 	writeAppliedEditingPolicy(stateDir, clientview.EditingFree, logger)
+	return false
+}
+
+// retryEditingPolicyMigration runs a deferred migration again each time a
+// publication is confirmed. It takes the host gate and the repository mutex
+// the commit service publishes under, so it starts only after that commit -
+// intent included - has finished, and no poll update runs beside it. It ends
+// once the migration completes or the repository instance stops.
+func retryEditingPolicyMigration(ctx context.Context, wake <-chan struct{}, gate runtime.Gate, mutex runtime.RepoMutex, repoURL string, migrate func(context.Context) (deferred bool), logger talk.Logger) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+		}
+		deferred := func() bool {
+			if gate != nil {
+				release, err := gate.Acquire(ctx)
+				if err != nil {
+					return true
+				}
+				defer release()
+			}
+			if mutex != nil {
+				unlock, err := mutex.Lock(ctx, repoURL)
+				if err != nil {
+					return true
+				}
+				defer unlock()
+			}
+			return migrate(ctx)
+		}()
+		if !deferred {
+			logger.Infof("polityka blokad dokończona po publikacji")
+			return
+		}
+	}
 }
 
 // reportEditingPolicyPartial records that some paths were left for a later

@@ -497,6 +497,11 @@ func (b *DurableBackend) Delete(ctx context.Context, operationID, realmID, repoI
 		}
 	}
 	if record.Stage == "allocated" {
+		if checker, ok := b.Effects.(interface{ CheckDeleteOwnership(string, string) error }); ok {
+			if err := checker.CheckDeleteOwnership(repoID, operationID); err != nil {
+				return time.Time{}, err
+			}
+		}
 		if err := b.Effects.PrepareDelete(ctx, repoID, operationID); err != nil {
 			prepareErr := err
 			if err := b.Effects.RestoreDelete(ctx, repoID, operationID); err != nil {

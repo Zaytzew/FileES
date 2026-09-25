@@ -264,7 +264,7 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
   };
   let locale = "en";
   const escapeHTML = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
-  const render = runInNewContext(`${extract("repoAction")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
+  const render = runInNewContext(`${extract("repoAction")}\n${extract("repoProblemLine")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
     t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
     repoSection: () => "active", readRepoView: () => ({}), drawerPicker: () => "",
     repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "",
@@ -296,6 +296,11 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
     ];
     for (const [fields, key] of cases) assert.ok(render.renderRepo({...repo, ...fields}).includes(catalogues[locale][`queue.${key}`]), `${locale}:${key}`);
     assert.ok(render.renderRepo({...repo, pending_files: 2, pending_bytes: 123}).includes("2 · 123"));
+    // A folder the folder window explains points there from its row.
+    const waiting = render.renderRepo({...repo, problem: "borrow_pending"});
+    assert.ok(waiting.includes(catalogues[locale]["repo.problem.borrowPending"]));
+    assert.ok(waiting.includes('class="repo-problem-link" type="button" data-action="settings"'));
+    assert.ok(!render.renderRepo(repo).includes("repo-problem"));
   }
 });
 

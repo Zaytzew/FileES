@@ -450,6 +450,14 @@ const repoIcons = {
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>',
 };
 
+// A folder whose state the folder window explains says so in its row and
+// opens that window: "wymaga uwagi" alone left the owner guessing what to
+// click (2026-09-25). The window holds the explanation and the remedy.
+function repoProblemLine(repo) {
+  if (repo.problem !== "borrow_pending") return "";
+  return `<small class="repo-problem"><span aria-hidden="true">⚠</span> ${escapeHTML(t("repo.problem.borrowPending"))} · <button class="repo-problem-link" type="button" data-action="settings">${escapeHTML(t("repo.problem.whatToDo"))}</button></small>`;
+}
+
 function repoAction(action, label, icon, extraClass = "") {
   return `<button class="repo-icon-action hint-button ${extraClass}" type="button" data-action="${escapeHTML(action)}" data-hint="${escapeHTML(label)}" aria-label="${escapeHTML(label)}">${icon}</button>`;
 }
@@ -621,7 +629,7 @@ function renderRepo(repo) {
   return `<article class="repo-row ${repo.intent_resolution_required || recoveryRequired ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title">
       ${open}
-      <div class="repo-name"><strong title="${escapeHTML(repo.own_name ? `${repo.display_name} (${t("rename.ownName", {name: repo.own_name})})` : repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
+      <div class="repo-name"><strong title="${escapeHTML(repo.own_name ? `${repo.display_name} (${t("rename.ownName", {name: repo.own_name})})` : repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoProblemLine(repo)}${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
     </div>
     <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>

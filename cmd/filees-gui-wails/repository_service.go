@@ -91,6 +91,7 @@ type RepositorySnapshot struct {
 	Text           string                       `json:"text"`
 	Busy           bool                         `json:"busy"`
 	Context        RepositoryContextProjection  `json:"context"`
+	Problem        *RepositoryProblemProjection `json:"problem,omitempty"`
 	Actions        []RepositoryActionProjection `json:"actions"`
 	Shares         []PublicShareProjection      `json:"shares"`
 	Grants         []RealmGrantProjection       `json:"grants"`
@@ -117,6 +118,20 @@ type RepositoryContextProjection struct {
 	State           string `json:"state"`
 	Access          string `json:"access"`
 	Editing         string `json:"editing"`
+}
+
+// RepositoryProblemProjection is the "what is happening" card above the
+// actions. ActionID names the remedy among the actions, when this user has
+// one; the renderer shows it as the card's button.
+type RepositoryProblemProjection struct {
+	Kind     string `json:"kind"`
+	Path     string `json:"path,omitempty"`
+	More     int    `json:"more,omitempty"`
+	Since    string `json:"since,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Remedy   string `json:"remedy"`
+	ActionID string `json:"action_id,omitempty"`
 }
 
 type RepositoryActionProjection struct {
@@ -953,6 +968,12 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 			description = "repoAction.disable_editing_lock.description"
 		}
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogEditingPolicy), LabelKey: label, DescriptionKey: description, Tone: "warning"})
+	}
+	if problem := folder.Problem; problem != nil {
+		snapshot.Problem = &RepositoryProblemProjection{Kind: problem.Kind, Path: problem.Path, More: problem.More, Since: problem.Since, Code: problem.Code, Reason: problem.Reason, Remedy: problem.Remedy}
+		if problem.Remedy == "disable_editing_lock" && folder.CanSetEditingPolicy && folder.LockRequired {
+			snapshot.Problem.ActionID = string(platform.SettingsDialogEditingPolicy)
+		}
 	}
 	if folder.CanConnect {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogConnectRepos), LabelKey: "repoAction.connect_repositories.label", DescriptionKey: "repoAction.connect_repositories.description", Tone: "primary"})

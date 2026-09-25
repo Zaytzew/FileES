@@ -220,6 +220,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .repo-name { min-width:0; } .repo-name strong,.repo-name small { display:block; white-space:nowrap; }
 .repo-name strong { overflow:visible; text-overflow:clip; }
 .repo-name small { overflow:hidden; text-overflow:ellipsis; }
+.repo-name .repo-problem { color:var(--amber); } .repo-problem-link { padding:0; border:0; color:inherit; background:none; font:inherit; font-weight:750; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .repo-name strong { font-size:14px; } .repo-name small { margin-top:5px; color:var(--muted); font-size:12px; }
 .repo-meta { display:grid; gap:5px; min-width:0; } .repo-meta small { color:#8290a4; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
 .repo-meta span { overflow:hidden; font-size:13px; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }

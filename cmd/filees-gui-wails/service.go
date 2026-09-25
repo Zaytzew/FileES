@@ -137,6 +137,9 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
+	// Problem names a state the folder window explains (app.FolderProblem
+	// kinds); the row only points there.
+	Problem              string `json:"problem,omitempty"`
 	CanDetachLocalCopy   bool   `json:"can_detach_local_copy"`
 	ID                   string `json:"id"`
 	ServerID             string `json:"server_id"`
@@ -1071,7 +1074,9 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 				ownership = "guest"
 			}
 		}
+		problem, _ := vm.FolderProblem(repo.ID)
 		result.Repositories = append(result.Repositories, RepoProjection{
+			Problem:            problem.Kind,
 			CanDetachLocalCopy: vm.CanDetachDeletedCopy(repo),
 			ID:                 repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached, LocalProvisioning: repo.LocallyProvisioning(),

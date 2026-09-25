@@ -153,6 +153,71 @@ func (policy *intentAlertPolicy) Observe(snapshot Snapshot, locales ...nativeLan
 	return result
 }
 
+// grantAlertPolicy tells a recipient that another realm shared a repository
+// with them, or changed their access to it. Granting used to be silent: the
+// repository simply appeared among the guests (owner's live acceptance,
+// 2026-09-25). The first fresh snapshot is the baseline, so a restart never
+// announces grants that were already there.
+type grantAlertPolicy struct {
+	initialized bool
+	access      map[string]string
+}
+
+func (policy *grantAlertPolicy) Observe(snapshot Snapshot, locales ...nativeLanguage) []platform.Notification {
+	language := nativePresentationLanguage(locales)
+	if !snapshot.Connected || snapshot.Stale {
+		return nil
+	}
+	current := make(map[string]string)
+	for _, repo := range snapshot.Repositories {
+		if repo.Ownership == "guest" && repo.Purpose == "" && !repo.ServerDeleted {
+			current[repo.ServerID+":"+repo.ID] = repo.Access
+		}
+	}
+	if !policy.initialized {
+		policy.access, policy.initialized = current, true
+		return nil
+	}
+	servers := make(map[string]string, len(snapshot.Servers))
+	for _, server := range snapshot.Servers {
+		servers[server.ID] = firstNonBlank(server.DisplayName, server.RealmAlias, server.ID)
+	}
+	var result []platform.Notification
+	for _, repo := range snapshot.Repositories {
+		key := repo.ServerID + ":" + repo.ID
+		access, guest := current[key]
+		if !guest {
+			continue
+		}
+		previous, known := policy.access[key]
+		if known && previous == access {
+			continue
+		}
+		args := map[string]string{
+			"name":   firstNonBlank(repo.DisplayName, repo.ID),
+			"server": firstNonBlank(servers[repo.ServerID], repo.ServerID),
+			"access": language.text(grantAccessKey(access)),
+		}
+		title, body := "notification.grant.title", "notification.grant.body"
+		if known {
+			title, body = "notification.grantAccess.title", "notification.grantAccess.body"
+		}
+		result = append(result, platform.Notification{
+			ID: "grant." + key, Group: "grant." + key,
+			Title: language.text(title), Body: language.format(body, args), Urgency: platform.UrgencyNormal,
+		})
+	}
+	policy.access = current
+	return result
+}
+
+func grantAccessKey(access string) string {
+	if access == contract.AccessReadWrite {
+		return "access.rw"
+	}
+	return "access.r"
+}
+
 type announcementAlertPolicy struct {
 	initialized bool
 	seen        map[string]struct{}
@@ -264,6 +329,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 
 	var alerts announcementAlertPolicy
 	var intentAlerts intentAlertPolicy
+	var grantAlerts grantAlertPolicy
 	var trayMu sync.Mutex
 	var lastRevision uint64
 	var lastSnapshot Snapshot
@@ -348,7 +414,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 			systemTray.SetIcon(icon)
 		}
 		if notifier != nil {
-			for _, notification := range append(alerts.Observe(snapshot, language), intentAlerts.Observe(snapshot, language)...) {
+			for _, notification := range append(append(alerts.Observe(snapshot, language), intentAlerts.Observe(snapshot, language)...), grantAlerts.Observe(snapshot, language)...) {
 				notification := notification
 				go func() {
 					if err := notifier.Notify(host.Context(), notification); err != nil {

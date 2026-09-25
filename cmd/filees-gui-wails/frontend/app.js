@@ -7,7 +7,7 @@ import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.
 import { initializeLanguageMenu } from "./language-menu.js";
 import { shelvesFor, unparentedShelves } from "./shelf-layout.js";
 import { parseDrawers, groupDrawers, commitDrawerChange } from "./drawer-layout.js";
-import { reconcileRepositoryHTML } from "./repository-dom.js";
+import { reconcileRepositoryHTML, repoToolsWidth } from "./repository-dom.js";
 import { initializeProgressOverlay } from "./progress-overlay.js";
 
 initializeTheme();
@@ -112,10 +112,8 @@ function prepareRepositoryWidths() {
     const actionsWidth = panelRows.reduce((largest, row) => {
       const tools = row.querySelector(".repo-tools");
       if (!tools) return largest;
-      const buttons = [...tools.children];
-      const natural = buttons.reduce((total, button) => total + button.getBoundingClientRect().width, 0)
-        + Math.max(0, buttons.length - 1) * 5;
-      return Math.max(largest, Math.ceil(natural));
+      const widths = [...tools.children].map(button => button.getBoundingClientRect().width);
+      return Math.max(largest, repoToolsWidth(widths));
     }, 0);
     // Folder names are identifiers, not prose. Keep them whole and let this
     // surface scroll if necessary; only the subordinate path may ellipsise.
@@ -133,12 +131,18 @@ function repositoryOverflow(rows) {
   return Math.max(rowOverflow, panelOverflow);
 }
 
+// The columns are measured on every layout change, not only when the window
+// may still grow. The HEAD browser action appears only once the snapshot is
+// fresh; after an update restart the column kept the width of the stale
+// first render and the new button covered the size column (owner,
+// 2026-09-25), because a manual shrink or a fit in progress skipped the pass.
 function scheduleWindowFit() {
-  if (!autoFit.enabled || autoFit.queued) return;
+  if (autoFit.queued) return;
   autoFit.queued = true;
   window.requestAnimationFrame(() => {
     autoFit.queued = false;
-    fitWindowToRepositories();
+    prepareRepositoryWidths();
+    if (autoFit.enabled) fitWindowToRepositories();
   });
 }
 

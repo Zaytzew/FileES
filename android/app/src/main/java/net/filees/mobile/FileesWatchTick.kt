@@ -65,6 +65,7 @@ object FileesWatchTick {
                 waiting += result.second
             }
         } catch (e: Exception) {
+            recordJournal(context, sent, waiting, repoName, e.message ?: "")
             notifyMessage(
                 context,
                 context.getString(R.string.notification_watch_failed),
@@ -73,6 +74,7 @@ object FileesWatchTick {
             )
             throw e
         }
+        recordJournal(context, sent, waiting, repoName, null)
         if (sent > 0) notifySent(context, sent, repoName)
         if (waiting > 0) {
             notifyMessage(
@@ -83,6 +85,45 @@ object FileesWatchTick {
             )
         }
         return sent
+    }
+
+    // Real outcomes only. A tick that found nothing does not touch the journal.
+    private fun recordJournal(context: Context, sent: Int, waiting: Int, repoName: String, failure: String?) {
+        if (sent <= 0 && waiting <= 0 && failure == null) return
+        val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
+        if (sent > 0) {
+            FileesSession.pushJournal(
+                prefs,
+                repoName,
+                context.resources.getQuantityString(R.plurals.journal_watch_sent, sent, sent),
+            )
+        }
+        if (waiting > 0) {
+            FileesSession.pushJournal(
+                prefs,
+                repoName,
+                context.resources.getQuantityString(R.plurals.journal_watch_waiting, waiting, waiting),
+            )
+        }
+        if (failure != null) {
+            FileesSession.pushJournal(prefs, repoName, failureSentence(context, failure))
+        }
+    }
+
+    private fun failureSentence(context: Context, raw: String): String {
+        val text = raw.trim()
+        if (text.isEmpty()) return context.getString(R.string.journal_watch_failed)
+        val catalog = try {
+            val lang = context.resources.configuration.locales[0].language
+            Androidbind.explainIn(text, lang).trim()
+        } catch (_: Exception) {
+            try {
+                Androidbind.explain(text).trim()
+            } catch (_: Exception) {
+                ""
+            }
+        }
+        return catalog.ifBlank { context.getString(R.string.journal_watch_failed) }
     }
 
     // Same threshold as the foreground "Dodaj folder" path: eight or more

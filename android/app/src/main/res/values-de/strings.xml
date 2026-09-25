@@ -50,6 +50,15 @@
     <string name="notification_channel_watch_description">Hinweise zu Dateien, die automatisch aus beobachteten Ordnern gesendet wurden.</string>
     <string name="notification_watch_sent">Aus beobachtetem Ordner gesendet</string>
     <string name="notification_watch_sent_text">%1$d Dateien nach „%2$s“</string>
+    <plurals name="journal_watch_sent">
+        <item quantity="one">%1$d Datei gesendet.</item>
+        <item quantity="other">%1$d Dateien gesendet.</item>
+    </plurals>
+    <plurals name="journal_watch_waiting">
+        <item quantity="one">%1$d Datei wartet auf eine Entscheidung.</item>
+        <item quantity="other">%1$d Dateien warten auf eine Entscheidung.</item>
+    </plurals>
+    <string name="journal_watch_failed">Die Sendung aus dem beobachteten Ordner ist nicht angekommen.</string>
     <string name="browse_root">Freigabe</string>
     <string name="browse_directory">Ordner</string>
     <string name="browse_file_size">%1$d B</string>

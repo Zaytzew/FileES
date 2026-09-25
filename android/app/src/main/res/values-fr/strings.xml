@@ -50,6 +50,15 @@
     <string name="notification_channel_watch_description">Notifications des fichiers envoyés automatiquement depuis les dossiers surveillés.</string>
     <string name="notification_watch_sent">Envoyé depuis un dossier surveillé</string>
     <string name="notification_watch_sent_text">%1$d fichiers vers « %2$s »</string>
+    <plurals name="journal_watch_sent">
+        <item quantity="one">%1$d fichier envoyé.</item>
+        <item quantity="other">%1$d fichiers envoyés.</item>
+    </plurals>
+    <plurals name="journal_watch_waiting">
+        <item quantity="one">%1$d fichier attend une décision.</item>
+        <item quantity="other">%1$d fichiers attendent une décision.</item>
+    </plurals>
+    <string name="journal_watch_failed">L’envoi depuis le dossier surveillé n’est pas arrivé.</string>
     <string name="browse_root">Partage</string>
     <string name="browse_directory">dossier</string>
     <string name="browse_file_size">%1$d o</string>

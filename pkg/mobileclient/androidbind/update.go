@@ -111,16 +111,30 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 		Size:     manifest.APK.Size,
 		URL:      fetcher.base + dir + manifest.APK.Source,
 	}
-	// Sequence, not versionName: the APK's versionName may contain '+' and
-	// the signed manifest version may not. Accepting a sequence means this
-	// install already took that release.
-	if remembered > 0 && channel.Sequence == remembered {
+	// The manifest version is 0.1.17.1585; the APK says 0.1.17+r1585.
+	// Those are the same release. Deciding that before the download avoids
+	// pulling the whole APK just to learn we already have it. A remembered
+	// sequence is the same fact after an install through this updater.
+	if (remembered > 0 && channel.Sequence == remembered) || sameAndroidRelease(currentVersion, manifest.Version) {
 		offer.State = "current"
 		offer.URL = ""
 		offer.SHA256 = ""
 		offer.Size = 0
 	}
 	return offer, nil
+}
+
+func sameAndroidRelease(installed, published string) bool {
+	installed = canonicalAndroidVersion(installed)
+	published = canonicalAndroidVersion(published)
+	return installed != "" && installed == published
+}
+
+func canonicalAndroidVersion(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "+r", ".")
+	value = strings.ReplaceAll(value, "+", ".")
+	return value
 }
 
 type httpsFetcher struct{ base string }

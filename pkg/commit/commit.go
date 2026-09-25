@@ -21,6 +21,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 	"filees/pkg/errmap"
 	"filees/pkg/filepolicy"
 	"filees/pkg/runtime"
@@ -175,6 +176,7 @@ type Service struct {
 	intentDiagnosticAt   time.Time
 	receivedDeletes      map[string]bool // successful update removals, guarded by wcOpMu
 	lastShout            time.Time
+	ownershipUnknownAt   time.Time // first failed owned-access reconcile in a row; guarded by mu
 	lastCommit           time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
@@ -914,13 +916,40 @@ func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
 	if s.AutoUnlockOwned == nil || s.RealmID == "" || (!s.PerPathOwnership && s.RealmID != s.OwnerRealmID) {
 		return
 	}
-	if err := s.AutoUnlockOwned(ctx, wc, s.RealmID); err != nil {
-		s.Logger.Warnf("autolock local access: %v", err)
-		if s.ErrSink != nil {
-			s.ErrSink.Emit(errmap.Classify(err))
-		}
+	err := s.AutoUnlockOwned(ctx, wc, s.RealmID)
+	s.mu.Lock()
+	if err == nil {
+		s.ownershipUnknownAt = time.Time{}
+		s.mu.Unlock()
+		return
+	}
+	// Ownership is unknown right after a start or an update, until the
+	// server's projection for the new revision arrives; every poll retries.
+	// Owner's production, 2026-09-25: each such moment reached the journal as
+	// "LOCK-2106 · wymagane działanie użytkownika" although nothing was asked
+	// of anybody. Only an unknown lasting past the grace is reported.
+	var fault errcat.Fault
+	transient := errors.As(err, &fault) && fault.Key == errcat.KeyPathOwnerUnavailable
+	now := time.Now()
+	if transient && s.ownershipUnknownAt.IsZero() {
+		s.ownershipUnknownAt = now
+	}
+	quiet := transient && now.Sub(s.ownershipUnknownAt) < ownershipUnknownGrace
+	s.mu.Unlock()
+	if quiet {
+		s.Logger.Infof("autolock local access waits for path ownership: %v", err)
+		return
+	}
+	s.Logger.Warnf("autolock local access: %v", err)
+	if s.ErrSink != nil {
+		s.ErrSink.Emit(errmap.Classify(err))
 	}
 }
+
+// ownershipUnknownGrace is how long path ownership may stay unknown before
+// the owned-access reconcile reports it: a few poll cycles and projection
+// refreshes, never one start or update.
+const ownershipUnknownGrace = 10 * time.Minute
 
 func (s *Service) RequestPublish(ctx context.Context, wc, comment string) (int64, error) {
 	if err := shout.ValidateComment(comment); err != nil {

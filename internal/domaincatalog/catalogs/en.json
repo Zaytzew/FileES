@@ -82,7 +82,7 @@
     "passport.replacement_denied": "You are not allowed to take over this reservation",
     "passport.replacement_request_conflict": "This reservation operation ID belongs to another request",
     "passport.replacement_stale": "The reservation has changed — refresh its state",
-    "passport.replacement_unavailable": "The reservation takeover service is not available",
+    "passport.replacement_unavailable": "The server is not issuing reservations right now",
     "passport.replacement_uncertain": "The outcome of the reservation change is uncertain — settle its state before working on",
     "policy.deferred": "The reservation policy change is waiting for a clean local copy",
     "proto.invalid_envelope": "The daemon rejected a malformed envelope",

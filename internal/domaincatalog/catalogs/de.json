@@ -82,7 +82,7 @@
     "passport.replacement_denied": "Sie dürfen diese Reservierung nicht übernehmen",
     "passport.replacement_request_conflict": "Diese Reservierungsvorgangs-ID gehört zu einer anderen Anfrage",
     "passport.replacement_stale": "Die Reservierung hat sich geändert. Aktualisieren Sie ihren Status",
-    "passport.replacement_unavailable": "Der Dienst zur Reservierungsübernahme ist nicht verfügbar",
+    "passport.replacement_unavailable": "Der Server vergibt gerade keine Reservierungen",
     "passport.replacement_uncertain": "Das Ergebnis der Reservierungsänderung ist unklar. Klären Sie ihren Zustand, bevor Sie weiterarbeiten",
     "policy.deferred": "Die Änderung der Reservierungsrichtlinie wartet auf eine lokale Kopie ohne Änderungen",
     "proto.invalid_envelope": "Der Hintergrunddienst hat eine fehlerhafte Nachrichtenhülle abgewiesen",

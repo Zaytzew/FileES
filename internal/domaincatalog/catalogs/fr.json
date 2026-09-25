@@ -82,7 +82,7 @@
     "passport.replacement_denied": "Vous n’êtes pas autorisé à reprendre cette réservation",
     "passport.replacement_request_conflict": "Cet identifiant d’opération de réservation appartient à une autre demande",
     "passport.replacement_stale": "La réservation a changé. Actualisez son état",
-    "passport.replacement_unavailable": "Le service de reprise des réservations est indisponible",
+    "passport.replacement_unavailable": "Le serveur n’accorde pas de réservations pour le moment",
     "passport.replacement_uncertain": "Le résultat de la modification de réservation est incertain. Clarifiez son état avant de poursuivre",
     "policy.deferred": "La modification des règles de réservation attend une copie locale sans changements",
     "proto.invalid_envelope": "Le service a rejeté une enveloppe de message mal formée",

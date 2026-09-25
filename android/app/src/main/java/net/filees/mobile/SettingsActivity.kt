@@ -421,20 +421,14 @@ class SettingsActivity : AppCompatActivity() {
                     onPicked?.invoke()
                     return@runOnUiThread
                 }
-                val summary = FolderPreflight.of(pending)
-                val countText = resources.getQuantityString(
-                    R.plurals.status_preflight, summary.files, summary.files, HumanSize.format(summary.bytes),
-                )
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.watch_confirm_title)
-                    .setMessage(getString(R.string.watch_backlog_message, countText))
-                    .setPositiveButton(R.string.action_watch_send_existing) { _, _ -> onPicked?.invoke() }
-                    .setNeutralButton(R.string.action_watch_only_new) { _, _ ->
-                        pending.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
-                        onPicked?.invoke()
-                    }
-                    .setNegativeButton(R.string.action_cancel, null)
-                    .show()
+                showWatchDepthDialog(
+                    getString(R.string.watch_confirm_title),
+                    getString(R.string.watch_backlog_message, depthCount(pending)),
+                    pending,
+                ) { depth ->
+                    markOutsideDepth(pending, depth)
+                    onPicked?.invoke()
+                }
             }
         }.start()
     }
@@ -447,37 +441,74 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showWatchConfirmDialog(uri: Uri, files: List<WalkedFile>) {
-        val summary = FolderPreflight.of(files)
-        val countText = resources.getQuantityString(
-            R.plurals.status_preflight, summary.files, summary.files, HumanSize.format(summary.bytes),
-        )
+        if (files.isEmpty()) {
+            finishAddWatch(uri, files, WatchDepth.ONLY_NEW)
+            return
+        }
         val name = uri.lastPathSegment ?: uri.toString()
+        showWatchDepthDialog(
+            getString(R.string.watch_confirm_title),
+            getString(R.string.watch_confirm_message, name, depthCount(files)),
+            files,
+        ) { depth -> finishAddWatch(uri, files, depth) }
+    }
+
+    private fun showWatchDepthDialog(
+        title: String,
+        message: String,
+        files: List<WalkedFile>,
+        onChosen: (WatchDepth) -> Unit,
+    ) {
+        val now = System.currentTimeMillis()
+        val depths = WatchDepth.entries
+        val labels = depths.map { depth ->
+            val included = files.filter { depth.includes(it, now) }
+            getString(R.string.watch_depth_item, depthLabel(depth), depthCount(included))
+        }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle(R.string.watch_confirm_title)
-            .setMessage(getString(R.string.watch_confirm_message, name, countText))
-            .setPositiveButton(R.string.action_watch_send_existing) { _, _ -> finishAddWatch(uri, files, sendExisting = true) }
-            .setNeutralButton(R.string.action_watch_only_new) { _, _ -> finishAddWatch(uri, files, sendExisting = false) }
+            .setTitle(title)
+            .setMessage(message)
+            .setItems(labels) { _, index -> onChosen(depths[index]) }
             .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 
-    // sendExisting=false marks every file already in the folder as seen
-    // right away, so FileesWatchTick's next run treats the whole existing
-    // backlog as already handled and only picks up files that appear from
-    // here on - the "tylko nowe od teraz" choice.
+    private fun depthLabel(depth: WatchDepth): String = when (depth) {
+        WatchDepth.ONLY_NEW -> getString(R.string.watch_depth_new)
+        WatchDepth.DAY -> getString(R.string.watch_depth_day)
+        WatchDepth.WEEK -> getString(R.string.watch_depth_week)
+        WatchDepth.MONTH -> getString(R.string.watch_depth_month)
+        WatchDepth.YEAR -> getString(R.string.watch_depth_year)
+        WatchDepth.ALL -> getString(R.string.watch_depth_all)
+    }
+
+    private fun depthCount(files: List<WalkedFile>): String {
+        if (files.isEmpty()) return getString(R.string.watch_depth_none)
+        val summary = FolderPreflight.of(files)
+        return resources.getQuantityString(
+            R.plurals.status_preflight, summary.files, summary.files, HumanSize.format(summary.bytes),
+        )
+    }
+
+    private fun markOutsideDepth(files: List<WalkedFile>, depth: WatchDepth) {
+        val now = System.currentTimeMillis()
+        files.filterNot { depth.includes(it, now) }
+            .forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
+    }
+
+    // Files outside the chosen depth are marked seen, so the next tick
+    // sends only the rest. Later arrivals are not in this list and still go.
     //
     // Deliberately picks the upload target (when unset) BEFORE calling
     // watched.add(uri): confirmExistingBacklogThen's scan reads
     // watched.uris(), so doing it in this order means that scan never sees
     // (and never re-asks about) the very folder this dialog just finished
     // confirming on its own.
-    private fun finishAddWatch(uri: Uri, files: List<WalkedFile>, sendExisting: Boolean) {
+    private fun finishAddWatch(uri: Uri, files: List<WalkedFile>, depth: WatchDepth) {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         val addThisWatch = {
             watched.add(uri)
-            if (!sendExisting) {
-                files.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
-            }
+            markOutsideDepth(files, depth)
             renderWatched()
             FileesWatchScheduler.runSoon(this)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

@@ -319,6 +319,12 @@ func (e ServerEffects) archiveAndDeleteFSFS(ctx context.Context, repoID, operati
 	}
 
 	if _, err := os.Stat(dumpPath); errors.Is(err, os.ErrNotExist) {
+		// freeze writes the repository (rep-cache.db among others): a file
+		// the worker does not own fails it on every retry, so name the file
+		// and its owner before starting instead of after a failed dump.
+		if err := CheckRepositoryOwnership(repo); err != nil {
+			return time.Time{}, err
+		}
 		// Both destinations need headroom. There is deliberately no claim
 		// that the compressed FSFS size bounds the eventual dump/load size.
 		if err := check(ctx, e.RepositoriesRoot, 0); err != nil {
@@ -458,6 +464,21 @@ func (e ServerEffects) deleteRepoPath(repoID, operationID string) (string, error
 		return "", errors.New("repository deletion path escapes repository root")
 	}
 	return repo, nil
+}
+
+// CheckDeleteOwnership runs before any deletion side effect (DurableBackend):
+// a repository the worker cannot freeze must not be blocked and withdrawn
+// first, which left spot's shelf half-deleted — gone from the view, still on
+// disk — for every retry.
+func (e ServerEffects) CheckDeleteOwnership(repoID, operationID string) error {
+	repo, err := e.deleteRepoPath(repoID, operationID)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(repo); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return CheckRepositoryOwnership(repo)
 }
 
 func removeRepositoryTree(repo string) error {

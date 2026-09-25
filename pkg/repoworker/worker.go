@@ -598,6 +598,13 @@ func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket c
 		}
 	}
 	retainUntil, err := w.Backend.Delete(ctx, ticket.OperationID, session.RealmID, payload.RepoID)
+	var foreign *RepositoryOwnershipError
+	if errors.As(err, &foreign) {
+		// Not retryable: nothing the worker can do fixes it, and an endless
+		// DELETE_REPOSITORY_RETRY hid the cause (spot, 2026-09-25). The client
+		// keeps the operation and can retry once an administrator corrected it.
+		return w.failure(ticket, "DELETE_REPOSITORY_OWNERSHIP", foreign.Error())
+	}
 	if err != nil {
 		return w.retryable(ticket, "DELETE_REPOSITORY_RETRY", err.Error())
 	}

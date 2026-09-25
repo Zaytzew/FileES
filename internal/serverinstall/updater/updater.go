@@ -467,6 +467,11 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	// Read before the sandbox narrows the filesystem.
+	repositoriesRoot, err := r.repositoriesRoot()
+	if err != nil {
+		return err
+	}
 
 	var staged []StagedFile
 	var stageRoot string
@@ -521,7 +526,15 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun, configMigrations...)...)); err != nil {
+		specs := append(base, r.manifestUnveils(m, !opts.DryRun, configMigrations...)...)
+		if repositoriesRoot != "" {
+			perm := "r"
+			if !opts.DryRun {
+				perm = "rwc"
+			}
+			specs = append(specs, unveilSpec{Label: "repositories", Path: repositoriesRoot, Perms: perm})
+		}
+		if err := r.applyUnveils(specs); err != nil {
 			return err
 		}
 		if opts.DryRun {
@@ -538,7 +551,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	plan.ConfigMigrations = append(plan.ConfigMigrations, configMigrations...)
 	r.PrintPlan(plan)
 	if opts.DryRun {
-		return nil
+		return r.correctRepositoryOwnership(repositoriesRoot, true)
 	}
 	if err := r.confirmConfigDrift(plan, opts); err != nil {
 		return err
@@ -564,6 +577,9 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err := r.Platform.ReloadSSHD(); err != nil {
 			return fmt.Errorf("reload sshd after fragment update: %w", err)
 		}
+	}
+	if err := r.correctRepositoryOwnership(repositoriesRoot, false); err != nil {
+		return fmt.Errorf("repository ownership: %w", err)
 	}
 	// All inode and system mutations are complete. Only now may OpenBSD
 	// pledge: its first call permanently disables setting set-id bits.

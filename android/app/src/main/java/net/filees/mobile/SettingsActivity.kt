@@ -173,7 +173,15 @@ class SettingsActivity : AppCompatActivity() {
     private fun presentUpdate(status: TextView, button: MaterialButton, offer: ApkUpdate.Offer) {
         button.isEnabled = true
         when (offer.state) {
-            "current" -> status.setText(R.string.update_current)
+            "current" -> {
+                status.setText(R.string.update_current)
+                if (offer.sequence > 0) {
+                    getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+                        .edit()
+                        .putLong(ApkUpdate.PREF_SEQUENCE, offer.sequence)
+                        .apply()
+                }
+            }
             "absent" -> status.setText(R.string.update_absent)
             "available" -> {
                 status.text = getString(R.string.update_available, offer.version)
@@ -205,6 +213,12 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 if (archiveCode <= installed) {
                     apk.delete()
+                    if (offer.sequence > 0) {
+                        getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+                            .edit()
+                            .putLong(ApkUpdate.PREF_SEQUENCE, offer.sequence)
+                            .apply()
+                    }
                     runOnUiThread {
                         button.isEnabled = true
                         status.setText(R.string.update_not_newer)

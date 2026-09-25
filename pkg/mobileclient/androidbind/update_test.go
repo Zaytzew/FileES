@@ -52,6 +52,19 @@ func TestInspectMobileUpdateOffersTheSignedAPK(t *testing.T) {
 	if err != nil || again.State != "current" || again.URL != "" {
 		t.Fatalf("again = %+v err=%v", again, err)
 	}
+	same, err := inspectMobileUpdate(context.Background(), srv.URL, "0.1.16.r9", 0)
+	if err != nil || same.State != "current" || same.URL != "" || same.Size != 0 {
+		t.Fatalf("version match should not offer the apk: %+v err=%v", same, err)
+	}
+}
+
+func TestSameAndroidReleaseCollapsesPlusR(t *testing.T) {
+	if !sameAndroidRelease("0.1.17+r1585", "0.1.17.1585") {
+		t.Fatal("installed +r and published dotted revision must be one release")
+	}
+	if sameAndroidRelease("0.1.17+r1585", "0.1.17.1584") {
+		t.Fatal("a different revision must still be offered")
+	}
 }
 
 func serveUpdate(key *updateSigner) *httptest.Server {

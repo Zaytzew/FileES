@@ -37,7 +37,7 @@ done
 if ! id "$user" >/dev/null 2>&1; then
 	useradd --system --home-dir "$home" --no-create-home --shell /usr/sbin/nologin "$user"
 fi
-install -d -m 0755 -o "$user" -g "$user" "$home" "$home/site"
+install -d -m 0755 -o "$user" -g "$user" "$home" "$home/site" "$home/site/android"
 # Exclude the previous cron command while replacing its config/template: it
 # must not publish beta using the historical alpha rollback state.
 touch "$home/run.lock"
@@ -60,7 +60,7 @@ fi
 
 # The web root keeps pointing at the publication through one symlink, so the
 # service user never needs write access to the web root itself.
-for lane in download download-alpha; do
+for lane in download download-alpha android; do
 published="$home/site/$lane"
 link="$docroot/$lane"
 if [ -L "$link" ]; then
@@ -77,5 +77,5 @@ done
 
 install -m 0644 -o root -g root "$here/filees-site-download.cron" /etc/cron.d/filees-site-download
 
-echo "installed: download (beta) and download-alpha, refreshed every 15 minutes"
+echo "installed: download (beta), download-alpha and android, refreshed every 15 minutes"
 echo "logs: journalctl -t filees-site-download"

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,7 +116,7 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 	// Those are the same release. Deciding that before the download avoids
 	// pulling the whole APK just to learn we already have it. A remembered
 	// sequence is the same fact after an install through this updater.
-	if (remembered > 0 && channel.Sequence == remembered) || sameAndroidRelease(currentVersion, manifest.Version) {
+	if (remembered > 0 && channel.Sequence == remembered) || !channelReleaseIsNewer(currentVersion, manifest.Version) {
 		offer.State = "current"
 		offer.URL = ""
 		offer.SHA256 = ""
@@ -124,10 +125,18 @@ func inspectMobileUpdate(ctx context.Context, base, currentVersion string, remem
 	return offer, nil
 }
 
-func sameAndroidRelease(installed, published string) bool {
+// channelReleaseIsNewer reports whether the signed manifest names a later
+// revision than this install. 0.1.17+r1585 and 0.1.17.1585 are the same
+// number. An older channel is not an update.
+func channelReleaseIsNewer(installed, published string) bool {
+	have, okHave := revisionOf(installed)
+	offer, okOffer := revisionOf(published)
+	if okHave && okOffer {
+		return offer > have
+	}
 	installed = canonicalAndroidVersion(installed)
 	published = canonicalAndroidVersion(published)
-	return installed != "" && installed == published
+	return installed == "" || installed != published
 }
 
 func canonicalAndroidVersion(value string) string {
@@ -135,6 +144,19 @@ func canonicalAndroidVersion(value string) string {
 	value = strings.ReplaceAll(value, "+r", ".")
 	value = strings.ReplaceAll(value, "+", ".")
 	return value
+}
+
+func revisionOf(value string) (int, bool) {
+	value = canonicalAndroidVersion(value)
+	i := strings.LastIndex(value, ".")
+	if i < 0 || i == len(value)-1 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(value[i+1:])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 type httpsFetcher struct{ base string }

@@ -188,6 +188,9 @@ func TestPublishesTheSignedChannelRelease(t *testing.T) {
 	if got := mustRead(t, filepath.Join(p.OutDir, "filees-0.1.16.1295.msi")); got != string(installer) {
 		t.Fatalf("installer = %q", got)
 	}
+	if got := mustRead(t, filepath.Join(p.OutDir, "channels", "alpha.v2.json")); got != string(r.files["channels/alpha.v2.json"]) {
+		t.Fatal("the phone mirror does not carry the signed channel bytes")
+	}
 	digest := sha256.Sum256(installer)
 	hash := hex.EncodeToString(digest[:])
 	if got := mustRead(t, filepath.Join(p.OutDir, "SHA256SUMS")); got != hash+"  filees-0.1.16.1295.msi\n" {

@@ -139,6 +139,8 @@ class SettingsActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.textAboutChannel).text = getString(R.string.about_channel_apk)
         view.findViewById<TextView>(R.id.textAboutRelease).text = version
         view.findViewById<TextView>(R.id.textAboutStatus).text = getString(R.string.about_status_apk)
+        val updateButton = view.findViewById<MaterialButton>(R.id.buttonCheckUpdate)
+        updateButton.setOnClickListener { checkUpdate(view.findViewById(R.id.textAboutStatus), updateButton) }
         val licenseBody = view.findViewById<TextView>(R.id.textAboutLicenseFull)
         val licenseToggle = view.findViewById<MaterialButton>(R.id.buttonAboutLicense)
         licenseToggle.setOnClickListener {
@@ -150,6 +152,77 @@ class SettingsActivity : AppCompatActivity() {
             .setView(view)
             .setPositiveButton(R.string.action_close, null)
             .show()
+    }
+
+    private fun checkUpdate(status: TextView, button: MaterialButton) {
+        button.isEnabled = false
+        status.setText(R.string.update_checking)
+        Thread {
+            try {
+                val offer = ApkUpdate.inspect(this)
+                runOnUiThread { presentUpdate(status, button, offer) }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    button.isEnabled = true
+                    status.setText(R.string.update_failed)
+                }
+            }
+        }.start()
+    }
+
+    private fun presentUpdate(status: TextView, button: MaterialButton, offer: ApkUpdate.Offer) {
+        button.isEnabled = true
+        when (offer.state) {
+            "current" -> status.setText(R.string.update_current)
+            "absent" -> status.setText(R.string.update_absent)
+            "available" -> {
+                status.text = getString(R.string.update_available, offer.version)
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.update_check)
+                    .setMessage(getString(R.string.update_available, offer.version))
+                    .setPositiveButton(R.string.update_install) { _, _ -> fetchAndInstall(status, button, offer) }
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show()
+            }
+            else -> status.text = offer.message.ifBlank { getString(R.string.update_failed) }
+        }
+    }
+
+    private fun fetchAndInstall(status: TextView, button: MaterialButton, offer: ApkUpdate.Offer) {
+        if (!ApkUpdate.canInstall(this)) {
+            status.setText(R.string.update_need_permission)
+            startActivity(ApkUpdate.unknownSourcesSettings(this))
+            return
+        }
+        button.isEnabled = false
+        status.setText(R.string.update_downloading)
+        Thread {
+            try {
+                val apk = ApkUpdate.download(this, offer)
+                val archiveCode = ApkUpdate.archiveVersionCode(this, apk)
+                val installed = packageManager.getPackageInfo(packageName, 0).let { info ->
+                    if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+                }
+                if (archiveCode <= installed) {
+                    apk.delete()
+                    runOnUiThread {
+                        button.isEnabled = true
+                        status.setText(R.string.update_not_newer)
+                    }
+                    return@Thread
+                }
+                runOnUiThread {
+                    button.isEnabled = true
+                    status.setText(R.string.update_installing)
+                    ApkUpdate.install(this, apk, offer.sequence)
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    button.isEnabled = true
+                    status.setText(R.string.update_failed)
+                }
+            }
+        }.start()
     }
 
     private fun bindLanguage() {

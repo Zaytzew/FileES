@@ -84,6 +84,23 @@ func (c *Client) ListRepositoriesJSON() (string, error) {
 	return string(raw), nil
 }
 
+// ListDrawersJSON returns the realm drawer frame as JSON
+// ({version, drawers[{id,name}], assignments{repo_id:drawer_id}}).
+// An error means the phone should keep the repository list flat.
+func (c *Client) ListDrawersJSON() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+	res, err := c.inner.ListDrawers(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // RequestDesktopJoin asks the server to mail a normal desktop invitation to
 // email. The phone never receives the invite blob; mail + BeginInvitation
 // stay the desktop path.

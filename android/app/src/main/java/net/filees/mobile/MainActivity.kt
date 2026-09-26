@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedRepoId: String? = null
     private var selectedShareName: String = ""
     private var selectableShares: List<RealmShare> = emptyList()
+    private var drawerFrame: DrawerFrame = DrawerFrame.empty()
     private var manifestEntries: List<ManifestEntry> = emptyList()
     private var browsePrefix: String = ""
     private var browseRevision: Long = 0
@@ -276,7 +277,13 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             try {
                 val projection = RealmProjection.fromJson(active.listRepositoriesJSON())
+                val drawers = try {
+                    DrawerFrame.fromJson(active.listDrawersJSON())
+                } catch (_: Exception) {
+                    DrawerFrame.empty()
+                }
                 main.post {
+                    drawerFrame = drawers
                     FileesSession.rememberProjection(prefs, projection)
                     bindServerLabel()
                     selectableShares = projection.shares.filter { it.selectable }
@@ -458,6 +465,25 @@ class MainActivity : AppCompatActivity() {
     // inserted when more than one group is actually present, so a realm
     // with no upload shelves at all renders exactly as before.
     private fun shareRows(shares: List<RealmShare>): List<BrowseRow> {
+        if (drawerFrame.isEmpty()) return shareRowsByPurpose(shares)
+        val rows = mutableListOf<BrowseRow>()
+        val placed = mutableSetOf<String>()
+        for ((id, name) in drawerFrame.drawers) {
+            val members = shares.filter { drawerFrame.assignments[it.repoId] == id }
+            if (members.isEmpty()) continue
+            rows.add(sectionHeader(name))
+            members.forEach {
+                rows.add(shareRow(it))
+                placed.add(it.repoId)
+            }
+        }
+        val loose = shares.filter { it.repoId !in placed }
+        if (rows.isEmpty()) return shareRowsByPurpose(loose)
+        rows.addAll(shareRowsByPurpose(loose))
+        return rows
+    }
+
+    private fun shareRowsByPurpose(shares: List<RealmShare>): List<BrowseRow> {
         val groups = shares.groupBy { it.purpose }
         if (groups.size <= 1) {
             return shares.map { share -> shareRow(share) }
@@ -466,17 +492,14 @@ class MainActivity : AppCompatActivity() {
         val rows = mutableListOf<BrowseRow>()
         for (purpose in order + (groups.keys - order.toSet())) {
             val members = groups[purpose] ?: continue
-            rows.add(
-                BrowseRow(
-                    "", "", directory = false, size = 0,
-                    sectionHeader = sectionLabel(purpose),
-                    kind = BrowseRow.Kind.HEADER,
-                ),
-            )
+            rows.add(sectionHeader(sectionLabel(purpose)))
             members.forEach { rows.add(shareRow(it)) }
         }
         return rows
     }
+
+    private fun sectionHeader(title: String): BrowseRow =
+        BrowseRow("", "", directory = false, size = 0, sectionHeader = title, kind = BrowseRow.Kind.HEADER)
 
     private fun shareRow(share: RealmShare): BrowseRow =
         BrowseRow(share.displayName, "", directory = true, size = 0, repoId = share.repoId, share = true)
@@ -1059,6 +1082,7 @@ class MainActivity : AppCompatActivity() {
         browseGeneration = 0
         legacyFullTree = false
         selectableShares = emptyList()
+        drawerFrame = DrawerFrame.empty()
         manifestEntries = emptyList()
         bindDecisions(emptyList())
         bindServerLabel()
@@ -1071,6 +1095,7 @@ class MainActivity : AppCompatActivity() {
         activeAddress = null
         selectedRepoId = null
         selectableShares = emptyList()
+        drawerFrame = DrawerFrame.empty()
         manifestEntries = emptyList()
         browseRevision = 0
         browseGeneration = 0

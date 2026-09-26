@@ -196,6 +196,32 @@ func (c Client) ListRepositories(ctx context.Context) (*v1.ListRepositoriesResul
 	return &res, nil
 }
 
+// ListDrawers asks for the realm's drawer frame. A missing command, an empty
+// document and a realm with no drawers are all normal: the caller keeps the
+// repository list flat. This method returns the transport error unchanged so
+// the phone can make that choice.
+func (c Client) ListDrawers(ctx context.Context) (*v1.ListDrawersResult, error) {
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpListDrawers, v1.ListDrawersPayload{})
+	if err != nil {
+		return nil, err
+	}
+	resp, _, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != v1.StatusOK {
+		return nil, respError(resp)
+	}
+	var res v1.ListDrawersResult
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("decode list drawers result: %w", err)
+	}
+	if err := res.Validate(); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // RequestDesktopJoin asks the server to issue a normal join invitation to
 // email. The response must not contain the invite; mail delivers it.
 func (c Client) RequestDesktopJoin(ctx context.Context, email string) error {

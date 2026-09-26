@@ -303,6 +303,14 @@ func (j *recordingJoiner) RequestDesktopJoin(_ context.Context, clientID, email 
 	return nil
 }
 
+func TestListDrawersUnsupportedKeepsTheListFlat(t *testing.T) {
+	c := newClient(t, "", "rw")
+	_, err := c.ListDrawers(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "op.unsupported") {
+		t.Fatalf("missing drawer frame must be a transport error, got %v", err)
+	}
+}
+
 func TestRequestDesktopJoinUnsupportedWithoutJoiner(t *testing.T) {
 	c := newClient(t, "", "rw")
 	err := c.RequestDesktopJoin(context.Background(), "desk@example.test")

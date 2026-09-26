@@ -241,9 +241,24 @@ func (c Client) RequestDesktopJoin(ctx context.Context, email string) error {
 
 // UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT), one
 // SSH session for the whole packed folder instead of N.
+//
+// A transport failure here is ambiguous by nature: sshtransport.Do reads the
+// server's response after the server has already committed (tree.go writes
+// the ledger's COMMITTED record and runs the SVN commit before it ever gets
+// to write a response frame), so a connection dropped between "server
+// committed" and "phone read the ack" is indistinguishable, from the raw
+// error alone, from a connection dropped before the server ever saw the
+// request. Reporting the former as a failure would be a false ack: the
+// caller would treat already-landed files as still unsent. Since the ledger
+// keys on this exact request_id (internal/mobileworker/tree.go's idempotent
+// Lookup), one cheap follow-up GET_OPERATION_STATUS on the same id turns
+// that ambiguity into a real answer instead of a guess - and a tiny status
+// request is far likelier to survive a bad link than the tree pack itself
+// was.
 func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileCount int, zip []byte) error {
 	sum := sha256.Sum256(zip)
-	req, err := v1.NewRequest(uuid.NewString(), v1.OpUploadTree, v1.UploadTreePayload{
+	requestID := uuid.NewString()
+	req, err := v1.NewRequest(requestID, v1.OpUploadTree, v1.UploadTreePayload{
 		RepoID:     repoID,
 		ParentPath: parentPath,
 		FileCount:  fileCount,
@@ -255,12 +270,39 @@ func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileC
 	}
 	resp, _, err := c.Transport.Do(ctx, req, zip)
 	if err != nil {
+		if state, statusErr := c.operationStatus(ctx, requestID); statusErr == nil && state == v1.OpStateCommitted {
+			return nil
+		}
 		return fmt.Errorf("UPLOAD_TREE: %w", err)
 	}
 	if resp.Status != v1.StatusOK {
 		return fmt.Errorf("UPLOAD_TREE: %w", respError(resp))
 	}
 	return nil
+}
+
+// operationStatus asks the server what it durably recorded for requestID
+// (GET_OPERATION_STATUS backed by the same ledger UploadTree's idempotent
+// retry check reads). Any failure here - including one from the same flaky
+// link - returns OpStateUnknown: the caller must not read "the status check
+// itself failed" as "the operation failed", only as "still don't know".
+func (c Client) operationStatus(ctx context.Context, requestID string) (v1.OpState, error) {
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpOperationStatus, v1.OperationStatusPayload{TargetRequestID: requestID})
+	if err != nil {
+		return v1.OpStateUnknown, err
+	}
+	resp, _, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return v1.OpStateUnknown, err
+	}
+	if resp.Status != v1.StatusOK {
+		return v1.OpStateUnknown, respError(resp)
+	}
+	var result v1.OperationStatusResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return v1.OpStateUnknown, err
+	}
+	return result.State, nil
 }
 
 // DrainPending sends every non-terminal queued upload for repoID, one at a

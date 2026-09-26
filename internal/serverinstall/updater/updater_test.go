@@ -556,3 +556,30 @@ func TestPruneBackupHistoryKeepsEntryWhenRemovalFails(t *testing.T) {
 		t.Fatalf("no warning printed for the failed prune: %q", out.String())
 	}
 }
+
+// stageFiles must sweep whatever a previous, crashed run left in StageDir
+// before starting a new one - nothing there is ever needed again once that
+// earlier call returned (live, 2026-09-27: unswept staging alone
+// accumulated 3.2 GB on a production /var).
+func TestStageFilesSweepsLeftoverFromAPreviousRun(t *testing.T) {
+	r, _ := testRunner(t)
+	leftover := filepath.Join(r.Config.StageDir, "orphaned-from-a-crash")
+	if err := os.MkdirAll(leftover, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(leftover, "debris.bin"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stageRoot, err := r.stageFiles(context.Background(), &manifest.Manifest{ReleaseID: "r2", Platform: r.Config.Platform})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
+		t.Fatalf("leftover from a previous run survived: stat err = %v", err)
+	}
+	if _, err := os.Stat(stageRoot); err != nil {
+		t.Fatalf("the new stage root itself is missing: %v", err)
+	}
+}

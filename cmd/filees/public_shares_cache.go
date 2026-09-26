@@ -44,6 +44,7 @@ func (c *publicShareCache) SetPartial(serverID string, shares []contract.PublicS
 	rows := append([]contract.PublicShareSummary(nil), shares...)
 	for i := range rows {
 		rows[i].ObservedAt = now.Format(time.RFC3339Nano)
+		rows[i].Stale = false
 	}
 	missing := map[string]bool{}
 	for _, repoID := range failed {
@@ -51,6 +52,7 @@ func (c *publicShareCache) SetPartial(serverID string, shares []contract.PublicS
 	}
 	for _, old := range c.byServer[serverID] {
 		if missing[old.RepoID] {
+			old.Stale = true
 			rows = append(rows, old)
 		}
 	}
@@ -101,13 +103,11 @@ func (c *publicShareCache) Snapshot() contract.PublicShareListResult {
 			oldest = observed
 		}
 		for _, share := range shares {
-			share.Stale = stale
+			// Aggregate completeness and row freshness are independent: an
+			// unread server or failed sibling repo cannot invalidate this row.
+			rowObserved, err := time.Parse(time.RFC3339Nano, share.ObservedAt)
+			share.Stale = share.Stale || err != nil || now.Sub(rowObserved) > 5*time.Minute
 			result.Shares = append(result.Shares, share)
-		}
-	}
-	if result.Stale {
-		for i := range result.Shares {
-			result.Shares[i].Stale = true
 		}
 	}
 	if !unknown && !oldest.IsZero() {

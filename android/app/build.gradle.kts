@@ -1,6 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val releaseKeystore = file("${System.getProperty("user.home")}/.filees/android-release.p12")
+val releaseKeyProps = file("${System.getProperty("user.home")}/.filees/android-release.properties")
+val buildingRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (buildingRelease && (!releaseKeystore.isFile || !releaseKeyProps.isFile)) {
+    error("Release APK requires ${releaseKeystore}. Debug builds do not use this key.")
 }
 
 android {
@@ -11,13 +20,26 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 41
-        versionName = "0.1.17+r1591"
+        versionCode = 42
+        versionName = "0.1.17+r1592"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore.isFile && releaseKeyProps.isFile) {
+                val props = Properties().apply { releaseKeyProps.inputStream().use { load(it) } }
+                storeFile = releaseKeystore
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

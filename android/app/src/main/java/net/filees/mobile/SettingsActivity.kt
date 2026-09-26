@@ -34,6 +34,14 @@ class SettingsActivity : AppCompatActivity() {
     private var uploadReposReady = false
     private var uploadReposError: String? = null
     private var drawerFrame: DrawerFrame = DrawerFrame.empty()
+    // A call to pickUploadTarget that arrived before loadUploadRepos finished
+    // used to just dead-end on "still checking" - the caller (in particular
+    // finishAddWatch's addThisWatch) never ran, so adding a watch silently
+    // did nothing. Queued here instead and replayed once the load resolves,
+    // success or failure, so the same click keeps working without the user
+    // having to retry by hand (2026-09-26, reported: watched folders "still
+    // don't work").
+    private val pendingUploadTargetPicks = mutableListOf<(() -> Unit)?>()
     private var mobile: Client? = null
     private var pendingJoinEmail = ""
     private var joinInFlight = false
@@ -465,15 +473,23 @@ class SettingsActivity : AppCompatActivity() {
                     renderUploadTarget()
                     bindServerDetails(prefs)
                     renderServers()
+                    resumePendingUploadTargetPicks()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     uploadRepos = emptyList()
                     uploadReposReady = true
                     uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_generic)
+                    resumePendingUploadTargetPicks()
                 }
             }
         }.start()
+    }
+
+    private fun resumePendingUploadTargetPicks() {
+        val queued = pendingUploadTargetPicks.toList()
+        pendingUploadTargetPicks.clear()
+        queued.forEach { pickUploadTarget(it) }
     }
 
     private fun renderUploadTarget() {
@@ -484,6 +500,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun pickUploadTarget(onPicked: (() -> Unit)? = null) {
         if (!uploadReposReady) {
+            // Queued, not dropped: loadUploadRepos's background thread calls
+            // resumePendingUploadTargetPicks once it resolves (success or
+            // failure), which replays this exact call - the user does not
+            // have to dismiss this and try again by hand.
+            pendingUploadTargetPicks.add(onPicked)
             AlertDialog.Builder(this)
                 .setTitle(R.string.upload_target_pick_title)
                 .setMessage(R.string.upload_target_pick_loading)

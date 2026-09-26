@@ -48,7 +48,12 @@ const (
 	OpUploadTree         Operation = "UPLOAD_TREE"   // zip-on-wire folder ingest
 	OpOperationStatus    Operation = "GET_OPERATION_STATUS"
 	OpRequestDesktopJoin Operation = "REQUEST_DESKTOP_JOIN"
-	OpListDrawers        Operation = "LIST_DRAWERS"
+	// OpListDrawers is a read-only viewer of the desktop's own drawer
+	// organization (implementation notes (not distributed) §6). It is a
+	// separate frame, not a field of ListRepositoriesResult: different
+	// refresh rhythm, different source. The phone never gets a write verb
+	// for this - desktop GUI workers are the sole authority.
+	OpListDrawers Operation = "LIST_DRAWERS"
 )
 
 func (o Operation) valid() bool {

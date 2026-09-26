@@ -2,6 +2,7 @@ package net.filees.mobile
 
 import android.content.ContentResolver
 import java.io.File
+import java.io.InputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -10,6 +11,19 @@ import java.util.zip.ZipOutputStream
 object TreeZip {
     // Must match pkg/mobile/v1.TreePackComment. The worker unpacks only this.
     const val COMMENT = "filees.tree/v1"
+
+    // A STORED zip entry needs its CRC32/size known before putNextEntry, so a
+    // stored file is read twice (once to hash, once to copy) - both passes
+    // stream through this fixed buffer. Loading a whole file into one
+    // ByteArray here used to throw OutOfMemoryError on anything above roughly
+    // a few hundred MB (live, 2026-09-26: a >1 GB video in a year-deep watch
+    // backlog asked for a single 1 116 709 344-byte allocation and lost).
+    // That Error is not an Exception, so it skipped every catch(Exception) on
+    // the way up (TreeZip -> FileesWatchTick.run -> FileesWatchWorker) and
+    // reached WorkManager's own handler invisibly - no journal entry, no
+    // notification, the file staying unseen forever so every following tick
+    // repeated the identical crash.
+    private const val BUFFER_SIZE = 64 * 1024
 
     private val storeExt = setOf(
         "jpg", "jpeg", "png", "gif", "webp", "heic",
@@ -25,20 +39,17 @@ object TreeZip {
         try {
             ZipOutputStream(out.outputStream().buffered()).use { zip ->
                 for ((name, file) in files) {
-                    val bytes = file.readBytes()
                     val entry = ZipEntry(name)
                     if (stored(name.substringAfterLast('/'))) {
-                        val crc = CRC32()
-                        crc.update(bytes)
                         entry.method = ZipEntry.STORED
-                        entry.size = bytes.size.toLong()
-                        entry.compressedSize = bytes.size.toLong()
-                        entry.crc = crc.value
+                        entry.size = file.length()
+                        entry.compressedSize = file.length()
+                        entry.crc = file.inputStream().use { crcOf(it) }
                     } else {
                         entry.method = ZipEntry.DEFLATED
                     }
                     zip.putNextEntry(entry)
-                    zip.write(bytes)
+                    file.inputStream().use { it.copyTo(zip, BUFFER_SIZE) }
                     zip.closeEntry()
                 }
             }
@@ -59,21 +70,25 @@ object TreeZip {
                     val name = listOf(file.relativeDir.trim('/'), file.filename)
                         .filter { it.isNotBlank() }
                         .joinToString("/")
-                    val bytes = resolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
                     val entry = ZipEntry(name)
                     if (stored(file.filename)) {
-                        val crc = CRC32()
-                        crc.update(bytes)
+                        // SAF documents do not reliably report length() the way
+                        // a local File does, so size comes from this same
+                        // hashing pass rather than a second, provider-specific
+                        // length query that could return UNKNOWN_LENGTH.
+                        val (crc, size) = resolver.openInputStream(file.uri)?.use { crcAndSizeOf(it) } ?: continue
                         entry.method = ZipEntry.STORED
-                        entry.size = bytes.size.toLong()
-                        entry.compressedSize = bytes.size.toLong()
-                        entry.crc = crc.value
+                        entry.size = size
+                        entry.compressedSize = size
+                        entry.crc = crc
                     } else {
                         entry.method = ZipEntry.DEFLATED
                     }
-                    zip.putNextEntry(entry)
-                    zip.write(bytes)
-                    zip.closeEntry()
+                    resolver.openInputStream(file.uri)?.use { input ->
+                        zip.putNextEntry(entry)
+                        input.copyTo(zip, BUFFER_SIZE)
+                        zip.closeEntry()
+                    } ?: continue
                 }
             }
         } catch (e: Exception) {
@@ -81,6 +96,21 @@ object TreeZip {
             throw e
         }
         return out
+    }
+
+    private fun crcOf(input: InputStream): Long = crcAndSizeOf(input).first
+
+    private fun crcAndSizeOf(input: InputStream): Pair<Long, Long> {
+        val crc = CRC32()
+        val buf = ByteArray(BUFFER_SIZE)
+        var size = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            crc.update(buf, 0, n)
+            size += n
+        }
+        return crc.value to size
     }
 
     fun sweep(cacheDir: File) {

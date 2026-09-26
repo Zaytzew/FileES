@@ -42,15 +42,24 @@ object FileesWatchTick {
         val trees = watched.uris()
         if (trees.isEmpty()) return 0
 
-        val client = Androidbind.newClient(
-            context.filesDir.absolutePath,
-            DialAddress.resolve(address),
-            FileesSession.MOBILE_USER,
-            hostKey,
-        )
         var sent = 0
         var waiting = 0
+        // Catches Throwable, not just Exception, and now wraps client
+        // construction too: an OutOfMemoryError from TreeZip.pack (a >1 GB
+        // file in a watch backlog, live 2026-09-26) is an Error, so it used
+        // to slip past a catch(Exception) here and above in
+        // FileesWatchWorker.doWork with no journal entry and no
+        // notification - the only trace was WorkManager's own logcat output.
+        // TreeZip now streams instead of buffering whole files, but this
+        // stays broad so any future failure of this shape still reaches the
+        // user instead of vanishing.
         try {
+            val client = Androidbind.newClient(
+                context.filesDir.absolutePath,
+                DialAddress.resolve(address),
+                FileesSession.MOBILE_USER,
+                hostKey,
+            )
             for (tree in trees) {
                 val unseen = DocumentWalk.tree(context.contentResolver, tree).filterNot {
                     watched.alreadySeen(it.uri.toString() + "/" + it.filename)
@@ -64,15 +73,15 @@ object FileesWatchTick {
                 sent += result.first
                 waiting += result.second
             }
-        } catch (e: Exception) {
-            recordJournal(context, sent, waiting, repoName, e.message ?: "")
+        } catch (t: Throwable) {
+            recordJournal(context, sent, waiting, repoName, t.message ?: "")
             notifyMessage(
                 context,
                 context.getString(R.string.notification_watch_failed),
-                e.message ?: context.getString(R.string.error_send),
+                t.message ?: context.getString(R.string.error_send),
                 NOTIFICATION_FAIL_ID,
             )
-            throw e
+            throw t
         }
         recordJournal(context, sent, waiting, repoName, null)
         if (sent > 0) notifySent(context, sent, repoName)

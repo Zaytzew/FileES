@@ -57,7 +57,7 @@ class BrowseAdapter(
             is FactsHolder -> holder.bind(row)
             is JournalPanelHolder -> holder.bind(row)
             is JournalEntryHolder -> holder.bind(row)
-            is HeaderHolder -> holder.bind(row)
+            is HeaderHolder -> holder.bind(row, onOpen)
             is AddServerHolder -> holder.bind(row, onOpen)
             is Holder -> holder.bind(row, onOpen, onDownload)
         }
@@ -159,9 +159,17 @@ class BrowseAdapter(
 
     class HeaderHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val label: TextView = itemView.findViewById(R.id.textSectionHeader)
-        fun bind(row: BrowseRow) {
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
             applyPanel(itemView, row.panel)
+            label.isAllCaps = row.drawerId.isEmpty()
             label.text = row.sectionHeader ?: row.name
+            if (row.drawerId.isNotEmpty()) {
+                itemView.isClickable = true
+                itemView.setOnClickListener { onOpen(row) }
+            } else {
+                itemView.isClickable = false
+                itemView.setOnClickListener(null)
+            }
         }
     }
 

@@ -38,7 +38,7 @@
     <string name="settings_upload_target">Destino de los archivos nuevos</string>
     <string name="upload_target_none">no elegido</string>
     <string name="action_change_upload_target">Cambiar</string>
-    <string name="upload_target_pick_title">Elegir el repositorio de destino</string>
+    <string name="upload_target_pick_title">Dónde van los archivos nuevos</string>
     <string name="upload_target_pick_empty">No hay repositorios con escritura para elegir.</string>
     <string name="upload_target_pick_loading">Aún se está cargando la lista de recursos.</string>
     <string name="watch_confirm_title">Vigilancia de carpeta</string>

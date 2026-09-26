@@ -66,6 +66,17 @@ func (c *Client) PublicKey() string {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(c.ident.signer.PublicKey())))
 }
 
+// PublicKeyIn reads the device key already stored under storeDir. It does not
+// open a connection, so Settings can show the key even when the server
+// address or host key will not build a client.
+func PublicKeyIn(storeDir string) (string, error) {
+	ident, err := loadOrCreateIdentity(storeDir)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(ident.signer.PublicKey()))), nil
+}
+
 // ListRepositoriesJSON returns the installation's realm projection as JSON
 // (view_generation, realm_alias, server_display_name, generated_at,
 // repositories[{repo_id, display_name, access, state, purpose}]). Mobile never creates repositories:

@@ -39,6 +39,7 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
+    private val prefsCollapsed = "collapsed_drawers"
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var watched: WatchedFolders
@@ -471,10 +472,16 @@ class MainActivity : AppCompatActivity() {
         for ((id, name) in drawerFrame.drawers) {
             val members = shares.filter { drawerFrame.assignments[it.repoId] == id }
             if (members.isEmpty()) continue
-            rows.add(sectionHeader(name))
-            members.forEach {
-                rows.add(shareRow(it))
-                placed.add(it.repoId)
+            val collapsed = isDrawerCollapsed(id)
+            val mark = if (collapsed) "▸" else "▾"
+            rows.add(sectionHeader("$mark  $name    ${members.size}", id))
+            if (!collapsed) {
+                members.forEach {
+                    rows.add(shareRow(it))
+                    placed.add(it.repoId)
+                }
+            } else {
+                placed.addAll(members.map { it.repoId })
             }
         }
         val loose = shares.filter { it.repoId !in placed }
@@ -498,8 +505,27 @@ class MainActivity : AppCompatActivity() {
         return rows
     }
 
-    private fun sectionHeader(title: String): BrowseRow =
-        BrowseRow("", "", directory = false, size = 0, sectionHeader = title, kind = BrowseRow.Kind.HEADER)
+    private fun sectionHeader(title: String, drawerId: String = ""): BrowseRow =
+        BrowseRow(
+            "", "", directory = false, size = 0,
+            sectionHeader = title, drawerId = drawerId, kind = BrowseRow.Kind.HEADER,
+        )
+
+    private fun isDrawerCollapsed(id: String): Boolean {
+        if (!prefs.contains(prefsCollapsed)) return true
+        return prefs.getStringSet(prefsCollapsed, emptySet())?.contains(id) == true
+    }
+
+    private fun toggleDrawer(id: String) {
+        val collapsed = if (!prefs.contains(prefsCollapsed)) {
+            drawerFrame.drawers.map { it.first }.toMutableSet()
+        } else {
+            prefs.getStringSet(prefsCollapsed, emptySet())?.toMutableSet() ?: mutableSetOf()
+        }
+        if (id in collapsed) collapsed.remove(id) else collapsed.add(id)
+        prefs.edit().putStringSet(prefsCollapsed, collapsed).apply()
+        if (selectedRepoId == null) renderList()
+    }
 
     private fun shareRow(share: RealmShare): BrowseRow =
         BrowseRow(share.displayName, "", directory = true, size = 0, repoId = share.repoId, share = true)
@@ -512,6 +538,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: BrowseRow) {
+        if (row.kind == BrowseRow.Kind.HEADER && row.drawerId.isNotEmpty()) {
+            toggleDrawer(row.drawerId)
+            return
+        }
         if (row.kind == BrowseRow.Kind.ADD_SERVER) {
             onScanQrClicked()
             return

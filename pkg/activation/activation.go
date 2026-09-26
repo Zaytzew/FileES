@@ -1016,6 +1016,25 @@ func (m *Manager) renderAccessLocked() error {
 			fmt.Fprintf(&authz, "\n[/clients/%s]\n%s = r\n", record.ClientID, record.ClientID)
 		}
 	}
+	// Alert mailboxes contain operator-addressed, safe text for this realm.
+	// Phones and staged installations never acquire SVN access to this channel.
+	realms := map[string][]string{}
+	for _, record := range records {
+		if record.State == "active" && (record.Kind == "" || record.Kind == onboarding.KindDesktop) {
+			realms[record.RealmID] = append(realms[record.RealmID], record.ClientID)
+		}
+	}
+	realmIDs := make([]string, 0, len(realms))
+	for id := range realms {
+		realmIDs = append(realmIDs, id)
+	}
+	sort.Strings(realmIDs)
+	for _, id := range realmIDs {
+		fmt.Fprintf(&authz, "\n[/alerts/%s]\n", id)
+		for _, client := range realms[id] {
+			fmt.Fprintf(&authz, "%s = r\n", client)
+		}
+	}
 	if err := atomicWrite(m.config.AuthorizedKeysFile, []byte(keys.String()), 0o600); err != nil {
 		return err
 	}
@@ -1168,3 +1187,9 @@ func (m *Manager) recordsDir() string           { return filepath.Join(m.config.
 func (m *Manager) proofsDir() string            { return filepath.Join(m.config.Root, "proofs") }
 func (m *Manager) recordPath(id string) string  { return filepath.Join(m.recordsDir(), id+".json") }
 func (m *Manager) receiptPath(id string) string { return filepath.Join(m.proofsDir(), id+".json") }
+
+// RefreshAlertAccess regenerates read-only service authz from canonical active
+// records. Local administrative publication uses it when upgrading an old host.
+func (m *Manager) RefreshAlertAccess() error {
+	return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), m.renderAccessLocked)
+}

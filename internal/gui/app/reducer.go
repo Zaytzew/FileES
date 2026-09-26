@@ -115,6 +115,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	for _, notice := range notices {
 		s.notices = append(s.notices, NoticeViewModel{
 			ID: notice.ID, RepoID: notice.RepoID, Revision: notice.Revision,
+			ServerID: notice.ServerID, Source: notice.Source, Status: notice.Status, Severity: notice.Severity, ObservedAt: notice.ObservedAt, Stale: notice.Stale,
 			Title: notice.Title, CreatedAt: notice.CreatedAt, Acked: notice.Acked,
 		})
 	}

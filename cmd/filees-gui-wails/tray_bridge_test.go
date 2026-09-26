@@ -154,3 +154,25 @@ func TestAnnouncementAlertPolicySuppressesStartupAndNotifiesOnlyNewUnread(t *tes
 		t.Fatalf("fresh notification after stale=%#v", got)
 	}
 }
+
+func TestServerAlertNotificationRecoveryIsSilent(t *testing.T) {
+	var policy announcementAlertPolicy
+	policy.Observe(Snapshot{Connected: true})
+	snapshot := Snapshot{Connected: true, Notices: []NoticeProjection{{ID: "alert-1", Source: "server", ServerID: "office", Title: "Low space", Status: "active", Stale: true}}}
+	if got := policy.Observe(snapshot); len(got) != 0 {
+		t.Fatal("stale cache announced", got)
+	}
+	snapshot.Notices[0].Stale = false
+	if got := policy.Observe(snapshot); len(got) != 1 {
+		t.Fatal("fresh active alert missing", got)
+	}
+	if got := policy.Observe(snapshot); len(got) != 0 {
+		t.Fatal("duplicate", got)
+	}
+	snapshot.Notices[0].ID = "alert-2"
+	snapshot.Notices[0].Status = "resolved"
+	snapshot.Notices[0].Acked = true
+	if got := policy.Observe(snapshot); len(got) != 0 {
+		t.Fatal("recovery was loud", got)
+	}
+}

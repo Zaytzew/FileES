@@ -24,6 +24,7 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	serverNotices        ServerNoticeSource
 	daemonVersion        string
 	guiBlobs             GUIBlobService
 	memorySafety         *contract.MemorySafetyStatus
@@ -1073,4 +1074,16 @@ func (s *Server) allRepos() []*RepoState {
 // uptime returns seconds since the server started.
 func (s *Server) uptime() int64 {
 	return int64(time.Since(s.startTime).Seconds())
+}
+
+// ServerNoticeSource is independent of project working copies. Ack is local only.
+type ServerNoticeSource interface {
+	Notices() ([]contract.Notice, error)
+	Ack(string) error
+}
+
+func (s *Server) SetServerNoticeSource(source ServerNoticeSource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.serverNotices = source
 }

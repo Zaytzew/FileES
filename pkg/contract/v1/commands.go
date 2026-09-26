@@ -1114,13 +1114,19 @@ type NoticeAckPayload struct {
 
 // Notice is a single outbound notification record.
 type Notice struct {
-	ID        string `json:"id"`
-	RepoID    string `json:"repo_id,omitempty"`
-	Revision  int64  `json:"revision,omitempty"`
-	CreatedAt string `json:"created_at"`
-	Title     string `json:"title"`
-	Body      string `json:"body,omitempty"`
-	Acked     bool   `json:"acked"`
+	ServerID   string `json:"server_id,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Severity   string `json:"severity,omitempty"`
+	Stale      bool   `json:"stale,omitempty"`
+	ObservedAt string `json:"observed_at,omitempty"`
+	ID         string `json:"id"`
+	RepoID     string `json:"repo_id,omitempty"`
+	Revision   int64  `json:"revision,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	Title      string `json:"title"`
+	Body       string `json:"body,omitempty"`
+	Acked      bool   `json:"acked"`
 }
 
 // NoticeListResult is the result for CmdNoticeList.

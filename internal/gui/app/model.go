@@ -230,9 +230,11 @@ type ActivityViewModel struct {
 }
 
 type NoticeViewModel struct {
-	ID, RepoID, Title, CreatedAt string
-	Revision                     int64
-	Acked                        bool
+	ServerID, Source, Status, Severity, ObservedAt string
+	Stale                                          bool
+	ID, RepoID, Title, CreatedAt                   string
+	Revision                                       int64
+	Acked                                          bool
 }
 
 // DetachmentViewModel is a relationship with a server that has ended, carried

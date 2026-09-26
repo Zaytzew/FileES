@@ -354,13 +354,19 @@ type DetachmentProjection struct {
 }
 
 type NoticeProjection struct {
-	ID        string `json:"id"`
-	RepoID    string `json:"repo_id,omitempty"`
-	Revision  int64  `json:"revision,omitempty"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	Acked     bool   `json:"acked"`
-	CanAck    bool   `json:"can_ack"`
+	ServerID   string `json:"server_id,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Severity   string `json:"severity,omitempty"`
+	Stale      bool   `json:"stale,omitempty"`
+	ObservedAt string `json:"observed_at,omitempty"`
+	ID         string `json:"id"`
+	RepoID     string `json:"repo_id,omitempty"`
+	Revision   int64  `json:"revision,omitempty"`
+	Title      string `json:"title"`
+	CreatedAt  string `json:"created_at"`
+	Acked      bool   `json:"acked"`
+	CanAck     bool   `json:"can_ack"`
 }
 
 type DashboardPublicShareProjection struct {
@@ -1179,6 +1185,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 	for _, item := range vm.Notices {
 		result.Notices = append(result.Notices, NoticeProjection{
 			ID: item.ID, RepoID: item.RepoID, Revision: item.Revision,
+			ServerID: item.ServerID, Source: item.Source, Status: item.Status, Severity: item.Severity, ObservedAt: item.ObservedAt, Stale: item.Stale,
 			Title: item.Title, CreatedAt: item.CreatedAt, Acked: item.Acked,
 			CanAck: !item.Acked && vm.Connected && !vm.Stale && vm.CanAckNotices(),
 		})

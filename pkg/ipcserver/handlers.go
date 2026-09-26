@@ -1960,12 +1960,20 @@ func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
 func (s *Server) handleNoticeList(req contract.Request) contract.Response {
 	const acknowledgedLimit = 50
 	s.mu.RLock()
+	source := s.serverNotices
 	repos := make([]*RepoState, 0, len(s.repos))
 	for _, rs := range s.repos {
 		repos = append(repos, rs)
 	}
 	s.mu.RUnlock()
 	var notices []contract.Notice
+	if source != nil {
+		items, err := source.Notices()
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1004", "ERROR", "RETRY_LOCAL", "shout.list_failed", nil)
+		}
+		notices = append(notices, items...)
+	}
 	for _, rs := range repos {
 		items, err := rs.Notices()
 		if err != nil {
@@ -1988,7 +1996,7 @@ func (s *Server) handleNoticeList(req contract.Request) contract.Response {
 	recent := notices[:0]
 	acknowledged := 0
 	for _, notice := range notices {
-		if notice.Acked {
+		if notice.Acked && !(notice.Source == "server" && notice.Status == "active") {
 			if acknowledged >= acknowledgedLimit {
 				continue
 			}
@@ -2006,6 +2014,7 @@ func (s *Server) handleNoticeAck(req contract.Request) contract.Response {
 		return protoErr(req.RequestID, "proto.invalid_payload", nil)
 	}
 	s.mu.RLock()
+	source := s.serverNotices
 	repos := make([]*RepoState, 0, len(s.repos))
 	for _, rs := range s.repos {
 		repos = append(repos, rs)
@@ -2014,6 +2023,11 @@ func (s *Server) handleNoticeAck(req contract.Request) contract.Response {
 	for _, rs := range repos {
 		if err := rs.AckNotice(payload.NoticeID); err != nil {
 			return contract.ErrResponse(req.RequestID, "SHOUT-1005", "ERROR", "RETRY_LOCAL", "shout.ack_failed", map[string]string{"detail": err.Error()})
+		}
+	}
+	if source != nil {
+		if err := source.Ack(payload.NoticeID); err != nil {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1005", "ERROR", "RETRY_LOCAL", "shout.ack_failed", nil)
 		}
 	}
 	return contract.OKResponse(req.RequestID, map[string]bool{"acked": true})

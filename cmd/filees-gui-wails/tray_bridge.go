@@ -248,6 +248,9 @@ func (policy *announcementAlertPolicy) Observe(snapshot Snapshot, locales ...nat
 	}
 	var result []platform.Notification
 	for _, notice := range snapshot.Notices {
+		if notice.Source == "server" && notice.Stale {
+			continue
+		}
 		if _, exists := policy.seen[notice.ID]; exists {
 			continue
 		}
@@ -256,6 +259,9 @@ func (policy *announcementAlertPolicy) Observe(snapshot Snapshot, locales ...nat
 			continue
 		}
 		body := notice.Title
+		if notice.Source == "server" {
+			body = notice.ServerID + " — " + body
+		}
 		if repository := repositories[notice.RepoID]; repository != "" {
 			body = repository + " — " + body
 		}

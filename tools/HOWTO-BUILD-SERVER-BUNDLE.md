@@ -40,12 +40,25 @@ Potrzebne lokalnie: `go`, `svn`, POSIX `sh` (na Windows wystarczy Git Bash).
 
 ## Konwencja identyfikatorów
 
-`RELEASE_ID` to `r<rewizja źródeł>`, a `SEQUENCE` to ta sama liczba bez `r`.
-`SECURITY_EPOCH` zostaje `1`, dopóki nie unieważniamy starszych wydań.
+`RELEASE_ID` to `r<rewizja źródeł>-server` — **z sufiksem**, nie sam numer.
+`SEQUENCE` jest tą samą liczbą bez `r` i bez sufiksu. `SECURITY_EPOCH` zostaje
+`1`, dopóki nie unieważniamy starszych wydań.
 
 ```
-r688 → RELEASE_ID=r688  SEQUENCE=688  SECURITY_EPOCH=1
+r688 → RELEASE_ID=r688-server  SEQUENCE=688  SECURITY_EPOCH=1
 ```
+
+Sufiks nie jest kosmetyczny: `tools/prune-release-history.sh` odcina z nazwy
+katalogu `releases/<ID>` wiodące `r<liczba>` i to, co zostanie, traktuje jako
+„rodzaj" wydania — pusty sufiks znaczy desktop. `r1607` bez sufiksu
+wpadłoby do puli desktopowej (błędna retencja) i mogłoby się nazwowo
+zderzyć z prawdziwym wydaniem desktopu tej samej rewizji źródeł. Ten sam
+mechanizm dotyczy Androida (`-android`, patrz `tools/prepare-android-release.sh`)
+i dowolnego przyszłego kanału (`-beta`…). Żywy przykład:
+`channels/beta.json` → `"release_id": "r1442-server"`.
+Pomyłka z 2026-09-26: wydanie przygotowane jako `r1607` (bez sufiksu),
+usunięte z HEAD FILEES-BIN i przygotowane ponownie jako `r1607-server`
+zanim ktokolwiek je podpisał.
 
 Wydanie jest **niezmienne**: skrypt odmówi, jeśli `releases/<ID>` już istnieje.
 Poprawka wychodzi jako nowe wydanie z wyższym numerem, nigdy jako nadpisanie.
@@ -69,20 +82,20 @@ svn up -q
 cd <źródła>
 FILEES_BIN_WC="<FILEES-BIN>" \
 FILEES_RELEASE_PUBKEY="<FILEES-BIN>/FILEESrelease.pub" \
-RELEASE_ID="r$REV" SEQUENCE="$REV" SECURITY_EPOCH=1 \
+RELEASE_ID="r$REV-server" SEQUENCE="$REV" SECURITY_EPOCH=1 \
 sh tools/prepare-server-release.sh
 ```
 
-Powstaje `releases/r$REV/` z `openbsd-amd64/bin/` (17 binariów serwerowych),
+Powstaje `releases/r$REV-server/` z `openbsd-amd64/bin/` (17 binariów serwerowych),
 `examples/install.example.conf`, `manifest.json` i `channel.json`.
 
 ## Przegląd przed commitem
 
 ```bash
 cd <FILEES-BIN>
-ls releases/r$REV/openbsd-amd64/bin/ | wc -l     # 17
-grep -c '"target"' releases/r$REV/openbsd-amd64/manifest.json
-svn status releases/r$REV
+ls releases/r$REV-server/openbsd-amd64/bin/ | wc -l     # 17
+grep -c '"target"' releases/r$REV-server/openbsd-amd64/manifest.json
+svn status releases/r$REV-server
 ```
 
 Sprawdź, czy w `bin/` jest **każde** binarium, którego oczekujesz. Binarka
@@ -106,7 +119,7 @@ poprzedniego wydania, nie równość, a rozbieżność licz tak:
 ```bash
 python -c "
 import json,io,collections
-m=json.load(io.open('releases/r<ID>/openbsd-amd64/manifest.json',encoding='utf-8'))
+m=json.load(io.open('releases/r<ID>-server/openbsd-amd64/manifest.json',encoding='utf-8'))
 c=collections.Counter(f['source'] for f in m['files'])
 print('celow',len(m['files']),'zrodel',len(c))
 print([s for s,n in c.items() if n>1])
@@ -119,8 +132,8 @@ print([s for s,n in c.items() if n>1])
 promocja kanału to część podpisywania i należy do maszyny podpisującej.
 
 ```bash
-svn add releases/r$REV --force
-svn commit releases/r$REV -m "Add unsigned server release r$REV (openbsd-amd64)"
+svn add releases/r$REV-server --force
+svn commit releases/r$REV-server -m "Add unsigned server release r$REV-server (openbsd-amd64)"
 ```
 
 Skrypt **niczego nie commituje sam** — kończy się wypisaniem, co przejrzeć.

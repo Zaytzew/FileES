@@ -121,9 +121,23 @@ class SettingsActivity : AppCompatActivity() {
                 )
                 mobile = client
                 loadUploadRepos(client)
-            } catch (_: Exception) {
-                // The key above does not depend on this connection.
+            } catch (e: Exception) {
+                // The key above does not depend on this connection, but a
+                // queued pickUploadTarget call does: without this,
+                // uploadReposReady never becomes true and every future tap
+                // re-queues into a dialog that can never resolve (reported
+                // live: "Where new files go" stays stuck forever, even
+                // across repeated taps, because loadUploadRepos never ran
+                // at all here - not the slow-network case r1613 fixed).
+                uploadReposReady = true
+                uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_connect)
+                resumePendingUploadTargetPicks()
             }
+        } else {
+            // No pairing at all: same reasoning as above, a queued pick must
+            // still resolve to something instead of hanging forever.
+            uploadReposReady = true
+            uploadReposError = getString(R.string.error_connect)
         }
         bindServerDetails(prefs)
         renderServers()

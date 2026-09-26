@@ -40,6 +40,7 @@
     <string name="action_add_watched">Śledź folder…</string>
     <string name="action_remove_watched">Nie śledź</string>
     <string name="settings_upload_target">Cel wysyłki nowych plików</string>
+    <string name="settings_upload_target_shared">Wspólny cel dla wszystkich śledzonych folderów poniżej — nie ustawia się osobno dla każdego.</string>
     <string name="upload_target_none">nie wybrano</string>
     <string name="action_change_upload_target">Zmień</string>
     <string name="upload_target_pick_title">Gdzie wysyłać nowe pliki</string>

@@ -79,6 +79,21 @@ class SettingsActivity : AppCompatActivity() {
         super.attachBaseContext(FileesLocale.wrap(newBase))
     }
 
+    // Every background Thread in this file posts its result back with this,
+    // not raw runOnUiThread: under a slow/flaky connection a network call
+    // can easily still be in flight when the user backs out of Settings.
+    // The bare runOnUiThread{} still executes the callback once the
+    // Activity is destroyed - AlertDialog.Builder(this).show() on a dead
+    // Activity throws WindowManager.BadTokenException, which is exactly the
+    // instability reported live under connection problems, 2026-09-26:
+    // repeated attempts against a bad connection kept leaving delayed
+    // callbacks armed, any one of which could fire onto a since-destroyed
+    // screen. isFinishing/isDestroyed does not need minSdk gating (24 here,
+    // both available since 17).
+    private fun uiSafe(action: () -> Unit) {
+        runOnUiThread { if (!isFinishing && !isDestroyed) action() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installFileesWindow()
@@ -129,7 +144,7 @@ class SettingsActivity : AppCompatActivity() {
                         FileesSession.MOBILE_USER,
                         hostKey,
                     )
-                    runOnUiThread {
+                    uiSafe {
                         mobile = client
                         loadUploadRepos(client)
                     }
@@ -141,7 +156,7 @@ class SettingsActivity : AppCompatActivity() {
                     // live: "Where new files go" stays stuck forever, even
                     // across repeated taps, because loadUploadRepos never ran
                     // at all here - not the slow-network case r1613 fixed).
-                    runOnUiThread {
+                    uiSafe {
                         uploadReposReady = true
                         uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_connect)
                         resumePendingUploadTargetPicks()
@@ -210,9 +225,9 @@ class SettingsActivity : AppCompatActivity() {
         Thread {
             try {
                 val offer = ApkUpdate.inspect(this)
-                runOnUiThread { presentUpdate(status, button, offer) }
+                uiSafe { presentUpdate(status, button, offer) }
             } catch (_: Exception) {
-                runOnUiThread {
+                uiSafe {
                     button.isEnabled = true
                     status.setText(R.string.update_failed)
                 }
@@ -269,19 +284,19 @@ class SettingsActivity : AppCompatActivity() {
                             .putLong(ApkUpdate.PREF_SEQUENCE, offer.sequence)
                             .apply()
                     }
-                    runOnUiThread {
+                    uiSafe {
                         button.isEnabled = true
                         status.setText(R.string.update_not_newer)
                     }
                     return@Thread
                 }
-                runOnUiThread {
+                uiSafe {
                     button.isEnabled = true
                     status.setText(R.string.update_installing)
                     ApkUpdate.install(this, apk, offer.sequence)
                 }
             } catch (_: Exception) {
-                runOnUiThread {
+                uiSafe {
                     button.isEnabled = true
                     status.setText(R.string.update_failed)
                 }
@@ -336,7 +351,7 @@ class SettingsActivity : AppCompatActivity() {
         Thread {
             try {
                 client.requestDesktopJoin(email)
-                runOnUiThread {
+                uiSafe {
                     joinFinished()
                     AlertDialog.Builder(this)
                         .setTitle(R.string.join_success_title)
@@ -345,7 +360,7 @@ class SettingsActivity : AppCompatActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                runOnUiThread {
+                uiSafe {
                     joinFinished()
                     joinAlert(joinErrorMessage(e))
                 }
@@ -482,35 +497,59 @@ class SettingsActivity : AppCompatActivity() {
     // Upload target list is scoped to capturable shares: rw, not the realm
     // trash. A read-only grant cannot receive an upload; trash is a reject
     // waiting room, not a camera dump. Shelves stay writable.
+    //
+    // Retries with backoff before surfacing an error: on a real device this
+    // fetch races a background FileesWatchTick send over an independent SSH
+    // connection (sshtransport.Transport dials fresh per operation, so the
+    // two never share a session slot - MaxSessions 1 on _filees-mobile does
+    // not explain a collision here). What we actually saw live, 2026-09-26,
+    // was "handshake failed: read tcp ... use of closed connection" - a
+    // transient transport reset (cellular RRC/NAT reassignment, or the
+    // background send saturating the uplink) rather than a server-side
+    // rejection. A few short retries absorb exactly that kind of blip
+    // instead of dead-ending the user on the first one.
     private fun loadUploadRepos(client: Client) {
         Thread {
-            try {
-                val projection = RealmProjection.fromJson(client.listRepositoriesJSON())
-                val drawers = try {
-                    DrawerFrame.fromJson(client.listDrawersJSON())
-                } catch (_: Exception) {
-                    DrawerFrame.empty()
+            val backoffMs = longArrayOf(0L, 1500L, 3000L)
+            var lastError: Exception? = null
+            for (delay in backoffMs) {
+                if (delay > 0) {
+                    try {
+                        Thread.sleep(delay)
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
                 }
-                val capturable = projection.shares.filter { it.canCapture }
-                val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
-                FileesSession.rememberProjection(prefs, projection)
-                runOnUiThread {
-                    uploadRepos = capturable
-                    drawerFrame = drawers
-                    uploadReposReady = true
-                    uploadReposError = null
-                    renderUploadTarget()
-                    bindServerDetails(prefs)
-                    renderServers()
-                    resumePendingUploadTargetPicks()
+                try {
+                    val projection = RealmProjection.fromJson(client.listRepositoriesJSON())
+                    val drawers = try {
+                        DrawerFrame.fromJson(client.listDrawersJSON())
+                    } catch (_: Exception) {
+                        DrawerFrame.empty()
+                    }
+                    val capturable = projection.shares.filter { it.canCapture }
+                    val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+                    FileesSession.rememberProjection(prefs, projection)
+                    uiSafe {
+                        uploadRepos = capturable
+                        drawerFrame = drawers
+                        uploadReposReady = true
+                        uploadReposError = null
+                        renderUploadTarget()
+                        bindServerDetails(prefs)
+                        renderServers()
+                        resumePendingUploadTargetPicks()
+                    }
+                    return@Thread
+                } catch (e: Exception) {
+                    lastError = e
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    uploadRepos = emptyList()
-                    uploadReposReady = true
-                    uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_generic)
-                    resumePendingUploadTargetPicks()
-                }
+            }
+            uiSafe {
+                uploadRepos = emptyList()
+                uploadReposReady = true
+                uploadReposError = lastError?.message?.ifBlank { null } ?: getString(R.string.error_generic)
+                resumePendingUploadTargetPicks()
             }
         }.start()
     }
@@ -531,13 +570,21 @@ class SettingsActivity : AppCompatActivity() {
         if (!uploadReposReady) {
             // Queued, not dropped: loadUploadRepos's background thread calls
             // resumePendingUploadTargetPicks once it resolves (success or
-            // failure), which replays this exact call - the user does not
-            // have to dismiss this and try again by hand.
+            // failure, including after its internal retries), which replays
+            // this exact call - the user does not have to dismiss this and
+            // try again by hand. Cancel only forgets this one queued
+            // callback; it does not stop loadUploadRepos itself, which keeps
+            // running so a later pick does not have to start over.
             pendingUploadTargetPicks.add(onPicked)
+            val view = layoutInflater.inflate(R.layout.dialog_loading, null)
+            view.findViewById<TextView>(R.id.textLoadingMessage)
+                .setText(R.string.upload_target_pick_loading)
             AlertDialog.Builder(this)
                 .setTitle(R.string.upload_target_pick_title)
-                .setMessage(R.string.upload_target_pick_loading)
-                .setPositiveButton(android.R.string.ok, null)
+                .setView(view)
+                .setNegativeButton(R.string.action_cancel) { _, _ ->
+                    pendingUploadTargetPicks.remove(onPicked)
+                }
                 .show()
             return
         }
@@ -596,10 +643,10 @@ class SettingsActivity : AppCompatActivity() {
             val pending = trees
                 .flatMap { DocumentWalk.tree(contentResolver, it) }
                 .filterNot { watched.alreadySeen(it.uri.toString() + "/" + it.filename) }
-            runOnUiThread {
+            uiSafe {
                 if (pending.isEmpty()) {
                     onPicked?.invoke()
-                    return@runOnUiThread
+                    return@uiSafe
                 }
                 showWatchDepthDialog(
                     getString(R.string.watch_confirm_title),
@@ -616,7 +663,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun confirmAndAddWatch(uri: Uri) {
         Thread {
             val files = DocumentWalk.tree(contentResolver, uri)
-            runOnUiThread { showWatchConfirmDialog(uri, files) }
+            uiSafe { showWatchConfirmDialog(uri, files) }
         }.start()
     }
 
@@ -814,7 +861,7 @@ class SettingsActivity : AppCompatActivity() {
                     json.getString("address"),
                     json.getString("host_public_key"),
                 )
-                runOnUiThread { finish() }
+                uiSafe { finish() }
             } catch (_: Exception) {
                 // Main screen shows connection errors on resume.
             }

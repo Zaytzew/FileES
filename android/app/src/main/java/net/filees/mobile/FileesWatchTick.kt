@@ -188,10 +188,17 @@ object FileesWatchTick {
         ) {
             return
         }
+        // BigTextStyle, not just setContentText: a raw sshtransport error
+        // (e.g. "sshtransport: session failed: ...") easily exceeds the one
+        // line a collapsed notification shows, and without an explicit
+        // expanded style some OEM skins render it permanently truncated
+        // with no way to see the rest - reported live on ColorOS/Oppo,
+        // 2026-09-26.
         val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_file)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()

@@ -36,6 +36,7 @@
     <string name="action_add_watched">Ordner beobachten…</string>
     <string name="action_remove_watched">Nicht mehr beobachten</string>
     <string name="settings_upload_target">Ziel für neue Dateien</string>
+    <string name="settings_upload_target_shared">Gemeinsames Ziel für alle unten aufgeführten beobachteten Ordner — nicht einzeln pro Ordner festgelegt.</string>
     <string name="upload_target_none">nicht gewählt</string>
     <string name="action_change_upload_target">Ändern</string>
     <string name="upload_target_pick_title">Wohin neue Dateien gehen</string>

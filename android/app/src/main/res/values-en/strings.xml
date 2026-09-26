@@ -38,6 +38,7 @@
     <string name="action_add_watched">Watch folder…</string>
     <string name="action_remove_watched">Stop watching</string>
     <string name="settings_upload_target">Destination for new files</string>
+    <string name="settings_upload_target_shared">Shared destination for every watched folder below — not set separately per folder.</string>
     <string name="upload_target_none">not selected</string>
     <string name="action_change_upload_target">Change</string>
     <string name="upload_target_pick_title">Where new files go</string>

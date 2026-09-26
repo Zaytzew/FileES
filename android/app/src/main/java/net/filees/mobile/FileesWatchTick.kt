@@ -119,6 +119,13 @@ object FileesWatchTick {
         }
     }
 
+    // The catalog sentence alone hid the real cause live, 2026-09-26: a
+    // status-70 dispatch failure got bucketed under a generic "server does
+    // not accept this yet" entry (an needle match on the operation name, not
+    // the true reason), and the journal - unlike the interactive transport
+    // error dialog - never showed the raw text underneath it. Appending raw
+    // here mirrors what showTransportError already does for user-triggered
+    // sends, so a background failure is diagnosable from the app alone.
     private fun failureSentence(context: Context, raw: String): String {
         val text = raw.trim()
         if (text.isEmpty()) return context.getString(R.string.journal_watch_failed)
@@ -132,7 +139,8 @@ object FileesWatchTick {
                 ""
             }
         }
-        return catalog.ifBlank { context.getString(R.string.journal_watch_failed) }
+        val sentence = catalog.ifBlank { context.getString(R.string.journal_watch_failed) }
+        return "$sentence\n$text"
     }
 
     // Same threshold as the foreground "Dodaj folder" path: eight or more

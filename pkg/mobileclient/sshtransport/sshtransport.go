@@ -125,6 +125,13 @@ func (t *Transport) Do(ctx context.Context, req v1.Request, reqPayload []byte) (
 	if err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: stdout pipe: %w", err)
 	}
+	// A hard dispatch failure on the host (RunMobileEntry's report(stderr, ...))
+	// writes the real reason here before exiting non-zero - without capturing
+	// it, the client only ever sees "Process exited with status 70" and no
+	// way to tell "old server" apart from any other server-side failure
+	// (live, 2026-09-26: a real cause was invisible behind exactly this).
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
 
 	if err := session.Start(Command); err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: start session: %w", err)
@@ -136,10 +143,17 @@ func (t *Transport) Do(ctx context.Context, req v1.Request, reqPayload []byte) (
 	respHeader, respPayload, readErr := v1.ReadFrame(stdout, v1.ResponseMagic, v1.MaxHeaderBytes)
 
 	if waitErr := session.Wait(); waitErr != nil {
-		if readErr != nil {
+		detail := strings.TrimSpace(stderr.String())
+		switch {
+		case detail != "" && readErr != nil:
+			return v1.Response{}, nil, fmt.Errorf("sshtransport: session failed: %w: %s (response read: %v)", waitErr, detail, readErr)
+		case detail != "":
+			return v1.Response{}, nil, fmt.Errorf("sshtransport: session failed: %w: %s", waitErr, detail)
+		case readErr != nil:
 			return v1.Response{}, nil, fmt.Errorf("sshtransport: session failed: %w (response read: %v)", waitErr, readErr)
+		default:
+			return v1.Response{}, nil, fmt.Errorf("sshtransport: session failed: %w", waitErr)
 		}
-		return v1.Response{}, nil, fmt.Errorf("sshtransport: session failed: %w", waitErr)
 	}
 	if readErr != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: read response: %w", readErr)

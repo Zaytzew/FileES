@@ -239,9 +239,8 @@ func (c Client) RequestDesktopJoin(ctx context.Context, email string) error {
 	return nil
 }
 
-// UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT).
-// Today's live worker does not implement this operation; the phone still
-// fires it so a packed folder is one SSH session instead of N.
+// UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT), one
+// SSH session for the whole packed folder instead of N.
 func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileCount int, zip []byte) error {
 	sum := sha256.Sum256(zip)
 	req, err := v1.NewRequest(uuid.NewString(), v1.OpUploadTree, v1.UploadTreePayload{

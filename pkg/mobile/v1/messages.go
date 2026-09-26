@@ -262,8 +262,8 @@ type UploadTreePayload struct {
 	Sha256     string `json:"sha256"`
 }
 
-// UploadTreeResult is the future worker receipt. Today's live worker does
-// not ingest this operation yet.
+// UploadTreeResult is the worker's receipt for one ingested tree pack
+// (internal/mobileworker/tree.go Appender.UploadTree, live since r1011).
 type UploadTreeResult struct {
 	FileCount int   `json:"file_count"`
 	Size      int64 `json:"size"`

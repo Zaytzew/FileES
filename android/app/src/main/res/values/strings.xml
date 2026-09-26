@@ -46,7 +46,7 @@
     <string name="upload_target_pick_empty">Brak repozytoriów z prawem zapisu do wyboru.</string>
     <string name="upload_target_pick_loading">Jeszcze sprawdzam listę udziałów.</string>
     <string name="watch_confirm_title">Śledzenie folderu</string>
-    <string name="watch_confirm_message">Folder „%1$s” zawiera już %2$s. Jak stare z nich wysłać teraz? To, co powstanie później, i tak pójdzie.</string>
+    <string name="watch_confirm_message">Folder %1$s zawiera %2$d plików, łącznie to %3$s. Nowe obiekty będą przesyłane do repozytorium automatycznie. Jeśli chcesz przesłać również historię, określ przedział czasu dla synchronizacji historii.</string>
     <string name="watch_backlog_message">Śledzone foldery mają już %1$s, które nigdy nie poszły. Jak stare z nich wysłać teraz?</string>
     <string name="watch_depth_new">Tylko nowe od teraz</string>
     <string name="watch_depth_day">Ostatnie 24 godziny</string>
@@ -85,6 +85,7 @@
     <string name="status_folder_queued">Dodano folder do kolejki: %1$d plików</string>
     <string name="status_watched_added">Śledzę folder. Nowe pliki pójdą do mobile-uploads.</string>
     <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>
+    <string name="device_public_key_missing">Nie udało się odczytać klucza.</string>
 
     <string name="section_repository">Udziały strefy</string>
     <string name="hint_share">Wybierz udział</string>
@@ -203,8 +204,8 @@
     <string name="home_access_rw">zapis</string>
     <string name="home_access_r">odczyt</string>
 
-    <string name="settings_join">Nowy komputer</string>
-    <string name="settings_join_copy">Zgłoś zapotrzebowanie na zwykłe zaproszenie. Serwer wyśle je pocztą na ten adres. Telefon biletu nie pokaże — wklejasz je na nowym komputerze jak zawsze.</string>
+    <string name="settings_join">Nowa aktywacja</string>
+    <string name="settings_join_copy">Zgłoś zapotrzebowanie na aktywację nowego desktopu. Otrzymasz zaproszenie na podany adres e-mail i dokończysz proces na nowym komputerze.</string>
     <string name="hint_join_email">Adres e-mail</string>
     <string name="action_request_desktop_join">Poproś o zaproszenie</string>
     <string name="join_sending">Zgłaszanie…</string>

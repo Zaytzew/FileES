@@ -44,7 +44,7 @@
     <string name="upload_target_pick_empty">No writable repositories to choose from.</string>
     <string name="upload_target_pick_loading">Still loading the share list.</string>
     <string name="watch_confirm_title">Watch folder</string>
-    <string name="watch_confirm_message">Folder “%1$s” already contains %2$s. How far back should the first send reach? Anything newer still goes.</string>
+    <string name="watch_confirm_message">Folder %1$s already holds %2$d files, %3$s in total. New objects go to the repository on their own. To send history as well, choose how far back that history should reach.</string>
     <string name="watch_backlog_message">Watched folders already hold %1$s that never went. How far back should this send reach?</string>
     <string name="watch_depth_new">New files only</string>
     <string name="watch_depth_day">Last 24 hours</string>
@@ -79,6 +79,7 @@
     <string name="status_folder_queued">Folder queued: %1$d files</string>
     <string name="status_watched_added">Watching this folder. New files will go to mobile-uploads.</string>
     <string name="label_device_public_key">Public key of this device:</string>
+    <string name="device_public_key_missing">The key could not be read.</string>
 
     <string name="section_repository">Realm shares</string>
     <string name="hint_share">Choose a share</string>
@@ -194,8 +195,8 @@
     <string name="home_access_rw">write</string>
     <string name="home_access_r">read</string>
 
-    <string name="settings_join">New computer</string>
-    <string name="settings_join_copy">Ask the server to send a normal invitation by mail to this address. The phone will not show the ticket — paste it on the new computer as usual.</string>
+    <string name="settings_join">New activation</string>
+    <string name="settings_join_copy">Ask for an activation of a new desktop. The invitation arrives at the address you enter, and you finish the process on the new computer.</string>
     <string name="hint_join_email">Email address</string>
     <string name="action_request_desktop_join">Request invitation</string>
     <string name="join_sending">Sending request…</string>

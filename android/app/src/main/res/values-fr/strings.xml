@@ -41,9 +41,9 @@
     <string name="upload_target_pick_title">Choisir le dépôt de destination</string>
     <string name="upload_target_pick_empty">Aucun dépôt en écriture à choisir.</string>
     <string name="upload_target_pick_loading">La liste des partages est encore en cours de chargement.</string>
-    <string name="watch_confirm_title">Surveillance de dossier</string>
-    <string name="watch_confirm_message">Le dossier %1$s contient déjà %2$d fichiers, soit %3$s. Les nouveaux objets partent seuls vers le dépôt. Pour envoyer aussi l’historique, indiquez la période.</string>
-    <string name="watch_backlog_message">Les dossiers surveillés ont déjà %1$s qui ne sont jamais partis. Jusqu’où remonter pour cet envoi ?</string>
+    <string name="watch_confirm_title">Surveillance d’un dossier</string>
+    <string name="watch_confirm_message">Le dossier %1$s contient %2$d fichiers, %3$s au total. Les nouveaux objets sont envoyés automatiquement vers le dépôt. Pour envoyer aussi ce qui est déjà là, indiquez jusqu’où cette synchronisation doit remonter.</string>
+    <string name="watch_backlog_message">Les dossiers surveillés contiennent déjà %1$s qui n’ont jamais été envoyés. Jusqu’où cet envoi doit-il remonter ?</string>
     <string name="watch_depth_new">Nouveaux seulement</string>
     <string name="watch_depth_day">Dernières 24 heures</string>
     <string name="watch_depth_week">Dernière semaine</string>
@@ -190,14 +190,14 @@
     <string name="home_access_r">lecture</string>
 
     <string name="settings_join">Nouvelle activation</string>
-    <string name="settings_join_copy">Demandez l’activation d’un nouveau bureau. L’invitation arrive à l’adresse indiquée, et vous terminez sur le nouvel ordinateur.</string>
+    <string name="settings_join_copy">Demandez l’activation d’un nouveau bureau. Vous recevrez l’invitation à l’adresse indiquée et terminerez la procédure sur le nouvel ordinateur.</string>
     <string name="hint_join_email">Adresse e-mail</string>
     <string name="action_request_desktop_join">Demander une invitation</string>
     <string name="join_sending">Demande…</string>
     <string name="join_pin_title">Confirmer le code PIN du téléphone</string>
     <string name="join_pin_description">Sans verrouillage d’écran, la demande ne part pas.</string>
     <string name="join_success_title">Demandé</string>
-    <string name="join_success">Le serveur enverra l’invitation à %1$s. Ouvrez le courrier sur le nouvel ordinateur et collez-la.</string>
+    <string name="join_success">Le serveur enverra l’invitation à %1$s. Ouvrez le courrier sur le nouvel ordinateur et collez-la là.</string>
     <string name="join_error_title">Demande non envoyée</string>
     <string name="join_error_email">Saisissez une adresse e-mail simple.</string>
     <string name="join_error_unpaired">Associez d’abord le téléphone à cette zone.</string>

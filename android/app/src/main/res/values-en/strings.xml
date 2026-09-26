@@ -43,9 +43,9 @@
     <string name="upload_target_pick_title">Choose the destination repository</string>
     <string name="upload_target_pick_empty">No writable repositories to choose from.</string>
     <string name="upload_target_pick_loading">Still loading the share list.</string>
-    <string name="watch_confirm_title">Watch folder</string>
-    <string name="watch_confirm_message">Folder %1$s already holds %2$d files, %3$s in total. New objects go to the repository on their own. To send history as well, choose how far back that history should reach.</string>
-    <string name="watch_backlog_message">Watched folders already hold %1$s that never went. How far back should this send reach?</string>
+    <string name="watch_confirm_title">Watching a folder</string>
+    <string name="watch_confirm_message">Folder %1$s contains %2$d files, %3$s in all. New objects are sent to the repository automatically. If you also want to send what is already there, choose how far back that history should go.</string>
+    <string name="watch_backlog_message">Watched folders already contain %1$s that has never been sent. How far back should this send go?</string>
     <string name="watch_depth_new">New files only</string>
     <string name="watch_depth_day">Last 24 hours</string>
     <string name="watch_depth_week">Last week</string>
@@ -196,14 +196,14 @@
     <string name="home_access_r">read</string>
 
     <string name="settings_join">New activation</string>
-    <string name="settings_join_copy">Ask for an activation of a new desktop. The invitation arrives at the address you enter, and you finish the process on the new computer.</string>
+    <string name="settings_join_copy">Request activation of a new desktop. The invitation comes to the address you give, and you finish the process on the new computer.</string>
     <string name="hint_join_email">Email address</string>
     <string name="action_request_desktop_join">Request invitation</string>
     <string name="join_sending">Sending request…</string>
     <string name="join_pin_title">Confirm the phone PIN</string>
     <string name="join_pin_description">The request will not go without the screen lock.</string>
     <string name="join_success_title">Requested</string>
-    <string name="join_success">The server will send the invitation to %1$s. Open mail on the new computer and paste it there.</string>
+    <string name="join_success">The server will send the invitation to %1$s. Open the mail on the new computer and paste it there.</string>
     <string name="join_error_title">Request not sent</string>
     <string name="join_error_email">Enter a plain mailbox address.</string>
     <string name="join_error_unpaired">Pair the phone with this realm first.</string>

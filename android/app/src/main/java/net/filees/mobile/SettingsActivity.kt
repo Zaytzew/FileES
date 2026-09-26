@@ -102,6 +102,7 @@ class SettingsActivity : AppCompatActivity() {
         FileesSession.migrate(prefs)
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
+        binding.textDevicePublicKey.text = localPublicKey()
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             try {
                 val client = Androidbind.newClient(
@@ -111,11 +112,9 @@ class SettingsActivity : AppCompatActivity() {
                     hostKey,
                 )
                 mobile = client
-                val key = client.publicKey().trim()
-                binding.textDevicePublicKey.text = key.ifBlank { getString(R.string.device_public_key_missing) }
                 loadUploadRepos(client)
-            } catch (e: Exception) {
-                binding.textDevicePublicKey.text = e.message?.ifBlank { null } ?: getString(R.string.device_public_key_missing)
+            } catch (_: Exception) {
+                // The key above does not depend on this connection.
             }
         }
         bindServerDetails(prefs)
@@ -124,6 +123,16 @@ class SettingsActivity : AppCompatActivity() {
         renderUploadTarget()
         bindLanguage()
         binding.buttonChangeLanguage.setOnClickListener { pickLanguage() }
+    }
+
+    private fun localPublicKey(): String {
+        return try {
+            Androidbind.publicKeyIn(filesDir.absolutePath).trim().ifBlank {
+                getString(R.string.device_public_key_missing)
+            }
+        } catch (e: Exception) {
+            e.message?.takeIf { it.isNotBlank() } ?: getString(R.string.device_public_key_missing)
+        }
     }
 
     @Suppress("DEPRECATION")

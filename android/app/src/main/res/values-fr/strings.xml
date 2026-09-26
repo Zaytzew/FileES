@@ -38,7 +38,7 @@
     <string name="settings_upload_target">Destination des nouveaux fichiers</string>
     <string name="upload_target_none">non choisi</string>
     <string name="action_change_upload_target">Modifier</string>
-    <string name="upload_target_pick_title">Choisir le dépôt de destination</string>
+    <string name="upload_target_pick_title">Où envoyer les nouveaux fichiers</string>
     <string name="upload_target_pick_empty">Aucun dépôt en écriture à choisir.</string>
     <string name="upload_target_pick_loading">La liste des partages est encore en cours de chargement.</string>
     <string name="watch_confirm_title">Surveillance d’un dossier</string>

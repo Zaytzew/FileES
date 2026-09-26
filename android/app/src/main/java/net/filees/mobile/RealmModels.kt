@@ -124,6 +124,7 @@ data class BrowseRow(
     val repoId: String = "",
     val share: Boolean = false,
     val sectionHeader: String? = null,
+    val drawerId: String = "",
     val kind: Kind = Kind.ITEM,
     val metricServers: String = "",
     val metricRepos: String = "",

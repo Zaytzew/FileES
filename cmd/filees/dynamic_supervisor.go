@@ -227,6 +227,8 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
+	alerts := &serverAlertSources{}
+	ipc.SetServerNoticeSource(alerts)
 	freshness := newViewFreshness(nil)
 	// One publisher per server, registered when its monitor starts, so any
 	// source of freshness can push the snapshot without rebuilding the record.
@@ -475,6 +477,13 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}
 		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute), DemoExpiresAt: demoExpiresAt(syncConfig)}))
 		svn := client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort, SSHHostName: address})
+		alertView := func(clientview.View) {}
+		if reader, ok := svn.(alertReader); ok {
+			alertView = alerts.start(monitorCtx, reader, serverID, clientID, serviceURL, syncConfig.CachePath)
+		}
+		if exists {
+			alertView(cached)
+		}
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
 			updater = serviceProjectionUpdater{client: svn, url: serviceURL, prepare: serviceWCPreparation(svn, serverID, clientID, serviceURL)}
@@ -501,6 +510,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			publishFreshness()
 			talk.With("projection:"+serverID).Warnf("sync failed: %v", err)
 		}, OnSync: func(view clientview.View) {
+			alertView(view)
 			// Every successful sync, not only one that brought a new
 			// generation: a quiet server that changes nothing must not look
 			// like a server that has stopped answering.

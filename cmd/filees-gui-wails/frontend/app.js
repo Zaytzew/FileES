@@ -753,7 +753,7 @@ function renderRepositories(snapshot) {
     const health = demo?.ended ? { className: "health-unavailable", label: demo.text } : serverHealthPresentation(server.health);
     const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
-      || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
+      || (snapshot.notices || []).some((notice) => !notice.acked && (notice.server_id === server.id || serverRepos.some((repo) => repo.id === notice.repo_id)));
     const accent = /^#[0-9a-f]{6}$/i.test(server.accent_color || "") ? server.accent_color : "#FF6A00";
     return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}" data-gui-scope="${escapeHTML(server.gui_scope || "")}" style="--realm-accent:${escapeHTML(accent)}">
       <header class="server-header" data-toggle-server="${escapeHTML(server.id)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-controls="server-folders-${escapeHTML(server.id)}">
@@ -966,11 +966,12 @@ function renderShouts(snapshot) {
   }
   const repositories = new Map((snapshot.repositories || []).map((repo) => [repo.id, repo.display_name || repo.id]));
   // Never let recent acknowledged history hide an older unread announcement.
-  const visible = [...unreadAnnouncements(snapshot), ...notices.filter((notice) => notice.acked).slice(0, 5)];
+  const activeRead = notices.filter((n) => n.source === "server" && n.status === "active" && n.acked);
+  const visible = [...unreadAnnouncements(snapshot), ...activeRead, ...notices.filter((n) => n.acked && !(n.source === "server" && n.status === "active")).slice(0, 5)];
   const html = visible.map((notice) => {
-    const repository = repositories.get(notice.repo_id) || notice.repo_id || "FileES";
+    const repository = notice.source === "server" ? announcementScope(snapshot, notice) : repositories.get(notice.repo_id) || notice.repo_id || "FileES";
     const revision = Number(notice.revision || 0) > 0 ? ` · r${Number(notice.revision)}` : "";
-    const state = notice.acked ? t("shout.read") : t("shout.review");
+    const state = notice.source === "server" ? t(notice.status === "resolved" ? "alert.resolved" : "alert.active") : notice.acked ? t("shout.read") : t("shout.review");
     return `<button class="shout-row ${notice.acked ? "is-read" : "is-unread"}" type="button" data-notice-id="${escapeHTML(notice.id)}" aria-label="${escapeHTML(t("shout.open", { title: notice.title }))}">
       <span class="shout-symbol" aria-hidden="true">${repoIcons.publish}</span>
       <span class="shout-main"><strong>${escapeHTML(notice.title || t("shout.default"))}</strong>
@@ -983,6 +984,11 @@ function renderShouts(snapshot) {
 }
 
 function announcementScope(snapshot, notice) {
+  if (notice.source === "server") {
+    const server = (snapshot.servers || []).find((item) => item.id === notice.server_id);
+    return `${t("alert.server")} · ${server?.display_name || notice.server_id}${notice.stale ? " · " + t("alert.stale") : ""}`;
+  }
+
   const repo = (snapshot.repositories || []).find((item) => item.id === notice.repo_id);
   const server = (snapshot.servers || []).find((item) => item.id === repo?.server_id);
   const repository = repo?.display_name || notice.repo_id || "FileES";
@@ -1048,7 +1054,7 @@ function renderAnnouncementDialog(snapshot) {
   revision.textContent = revision.hidden ? "" : t("shout.revision", { revision: Number(notice.revision) });
   $("#announcement-time").textContent = t("shout.received", { date: shortDateTime(notice.created_at) });
   const unread = unreadAnnouncements(snapshot);
-  $("#announcement-status").textContent = notice.acked ? t("shout.acked") : t("shout.unreadHelp", { count: unread.length });
+  $("#announcement-status").textContent = notice.source === "server" ? t(notice.status === "resolved" ? "alert.resolved" : "alert.active") + (notice.acked ? " · " + t("shout.read") : "") : notice.acked ? t("shout.acked") : t("shout.unreadHelp", { count: unread.length });
   $("#next-announcement").hidden = unread.length < 2;
   $(".announcement-dialog .eyebrow").textContent = notice.acked ? t("shout.read") : t("shout.attention");
   const ack = $("#ack-announcement");

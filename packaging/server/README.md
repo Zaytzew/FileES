@@ -378,3 +378,40 @@ publication retains the record. Repository-control also runs this pass.
 `lock-requests-reap.crontab.example` supports cleanup without client activity;
 installation copies the example but does not activate cron. Run as
 `_filees-state` with the existing service WC/publication permissions.
+
+### Server alert channel (desktop consumer)
+
+The operator can publish a safe incident message to the active desktops of one
+explicitly selected realm. This grants no administrative actions to recipients.
+The publisher uses the service repository through `svnmucc`; no additional WC
+is created. `svnlook` and `svnmucc` must be available in the configured toolchain.
+
+```sh
+doas -u _filees-state filees-admin alert publish \
+  --realm <realm-uuid> --key storage.var --severity error \
+  --text 'Brak miejsca na serwerze; wysyłka może być niedostępna.'
+
+doas -u _filees-state filees-admin alert publish \
+  --realm <realm-uuid> --key storage.var --severity error --resolve \
+  --text 'Dostępne miejsce zostało przywrócone.'
+```
+
+`--key` identifies the problem. Repeating unchanged content is a no-op; a
+recurrence after resolution starts a new incident. `--resolve` updates clients
+silently. The text must be safe for every active desktop of that realm: do not
+include credentials, raw tool errors or another customer's information.
+
+Mailboxes live at `alerts/<realm-uuid>/snapshot.json` in the service repository.
+Publication regenerates service authz from canonical activations: only active
+desktops of the addressed realm can read it; mobile and staged activations have
+no channel access. SVN revision log messages contain no incident text. Desktop
+read receipts stay on that desktop; they do not change the server snapshot.
+
+Deploy matching daemon/GUI code for the consumer. Polling uses native SVN,
+bounded snapshots (256 KiB, 128 records), a separate read lane and 1–5 minute
+backoff. Existing services without a mailbox remain compatible. No automatic
+capacity monitor, new administrator role or mobile consumer is installed by
+this feature. A full filesystem may prevent publication itself; this channel
+cannot replace direct operation errors or independent infrastructure monitoring.
+Resolved records are pruned from snapshots when needed; this does not reclaim
+SVN history. Automated channel history rotation is not part of this first stage.

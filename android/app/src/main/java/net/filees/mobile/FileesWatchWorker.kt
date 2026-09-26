@@ -14,8 +14,15 @@ class FileesWatchWorker(context: Context, params: WorkerParameters) : Worker(con
     override fun doWork(): Result {
         try {
             FileesWatchTick.run(applicationContext)
-        } catch (_: Exception) {
-            // The next tick is still scheduled; a hard retry loop would pile work.
+        } catch (_: Throwable) {
+            // The next tick is still scheduled; a hard retry loop would pile
+            // work. FileesWatchTick.run already recorded the journal entry
+            // and notification for this failure before rethrowing - this
+            // catch only keeps the worker itself from ending in a raw
+            // WorkManager FAILURE that only a logcat pull would ever show
+            // (Throwable, not Exception: an OutOfMemoryError reached exactly
+            // this point uncaught, live, 2026-09-26, before TreeZip streamed
+            // instead of buffering whole files).
         }
         FileesWatchScheduler.scheduleNext(applicationContext)
         return Result.success()

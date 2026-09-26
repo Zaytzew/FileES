@@ -33,6 +33,7 @@ class SettingsActivity : AppCompatActivity() {
     private var uploadRepos: List<RealmShare> = emptyList()
     private var uploadReposReady = false
     private var uploadReposError: String? = null
+    private var drawerFrame: DrawerFrame = DrawerFrame.empty()
     private var mobile: Client? = null
     private var pendingJoinEmail = ""
     private var joinInFlight = false
@@ -439,11 +440,17 @@ class SettingsActivity : AppCompatActivity() {
         Thread {
             try {
                 val projection = RealmProjection.fromJson(client.listRepositoriesJSON())
+                val drawers = try {
+                    DrawerFrame.fromJson(client.listDrawersJSON())
+                } catch (_: Exception) {
+                    DrawerFrame.empty()
+                }
                 val capturable = projection.shares.filter { it.canCapture }
                 val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
                 FileesSession.rememberProjection(prefs, projection)
                 runOnUiThread {
                     uploadRepos = capturable
+                    drawerFrame = drawers
                     uploadReposReady = true
                     uploadReposError = null
                     renderUploadTarget()
@@ -492,7 +499,10 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
             return
         }
-        val names = uploadRepos.map { it.displayName }.toTypedArray()
+        val names = uploadRepos.map { share ->
+            val drawer = drawerFrame.nameFor(share.repoId)
+            if (drawer.isBlank()) share.displayName else "$drawer — ${share.displayName}"
+        }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(R.string.upload_target_pick_title)
             .setItems(names) { _, index ->

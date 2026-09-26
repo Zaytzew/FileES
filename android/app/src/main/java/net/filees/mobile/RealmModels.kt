@@ -27,6 +27,49 @@ data class RealmShare(
         get() = selectable && access == "rw" && !isUploadTrash
 }
 
+data class DrawerFrame(
+    val version: String,
+    val drawers: List<Pair<String, String>>,
+    val assignments: Map<String, String>,
+) {
+    fun isEmpty(): Boolean = drawers.isEmpty()
+
+    fun nameFor(repoId: String): String {
+        val id = assignments[repoId] ?: return ""
+        return drawers.firstOrNull { it.first == id }?.second.orEmpty()
+    }
+
+    companion object {
+        fun empty() = DrawerFrame("", emptyList(), emptyMap())
+
+        fun fromJson(json: String): DrawerFrame {
+            if (json.isBlank()) return empty()
+            val root = JSONObject(json)
+            val array = root.optJSONArray("drawers")
+            val drawers = mutableListOf<Pair<String, String>>()
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val id = item.optString("id")
+                    val name = item.optString("name").trim()
+                    if (id.isNotBlank() && name.isNotBlank()) drawers.add(id to name)
+                }
+            }
+            val assignments = mutableMapOf<String, String>()
+            val raw = root.optJSONObject("assignments")
+            if (raw != null) {
+                val keys = raw.keys()
+                while (keys.hasNext()) {
+                    val repo = keys.next()
+                    val drawer = raw.optString(repo)
+                    if (repo.isNotBlank() && drawer.isNotBlank()) assignments[repo] = drawer
+                }
+            }
+            return DrawerFrame(root.optString("version"), drawers, assignments)
+        }
+    }
+}
+
 data class RealmProjection(
     val realmId: String,
     val realmAlias: String,

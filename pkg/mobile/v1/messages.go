@@ -48,11 +48,12 @@ const (
 	OpUploadTree         Operation = "UPLOAD_TREE"   // zip-on-wire folder ingest
 	OpOperationStatus    Operation = "GET_OPERATION_STATUS"
 	OpRequestDesktopJoin Operation = "REQUEST_DESKTOP_JOIN"
+	OpListDrawers        Operation = "LIST_DRAWERS"
 )
 
 func (o Operation) valid() bool {
 	switch o {
-	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpUploadTree, OpOperationStatus, OpRequestDesktopJoin:
+	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpUploadTree, OpOperationStatus, OpRequestDesktopJoin, OpListDrawers:
 		return true
 	}
 	return false
@@ -178,6 +179,24 @@ type ListRepositoriesResult struct {
 	LeadingColor string              `json:"leading_color,omitempty"`
 	GeneratedAt  *time.Time          `json:"generated_at,omitempty"`
 	Repositories []RepositorySummary `json:"repositories"`
+}
+
+// ListDrawersPayload asks for the realm's drawer frame. The phone only reads.
+type ListDrawersPayload struct{}
+
+// DrawerSummary is one named group. ID is the key used in assignments.
+type DrawerSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListDrawersResult is the read-only view of filees.gui.drawers/v1.
+// Empty drawers and assignments are a normal projection, not an error.
+// Version is the blob CAS token; empty when the realm has no document.
+type ListDrawersResult struct {
+	Version     string            `json:"version"`
+	Drawers     []DrawerSummary   `json:"drawers"`
+	Assignments map[string]string `json:"assignments"`
 }
 
 // RefreshManifestResult is NOT_MODIFIED (Manifest nil) only when both the view
@@ -373,6 +392,11 @@ func (r Request) Validate() error {
 		if err := decodeStrict(r.Payload, &p); err != nil {
 			return fmt.Errorf("%s payload: %w", r.Operation, err)
 		}
+	case OpListDrawers:
+		var p ListDrawersPayload
+		if err := decodeStrict(r.Payload, &p); err != nil {
+			return fmt.Errorf("%s payload: %w", r.Operation, err)
+		}
 	case OpListDirectory:
 		var p ListDirectoryPayload
 		if err := decodeStrict(r.Payload, &p); err != nil {
@@ -509,6 +533,12 @@ func (r Response) validateResult() error {
 		return res.Manifest.Validate()
 	case OpListRepositories:
 		var res ListRepositoriesResult
+		if err := decodeStrict(r.Result, &res); err != nil {
+			return fmt.Errorf("%s result: %w", r.Operation, err)
+		}
+		return res.Validate()
+	case OpListDrawers:
+		var res ListDrawersResult
 		if err := decodeStrict(r.Result, &res); err != nil {
 			return fmt.Errorf("%s result: %w", r.Operation, err)
 		}

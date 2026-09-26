@@ -74,11 +74,25 @@ object FileesWatchTick {
                 waiting += result.second
             }
         } catch (t: Throwable) {
-            recordJournal(context, sent, waiting, repoName, t.message ?: "")
+            // A chunked or one-by-one send that fails partway through throws
+            // a PartialProgress carrying whatever it already landed before
+            // the failure - without unwrapping it here, that real progress
+            // (already committed server-side, already marked seen, never
+            // resent) would vanish from sent/waiting as if nothing had
+            // happened. Live, 2026-09-26: a large chunked batch actually
+            // pushed most of its data before one chunk failed, and the
+            // journal showed only the error with no success at all.
+            val partial = t as? PartialProgress
+            if (partial != null) {
+                sent += partial.sent
+                waiting += partial.waiting
+            }
+            val cause = partial?.cause ?: t
+            recordJournal(context, sent, waiting, repoName, cause?.message ?: "")
             notifyMessage(
                 context,
                 context.getString(R.string.notification_watch_failed),
-                t.message ?: context.getString(R.string.error_send),
+                cause?.message ?: context.getString(R.string.error_send),
                 NOTIFICATION_FAIL_ID,
             )
             throw t
@@ -143,6 +157,12 @@ object FileesWatchTick {
         return "$sentence\n$text"
     }
 
+    // Carries whatever a chunked or one-by-one send already landed before it
+    // failed partway through, so the caller's sent/waiting counters do not
+    // silently drop real, already-committed progress just because the
+    // function itself exits via an exception instead of a normal return.
+    private class PartialProgress(val sent: Int, val waiting: Int, cause: Throwable) : Exception(cause)
+
     // Same threshold as the foreground "Dodaj folder" path: eight or more
     // new files in one watched tree become one or more UPLOAD_TREE sessions
     // instead of a storm of SSH handshakes (TREE_INGEST). Smaller bursts
@@ -171,6 +191,8 @@ object FileesWatchTick {
                 client.uploadTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), zip.absolutePath)
                 chunk.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
                 sent += chunk.size
+            } catch (t: Throwable) {
+                throw PartialProgress(sent, 0, t)
             } finally {
                 zip?.delete()
             }
@@ -192,7 +214,7 @@ object FileesWatchTick {
             client.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
             val report = UploadDrain.run(client, repoId)
             if (report.transportError != null) {
-                throw RuntimeException(report.transportError)
+                throw PartialProgress(sent, waiting, RuntimeException(report.transportError))
             }
             watched.markSeen(file.uri.toString() + "/" + file.filename)
             sent++

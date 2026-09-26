@@ -41,9 +41,9 @@
     <string name="upload_target_pick_title">Ziel-Repository wählen</string>
     <string name="upload_target_pick_empty">Keine beschreibbaren Repositorys zur Auswahl.</string>
     <string name="upload_target_pick_loading">Die Freigabeliste wird noch geladen.</string>
-    <string name="watch_confirm_title">Ordner beobachten</string>
-    <string name="watch_confirm_message">Ordner %1$s enthält bereits %2$d Dateien, zusammen %3$s. Neue Objekte gehen automatisch ins Repository. Wenn auch die Historie mit soll, wählen Sie den Zeitraum.</string>
-    <string name="watch_backlog_message">Beobachtete Ordner halten bereits %1$s, die nie gingen. Wie weit zurück soll diese Sendung reichen?</string>
+    <string name="watch_confirm_title">Ordnerüberwachung</string>
+    <string name="watch_confirm_message">Der Ordner %1$s enthält %2$d Dateien, insgesamt %3$s. Neue Objekte werden automatisch an das Repository übertragen. Wenn Sie auch den vorhandenen Bestand senden möchten, legen Sie fest, wie weit diese Historie zurückreichen soll.</string>
+    <string name="watch_backlog_message">Beobachtete Ordner enthalten bereits %1$s, die noch nie gesendet wurden. Wie weit soll diese Sendung zurückreichen?</string>
     <string name="watch_depth_new">Nur neue ab jetzt</string>
     <string name="watch_depth_day">Letzte 24 Stunden</string>
     <string name="watch_depth_week">Letzte Woche</string>
@@ -190,14 +190,14 @@
     <string name="home_access_r">Lesen</string>
 
     <string name="settings_join">Neue Aktivierung</string>
-    <string name="settings_join_copy">Fordern Sie die Aktivierung eines neuen Desktops an. Die Einladung kommt an die angegebene Adresse, den Rest erledigen Sie am neuen Rechner.</string>
+    <string name="settings_join_copy">Fordern Sie die Aktivierung eines neuen Desktops an. Die Einladung erhalten Sie an die angegebene E-Mail-Adresse und schließen den Vorgang am neuen Computer ab.</string>
     <string name="hint_join_email">E-Mail-Adresse</string>
     <string name="action_request_desktop_join">Einladung anfordern</string>
     <string name="join_sending">Anforderung…</string>
     <string name="join_pin_title">Telefon-PIN bestätigen</string>
     <string name="join_pin_description">Ohne Displaysperre geht die Anforderung nicht.</string>
     <string name="join_success_title">Angefordert</string>
-    <string name="join_success">Der Server sendet die Einladung an %1$s. Öffnen Sie die Post auf dem neuen Rechner und fügen Sie sie dort ein.</string>
+    <string name="join_success">Der Server schickt die Einladung an %1$s. Öffnen Sie die E-Mail am neuen Computer und fügen Sie sie dort ein.</string>
     <string name="join_error_title">Nicht angefordert</string>
     <string name="join_error_email">Geben Sie eine gewöhnliche E-Mail-Adresse ein.</string>
     <string name="join_error_unpaired">Koppeln Sie das Telefon zuerst mit diesem Bereich.</string>

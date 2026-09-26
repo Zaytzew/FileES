@@ -41,9 +41,9 @@
     <string name="upload_target_pick_title">Elegir el repositorio de destino</string>
     <string name="upload_target_pick_empty">No hay repositorios con escritura para elegir.</string>
     <string name="upload_target_pick_loading">Aún se está cargando la lista de recursos.</string>
-    <string name="watch_confirm_title">Vigilar carpeta</string>
-    <string name="watch_confirm_message">La carpeta %1$s ya contiene %2$d archivos, %3$s en total. Los objetos nuevos van solos al repositorio. Si también quieres el historial, indica el intervalo.</string>
-    <string name="watch_backlog_message">Las carpetas vigiladas ya tienen %1$s que nunca salieron. ¿Hasta dónde debe llegar este envío?</string>
+    <string name="watch_confirm_title">Vigilancia de carpeta</string>
+    <string name="watch_confirm_message">La carpeta %1$s contiene %2$d archivos, %3$s en total. Los objetos nuevos se envían solos al repositorio. Si también quiere enviar lo que ya está, indique hasta dónde debe remontar ese historial.</string>
+    <string name="watch_backlog_message">Las carpetas vigiladas ya contienen %1$s que nunca se enviaron. ¿Hasta dónde debe llegar este envío?</string>
     <string name="watch_depth_new">Solo nuevos desde ahora</string>
     <string name="watch_depth_day">Últimas 24 horas</string>
     <string name="watch_depth_week">Última semana</string>
@@ -190,7 +190,7 @@
     <string name="home_access_r">lectura</string>
 
     <string name="settings_join">Nueva activación</string>
-    <string name="settings_join_copy">Pide la activación de un escritorio nuevo. La invitación llega a la dirección indicada y terminas el proceso en el equipo nuevo.</string>
+    <string name="settings_join_copy">Solicite la activación de un escritorio nuevo. Recibirá la invitación en la dirección indicada y terminará el proceso en el equipo nuevo.</string>
     <string name="hint_join_email">Dirección de correo</string>
     <string name="action_request_desktop_join">Pedir invitación</string>
     <string name="join_sending">Solicitando…</string>

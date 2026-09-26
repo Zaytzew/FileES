@@ -32,6 +32,16 @@ type Runner struct {
 	In        io.Reader
 }
 
+// maxBackupHistory bounds how many past installs keep a full pre-image
+// backup on disk. Every successful apply leaves one more (installStaged),
+// and nothing ever removed the old ones - on a server updated regularly this
+// grows without bound. Live, 2026-09-27: exactly this filled a production
+// /var partition to 103% capacity and broke unrelated durable writes (the
+// mobile ledger) sharing that partition. Rollback still works one step at a
+// time for anything inside this window, same as before; going further back
+// than that was never a promise this made.
+const maxBackupHistory = 4
+
 type Options struct {
 	ReleaseID string
 	DryRun    bool
@@ -597,6 +607,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		st.System = sysSt
 	}
 	st.History = append(st.History, entry)
+	r.pruneBackupHistory(st)
 	if err := state.Save(r.Config.StateDir, st); err != nil {
 		return err
 	}
@@ -1118,6 +1129,33 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 		fmt.Fprintf(r.Out, "REMOVE-ORPHAN %s\n", target)
 	}
 	return entry, nil
+}
+
+// pruneBackupHistory keeps at most maxBackupHistory install backups on disk,
+// oldest first. Best-effort and never fails the apply it runs inside: the
+// actual install already succeeded by the time this runs (files installed,
+// pledge already reduced), and losing st.InstalledRelease/history because an
+// old backup directory could not be removed would be a strictly worse
+// outcome than simply leaving that one directory for the next apply to
+// retry. An entry whose removal fails stays in history exactly as before,
+// so nothing is lost track of; a warning goes to Out either way.
+func (r *Runner) pruneBackupHistory(st *state.State) {
+	if len(st.History) <= maxBackupHistory {
+		return
+	}
+	stale := st.History[:len(st.History)-maxBackupHistory]
+	keep := st.History[len(st.History)-maxBackupHistory:]
+	remaining := make([]state.HistoryEntry, 0, len(stale)+len(keep))
+	for _, entry := range stale {
+		if entry.BackupDir == "" {
+			continue
+		}
+		if err := os.RemoveAll(entry.BackupDir); err != nil {
+			fmt.Fprintf(r.Out, "WARN: could not prune old install backup %s: %v\n", entry.BackupDir, err)
+			remaining = append(remaining, entry)
+		}
+	}
+	st.History = append(remaining, keep...)
 }
 
 // recoverInterrupted completes the write-ahead protocol before any new

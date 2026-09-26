@@ -47,7 +47,7 @@
     <string name="upload_target_pick_loading">Jeszcze sprawdzam listę udziałów.</string>
     <string name="watch_confirm_title">Śledzenie folderu</string>
     <string name="watch_confirm_message">Folder %1$s zawiera %2$d plików, łącznie to %3$s. Nowe obiekty będą przesyłane do repozytorium automatycznie. Jeśli chcesz przesłać również historię, określ przedział czasu dla synchronizacji historii.</string>
-    <string name="watch_backlog_message">Śledzone foldery mają już %1$s, które nigdy nie poszły. Jak stare z nich wysłać teraz?</string>
+    <string name="watch_backlog_message">Śledzone foldery mają już %1$s, które nigdy nie zostały wysłane. Jak stare z nich wysłać teraz?</string>
     <string name="watch_depth_new">Tylko nowe od teraz</string>
     <string name="watch_depth_day">Ostatnie 24 godziny</string>
     <string name="watch_depth_week">Ostatni tydzień</string>
@@ -81,9 +81,9 @@
     <string name="settings_pairing">Parowanie (awaryjne)</string>
     <string name="settings_device">To urządzenie</string>
     <string name="settings_watched">Śledzone foldery</string>
-    <string name="watched_empty">Brak śledzonych folderów. Nowe pliki z wybranego miejsca idą do mobile-uploads, co około 5 minut albo przy otwarciu aplikacji.</string>
+    <string name="watched_empty">Brak śledzonych folderów. Nowe pliki z wybranego miejsca trafiają do mobile-uploads, co około 5 minut albo przy otwarciu aplikacji.</string>
     <string name="status_folder_queued">Dodano folder do kolejki: %1$d plików</string>
-    <string name="status_watched_added">Śledzę folder. Nowe pliki pójdą do mobile-uploads.</string>
+    <string name="status_watched_added">Śledzę folder. Nowe pliki trafią do mobile-uploads.</string>
     <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>
     <string name="device_public_key_missing">Nie udało się odczytać klucza.</string>
 

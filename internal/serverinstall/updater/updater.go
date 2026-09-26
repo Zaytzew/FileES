@@ -495,6 +495,15 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
+		// Staged files are copied to their real targets (or the attempt is
+		// abandoned) before Apply returns either way - nothing here is ever
+		// read again afterward, so the stage is disposable the moment this
+		// function is done with it, success or failure alike.
+		defer func() {
+			if rmErr := os.RemoveAll(stageRoot); rmErr != nil {
+				fmt.Fprintf(r.Out, "WARN: could not remove stage directory %s: %v\n", stageRoot, rmErr)
+			}
+		}()
 		for _, configMigration := range configMigrations {
 			migrationStage := filepath.Join(stageRoot, "config-migrations", filepath.Base(configMigration.Path))
 			if err := os.MkdirAll(filepath.Dir(migrationStage), 0o700); err != nil {
@@ -977,6 +986,20 @@ func (r *Runner) confirmInteractive(prompt string) bool {
 func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]StagedFile, string, error) {
 	if err := os.MkdirAll(r.Config.StageDir, 0o755); err != nil {
 		return nil, "", err
+	}
+	// StageDir holds nothing worth keeping past this one apply attempt -
+	// unlike BackupDir, nothing ever reads a stage again once Apply returns
+	// (rollback restores from BackupDir, never a stage). The normal cleanup
+	// lives at the Apply call site (defer, right after this call succeeds);
+	// this sweep only catches what a crash between MkdirTemp and that defer
+	// left behind, so old debris cannot join install-time staging in
+	// silently filling the same disk install-backup did before it had
+	// retention (live, 2026-09-27: staging alone accumulated 3.2 GB on a
+	// production /var).
+	if leftover, err := os.ReadDir(r.Config.StageDir); err == nil {
+		for _, entry := range leftover {
+			_ = os.RemoveAll(filepath.Join(r.Config.StageDir, entry.Name()))
+		}
 	}
 	stageRoot, err := os.MkdirTemp(r.Config.StageDir, m.ReleaseID+"-"+m.Platform+"-"+state.NowStamp()+"-")
 	if err != nil {

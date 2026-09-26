@@ -112,27 +112,42 @@ class SettingsActivity : AppCompatActivity() {
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
         binding.textDevicePublicKey.text = localPublicKey()
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
-            try {
-                val client = Androidbind.newClient(
-                    filesDir.absolutePath,
-                    DialAddress.resolve(address),
-                    FileesSession.MOBILE_USER,
-                    hostKey,
-                )
-                mobile = client
-                loadUploadRepos(client)
-            } catch (e: Exception) {
-                // The key above does not depend on this connection, but a
-                // queued pickUploadTarget call does: without this,
-                // uploadReposReady never becomes true and every future tap
-                // re-queues into a dialog that can never resolve (reported
-                // live: "Where new files go" stays stuck forever, even
-                // across repeated taps, because loadUploadRepos never ran
-                // at all here - not the slow-network case r1613 fixed).
-                uploadReposReady = true
-                uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_connect)
-                resumePendingUploadTargetPicks()
-            }
+            // DialAddress.resolve does a real (blocking) DNS lookup for a
+            // hostname address - the Go core does the equivalent off-thread
+            // (MainActivity.activate runs this inside io.execute), but this
+            // call sat directly in onCreate. On a real device that throws
+            // NetworkOnMainThreadException, whose .message is always null,
+            // so the fallback below showed a bare "Could not connect" with
+            // no cause visible anywhere - reported live, 2026-09-26. An IP
+            // literal address never triggers this (no real DNS I/O), which
+            // is why emulator testing with 10.0.2.2 never caught it.
+            Thread {
+                try {
+                    val client = Androidbind.newClient(
+                        filesDir.absolutePath,
+                        DialAddress.resolve(address),
+                        FileesSession.MOBILE_USER,
+                        hostKey,
+                    )
+                    runOnUiThread {
+                        mobile = client
+                        loadUploadRepos(client)
+                    }
+                } catch (e: Exception) {
+                    // The key above does not depend on this connection, but a
+                    // queued pickUploadTarget call does: without this,
+                    // uploadReposReady never becomes true and every future tap
+                    // re-queues into a dialog that can never resolve (reported
+                    // live: "Where new files go" stays stuck forever, even
+                    // across repeated taps, because loadUploadRepos never ran
+                    // at all here - not the slow-network case r1613 fixed).
+                    runOnUiThread {
+                        uploadReposReady = true
+                        uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_connect)
+                        resumePendingUploadTargetPicks()
+                    }
+                }
+            }.start()
         } else {
             // No pairing at all: same reasoning as above, a queued pick must
             // still resolve to something instead of hanging forever.

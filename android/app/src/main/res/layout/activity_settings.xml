@@ -123,12 +123,19 @@
             android:textAppearance="@style/TextAppearance.Filees.Heading" />
 
         <TextView
-            android:id="@+id/textDevicePublicKey"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:text="@string/label_device_public_key"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
+        <TextView
+            android:id="@+id/textDevicePublicKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
             android:fontFamily="monospace"
-            android:textAppearance="@style/TextAppearance.Filees.Meta"
+            android:textColor="@color/filees_text"
             android:textIsSelectable="true" />
 
         <TextView

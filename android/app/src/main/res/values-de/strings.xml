@@ -42,7 +42,7 @@
     <string name="upload_target_pick_empty">Keine beschreibbaren Repositorys zur Auswahl.</string>
     <string name="upload_target_pick_loading">Die Freigabeliste wird noch geladen.</string>
     <string name="watch_confirm_title">Ordner beobachten</string>
-    <string name="watch_confirm_message">Ordner „%1$s“ enthält bereits %2$s. Wie weit zurück soll die erste Sendung reichen? Was später entsteht, geht trotzdem.</string>
+    <string name="watch_confirm_message">Ordner %1$s enthält bereits %2$d Dateien, zusammen %3$s. Neue Objekte gehen automatisch ins Repository. Wenn auch die Historie mit soll, wählen Sie den Zeitraum.</string>
     <string name="watch_backlog_message">Beobachtete Ordner halten bereits %1$s, die nie gingen. Wie weit zurück soll diese Sendung reichen?</string>
     <string name="watch_depth_new">Nur neue ab jetzt</string>
     <string name="watch_depth_day">Letzte 24 Stunden</string>
@@ -77,6 +77,7 @@
     <string name="status_folder_queued">Ordner in die Warteschlange: %1$d Dateien</string>
     <string name="status_watched_added">Ordner wird beobachtet. Neue Dateien gehen nach mobile-uploads.</string>
     <string name="label_device_public_key">Öffentlicher Schlüssel dieses Geräts:</string>
+    <string name="device_public_key_missing">Der Schlüssel konnte nicht gelesen werden.</string>
     <string name="section_repository">Bereichsfreigaben</string>
     <string name="hint_share">Freigabe wählen</string>
     <string name="projection_empty">Keine Freigaben in der Bereichsprojektion.</string>
@@ -188,8 +189,8 @@
     <string name="home_access_rw">Schreiben</string>
     <string name="home_access_r">Lesen</string>
 
-    <string name="settings_join">Neuer Rechner</string>
-    <string name="settings_join_copy">Bitten Sie den Server, eine normale Einladung per E-Mail an diese Adresse zu schicken. Das Telefon zeigt das Ticket nicht — fügen Sie es auf dem neuen Rechner wie gewohnt ein.</string>
+    <string name="settings_join">Neue Aktivierung</string>
+    <string name="settings_join_copy">Fordern Sie die Aktivierung eines neuen Desktops an. Die Einladung kommt an die angegebene Adresse, den Rest erledigen Sie am neuen Rechner.</string>
     <string name="hint_join_email">E-Mail-Adresse</string>
     <string name="action_request_desktop_join">Einladung anfordern</string>
     <string name="join_sending">Anforderung…</string>

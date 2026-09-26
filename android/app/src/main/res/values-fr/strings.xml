@@ -42,7 +42,7 @@
     <string name="upload_target_pick_empty">Aucun dépôt en écriture à choisir.</string>
     <string name="upload_target_pick_loading">La liste des partages est encore en cours de chargement.</string>
     <string name="watch_confirm_title">Surveillance de dossier</string>
-    <string name="watch_confirm_message">Le dossier « %1$s » contient déjà %2$s. Jusqu’où remonter pour le premier envoi ? Ce qui arrivera ensuite partira quand même.</string>
+    <string name="watch_confirm_message">Le dossier %1$s contient déjà %2$d fichiers, soit %3$s. Les nouveaux objets partent seuls vers le dépôt. Pour envoyer aussi l’historique, indiquez la période.</string>
     <string name="watch_backlog_message">Les dossiers surveillés ont déjà %1$s qui ne sont jamais partis. Jusqu’où remonter pour cet envoi ?</string>
     <string name="watch_depth_new">Nouveaux seulement</string>
     <string name="watch_depth_day">Dernières 24 heures</string>
@@ -77,6 +77,7 @@
     <string name="status_folder_queued">Dossier mis en file : %1$d fichiers</string>
     <string name="status_watched_added">Dossier surveillé. Les nouveaux fichiers iront dans mobile-uploads.</string>
     <string name="label_device_public_key">Clé publique de cet appareil :</string>
+    <string name="device_public_key_missing">La clé n’a pas pu être lue.</string>
     <string name="section_repository">Partages du domaine</string>
     <string name="hint_share">Choisir un partage</string>
     <string name="projection_empty">Aucun partage dans la projection du domaine.</string>
@@ -188,8 +189,8 @@
     <string name="home_access_rw">écriture</string>
     <string name="home_access_r">lecture</string>
 
-    <string name="settings_join">Nouvel ordinateur</string>
-    <string name="settings_join_copy">Demandez au serveur d’envoyer une invitation normale par courrier à cette adresse. Le téléphone n’affiche pas le billet — collez-le sur le nouvel ordinateur comme d’habitude.</string>
+    <string name="settings_join">Nouvelle activation</string>
+    <string name="settings_join_copy">Demandez l’activation d’un nouveau bureau. L’invitation arrive à l’adresse indiquée, et vous terminez sur le nouvel ordinateur.</string>
     <string name="hint_join_email">Adresse e-mail</string>
     <string name="action_request_desktop_join">Demander une invitation</string>
     <string name="join_sending">Demande…</string>

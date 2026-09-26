@@ -110,10 +110,11 @@ class SettingsActivity : AppCompatActivity() {
                     hostKey,
                 )
                 mobile = client
-                binding.textDevicePublicKey.text = client.publicKey()
+                val key = client.publicKey().trim()
+                binding.textDevicePublicKey.text = key.ifBlank { getString(R.string.device_public_key_missing) }
                 loadUploadRepos(client)
-            } catch (_: Exception) {
-                binding.textDevicePublicKey.text = getString(R.string.label_device_public_key)
+            } catch (e: Exception) {
+                binding.textDevicePublicKey.text = e.message?.ifBlank { null } ?: getString(R.string.device_public_key_missing)
             }
         }
         bindServerDetails(prefs)
@@ -555,10 +556,15 @@ class SettingsActivity : AppCompatActivity() {
             finishAddWatch(uri, files, WatchDepth.ONLY_NEW)
             return
         }
-        val name = treeLabel(uri)
+        val summary = FolderPreflight.of(files)
         showWatchDepthDialog(
             getString(R.string.watch_confirm_title),
-            getString(R.string.watch_confirm_message, name, depthCount(files)),
+            getString(
+                R.string.watch_confirm_message,
+                treeLabel(uri),
+                summary.files,
+                HumanSize.format(summary.bytes),
+            ),
             files,
         ) { depth -> finishAddWatch(uri, files, depth) }
     }

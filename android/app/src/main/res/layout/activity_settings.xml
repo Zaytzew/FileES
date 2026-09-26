@@ -101,6 +101,12 @@
                 android:text="@string/action_change_upload_target" />
         </LinearLayout>
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_upload_target_shared"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonAddWatched"
             android:layout_width="match_parent"

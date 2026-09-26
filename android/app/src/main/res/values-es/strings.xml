@@ -36,6 +36,7 @@
     <string name="action_add_watched">Vigilar carpeta…</string>
     <string name="action_remove_watched">Dejar de vigilar</string>
     <string name="settings_upload_target">Destino de los archivos nuevos</string>
+    <string name="settings_upload_target_shared">Destino compartido para todas las carpetas vigiladas de abajo — no se define por separado para cada una.</string>
     <string name="upload_target_none">no elegido</string>
     <string name="action_change_upload_target">Cambiar</string>
     <string name="upload_target_pick_title">Dónde van los archivos nuevos</string>

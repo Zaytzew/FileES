@@ -36,6 +36,7 @@
     <string name="action_add_watched">Surveiller un dossier…</string>
     <string name="action_remove_watched">Ne plus surveiller</string>
     <string name="settings_upload_target">Destination des nouveaux fichiers</string>
+    <string name="settings_upload_target_shared">Destination commune à tous les dossiers surveillés ci-dessous — non définie séparément pour chacun.</string>
     <string name="upload_target_none">non choisi</string>
     <string name="action_change_upload_target">Modifier</string>
     <string name="upload_target_pick_title">Où envoyer les nouveaux fichiers</string>

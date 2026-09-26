@@ -25,8 +25,8 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 42
-        versionName = "0.1.17+r1593"
+        versionCode = 43
+        versionName = "0.1.17+r1594"
     }
 
     signingConfigs {

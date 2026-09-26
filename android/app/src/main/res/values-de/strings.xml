@@ -40,6 +40,7 @@
     <string name="action_change_upload_target">Ändern</string>
     <string name="upload_target_pick_title">Ziel-Repository wählen</string>
     <string name="upload_target_pick_empty">Keine beschreibbaren Repositorys zur Auswahl.</string>
+    <string name="upload_target_pick_loading">Die Freigabeliste wird noch geladen.</string>
     <string name="watch_confirm_title">Ordner beobachten</string>
     <string name="watch_confirm_message">Ordner „%1$s“ enthält bereits %2$s. Wie weit zurück soll die erste Sendung reichen? Was später entsteht, geht trotzdem.</string>
     <string name="watch_backlog_message">Beobachtete Ordner halten bereits %1$s, die nie gingen. Wie weit zurück soll diese Sendung reichen?</string>

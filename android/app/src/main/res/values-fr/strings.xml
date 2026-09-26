@@ -40,6 +40,7 @@
     <string name="action_change_upload_target">Modifier</string>
     <string name="upload_target_pick_title">Choisir le dépôt de destination</string>
     <string name="upload_target_pick_empty">Aucun dépôt en écriture à choisir.</string>
+    <string name="upload_target_pick_loading">La liste des partages est encore en cours de chargement.</string>
     <string name="watch_confirm_title">Surveillance de dossier</string>
     <string name="watch_confirm_message">Le dossier « %1$s » contient déjà %2$s. Jusqu’où remonter pour le premier envoi ? Ce qui arrivera ensuite partira quand même.</string>
     <string name="watch_backlog_message">Les dossiers surveillés ont déjà %1$s qui ne sont jamais partis. Jusqu’où remonter pour cet envoi ?</string>

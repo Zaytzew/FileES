@@ -42,6 +42,7 @@
     <string name="action_change_upload_target">Change</string>
     <string name="upload_target_pick_title">Choose the destination repository</string>
     <string name="upload_target_pick_empty">No writable repositories to choose from.</string>
+    <string name="upload_target_pick_loading">Still loading the share list.</string>
     <string name="watch_confirm_title">Watch folder</string>
     <string name="watch_confirm_message">Folder “%1$s” already contains %2$s. How far back should the first send reach? Anything newer still goes.</string>
     <string name="watch_backlog_message">Watched folders already hold %1$s that never went. How far back should this send reach?</string>

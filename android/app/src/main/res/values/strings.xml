@@ -44,6 +44,7 @@
     <string name="action_change_upload_target">Zmień</string>
     <string name="upload_target_pick_title">Wybierz repozytorium docelowe</string>
     <string name="upload_target_pick_empty">Brak repozytoriów z prawem zapisu do wyboru.</string>
+    <string name="upload_target_pick_loading">Jeszcze sprawdzam listę udziałów.</string>
     <string name="watch_confirm_title">Śledzenie folderu</string>
     <string name="watch_confirm_message">Folder „%1$s” zawiera już %2$s. Jak stare z nich wysłać teraz? To, co powstanie później, i tak pójdzie.</string>
     <string name="watch_backlog_message">Śledzone foldery mają już %1$s, które nigdy nie poszły. Jak stare z nich wysłać teraz?</string>

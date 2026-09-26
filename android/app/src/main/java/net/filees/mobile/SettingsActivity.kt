@@ -31,6 +31,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var watched: WatchedFolders
     private var uploadRepos: List<RealmShare> = emptyList()
+    private var uploadReposReady = false
+    private var uploadReposError: String? = null
     private var mobile: Client? = null
     private var pendingJoinEmail = ""
     private var joinInFlight = false
@@ -441,14 +443,18 @@ class SettingsActivity : AppCompatActivity() {
                 FileesSession.rememberProjection(prefs, projection)
                 runOnUiThread {
                     uploadRepos = capturable
+                    uploadReposReady = true
+                    uploadReposError = null
                     renderUploadTarget()
                     bindServerDetails(prefs)
                     renderServers()
                 }
-            } catch (_: Exception) {
-                // Settings still work without this list; picking a target
-                // just fails over to upload_target_pick_empty until the
-                // next visit succeeds.
+            } catch (e: Exception) {
+                runOnUiThread {
+                    uploadRepos = emptyList()
+                    uploadReposReady = true
+                    uploadReposError = e.message?.ifBlank { null } ?: getString(R.string.error_generic)
+                }
             }
         }.start()
     }
@@ -460,6 +466,23 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun pickUploadTarget(onPicked: (() -> Unit)? = null) {
+        if (!uploadReposReady) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.upload_target_pick_title)
+                .setMessage(R.string.upload_target_pick_loading)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+        val failure = uploadReposError
+        if (failure != null) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.upload_target_pick_title)
+                .setMessage(failure)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
         if (uploadRepos.isEmpty()) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.upload_target_pick_title)
@@ -532,7 +555,7 @@ class SettingsActivity : AppCompatActivity() {
             finishAddWatch(uri, files, WatchDepth.ONLY_NEW)
             return
         }
-        val name = uri.lastPathSegment ?: uri.toString()
+        val name = treeLabel(uri)
         showWatchDepthDialog(
             getString(R.string.watch_confirm_title),
             getString(R.string.watch_confirm_message, name, depthCount(files)),
@@ -551,13 +574,37 @@ class SettingsActivity : AppCompatActivity() {
         val labels = depths.map { depth ->
             val included = files.filter { depth.includes(it, now) }
             getString(R.string.watch_depth_item, depthLabel(depth), depthCount(included))
-        }.toTypedArray()
-        AlertDialog.Builder(this)
+        }
+        val view = layoutInflater.inflate(R.layout.dialog_watch_depth, null)
+        view.findViewById<TextView>(R.id.textWatchDepthMessage).text = message
+        val list = view.findViewById<LinearLayout>(R.id.listWatchDepth)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(title)
-            .setMessage(message)
-            .setItems(labels) { _, index -> onChosen(depths[index]) }
+            .setView(view)
             .setNegativeButton(R.string.action_cancel, null)
-            .show()
+            .create()
+        labels.forEachIndexed { index, label ->
+            val row = MaterialButton(this, null, com.google.android.material.R.attr.borderlessButtonStyle)
+            row.text = label
+            row.isAllCaps = false
+            row.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            row.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            row.setOnClickListener {
+                dialog.dismiss()
+                onChosen(depths[index])
+            }
+            list.addView(row)
+        }
+        dialog.show()
+    }
+
+    private fun treeLabel(uri: Uri): String {
+        val name = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)?.name
+        if (!name.isNullOrBlank()) return name
+        return uri.lastPathSegment ?: uri.toString()
     }
 
     private fun depthLabel(depth: WatchDepth): String = when (depth) {

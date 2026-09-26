@@ -40,6 +40,7 @@
     <string name="action_change_upload_target">Cambiar</string>
     <string name="upload_target_pick_title">Elegir el repositorio de destino</string>
     <string name="upload_target_pick_empty">No hay repositorios con escritura para elegir.</string>
+    <string name="upload_target_pick_loading">Aún se está cargando la lista de recursos.</string>
     <string name="watch_confirm_title">Vigilar carpeta</string>
     <string name="watch_confirm_message">La carpeta «%1$s» ya contiene %2$s. ¿Hasta dónde debe llegar el primer envío? Lo que llegue después se envía igual.</string>
     <string name="watch_backlog_message">Las carpetas vigiladas ya tienen %1$s que nunca salieron. ¿Hasta dónde debe llegar este envío?</string>

@@ -802,11 +802,27 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	if err != nil {
 		if client.IsNetworkError(err) {
 			s.goOffline()
-		} else {
+			return
+		}
+		// A lock left by an interrupted update is ours to clear, not a fault
+		// to keep reporting forever. pkg/clientview.Sync already applies
+		// this exact cleanup-then-retry-once for the service working copy
+		// (2026-09-03: a locked WC there failed every sync silently,
+		// misread as "server not responding" though the server was never
+		// contacted). Ordinary attached repos never got the same fix and
+		// hit the identical failure live, 2026-09-26: once locked, every
+		// following poll re-failed identically with no recovery short of a
+		// manual `svn cleanup` nobody using this product would think to run.
+		if errmap.Classify(err).Key == errcat.KeyWorkingCopyBusy {
+			if _, cleanErr := s.Cli.Cleanup(ctx, wc); cleanErr == nil {
+				out, err = s.Cli.Update(ctx, wc)
+			}
+		}
+		if err != nil {
 			s.Logger.Warnf("poll: svn update failed: %v\n%s", err, out)
 			s.ErrSink.Emit(errmap.Classify(err))
+			return
 		}
-		return
 	}
 
 	s.ReconcileUpdateConflicts(ctx, wc, out)

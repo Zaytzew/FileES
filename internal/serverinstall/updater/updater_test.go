@@ -475,3 +475,84 @@ func TestCheckFreshnessGatesRollback(t *testing.T) {
 		t.Fatal("a release without freshness counters passed the gate")
 	}
 }
+
+// A backup directory older than the retention window must actually be
+// removed from disk, not just dropped from history - the whole point is
+// reclaiming space (live, 2026-09-27: unpruned backups filled a production
+// /var partition to 103%).
+func TestPruneBackupHistoryRemovesOldBackupDirsFromDisk(t *testing.T) {
+	r, root := testRunner(t)
+	st := &state.State{}
+	var dirs []string
+	for i := 0; i < maxBackupHistory+2; i++ {
+		dir := filepath.Join(root, "backups", strings.Repeat("x", i+1))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		dirs = append(dirs, dir)
+		st.History = append(st.History, state.HistoryEntry{ReleaseID: strings.Repeat("r", i+1), BackupDir: dir})
+	}
+
+	r.pruneBackupHistory(st)
+
+	if len(st.History) != maxBackupHistory {
+		t.Fatalf("history length = %d, want %d", len(st.History), maxBackupHistory)
+	}
+	// The oldest two must be gone from both history and disk.
+	for _, dir := range dirs[:2] {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("pruned backup dir still exists: %s (stat err = %v)", dir, err)
+		}
+	}
+	// The most recent maxBackupHistory entries must survive, on disk and in
+	// history, in original order - rollback walks history back to front.
+	for i, dir := range dirs[2:] {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("retained backup dir missing: %s: %v", dir, err)
+		}
+		if st.History[i].BackupDir != dir {
+			t.Fatalf("history[%d].BackupDir = %q, want %q", i, st.History[i].BackupDir, dir)
+		}
+	}
+}
+
+// A backup dir that fails to remove (e.g. transient permission issue) must
+// stay tracked in history rather than silently forgotten - losing track of
+// an on-disk backup would be worse than the disk space it would have freed.
+func TestPruneBackupHistoryKeepsEntryWhenRemovalFails(t *testing.T) {
+	r, root := testRunner(t)
+	st := &state.State{}
+	// A plain file where a directory component is expected makes RemoveAll
+	// fail structurally (ENOTDIR) - unlike a permission-based block, this
+	// fails even when the test runs as root.
+	notADir := filepath.Join(root, "backups", "not-a-directory")
+	if err := os.MkdirAll(filepath.Dir(notADir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notADir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unremovable := filepath.Join(notADir, "old")
+	st.History = append(st.History, state.HistoryEntry{ReleaseID: "stuck", BackupDir: unremovable})
+	for i := 0; i < maxBackupHistory; i++ {
+		dir := filepath.Join(root, "backups", strings.Repeat("y", i+1))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		st.History = append(st.History, state.HistoryEntry{ReleaseID: strings.Repeat("k", i+1), BackupDir: dir})
+	}
+
+	var out bytes.Buffer
+	r.Out = &out
+	r.pruneBackupHistory(st)
+
+	if len(st.History) != maxBackupHistory+1 {
+		t.Fatalf("history length = %d, want %d (the stuck entry must survive)", len(st.History), maxBackupHistory+1)
+	}
+	if st.History[0].ReleaseID != "stuck" {
+		t.Fatalf("history[0] = %q, want the entry that failed to prune", st.History[0].ReleaseID)
+	}
+	if !strings.Contains(out.String(), "could not prune") {
+		t.Fatalf("no warning printed for the failed prune: %q", out.String())
+	}
+}

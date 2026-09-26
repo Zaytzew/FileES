@@ -51,6 +51,12 @@ type revisionClient struct {
 	accept                                    string
 	status                                    []client.StatusEntry
 	remoteErr, localErr, updateErr, statusErr error
+	// updateErrOnce, when set, returns updateErr only on the first Update
+	// call and nil after - simulating a stale working-copy lock that a
+	// Cleanup call between the two clears.
+	updateErrOnce bool
+	cleanupCalls  int
+	cleanupErr    error
 	// theirs, when set, is what "theirs-full" writes into a resolved file,
 	// as Subversion does with the server version.
 	theirs string
@@ -64,6 +70,9 @@ func (c *revisionClient) Revision(_ context.Context, target string) (int64, erro
 }
 func (c *revisionClient) Update(context.Context, string) (string, error) {
 	c.update++
+	if c.updateErrOnce && c.update > 1 {
+		return "", nil
+	}
 	return "", c.updateErr
 }
 
@@ -76,8 +85,9 @@ func (*revisionClient) GetInfo(context.Context, string) (string, error) {
 func (*revisionClient) Checkout(context.Context, string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Cleanup(context.Context, string) (string, error) {
-	return "", nil
+func (c *revisionClient) Cleanup(context.Context, string) (string, error) {
+	c.cleanupCalls++
+	return "", c.cleanupErr
 }
 func (c *revisionClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
 	return c.status, c.statusErr
@@ -130,6 +140,48 @@ func (c *revisionClient) Resolve(_ context.Context, wc string, paths []string, a
 		}
 	}
 	return "", nil
+}
+
+// A working copy left locked by an interrupted update must not fail every
+// following poll forever. pkg/clientview.Sync already applies this cleanup-
+// then-retry-once for the service working copy (2026-09-03 report); this is
+// the same fix for an ordinary attached repo's periodic poll, added after
+// reproducing the stuck-forever failure live, 2026-09-26.
+func TestPollRecoversFromLockedWorkingCopy(t *testing.T) {
+	wc := t.TempDir()
+	cli := revisionClient{
+		remote:        8,
+		local:         7,
+		updateErr:     errors.New("svn: E155004: Working copy '" + wc + "' locked"),
+		updateErrOnce: true,
+	}
+	s := &Service{Cli: &cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-lock-test")}
+	s.pollOnce(t.Context(), wc, filepath.Join(wc, "head.rev"))
+	if cli.cleanupCalls != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", cli.cleanupCalls)
+	}
+	if cli.update != 2 {
+		t.Fatalf("update calls = %d, want 2 (initial + retry after cleanup)", cli.update)
+	}
+}
+
+// A lock that survives its own cleanup is a different fault: pollOnce must
+// not retry a second time or loop, only report it once.
+func TestPollDoesNotLoopWhenCleanupCannotClearTheLock(t *testing.T) {
+	wc := t.TempDir()
+	cli := revisionClient{
+		remote:    8,
+		local:     7,
+		updateErr: errors.New("svn: E155004: Working copy '" + wc + "' locked"),
+	}
+	s := &Service{Cli: &cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-lock-test")}
+	s.pollOnce(t.Context(), wc, filepath.Join(wc, "head.rev"))
+	if cli.cleanupCalls != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", cli.cleanupCalls)
+	}
+	if cli.update != 2 {
+		t.Fatalf("update calls = %d, want 2 (initial + one retry, never more)", cli.update)
+	}
 }
 
 func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {

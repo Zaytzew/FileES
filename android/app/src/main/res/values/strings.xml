@@ -29,6 +29,7 @@
     </plurals>
     <string name="status_packing">Pakowanie…</string>
     <string name="status_sending_pack">Wysyłanie paczki (%1$s)…</string>
+    <string name="status_sending_pack_chunk">Wysyłanie paczki %1$d/%2$d (%3$s)…</string>
     <string name="error_tree">Paczka nie przyjęta</string>
     <string name="error_tree_unsupported">Telefon spakował folder do jednego zipa i wysłał jednym połączeniem. Serwer jeszcze nie umie takiej paczki przyjąć — to ten strzał.</string>
     <string name="status_sending">Wysyłanie…</string>

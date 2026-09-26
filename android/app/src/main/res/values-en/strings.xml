@@ -27,6 +27,7 @@
     </plurals>
     <string name="status_packing">Packing…</string>
     <string name="status_sending_pack">Sending pack (%1$s)…</string>
+    <string name="status_sending_pack_chunk">Sending pack %1$d/%2$d (%3$s)…</string>
     <string name="error_tree">Pack not accepted</string>
     <string name="error_tree_unsupported">The phone packed the folder into one zip and sent it in one connection. The server cannot accept that pack yet — that is this attempt.</string>
     <string name="status_sending">Sending…</string>

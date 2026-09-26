@@ -728,26 +728,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Chunked the same way as the background watch tick
+    // (FileesWatchTick.sendPacked): each size-bounded pack is its own
+    // complete UPLOAD_TREE session, so one slow or unstable link cannot
+    // force the whole selection onto a single SSH session that a real
+    // network is never guaranteed to hold open long enough to finish
+    // (implementation notes (not distributed) §5).
     private fun sendPacked(files: List<WalkedFile>) {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
         main.post { setBusy(true, getString(R.string.status_packing)) }
-        var zip: File? = null
+        val chunks = FolderPreflight.chunkBySize(files)
+        var sent = 0
         try {
-            zip = TreeZip.pack(contentResolver, files, cacheDir)
-            main.post {
-                setBusy(true, getString(R.string.status_sending_pack, HumanSize.format(zip.length())))
+            chunks.forEachIndexed { index, chunk ->
+                var zip: File? = null
+                try {
+                    zip = TreeZip.pack(contentResolver, chunk, cacheDir)
+                    main.post {
+                        setBusy(
+                            true,
+                            if (chunks.size > 1) {
+                                getString(
+                                    R.string.status_sending_pack_chunk,
+                                    index + 1, chunks.size, HumanSize.format(zip.length()),
+                                )
+                            } else {
+                                getString(R.string.status_sending_pack, HumanSize.format(zip.length()))
+                            },
+                        )
+                    }
+                    active.uploadTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), zip.absolutePath)
+                    sent += chunk.size
+                } finally {
+                    zip?.delete()
+                }
             }
-            active.uploadTreeFile(repoId, UploadPaths.ROOT, files.size.toLong(), zip.absolutePath)
             main.post {
-                setBusy(false, getString(R.string.status_sent_count, files.size))
+                setBusy(false, getString(R.string.status_sent_count, sent))
                 refreshManifest()
                 refreshDecisions()
             }
         } catch (e: Exception) {
             main.post { failBusy(getString(R.string.error_tree), e) }
-        } finally {
-            zip?.delete()
         }
     }
 

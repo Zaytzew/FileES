@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	v1 "filees/pkg/mobile/v1"
@@ -88,4 +89,52 @@ func (l Ledger) Put(rec Record) error {
 		return err
 	}
 	return fsdurable.SyncDir(l.Dir)
+}
+
+// maxLogFieldLen bounds every field LogError writes, so one adversarial or
+// pathological error string cannot grow the file unboundedly.
+const maxLogFieldLen = 512
+
+// LogError appends one bounded, best-effort diagnostic line to
+// <Dir>/errors.log for a request the client only ever saw a generic, masked
+// error for (Dispatcher.writeError's "worker.failed" fallback never leaks
+// raw tool text to the phone - see internal/servertool/mobile_entry.go's
+// forced-command boundary). This directory is the same one the ledger
+// already writes durable records into under obsandbox's existing rwc
+// unveil, so this needs no new sandbox surface. An administrator with a
+// shell on the host can grep this file by request_id; the phone never sees
+// it. A failure to write is swallowed: logging must never affect a response
+// already being sent.
+func (l Ledger) LogError(requestID, clientID, operation, cause string) {
+	line := fmt.Sprintf(
+		"%s\trequest_id=%s\tclient_id=%s\top=%s\tcause=%s\n",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		sanitizeLogField(requestID), sanitizeLogField(clientID),
+		sanitizeLogField(operation), sanitizeLogField(cause),
+	)
+	if err := os.MkdirAll(l.Dir, 0o700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(l.Dir, "errors.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(line)
+}
+
+// sanitizeLogField folds control characters (the file is tab-delimited, one
+// record per line) and truncates so one field cannot inject a fake record or
+// grow the file unboundedly.
+func sanitizeLogField(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > maxLogFieldLen {
+		s = s[:maxLogFieldLen]
+	}
+	return s
 }

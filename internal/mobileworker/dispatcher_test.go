@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -137,6 +139,65 @@ func TestDispatchReadDeniedWithoutGrant(t *testing.T) {
 	resp, _ := serve(t, d, frame)
 	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "access.denied" {
 		t.Fatalf("expected access.denied error, got %+v", resp)
+	}
+}
+
+// A cause writeError cannot name with a specific code must still reach an
+// administrator, keyed by the same request_id the client's masked error
+// carries - the client only ever sees "worker.failed"/"operation failed".
+// "request_id reused with a different payload" (tree.go) is one such
+// unmapped cause: reuse a committed request_id with different content.
+func TestWriteErrorLogsGenericFailureCauseForAdministrator(t *testing.T) {
+	requireSVN(t)
+	d := newDispatcher(t, newSeededRepo(t), "rw")
+
+	rid := uuid.NewString()
+	first := packTree(t, map[string][]byte{"note.txt": []byte("v1")})
+	frame := frameRequest(t, rid, v1.OpUploadTree, v1.UploadTreePayload{
+		RepoID: "r", ParentPath: "mobile-uploads", FileCount: 1, Size: int64(len(first)), Sha256: sha(first),
+	}, first)
+	if resp, _ := serve(t, d, frame); resp.Status != v1.StatusOK {
+		t.Fatalf("first UPLOAD_TREE: status = %s error = %+v", resp.Status, resp.Error)
+	}
+
+	second := packTree(t, map[string][]byte{"note.txt": []byte("v2, a different payload, same request_id")})
+	frame = frameRequest(t, rid, v1.OpUploadTree, v1.UploadTreePayload{
+		RepoID: "r", ParentPath: "mobile-uploads", FileCount: 1, Size: int64(len(second)), Sha256: sha(second),
+	}, second)
+	resp, _ := serve(t, d, frame)
+	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "worker.failed" {
+		t.Fatalf("expected worker.failed error on reused request_id, got %+v", resp)
+	}
+
+	logged, err := os.ReadFile(filepath.Join(d.Appender.Ledger.Dir, "errors.log"))
+	if err != nil {
+		t.Fatalf("errors.log: %v", err)
+	}
+	text := string(logged)
+	for _, want := range []string{rid, "client-1", "UPLOAD_TREE", "request_id reused with a different payload"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("errors.log missing %q: %s", want, text)
+		}
+	}
+}
+
+// A cause already named by a specific code (access.denied here) must not
+// also get a log line - that would just duplicate what the client's own
+// error message already says, for every ordinary denial.
+func TestWriteErrorDoesNotLogWhenTheCauseIsAlreadyNamed(t *testing.T) {
+	requireSVN(t)
+	d := newDispatcher(t, newSeededRepo(t), "") // no grant -> ErrAccessDenied
+
+	body := []byte("zzzz")
+	frame := frameRequest(t, uuid.NewString(), v1.OpUploadTree, v1.UploadTreePayload{
+		RepoID: "r", ParentPath: "mobile-uploads", FileCount: 1, Size: int64(len(body)), Sha256: sha(body),
+	}, body)
+	resp, _ := serve(t, d, frame)
+	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "access.denied" {
+		t.Fatalf("expected access.denied error, got %+v", resp)
+	}
+	if _, err := os.Stat(filepath.Join(d.Appender.Ledger.Dir, "errors.log")); !os.IsNotExist(err) {
+		t.Fatalf("errors.log should not exist for an already-named cause, stat err = %v", err)
 	}
 }
 

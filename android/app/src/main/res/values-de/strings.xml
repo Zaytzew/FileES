@@ -25,6 +25,7 @@
     </plurals>
     <string name="status_packing">Wird gepackt…</string>
     <string name="status_sending_pack">Paket wird gesendet (%1$s)…</string>
+    <string name="status_sending_pack_chunk">Paket %1$d/%2$d wird gesendet (%3$s)…</string>
     <string name="error_tree">Paket nicht angenommen</string>
     <string name="error_tree_unsupported">Das Telefon hat den Ordner in ein Zip gepackt und in einer Verbindung gesendet. Der Server kann dieses Paket noch nicht annehmen — das ist dieser Versuch.</string>
     <string name="status_sending">Wird gesendet…</string>

@@ -144,8 +144,18 @@ object FileesWatchTick {
     }
 
     // Same threshold as the foreground "Dodaj folder" path: eight or more
-    // new files in one watched tree become one UPLOAD_TREE session, not a
-    // storm of SSH handshakes (TREE_INGEST). Smaller bursts stay one-by-one.
+    // new files in one watched tree become one or more UPLOAD_TREE sessions
+    // instead of a storm of SSH handshakes (TREE_INGEST). Smaller bursts
+    // stay one-by-one.
+    //
+    // Each size-bounded chunk (FolderPreflight.chunkBySize) is its own
+    // complete pack, sent and marked seen independently - a phone runs on
+    // cellular, not a comfortable office link, so it must not bet a whole
+    // backlog on one SSH session staying open long enough to carry all of
+    // it. If a later chunk fails, everything already marked seen here has
+    // already landed and will not be resent; the next tick resumes exactly
+    // at the chunk that failed, not from zero (implementation notes (not distributed)
+    // §5, applied here instead of only to the desktop's own large import).
     private fun sendPacked(
         context: Context,
         client: Client,
@@ -153,15 +163,19 @@ object FileesWatchTick {
         repoId: String,
         files: List<WalkedFile>,
     ): Pair<Int, Int> {
-        var zip: File? = null
-        try {
-            zip = TreeZip.pack(context.contentResolver, files, context.cacheDir)
-            client.uploadTreeFile(repoId, UploadPaths.ROOT, files.size.toLong(), zip.absolutePath)
-            files.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
-            return files.size to 0
-        } finally {
-            zip?.delete()
+        var sent = 0
+        for (chunk in FolderPreflight.chunkBySize(files)) {
+            var zip: File? = null
+            try {
+                zip = TreeZip.pack(context.contentResolver, chunk, context.cacheDir)
+                client.uploadTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), zip.absolutePath)
+                chunk.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
+                sent += chunk.size
+            } finally {
+                zip?.delete()
+            }
         }
+        return sent to 0
     }
 
     private fun sendOneByOne(

@@ -25,6 +25,7 @@
     </plurals>
     <string name="status_packing">Empaquetage…</string>
     <string name="status_sending_pack">Envoi du paquet (%1$s)…</string>
+    <string name="status_sending_pack_chunk">Envoi du paquet %1$d/%2$d (%3$s)…</string>
     <string name="error_tree">Paquet non accepté</string>
     <string name="error_tree_unsupported">Le téléphone a empaqueté le dossier en un zip et l’a envoyé en une connexion. Le serveur ne peut pas encore accepter ce paquet — c’est cette tentative.</string>
     <string name="status_sending">Envoi…</string>

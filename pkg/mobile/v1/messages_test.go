@@ -241,6 +241,60 @@ func TestListRepositoriesResultValidation(t *testing.T) {
 	}
 }
 
+func TestListDrawersResultValidation(t *testing.T) {
+	empty := ListDrawersResult{Drawers: []DrawerSummary{}, Assignments: map[string]string{}}
+	if _, err := NewSuccess(rid(), OpListDrawers, empty); err != nil {
+		t.Fatalf("no drawers is the ordinary state, not an error: %v", err)
+	}
+
+	ok := ListDrawersResult{
+		Version:     uuid.NewString(),
+		Drawers:     []DrawerSummary{{ID: "d-1", Name: "Archiwum"}},
+		Assignments: map[string]string{"repo-1": "d-1"},
+	}
+	resp, err := NewSuccess(rid(), OpListDrawers, ok)
+	if err != nil {
+		t.Fatalf("valid drawers result: %v", err)
+	}
+	raw, _ := json.Marshal(resp)
+	if _, err := ParseResponse(raw); err != nil {
+		t.Fatalf("drawers result round-trip: %v", err)
+	}
+
+	if _, err := NewSuccess(rid(), OpListDrawers, ListDrawersResult{}); err != nil {
+		t.Fatalf("nil drawers/assignments is the ordinary no-drawers state: %v", err)
+	}
+
+	badVersion := ok
+	badVersion.Version = "not-a-uuid"
+	if _, err := NewSuccess(rid(), OpListDrawers, badVersion); err == nil {
+		t.Fatal("non-uuid version should be rejected")
+	}
+
+	dupID := ok
+	dupID.Drawers = []DrawerSummary{{ID: "d-1", Name: "A"}, {ID: "d-1", Name: "B"}}
+	if _, err := NewSuccess(rid(), OpListDrawers, dupID); err == nil {
+		t.Fatal("duplicate drawer id should be rejected")
+	}
+
+	badID := ok
+	badID.Drawers = []DrawerSummary{{ID: "has a space", Name: "A"}}
+	if _, err := NewSuccess(rid(), OpListDrawers, badID); err == nil {
+		t.Fatal("drawer id outside [a-zA-Z0-9-] should be rejected")
+	}
+
+	blankName := ok
+	blankName.Drawers = []DrawerSummary{{ID: "d-1", Name: "  "}}
+	if _, err := NewSuccess(rid(), OpListDrawers, blankName); err == nil {
+		t.Fatal("blank drawer name should be rejected")
+	}
+
+	dangling := ListDrawersResult{Drawers: []DrawerSummary{}, Assignments: map[string]string{"repo-1": "d-missing"}}
+	if _, err := NewSuccess(rid(), OpListDrawers, dangling); err == nil {
+		t.Fatal("assignment naming an unknown drawer should be rejected")
+	}
+}
+
 func TestRefreshResultNotModified(t *testing.T) {
 	resp, err := NewSuccess(rid(), OpRefreshManifest, RefreshManifestResult{NotModified: true})
 	if err != nil {

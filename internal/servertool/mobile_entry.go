@@ -14,7 +14,9 @@ import (
 	"filees/internal/mobileworker"
 	"filees/internal/obsandbox"
 	"filees/pkg/clientview"
+	"filees/pkg/guiblob"
 	"filees/pkg/realmbranding"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 )
 
@@ -57,6 +59,17 @@ const (
 // regardless of a repository's initializing/active state, so mobile stays
 // consistent with the desktop access model rather than inventing a second,
 // stricter one.
+// drawerBlobReader adapts repoworker.GUIBlobStore (the same storage
+// GET_GUI_BLOB/SET_GUI_BLOB use) to mobileworker.DrawerReader's read-only
+// method. Exchange with a nil write already never mutates the document; this
+// adapter exists so the mobile path is handed an interface that has no
+// method capable of writing at all.
+type drawerBlobReader struct{ store repoworker.GUIBlobStore }
+
+func (r drawerBlobReader) Read(ctx context.Context, realmID string) (guiblob.State, error) {
+	return r.store.Exchange(ctx, realmID, nil)
+}
+
 type clientviewMobileAuthority struct {
 	ServiceWorkingCopy string
 	RepositoriesRoot   string
@@ -214,7 +227,7 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		report(stderr, "filees-mobile-v1 config", err)
 		return ExitConfig
 	}
-	if !filepath.IsAbs(config.Repositories.Root) || !filepath.IsAbs(config.Activation.ServiceWorkingCopy) {
+	if !filepath.IsAbs(config.Repositories.Root) || !filepath.IsAbs(config.Activation.ServiceWorkingCopy) || !filepath.IsAbs(config.Repositories.ResultsRoot) {
 		fmt.Fprintln(stderr, "filees-mobile-v1: repository configuration is incomplete")
 		return ExitConfig
 	}
@@ -222,11 +235,12 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		ServiceWorkingCopy: config.Activation.ServiceWorkingCopy,
 		RepositoriesRoot:   config.Repositories.Root,
 	}
+	guiBlobRoot := filepath.Join(config.Repositories.ResultsRoot, "gui-blobs")
 
 	profile := obsandbox.Profile{
 		Name:     "filees-mobile-v1",
 		Promises: mobileEntryPromises,
-		Paths:    mobileUnveilPaths(config.Repositories.Root, config.Activation.ServiceWorkingCopy, ledgerDir, svnPath, svnlookPath),
+		Paths:    mobileUnveilPaths(config.Repositories.Root, config.Activation.ServiceWorkingCopy, guiBlobRoot, ledgerDir, svnPath, svnlookPath),
 	}
 	if err := obsandbox.Apply(profile); err != nil {
 		report(stderr, "filees-mobile-v1 sandbox", err)
@@ -237,6 +251,7 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		Browser: mobileworker.Browser{
 			Authority: authority,
 			Reader:    mobileworker.SVNReader{SvnPath: svnPath, SvnlookPath: svnlookPath},
+			Drawers:   drawerBlobReader{store: repoworker.GUIBlobStore{Root: guiBlobRoot}},
 		},
 		Appender: mobileworker.Appender{
 			Authority: authority,
@@ -265,7 +280,7 @@ func execMobileWorkerSubcommand(subcommand, operationID, clientID string) error 
 	return syscall.Exec(workerPath, []string{"filees-worker", subcommand, operationID, clientID}, []string{})
 }
 
-func mobileUnveilPaths(repositoriesRoot, serviceWorkingCopy, ledgerDir, svnPath, svnlookPath string) []obsandbox.Path {
+func mobileUnveilPaths(repositoriesRoot, serviceWorkingCopy, guiBlobRoot, ledgerDir, svnPath, svnlookPath string) []obsandbox.Path {
 	return []obsandbox.Path{
 		{Label: "svn", Name: svnPath, Perms: "rx"},
 		{Label: "svnlook", Name: svnlookPath, Perms: "rx"},
@@ -278,6 +293,12 @@ func mobileUnveilPaths(repositoriesRoot, serviceWorkingCopy, ledgerDir, svnPath,
 		// Read-only: this dispatcher only ever reads
 		// clients/<clientID>/view.json, never writes to the service WC.
 		{Label: "service-working-copy", Name: serviceWorkingCopy, Perms: "r"},
+		// rwc, not r: repoworker.GUIBlobStore.Exchange takes a flock on
+		// <realm>.lock even for a nil-write read (pkg/repoworker/lock_unix.go
+		// opens O_RDWR|O_CREATE). drawerBlobReader never passes a non-nil
+		// write, so the stored <realm>.json itself is never touched here -
+		// only the lock file needs the extra permission.
+		{Label: "gui-blobs", Name: guiBlobRoot, Perms: "rwc"},
 		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
 		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},

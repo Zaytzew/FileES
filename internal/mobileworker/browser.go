@@ -80,6 +80,10 @@ type Reader interface {
 type Browser struct {
 	Authority Authority
 	Reader    Reader
+	// Drawers is optional. Nil means this server has no drawer storage
+	// wired in and LIST_DRAWERS answers ErrDrawersUnavailable; it is never
+	// nil just because a realm has no drawers of its own.
+	Drawers DrawerReader
 }
 
 // RefreshManifest returns NOT_MODIFIED only when both the control-plane view

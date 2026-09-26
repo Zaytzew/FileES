@@ -111,6 +111,13 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		_ = json.Unmarshal(req.Payload, &p)
 		return d.writeOK(out, req, d.status(p.TargetRequestID), nil)
 
+	case v1.OpListDrawers:
+		res, err := d.Browser.ListDrawers(ctx, d.ClientID)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		return d.writeOK(out, req, res, nil)
+
 	case v1.OpRequestDesktopJoin:
 		if d.Joiner == nil {
 			body := v1.ErrorBody{Code: "op.unsupported", Message: "operation not supported"}
@@ -166,6 +173,9 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	}
 	if errors.Is(err, errTreePayloadCorrupt) {
 		code, msg = "tree.payload_corrupt", "zip sha256 or size does not match the header"
+	}
+	if errors.Is(err, ErrDrawersUnavailable) {
+		code, msg = "op.unsupported", "operation not supported"
 	}
 	return d.writeErrorBody(out, req, v1.ErrorBody{Code: code, Message: msg})
 }

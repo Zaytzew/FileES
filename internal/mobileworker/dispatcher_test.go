@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"filees/pkg/guiblob"
 	v1 "filees/pkg/mobile/v1"
 	"github.com/google/uuid"
 )
@@ -152,6 +153,37 @@ func TestDispatchListRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res.RealmAlias != "acme" || res.ServerDisplayName != "Serwer testowy" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" || res.Repositories[0].Purpose != "upload_shelf" {
+		t.Fatalf("projection = %+v", res)
+	}
+}
+
+func TestDispatchListDrawersUnsupportedWithoutStore(t *testing.T) {
+	d := newDispatcher(t, "", "rw") // Drawers left nil, like newDispatcher's other fields.
+
+	frame := frameRequest(t, uuid.NewString(), v1.OpListDrawers, v1.ListDrawersPayload{}, nil)
+	resp, _ := serve(t, d, frame)
+	if resp.Status != v1.StatusError || resp.Error.Code != "op.unsupported" {
+		t.Fatalf("status = %s, error = %+v", resp.Status, resp.Error)
+	}
+}
+
+func TestDispatchListDrawersProjection(t *testing.T) {
+	d := newDispatcher(t, "", "rw")
+	d.Browser.Drawers = fakeDrawerReader{state: guiblob.State{
+		Version: uuid.NewString(),
+		Data:    `{"schema":"filees.gui.drawers/v1","drawers":[{"id":"d-1","name":"Archiwum"}],"repos":{"repo-1":"d-1"}}`,
+	}}
+
+	frame := frameRequest(t, uuid.NewString(), v1.OpListDrawers, v1.ListDrawersPayload{}, nil)
+	resp, _ := serve(t, d, frame)
+	if resp.Status != v1.StatusOK {
+		t.Fatalf("status = %s, error = %+v", resp.Status, resp.Error)
+	}
+	var res v1.ListDrawersResult
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Drawers) != 1 || res.Drawers[0].ID != "d-1" || res.Assignments["repo-1"] != "d-1" {
 		t.Fatalf("projection = %+v", res)
 	}
 }

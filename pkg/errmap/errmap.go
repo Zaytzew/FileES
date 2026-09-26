@@ -134,8 +134,17 @@ var (
 	mobilePackNeedles = []string{
 		"not a filees tree pack",
 	}
+	// "upload_tree" alone used to be here too, but pkg/mobileclient.Client's
+	// UploadTree wraps every failure of this operation as "UPLOAD_TREE:
+	// %w" - so that needle matched ANY failure of this op, not specifically
+	// a server that cannot ingest it. internal/mobileworker/tree.go has
+	// fully implemented ingest since r1011; two live incidents, 2026-09-26,
+	// against two different servers both confirmed at HEAD, showed this
+	// needle confidently misreporting an unrelated transport failure as
+	// "server missing apply". "not ingested" alone stays: unlike the
+	// operation's own name, nothing else legitimately produces this phrase.
 	mobileTreeNeedles = []string{
-		"upload_tree", "not ingested",
+		"not ingested",
 	}
 	mobileOpNeedles = []string{
 		"status 70", "op.unsupported",
@@ -161,6 +170,13 @@ var (
 	// died mid-operation, not a connection that never came up.
 	connDroppedNeedles = []string{
 		"not responding", // OpenSSH: "Timeout, server ... not responding."
+		// golang.org/x/crypto/ssh's own wording (not OpenSSH's) when a
+		// channel closes before any exit-status/exit-signal request
+		// arrives - an abrupt connection loss mid-operation, not a graceful
+		// remote exit. Live, 2026-09-26, against spot.example.net (confirmed
+		// at HEAD): "sshtransport: session failed: wait: remote command
+		// exited without exit status or exit signal".
+		"exited without exit status or exit signal",
 	}
 	// sessionEndedNeedles matches the marker session_supervisor_unix.go
 	// writes to its own stderr — which is the tunnel's stderr from the

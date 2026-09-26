@@ -5,8 +5,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val releaseKeystore = file("${System.getProperty("user.home")}/.filees/android-release.p12")
-val releaseKeyProps = file("${System.getProperty("user.home")}/.filees/android-release.properties")
+val releaseKeyDir = listOfNotNull(
+    System.getenv("FILEES_ANDROID_HOME")?.let { file(it) },
+    file("/home/acme/.filees"),
+    file("${System.getProperty("user.home")}/.filees"),
+).firstOrNull { file("$it/android-release.p12").isFile } ?: file("${System.getProperty("user.home")}/.filees")
+val releaseKeystore = file("$releaseKeyDir/android-release.p12")
+val releaseKeyProps = file("$releaseKeyDir/android-release.properties")
 val buildingRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
 if (buildingRelease && (!releaseKeystore.isFile || !releaseKeyProps.isFile)) {
     error("Release APK requires ${releaseKeystore}. Debug builds do not use this key.")
@@ -21,7 +26,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 42
-        versionName = "0.1.17+r1592"
+        versionName = "0.1.17+r1593"
     }
 
     signingConfigs {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "filees/pkg/mobile/v1"
 	"filees/pkg/mobileclient"
 	"filees/pkg/mobileclient/sshtransport"
 
@@ -26,8 +27,10 @@ const (
 // wired together behind plain string/[]byte/error — Kotlin never sees the v1
 // or ssh types directly, for the same reason as Store in androidbind.go.
 type Client struct {
-	inner mobileclient.Client
-	ident identity
+	inner  mobileclient.Client
+	ident  identity
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewClient loads or creates the device's persistent Ed25519 identity under
@@ -53,7 +56,8 @@ func NewClient(storeDir, address, user, hostPublicKey string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Client{ctx: ctx, cancel: cancel,
 		inner: mobileclient.Client{Transport: transport, Store: mobileclient.Store{Root: storeDir}},
 		ident: ident,
 	}, nil
@@ -82,7 +86,7 @@ func PublicKeyIn(storeDir string) (string, error) {
 // repositories[{repo_id, display_name, access, state, purpose}]). Mobile never creates repositories:
 // the UI picks one of these shares and later operations send that repo_id.
 func (c *Client) ListRepositoriesJSON() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
 	defer cancel()
 	res, err := c.inner.ListRepositories(ctx)
 	if err != nil {
@@ -99,7 +103,7 @@ func (c *Client) ListRepositoriesJSON() (string, error) {
 // ({version, drawers[{id,name}], assignments{repo_id:drawer_id}}).
 // An error means the phone should keep the repository list flat.
 func (c *Client) ListDrawersJSON() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
 	defer cancel()
 	res, err := c.inner.ListDrawers(ctx)
 	if err != nil {
@@ -116,7 +120,7 @@ func (c *Client) ListDrawersJSON() (string, error) {
 // email. The phone never receives the invite blob; mail + BeginInvitation
 // stay the desktop path.
 func (c *Client) RequestDesktopJoin(email string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
 	defer cancel()
 	return c.inner.RequestDesktopJoin(ctx, email)
 }
@@ -125,7 +129,7 @@ func (c *Client) RequestDesktopJoin(email string) error {
 // returns it as JSON, or "" if nothing has ever been cached and the server
 // reports no manifest either.
 func (c *Client) RefreshJSON(repoID string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
 	defer cancel()
 	manifest, err := c.inner.Refresh(ctx, repoID)
 	if err != nil {
@@ -145,7 +149,7 @@ func (c *Client) RefreshJSON(repoID string) (string, error) {
 // (entries in the object, not a recursive tree). revision/generation pin the
 // local directory cache; 0 lets the worker use HEAD.
 func (c *Client) ListDirectoryJSON(repoID, path string, revision, generation int64) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
 	defer cancel()
 	m, err := c.inner.ListDirectory(ctx, repoID, path, generation, revision)
 	if err != nil {
@@ -160,7 +164,7 @@ func (c *Client) ListDirectoryJSON(repoID, path string, revision, generation int
 
 // ListFilesUnderJSON walks directory pages and returns {"entries":[files…]}.
 func (c *Client) ListFilesUnderJSON(repoID, path string, revision, generation int64) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), downloadTimeout)
 	defer cancel()
 	files, err := c.inner.ListFilesUnder(ctx, repoID, path, generation, revision)
 	if err != nil {
@@ -179,7 +183,7 @@ func (c *Client) DownloadTo(repoID, path, destPath string) error {
 	if strings.TrimSpace(destPath) == "" {
 		return errors.New("androidbind: dest_path is required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), downloadTimeout)
 	defer cancel()
 	data, err := c.inner.Read(ctx, repoID, path)
 	if err != nil {
@@ -191,16 +195,18 @@ func (c *Client) DownloadTo(repoID, path, destPath string) error {
 // UploadTreeFile sends a zip produced by the Android packer as one UPLOAD_TREE
 // frame. The worker unpacks a filees.tree/v1 pack under mobile-uploads/.
 func (c *Client) UploadTreeFile(repoID, parentPath string, fileCount int, zipPath string) error {
-	if strings.TrimSpace(zipPath) == "" {
-		return errors.New("androidbind: zip_path is required")
-	}
-	zip, err := os.ReadFile(zipPath)
+	id, err := c.EnqueueTreeFile(repoID, parentPath, fileCount, zipPath, "[]")
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
-	defer cancel()
-	return c.inner.UploadTree(ctx, repoID, parentPath, fileCount, zip)
+	item, err := c.inner.SendUpload(c.baseContext(), repoID, id)
+	if err != nil {
+		return err
+	}
+	if item.State != mobileclient.UploadCommitted {
+		return fmt.Errorf("UPLOAD_TREE: %s: %s", item.State, item.LastError)
+	}
+	return nil
 }
 
 // EnqueueUpload durably queues a new append-only-unique candidate (concept
@@ -219,7 +225,7 @@ func (c *Client) EnqueueUpload(repoID, parentPath, filename, contentType string,
 // array — see mobileclient.PendingUpload for the shape.
 func (c *Client) DrainPendingJSON(repoID string) (string, error) {
 	// No batch deadline: each queued file has its own timeout inside DrainPending.
-	items, err := c.inner.DrainPending(context.Background(), repoID)
+	items, err := c.inner.DrainPending(c.baseContext(), repoID)
 	if err != nil {
 		return "", err
 	}
@@ -260,6 +266,57 @@ func (c *Client) DiscardUpload(repoID, id string) error {
 // RetryUploadAs requeues a conflict/parked candidate under filename
 // (empty keeps the original name) with a new request_id.
 func (c *Client) RetryUploadAs(repoID, id, filename string) error {
-	_, err := c.inner.Store.RetryUploadAs(repoID, id, filename)
+	_, err := c.inner.Store.RetryUploadAsContext(c.baseContext(), repoID, id, filename)
 	return err
+}
+
+// Cancel closes pending network I/O on this handle. A stopped worker creates
+// a fresh handle on its next run; cancellation cannot cancel another worker.
+func (c *Client) Cancel() {
+	if c.cancel != nil {
+		c.cancel()
+	}
+}
+func (c *Client) baseContext() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
+}
+
+func (c *Client) enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON string, operation v1.Operation, count int) (string, error) {
+	var sources []string
+	if err := json.Unmarshal([]byte(sourcesJSON), &sources); err != nil {
+		return "", err
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	item, err := c.inner.Store.EnqueueReader(c.baseContext(), repoID, parent, name, contentType, operation, count, sources, f)
+	if err != nil {
+		return "", err
+	}
+	return item.ID, nil
+}
+
+// EnqueueTreeFile durably imports the streamed ZIP, keeping its sources and ID.
+func (c *Client) EnqueueTreeFile(repoID, parent string, count int, filePath, sourcesJSON string) (string, error) {
+	return c.enqueueFile(repoID, parent, "tree.zip", "application/zip", filePath, sourcesJSON, v1.OpUploadTree, count)
+}
+
+// EnqueueUploadFile streams a SAF spool into the durable queue without []byte.
+func (c *Client) EnqueueUploadFile(repoID, parent, name, contentType, filePath, sourcesJSON string) (string, error) {
+	return c.enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON, v1.OpUploadObject, 1)
+}
+
+// SendUploadJSON reports only the requested ID, including uncertain/parked.
+func (c *Client) SendUploadJSON(repoID, id string) (string, error) {
+	item, err := c.inner.SendUpload(c.baseContext(), repoID, id)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal([]mobileclient.PendingUpload{item})
+	return string(raw), err
 }

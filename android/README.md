@@ -122,3 +122,32 @@ Practical notes from driving the UI over `adb` for this test:
   a string of unrelated `*isn't responding*` ANRs for `system_server`,
   the launcher, and SystemUI in the first few minutes — none of that is
   about this app; wait it out rather than debugging it.
+
+## Capture stabilization — 2026-09-27
+
+CaptureTransfers is the common foreground/watch spool-and-send path. SAF and
+ZIP data stream into the durable Go queue before network I/O. Sources + ID
+survive lost ACKs/restarts. Delivered/deduplicated are the only success states;
+conflict/parked/uncertain remain queued. A process-wide coordinator and the
+Go store lock serialize work; cancellation closes active I/O. WorkManager
+appends the next tick, and successful background sends stay silent.
+
+The frame protocol does not resume at byte offsets: retry sends the same
+whole pack under the same ID. The client batches at 32 MiB / 1000 files and
+accepts at most 2 GiB per file/unpacked pack; the authoritative server limit
+is 5000 entries / 2 GiB, with 16 MiB ZIP overhead. Unknown SAF sizes are
+measured, never treated as permission to buffer an unlimited file in RAM.
+
+Instrumentation has no JUnit dependency: `assembleDebugAndroidTest`, then
+`adb shell am instrument -w net.filees.mobile.test/net.filees.mobile.CaptureInstrumentation`.
+Its provider is in the **test APK only**. The optional SSH/SVN fixture is
+```sh
+FILEES_CAPTURE_EMULATOR_FIXTURE=/tmp/<new-dir> go test ./pkg/mobileclient/androidbind \
+  -run '^TestCaptureEmulatorBackend$' -v -timeout 22m
+```
+Pass its endpoint.json host_key as an instrumentation argument; create
+`<new-dir>/done` afterward. For the separate process-restart test, use a new
+fixture and run instrumentation with `-e process_phase prepare`, force-stop
+`net.filees.mobile`, then run `-e process_phase resume` with the same host key.
+Instrumentation waits for Application startup before creating its SAF payloads.
+See implementation notes (not distributed) for the exact run.

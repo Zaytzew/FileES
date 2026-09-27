@@ -214,6 +214,11 @@ func runStream(ctx context.Context, stdout io.Writer, name string, args ...strin
 		args = append([]string{"--non-interactive"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
+	if lock, ok := ctx.Value(operationLockKey{}).(*os.File); ok {
+		if err := inheritOperationLock(cmd, lock); err != nil {
+			return err
+		}
+	}
 	cmd.Stdout = stdout
 	cmd.Env = svnProcessEnvironment()
 	var errb bytes.Buffer

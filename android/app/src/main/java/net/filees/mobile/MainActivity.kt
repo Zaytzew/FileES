@@ -194,6 +194,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        captureCancellation.cancel()
         super.onDestroy()
         pulseAnimator?.cancel()
     }
@@ -728,81 +729,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Chunked the same way as the background watch tick
-    // (FileesWatchTick.sendPacked): each size-bounded pack is its own
-    // complete UPLOAD_TREE session, so one slow or unstable link cannot
-    // force the whole selection onto a single SSH session that a real
-    // network is never guaranteed to hold open long enough to finish
-    // (implementation notes (not distributed) §5).
-    private fun sendPacked(files: List<WalkedFile>) {
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
-        main.post { setBusy(true, getString(R.string.status_packing)) }
-        val chunks = FolderPreflight.chunkBySize(files)
-        var sent = 0
-        try {
-            chunks.forEachIndexed { index, chunk ->
-                var zip: File? = null
-                try {
-                    zip = TreeZip.pack(contentResolver, chunk, cacheDir)
-                    main.post {
-                        setBusy(
-                            true,
-                            if (chunks.size > 1) {
-                                getString(
-                                    R.string.status_sending_pack_chunk,
-                                    index + 1, chunks.size, HumanSize.format(zip.length()),
-                                )
-                            } else {
-                                getString(R.string.status_sending_pack, HumanSize.format(zip.length()))
-                            },
-                        )
-                    }
-                    active.uploadTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), zip.absolutePath)
-                    sent += chunk.size
-                } finally {
-                    zip?.delete()
-                }
-            }
-            main.post {
-                setBusy(false, getString(R.string.status_sent_count, sent))
-                refreshManifest()
-                refreshDecisions()
-            }
-        } catch (e: Exception) {
-            main.post { failBusy(getString(R.string.error_tree), e) }
-        }
-    }
+    private val captureCancellation = CaptureCancellation()
 
-    private fun sendOneByOne(files: List<WalkedFile>) {
+    private fun sendPacked(files: List<WalkedFile>) = sendCaptured(files, true)
+    private fun sendOneByOne(files: List<WalkedFile>) = sendCaptured(files, false)
+
+    private fun sendCaptured(files: List<WalkedFile>, packed: Boolean) {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
-        var done = 0
         try {
-            for ((index, file) in files.withIndex()) {
-                main.post {
-                    setBusy(true, getString(R.string.status_sending_progress, index + 1, files.size))
-                }
-                val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
-                active.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
-                val report = UploadDrain.run(active, repoId)
-                if (report.transportError != null) {
-                    throw RuntimeException(report.transportError)
-                }
-                done++
-            }
+            val result = CaptureTransfers.send(this, active, repoId, files, packed, captureCancellation)
             main.post {
-                setBusy(false, getString(R.string.status_sent_count, done))
+                if (result.errors.isNotEmpty()) {
+                    failBusy(getString(R.string.error_send_partial, result.sent, files.size), java.io.IOException(result.errors.distinct().take(5).joinToString("\n")))
+                } else {
+                    setBusy(false, getString(R.string.status_sent_count, result.sent))
+                }
                 refreshManifest()
                 refreshDecisions()
             }
         } catch (e: Exception) {
-            val sent = done
-            main.post {
-                failBusy(getString(R.string.error_send_partial, sent, files.size), e)
-                refreshManifest()
-                refreshDecisions()
-            }
+            main.post { failBusy(getString(R.string.error_send), e) }
         }
     }
 
@@ -1042,7 +989,11 @@ class MainActivity : AppCompatActivity() {
         val repoId = uploadRepoId() ?: return
         io.execute {
             try {
-                active.discardUpload(repoId, item.id)
+                CaptureCoordinator.run(captureCancellation) {
+                    val watched = WatchedFolders(this)
+                    item.sources.forEach { watched.markSeen(it) } // explicit discard must survive a watch rescan
+                    active.discardUpload(repoId, item.id)
+                }
                 main.post { refreshDecisions() }
             } catch (e: Exception) {
                 main.post { failBusy(getString(R.string.error_send), e) }
@@ -1073,10 +1024,7 @@ class MainActivity : AppCompatActivity() {
         if (filename.isBlank()) return
         io.execute {
             try {
-                val payload = File(filesDir, "uploads/$repoId/${item.id}.bin").readBytes()
-                val type = item.contentType.ifBlank { "application/octet-stream" }
-                active.enqueueUpload(repoId, item.parentPath, filename, type, payload)
-                active.discardUpload(repoId, item.id)
+                active.retryUploadAs(repoId, item.id, filename)
                 val report = UploadDrain.run(active, repoId)
                 if (report.transportError != null) {
                     throw RuntimeException(report.transportError)
@@ -1169,7 +1117,7 @@ class MainActivity : AppCompatActivity() {
         if (client == null || selectedRepoId.isNullOrBlank() || watched.uris().isEmpty()) return
         io.execute {
             try {
-                FileesWatchTick.run(this)
+                FileesWatchTick.run(this, captureCancellation)
             } catch (_: Exception) {
             }
             main.post { refreshDecisions() }

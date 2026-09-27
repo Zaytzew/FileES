@@ -17,12 +17,14 @@ import (
 )
 
 const (
-	maxTreeFiles        = 5000
-	maxTreeUncompressed = 2 << 30
+	maxTreeFiles        = v1.MaxTreeFiles
+	maxTreeUncompressed = v1.MaxUploadBytes
 )
 
 // errNotTreePack is a zip that is a repository artifact (or any other
 // unmarked archive), not FileES wire packaging. The worker must not unpack it.
+var errUploadLimit = errors.New("upload exceeds file count or size limit")
+
 var errTreeIncomplete = errors.New("tree file count does not match the header")
 
 var errNotTreePack = errors.New("not a filees tree pack")
@@ -57,23 +59,30 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		return v1.UploadTreeResult{}, errors.New("parent_path must be under mobile-uploads/")
 	}
 
-	if rec, err := a.Ledger.Lookup(requestID); err != nil {
+	lock, err := a.Ledger.lockOperation(requestID)
+	if err != nil {
+		return v1.UploadTreeResult{}, err
+	}
+	defer lock.Close()
+	ctx = context.WithValue(ctx, operationLockKey{}, lock)
+	intent := Record{RepoID: p.RepoID, Path: parent, PayloadHash: p.Sha256, Operation: v1.OpUploadTree, FileCount: p.FileCount, Size: p.Size}
+	if rec, err := a.prior(ctx, clientID, requestID, view.RepoPath, intent); err != nil {
 		return v1.UploadTreeResult{}, err
 	} else if rec != nil && rec.State == v1.OpStateCommitted {
-		if rec.PayloadHash != p.Sha256 {
-			return v1.UploadTreeResult{}, errors.New("request_id reused with a different payload")
-		}
 		return v1.UploadTreeResult{FileCount: p.FileCount, Size: p.Size, Revision: rec.Revision}, nil
 	}
 
-	spool, sum, size, err := a.spool(content)
+	if p.Size < 0 || p.Size > v1.MaxTreeWireBytes || p.FileCount < 1 || p.FileCount > maxTreeFiles {
+		return v1.UploadTreeResult{}, errUploadLimit
+	}
+	spool, sum, size, err := a.spool(content, p.Size)
 	if err != nil {
 		return v1.UploadTreeResult{}, err
 	}
 	defer os.Remove(spool)
 	// Hash and size are checked before unpack or commit. A transport
 	// bit-flip must not become a silent tree in HEAD.
-	if sum != p.Sha256 || (p.Size != 0 && p.Size != size) {
+	if sum != p.Sha256 || p.Size != size {
 		return v1.UploadTreeResult{}, errTreePayloadCorrupt
 	}
 
@@ -121,14 +130,16 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		toCommit = append(toCommit, item)
 	}
 
-	base := Record{RequestID: requestID, ClientID: clientID, RepoID: p.RepoID, Path: parent, PayloadHash: sum, State: v1.OpStateCommitting}
+	base := intent
+	base.RequestID, base.ClientID, base.State, base.BeforeRevision = requestID, clientID, v1.OpStateCommitting, rev
+	_, base.RecoveryFenced = a.Committer.(interface{ recoveryFence() })
+	base.NoChanges = len(toCommit) == 0
 	if err := a.Ledger.Put(base); err != nil {
 		return v1.UploadTreeResult{}, err
 	}
 
 	newRev, err := a.Committer.CommitTree(ctx, view.RepoPath, parent, toCommit, requestID)
 	if err != nil {
-		a.reject(base)
 		return v1.UploadTreeResult{}, err
 	}
 
@@ -172,13 +183,13 @@ func unpackTreePack(zipPath string) ([]TreeFile, string, error) {
 		}
 		if len(files) >= maxTreeFiles {
 			os.RemoveAll(dest)
-			return nil, "", fmt.Errorf("zip exceeds %d files", maxTreeFiles)
+			return nil, "", errUploadLimit
+		}
+		if entry.UncompressedSize64 > uint64(maxTreeUncompressed-uncompressed) {
+			os.RemoveAll(dest)
+			return nil, "", errUploadLimit
 		}
 		uncompressed += int64(entry.UncompressedSize64)
-		if uncompressed > maxTreeUncompressed {
-			os.RemoveAll(dest)
-			return nil, "", errors.New("zip uncompressed size exceeds limit")
-		}
 		outPath := filepath.Join(dest, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 			os.RemoveAll(dest)
@@ -233,7 +244,7 @@ func extractZipFile(entry *zip.File, dest string) (string, error) {
 	}
 	defer out.Close()
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(out, h), in); err != nil {
+	if _, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, int64(entry.UncompressedSize64)+1)); err != nil {
 		return "", err
 	}
 	if err := out.Sync(); err != nil {

@@ -22,6 +22,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        testInstrumentationRunner = "net.filees.mobile.CaptureInstrumentation"
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36

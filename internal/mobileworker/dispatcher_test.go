@@ -145,7 +145,7 @@ func TestDispatchReadDeniedWithoutGrant(t *testing.T) {
 // A cause writeError cannot name with a specific code must still reach an
 // administrator, keyed by the same request_id the client's masked error
 // carries - the client only ever sees "worker.failed"/"operation failed".
-// "request_id reused with a different payload" (tree.go) is one such
+// "request_id reused with a different intent" (tree.go) is one such
 // unmapped cause: reuse a committed request_id with different content.
 func TestWriteErrorLogsGenericFailureCauseForAdministrator(t *testing.T) {
 	requireSVN(t)
@@ -174,7 +174,7 @@ func TestWriteErrorLogsGenericFailureCauseForAdministrator(t *testing.T) {
 		t.Fatalf("errors.log: %v", err)
 	}
 	text := string(logged)
-	for _, want := range []string{rid, "client-1", "UPLOAD_TREE", "request_id reused with a different payload"} {
+	for _, want := range []string{rid, "client-1", "UPLOAD_TREE", "request_id reused with a different intent"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("errors.log missing %q: %s", want, text)
 		}

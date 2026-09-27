@@ -19,11 +19,16 @@ data class PendingUpload(
     val existingSha256: String,
     val lastError: String,
     val contentType: String,
+    val sources: List<String> = emptyList(),
+    val fileCount: Int = 1,
+    val operation: String = "UPLOAD_OBJECT",
 ) {
     /** conflict/parked need an explicit user decision -- never auto-resolved
      * (concept doc §6.4, §9.3, §10.2). Only these get a Discard action. */
     val needsDecision: Boolean
         get() = state == "conflict" || state == "parked"
+
+    val delivered: Boolean get() = state == "committed" || state == "dropped-duplicate"
 
     companion object {
         fun listFromJson(json: String): List<PendingUpload> {
@@ -41,6 +46,9 @@ data class PendingUpload(
                     existingSha256 = o.optString("existing_sha256"),
                     lastError = o.optString("last_error"),
                     contentType = o.optString("content_type"),
+                    sources = o.optJSONArray("sources")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+                    fileCount = o.optInt("file_count", 1).coerceAtLeast(1),
+                    operation = o.optString("operation", "UPLOAD_OBJECT"),
                 )
             }
         }

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -71,6 +72,11 @@ func New(cfg Config) (*Transport, error) {
 // Do implements mobileclient.Transport: one connection, one exec session, one
 // framed request out and one framed response back.
 func (t *Transport) Do(ctx context.Context, req v1.Request, reqPayload []byte) (v1.Response, []byte, error) {
+	return t.DoStream(ctx, req, bytes.NewReader(reqPayload))
+}
+
+// DoStream reads the durable spool with bounded memory.
+func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.Reader) (v1.Response, []byte, error) {
 	header, err := json.Marshal(req)
 	if err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: encode request: %w", err)
@@ -116,10 +122,10 @@ func (t *Transport) Do(ctx context.Context, req v1.Request, reqPayload []byte) (
 	defer session.Close()
 
 	var stdin bytes.Buffer
-	if err := v1.WriteFrame(&stdin, v1.RequestMagic, header, reqPayload); err != nil {
+	if err := v1.WriteFrame(&stdin, v1.RequestMagic, header, nil); err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: frame request: %w", err)
 	}
-	session.Stdin = &stdin
+	session.Stdin = io.MultiReader(&stdin, reqPayload)
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {

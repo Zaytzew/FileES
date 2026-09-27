@@ -27,7 +27,7 @@ class WatchedFolders(context: Context) {
     fun alreadySeen(key: String): Boolean = prefs.getBoolean(seenKey(key), false)
 
     fun markSeen(key: String) {
-        prefs.edit { putBoolean(seenKey(key), true) }
+        if (!prefs.edit().putBoolean(seenKey(key), true).commit()) throw java.io.IOException("Cannot persist capture receipt")
     }
 
     fun seenKeyFor(uri: Uri, size: Long, modified: Long): String =

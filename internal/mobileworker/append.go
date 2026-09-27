@@ -69,16 +69,26 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 
 	// Idempotency: a prior COMMITTED for this request_id returns its receipt and
 	// never commits a second time.
-	if rec, err := a.Ledger.Lookup(requestID); err != nil {
+	lock, err := a.Ledger.lockOperation(requestID)
+	if err != nil {
+		return v1.UploadObjectResult{}, err
+	}
+	defer lock.Close()
+	ctx = context.WithValue(ctx, operationLockKey{}, lock)
+	intent := Record{RepoID: p.RepoID, Path: target, PayloadHash: p.Sha256, Operation: v1.OpUploadObject, Size: p.Size}
+	if rec, err := a.prior(ctx, clientID, requestID, view.RepoPath, intent); err != nil {
 		return v1.UploadObjectResult{}, err
 	} else if rec != nil && rec.State == v1.OpStateCommitted {
-		if rec.PayloadHash != p.Sha256 {
-			return v1.UploadObjectResult{}, errors.New("request_id reused with a different payload")
+		if rec.Outcome == v1.OutcomeNameTakenSame {
+			return v1.UploadObjectResult{Outcome: v1.OutcomeNameTakenSame, ExistingSha256: rec.PayloadHash}, nil
 		}
 		return v1.UploadObjectResult{Outcome: v1.OutcomeCommitted, Revision: rec.Revision, FinalPath: rec.FinalPath}, nil
 	}
 
-	spool, sum, size, err := a.spool(content)
+	if p.Size < 0 || p.Size > v1.MaxUploadBytes {
+		return v1.UploadObjectResult{Outcome: v1.OutcomePolicyReject}, nil
+	}
+	spool, sum, size, err := a.spool(content, p.Size)
 	if err != nil {
 		return v1.UploadObjectResult{}, err
 	}
@@ -86,7 +96,7 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 	if sum != p.Sha256 {
 		return v1.UploadObjectResult{}, errors.New("payload sha256 mismatch")
 	}
-	if p.Size != 0 && p.Size != size {
+	if p.Size != size {
 		return v1.UploadObjectResult{}, errors.New("payload size mismatch")
 	}
 
@@ -110,10 +120,20 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 	if res, hit, err := a.collision(ctx, view.RepoPath, target, rev, sum); err != nil {
 		return v1.UploadObjectResult{}, err
 	} else if hit {
+		if res.Outcome == v1.OutcomeNameTakenSame {
+			done := intent
+			done.RequestID, done.ClientID, done.State = requestID, clientID, v1.OpStateCommitted
+			done.Revision, done.FinalPath, done.Outcome, done.NoChanges = rev, target, res.Outcome, true
+			if err := a.Ledger.Put(done); err != nil {
+				return v1.UploadObjectResult{}, err
+			}
+		}
 		return res, nil
 	}
 
-	base := Record{RequestID: requestID, ClientID: clientID, RepoID: p.RepoID, Path: target, PayloadHash: sum, State: v1.OpStateCommitting}
+	base := intent
+	base.RequestID, base.ClientID, base.State, base.BeforeRevision = requestID, clientID, v1.OpStateCommitting, rev
+	_, base.RecoveryFenced = a.Committer.(interface{ recoveryFence() })
 	if err := a.Ledger.Put(base); err != nil {
 		return v1.UploadObjectResult{}, err
 	}
@@ -124,11 +144,9 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 		// commit. Re-resolve against HEAD before surfacing the error.
 		if head, herr := a.Reader.Youngest(ctx, view.RepoPath); herr == nil {
 			if res, hit, cerr := a.collision(ctx, view.RepoPath, target, head, sum); cerr == nil && hit {
-				a.reject(base)
 				return res, nil
 			}
 		}
-		a.reject(base)
 		return v1.UploadObjectResult{}, commitErr
 	}
 
@@ -166,24 +184,23 @@ func (a Appender) collision(ctx context.Context, repoPath, target string, rev in
 	return v1.UploadObjectResult{Outcome: v1.OutcomeNameTakenDiff, ExistingSha256: existingSum}, true, nil
 }
 
-func (a Appender) reject(rec Record) {
-	rec.State = v1.OpStateRejected
-	_ = a.Ledger.Put(rec)
-}
-
 // spool copies content to a private temp file while computing its SHA-256 and
 // size. The caller removes the file.
-func (a Appender) spool(content io.Reader) (spoolPath, sha string, size int64, err error) {
+func (a Appender) spool(content io.Reader, limit int64) (spoolPath, sha string, size int64, err error) {
 	f, err := os.CreateTemp(a.SpoolDir, "filees-mobile-spool-")
 	if err != nil {
 		return "", "", 0, err
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), content)
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(content, limit+1))
 	if err != nil {
 		os.Remove(f.Name())
 		return "", "", 0, err
+	}
+	if n > limit {
+		os.Remove(f.Name())
+		return "", "", 0, errUploadLimit
 	}
 	if err := f.Sync(); err != nil {
 		os.Remove(f.Name())

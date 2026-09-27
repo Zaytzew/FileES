@@ -8,8 +8,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidbind.Androidbind
-import androidbind.Client
-import java.io.File
 
 /**
  * One scan of the operator-chosen Android locations. New objects go to
@@ -20,94 +18,61 @@ import java.io.File
  */
 object FileesWatchTick {
     const val NOTIFICATION_CHANNEL_ID = "filees-watch-uploads"
-    private const val NOTIFICATION_ID = 1001
     private const val NOTIFICATION_FAIL_ID = 1002
     private const val NOTIFICATION_WAIT_ID = 1003
 
-    fun run(context: Context): Int {
+    fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation()): Int = CaptureCoordinator.run(cancel) {
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
         FileesSession.migrate(prefs)
-        val address = prefs.getString(FileesSession.PREF_ADDRESS, null) ?: return 0
-        val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null) ?: return 0
-        // Deliberately PREF_UPLOAD_REPO_ID, not PREF_REPO_ID (the browser's
-        // transient "which repo am I looking at" field, cleared on every
-        // MainActivity#goUp back to the top-level list) - see its own doc
-        // comment in FileesSession.kt for why the two must not be the same
-        // preference.
-        val repoId = prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null) ?: return 0
+        val address = prefs.getString(FileesSession.PREF_ADDRESS, null) ?: return@run 0
+        val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null) ?: return@run 0
+        val repoId = prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null) ?: return@run 0
         val repoName = prefs.getString(FileesSession.PREF_UPLOAD_REPO_NAME, null) ?: repoId
-        if (address.isBlank() || hostKey.isBlank() || repoId.isBlank()) return 0
-
+        if (address.isBlank() || hostKey.isBlank() || repoId.isBlank()) return@run 0
         val watched = WatchedFolders(context)
-        val trees = watched.uris()
-        if (trees.isEmpty()) return 0
-
-        var sent = 0
-        var waiting = 0
-        // Catches Throwable, not just Exception, and now wraps client
-        // construction too: an OutOfMemoryError from TreeZip.pack (a >1 GB
-        // file in a watch backlog, live 2026-09-26) is an Error, so it used
-        // to slip past a catch(Exception) here and above in
-        // FileesWatchWorker.doWork with no journal entry and no
-        // notification - the only trace was WorkManager's own logcat output.
-        // TreeZip now streams instead of buffering whole files, but this
-        // stays broad so any future failure of this shape still reaches the
-        // user instead of vanishing.
+        val result = CaptureTransfers.Result()
         try {
-            val client = Androidbind.newClient(
-                context.filesDir.absolutePath,
-                DialAddress.resolve(address),
-                FileesSession.MOBILE_USER,
-                hostKey,
-            )
-            for (tree in trees) {
-                val unseen = DocumentWalk.tree(context.contentResolver, tree).filterNot {
-                    watched.alreadySeen(it.uri.toString() + "/" + it.filename)
+            val client = Androidbind.newClient(context.filesDir.absolutePath, DialAddress.resolve(address), FileesSession.MOBILE_USER, hostKey)
+            cancel.attach(client)
+            val before = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).associateBy { it.id }
+            before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it) } }
+            for (tree in watched.uris()) {
+                cancel.check()
+                try {
+                    val unseen = DocumentWalk.tree(context.contentResolver, tree, cancel).filterNot {
+                        watched.alreadySeen(CaptureTransfers.source(it))
+                    }
+                    if (unseen.isEmpty()) continue
+                    val part = CaptureTransfers.send(context, client, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true)
+                    result.sent += part.sent
+                    result.errors += part.errors
+                } catch (e: Exception) {
+                    cancel.check()
+                    result.errors += "${tree.lastPathSegment}: ${e.message}"
                 }
-                if (unseen.isEmpty()) continue
-                val result = if (FolderPreflight.of(unseen).pack) {
-                    sendPacked(context, client, watched, repoId, unseen)
+            }
+            val drained = PendingUpload.listFromJson(client.drainPendingJSON(repoId))
+            for (item in drained) {
+                if (item.delivered) {
+                    item.sources.forEach { watched.markSeen(it) }
+                    if (before[item.id]?.delivered != true) result.sent += item.fileCount
                 } else {
-                    sendOneByOne(context, client, watched, repoId, unseen)
+                    result.waiting += item.fileCount
+                    if (item.lastError.isNotBlank()) result.errors += item.lastError
                 }
-                sent += result.first
-                waiting += result.second
             }
-        } catch (t: Throwable) {
-            // A chunked or one-by-one send that fails partway through throws
-            // a PartialProgress carrying whatever it already landed before
-            // the failure - without unwrapping it here, that real progress
-            // (already committed server-side, already marked seen, never
-            // resent) would vanish from sent/waiting as if nothing had
-            // happened. Live, 2026-09-26: a large chunked batch actually
-            // pushed most of its data before one chunk failed, and the
-            // journal showed only the error with no success at all.
-            val partial = t as? PartialProgress
-            if (partial != null) {
-                sent += partial.sent
-                waiting += partial.waiting
-            }
-            val cause = partial?.cause ?: t
-            recordJournal(context, sent, waiting, repoName, cause?.message ?: "")
-            notifyMessage(
-                context,
-                context.getString(R.string.notification_watch_failed),
-                cause?.message ?: context.getString(R.string.error_send),
-                NOTIFICATION_FAIL_ID,
-            )
-            throw t
+
+        } catch (e: Exception) {
+            cancel.check()
+            result.errors += e.message ?: context.getString(R.string.error_send)
         }
-        recordJournal(context, sent, waiting, repoName, null)
-        if (sent > 0) notifySent(context, sent, repoName)
-        if (waiting > 0) {
-            notifyMessage(
-                context,
-                context.getString(R.string.notification_watch_waiting),
-                context.getString(R.string.notification_watch_waiting_text, waiting),
-                NOTIFICATION_WAIT_ID,
-            )
-        }
-        return sent
+        val failure = result.errors.distinct().take(5).joinToString("\n").ifBlank { null }
+        recordJournal(context, result.sent, result.waiting, repoName, failure)
+        if (failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)
+        else if (result.waiting > 0) notifyMessage(context, context.getString(R.string.notification_watch_waiting),
+            context.getString(R.string.notification_watch_waiting_text, result.waiting), NOTIFICATION_WAIT_ID)
+        // Receipt and journal are the success record; successful background work is silent.
+        result.sent
     }
 
     // Real outcomes only. A tick that found nothing does not touch the journal.
@@ -155,84 +120,6 @@ object FileesWatchTick {
         }
         val sentence = catalog.ifBlank { context.getString(R.string.journal_watch_failed) }
         return "$sentence\n$text"
-    }
-
-    // Carries whatever a chunked or one-by-one send already landed before it
-    // failed partway through, so the caller's sent/waiting counters do not
-    // silently drop real, already-committed progress just because the
-    // function itself exits via an exception instead of a normal return.
-    private class PartialProgress(val sent: Int, val waiting: Int, cause: Throwable) : Exception(cause)
-
-    // Same threshold as the foreground "Dodaj folder" path: eight or more
-    // new files in one watched tree become one or more UPLOAD_TREE sessions
-    // instead of a storm of SSH handshakes (TREE_INGEST). Smaller bursts
-    // stay one-by-one.
-    //
-    // Each size-bounded chunk (FolderPreflight.chunkBySize) is its own
-    // complete pack, sent and marked seen independently - a phone runs on
-    // cellular, not a comfortable office link, so it must not bet a whole
-    // backlog on one SSH session staying open long enough to carry all of
-    // it. If a later chunk fails, everything already marked seen here has
-    // already landed and will not be resent; the next tick resumes exactly
-    // at the chunk that failed, not from zero (implementation notes (not distributed)
-    // §5, applied here instead of only to the desktop's own large import).
-    private fun sendPacked(
-        context: Context,
-        client: Client,
-        watched: WatchedFolders,
-        repoId: String,
-        files: List<WalkedFile>,
-    ): Pair<Int, Int> {
-        var sent = 0
-        for (chunk in FolderPreflight.chunkBySize(files)) {
-            var zip: File? = null
-            try {
-                zip = TreeZip.pack(context.contentResolver, chunk, context.cacheDir)
-                client.uploadTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), zip.absolutePath)
-                chunk.forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
-                sent += chunk.size
-            } catch (t: Throwable) {
-                throw PartialProgress(sent, 0, t)
-            } finally {
-                zip?.delete()
-            }
-        }
-        return sent to 0
-    }
-
-    private fun sendOneByOne(
-        context: Context,
-        client: Client,
-        watched: WatchedFolders,
-        repoId: String,
-        files: List<WalkedFile>,
-    ): Pair<Int, Int> {
-        var sent = 0
-        var waiting = 0
-        for (file in files) {
-            val bytes = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
-            client.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
-            val report = UploadDrain.run(client, repoId)
-            if (report.transportError != null) {
-                throw PartialProgress(sent, waiting, RuntimeException(report.transportError))
-            }
-            watched.markSeen(file.uri.toString() + "/" + file.filename)
-            sent++
-            waiting = report.decisions.size
-        }
-        return sent to waiting
-    }
-
-    // The only user-visible sign this silent, periodic background tick did
-    // anything at all - previously nothing told the user a watched folder
-    // had (or had not) actually been uploaded.
-    private fun notifySent(context: Context, count: Int, repoName: String) {
-        notifyMessage(
-            context,
-            context.getString(R.string.notification_watch_sent),
-            context.getString(R.string.notification_watch_sent_text, count, repoName),
-            NOTIFICATION_ID,
-        )
     }
 
     private fun notifyMessage(context: Context, title: String, text: String, id: Int) {

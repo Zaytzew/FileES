@@ -109,7 +109,7 @@ func TestDispatchUploadThenStatus(t *testing.T) {
 	data := []byte("dispatched bytes")
 	rid := uuid.NewString()
 	up := frameRequest(t, rid, v1.OpUploadObject, v1.UploadObjectPayload{
-		RepoID: "r", ParentPath: "photos", Filename: "disp.bin", Size: int64(len(data)), Sha256: sha(data),
+		RepoID: "r", ParentPath: "mobile-uploads/photos", Filename: "disp.bin", Size: int64(len(data)), Sha256: sha(data),
 	}, data)
 	resp, _ := serve(t, d, up)
 	if resp.Status != v1.StatusOK {

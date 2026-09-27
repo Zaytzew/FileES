@@ -237,7 +237,7 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 		t.Fatalf("manifest = %+v", manifest)
 	}
 
-	id, err := client.EnqueueUpload("repo-1", "photos", "new.txt", "text/plain", []byte("brand new"))
+	id, err := client.EnqueueUpload("repo-1", "mobile-uploads/photos", "new.txt", "text/plain", []byte("brand new"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 	if len(results) != 1 || results[0].ID != id || results[0].State != "committed" {
 		t.Fatalf("drain results = %+v", results)
 	}
-	if results[0].FinalPath != "photos/new.txt" {
+	if results[0].FinalPath != "mobile-uploads/photos/new.txt" {
 		t.Fatalf("final_path = %q", results[0].FinalPath)
 	}
 }

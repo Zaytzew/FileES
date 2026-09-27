@@ -176,6 +176,9 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	if errors.Is(err, ErrNotDirectory) {
 		code, msg = "path.not_directory", "path is not a directory"
 	}
+	if errors.Is(err, errTreeIncomplete) {
+		code, msg = "tree.incomplete", "zip file count does not match the header"
+	}
 	if errors.Is(err, errTreePayloadCorrupt) {
 		code, msg = "tree.payload_corrupt", "zip sha256 or size does not match the header"
 	}

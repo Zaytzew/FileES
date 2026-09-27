@@ -3,6 +3,7 @@ package net.filees.mobile
 import android.content.ContentResolver
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -76,7 +77,7 @@ object TreeZip {
                         // a local File does, so size comes from this same
                         // hashing pass rather than a second, provider-specific
                         // length query that could return UNKNOWN_LENGTH.
-                        val (crc, size) = resolver.openInputStream(file.uri)?.use { crcAndSizeOf(it) } ?: continue
+                        val (crc, size) = (resolver.openInputStream(file.uri) ?: throw IOException("Cannot read source: ${file.filename}")).use { crcAndSizeOf(it) }
                         entry.method = ZipEntry.STORED
                         entry.size = size
                         entry.compressedSize = size
@@ -84,11 +85,11 @@ object TreeZip {
                     } else {
                         entry.method = ZipEntry.DEFLATED
                     }
-                    resolver.openInputStream(file.uri)?.use { input ->
+                    (resolver.openInputStream(file.uri) ?: throw IOException("Cannot read source: ${file.filename}")).use { input ->
                         zip.putNextEntry(entry)
                         input.copyTo(zip, BUFFER_SIZE)
                         zip.closeEntry()
-                    } ?: continue
+                    }
                 }
             }
         } catch (e: Exception) {

@@ -278,6 +278,13 @@ func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileC
 	if resp.Status != v1.StatusOK {
 		return fmt.Errorf("UPLOAD_TREE: %w", respError(resp))
 	}
+	var receipt v1.UploadTreeResult
+	if err := json.Unmarshal(resp.Result, &receipt); err != nil {
+		return fmt.Errorf("UPLOAD_TREE: invalid receipt: %w", err)
+	}
+	if receipt.FileCount != fileCount || receipt.Size != int64(len(zip)) || receipt.Revision < 1 {
+		return errors.New("UPLOAD_TREE: incomplete receipt")
+	}
 	return nil
 }
 

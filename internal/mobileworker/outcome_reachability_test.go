@@ -50,28 +50,32 @@ func outcomeEnumSource() string {
 // comes back.
 var outcomeScenarios = map[v1.Outcome]func(t *testing.T) v1.UploadObjectResult{
 	v1.OutcomeCommitted: func(t *testing.T) v1.UploadObjectResult {
-		a := newAppender(t, newSeededRepo(t), "rw")
-		return a.mustUpload(t, "photos/2026", "reach.jpg", []byte("nowy obiekt"))
+		a := newAppender(t, newUploadSeededRepo(t), "rw")
+		return a.mustUpload(t, "mobile-uploads/photos/2026", "reach.jpg", []byte("nowy obiekt"))
 	},
 	v1.OutcomeNameTakenSame: func(t *testing.T) v1.UploadObjectResult {
 		// The seed writes exactly "hello" to photos/2026/a.jpg, so this is
 		// the same name carrying the same bytes: a dedup drop.
-		a := newAppender(t, newSeededRepo(t), "rw")
-		return a.mustUpload(t, "photos/2026", "a.jpg", []byte("hello"))
+		a := newAppender(t, newUploadSeededRepo(t), "rw")
+		return a.mustUpload(t, "mobile-uploads/photos/2026", "a.jpg", []byte("hello"))
 	},
 	v1.OutcomeNameTakenDiff: func(t *testing.T) v1.UploadObjectResult {
-		a := newAppender(t, newSeededRepo(t), "rw")
-		return a.mustUpload(t, "photos/2026", "a.jpg", []byte("inna tresc"))
+		a := newAppender(t, newUploadSeededRepo(t), "rw")
+		return a.mustUpload(t, "mobile-uploads/photos/2026", "a.jpg", []byte("inna tresc"))
 	},
 	v1.OutcomeDestGone: func(t *testing.T) v1.UploadObjectResult {
-		// "photos" exists, "photos/gone" does not — a directory removed on
+		// "photos" exists, "mobile-uploads/top.txt" does not — a directory removed on
 		// the server, seen by a phone holding a stale manifest.
+		a := newAppender(t, newUploadSeededRepo(t), "rw")
+		return a.mustUpload(t, "mobile-uploads/top.txt", "x.bin", []byte("dane"))
+	},
+	v1.OutcomePolicyReject: func(t *testing.T) v1.UploadObjectResult {
 		a := newAppender(t, newSeededRepo(t), "rw")
-		return a.mustUpload(t, "photos/gone", "x.bin", []byte("dane"))
+		return a.mustUpload(t, "photos/2026", "outside.bin", []byte("data"))
 	},
 	v1.OutcomeAccessRevoked: func(t *testing.T) v1.UploadObjectResult {
-		a := newAppender(t, newSeededRepo(t), "r")
-		return a.mustUpload(t, "photos/2026", "x.bin", []byte("dane"))
+		a := newAppender(t, newUploadSeededRepo(t), "r")
+		return a.mustUpload(t, "mobile-uploads/photos/2026", "x.bin", []byte("dane"))
 	},
 }
 
@@ -89,10 +93,6 @@ var outcomePending = map[v1.Outcome]string{
 		"repository state lives in RepositoryGrant.State and never reaches the " +
 		"appender, so an inactive repository is indistinguishable from an active " +
 		"one here. Concept section 10.2 names the outcome; nothing derives it.",
-	v1.OutcomePolicyReject: "Concept section 6.4 step 1 requires the worker to check " +
-		"'rw and the mobile policy'. The rw half exists (OutcomeAccessRevoked); " +
-		"the mobile policy half has no representation in this package at all — " +
-		"no field, no interface, no call.",
 }
 
 type declaredOutcome struct {

@@ -89,3 +89,23 @@ func TestUploadTreeStillFailsWhenTheServerNeverSawIt(t *testing.T) {
 		t.Fatal("expected an error when the status check also cannot reach the server")
 	}
 }
+
+type receiptTransport struct{ receipt v1.UploadTreeResult }
+
+func (t receiptTransport) Do(_ context.Context, req v1.Request, _ []byte) (v1.Response, []byte, error) {
+	resp, err := v1.NewSuccess(req.RequestID, req.Operation, t.receipt)
+	return resp, nil, err
+}
+func TestUploadTreeRejectsIncompleteReceipt(t *testing.T) {
+	body := packTreeForTest(t, map[string][]byte{"note.txt": []byte("hi")})
+	for _, receipt := range []v1.UploadTreeResult{
+		{FileCount: 2, Size: int64(len(body)), Revision: 1},
+		{FileCount: 1, Size: int64(len(body)) - 1, Revision: 1},
+		{FileCount: 1, Size: int64(len(body)), Revision: 0},
+	} {
+		c := Client{Transport: receiptTransport{receipt}, Store: Store{Root: t.TempDir()}}
+		if err := c.UploadTree(context.Background(), "repo-1", "mobile-uploads", 1, body); err == nil {
+			t.Fatalf("accepted %+v", receipt)
+		}
+	}
+}

@@ -8,9 +8,9 @@ import (
 
 func TestDrainPendingCommitsNewUpload(t *testing.T) {
 	requireSVN(t)
-	c := newClient(t, newSeededRepo(t), "rw")
+	c := newClient(t, newUploadSeededRepo(t), "rw")
 
-	item, err := c.Store.EnqueueUpload("repo-1", "photos/2026", "new.txt", "text/plain", []byte("brand new content"))
+	item, err := c.Store.EnqueueUpload("repo-1", "mobile-uploads/photos/2026", "new.txt", "text/plain", []byte("brand new content"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestDrainPendingCommitsNewUpload(t *testing.T) {
 	if got.State != UploadCommitted {
 		t.Fatalf("state = %v, outcome = %v, lastError = %q", got.State, got.Outcome, got.LastError)
 	}
-	if got.Revision == 0 || got.FinalPath != "photos/2026/new.txt" {
+	if got.Revision == 0 || got.FinalPath != "mobile-uploads/photos/2026/new.txt" {
 		t.Fatalf("revision/final_path = %d/%q", got.Revision, got.FinalPath)
 	}
 	if _, err := os.Stat(c.Store.uploadPayloadPath("repo-1", item.ID)); !os.IsNotExist(err) {
@@ -48,9 +48,9 @@ func TestDrainPendingCommitsNewUpload(t *testing.T) {
 
 func TestDrainPendingDropsIdenticalDuplicate(t *testing.T) {
 	requireSVN(t)
-	c := newClient(t, newSeededRepo(t), "rw")
+	c := newClient(t, newUploadSeededRepo(t), "rw")
 
-	item, err := c.Store.EnqueueUpload("repo-1", "photos/2026", "a.jpg", "image/jpeg", []byte("hello"))
+	item, err := c.Store.EnqueueUpload("repo-1", "mobile-uploads/photos/2026", "a.jpg", "image/jpeg", []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,9 +70,9 @@ func TestDrainPendingDropsIdenticalDuplicate(t *testing.T) {
 
 func TestDrainPendingParksConflictingDuplicate(t *testing.T) {
 	requireSVN(t)
-	c := newClient(t, newSeededRepo(t), "rw")
+	c := newClient(t, newUploadSeededRepo(t), "rw")
 
-	item, err := c.Store.EnqueueUpload("repo-1", "photos/2026", "a.jpg", "image/jpeg", []byte("different content"))
+	item, err := c.Store.EnqueueUpload("repo-1", "mobile-uploads/photos/2026", "a.jpg", "image/jpeg", []byte("different content"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,9 +107,9 @@ func TestDrainPendingParksConflictingDuplicate(t *testing.T) {
 
 func TestDrainPendingParksDestinationGone(t *testing.T) {
 	requireSVN(t)
-	c := newClient(t, newSeededRepo(t), "rw")
+	c := newClient(t, newUploadSeededRepo(t), "rw")
 
-	item, err := c.Store.EnqueueUpload("repo-1", "no/such/parent", "new.txt", "text/plain", []byte("x"))
+	item, err := c.Store.EnqueueUpload("repo-1", "mobile-uploads/photos/2026/a.jpg", "new.txt", "text/plain", []byte("x"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,4 +200,15 @@ func TestListUploadsEmptyRepoReturnsNil(t *testing.T) {
 	if err != nil || len(items) != 0 {
 		t.Fatalf("items = %+v err = %v", items, err)
 	}
+}
+
+func newUploadSeededRepo(t *testing.T) string {
+	t.Helper()
+	repo := newSeededRepo(t)
+	c := newClient(t, repo, "rw")
+	err := c.UploadTree(context.Background(), "repo-1", "mobile-uploads", 1, packTreeForTest(t, map[string][]byte{"photos/2026/a.jpg": []byte("hello")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repo
 }

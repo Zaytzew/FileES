@@ -23,26 +23,22 @@ const (
 
 // errNotTreePack is a zip that is a repository artifact (or any other
 // unmarked archive), not FileES wire packaging. The worker must not unpack it.
+var errTreeIncomplete = errors.New("tree file count does not match the header")
+
 var errNotTreePack = errors.New("not a filees tree pack")
 
 // errTreePayloadCorrupt is a header/body mismatch: the zip that arrived is
 // not the zip the client hashed. Nothing from it may be committed.
 var errTreePayloadCorrupt = errors.New("tree payload corrupt: sha256 or size mismatch")
 
-// mobileUploadsRoot is the only directory the phone is allowed to bring into
-// existence.
-//
-// Section 0 of the Android concept: the mobile client never modifies or
-// deletes objects outside mobile-uploads/. Appending a new file to a directory
-// that already exists is neither, so that stays allowed anywhere - but a
-// directory that is not there is only ever conjured under this root.
+// mobileUploadsRoot is the exclusive write namespace for both mobile verbs.
 const mobileUploadsRoot = "mobile-uploads"
 
 // underMobileUploads reports whether p is the uploads root or sits inside it.
 // Both mobile write verbs ask it, so the rule has one place to be wrong.
 func underMobileUploads(p string) bool {
 	p = strings.Trim(p, "/")
-	return p == mobileUploadsRoot || strings.HasPrefix(p, mobileUploadsRoot+"/")
+	return path.Clean(p) == p && !strings.Contains(p, "\\") && (p == mobileUploadsRoot || strings.HasPrefix(p, mobileUploadsRoot+"/"))
 }
 
 // UploadTree unpacks a zip-on-wire folder and commits its files under
@@ -86,6 +82,9 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		return v1.UploadTreeResult{}, err
 	}
 	defer os.RemoveAll(unpackDir)
+	if len(extracted) != p.FileCount {
+		return v1.UploadTreeResult{}, errTreeIncomplete
+	}
 
 	rev, err := a.Reader.Youngest(ctx, view.RepoPath)
 	if err != nil {

@@ -40,22 +40,22 @@ func propget(t *testing.T, repo, prop, url string) string {
 
 func TestAppendCommitsUniqueWithNeedsLock(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
 	data := []byte("brand new photo")
 	rid := uuid.NewString()
 	res, err := a.Upload(context.Background(), "c", rid, v1.UploadObjectPayload{
-		RepoID: "r", ParentPath: "photos/2026", Filename: "new.jpg", Size: int64(len(data)), Sha256: sha(data),
+		RepoID: "r", ParentPath: "mobile-uploads/photos/2026", Filename: "new.jpg", Size: int64(len(data)), Sha256: sha(data),
 	}, bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Outcome != v1.OutcomeCommitted || res.Revision != 2 || res.FinalPath != "photos/2026/new.jpg" {
+	if res.Outcome != v1.OutcomeCommitted || res.Revision != 2 || res.FinalPath != "mobile-uploads/photos/2026/new.jpg" {
 		t.Fatalf("unexpected result %+v", res)
 	}
 	// svn:needs-lock set on the new object.
-	if got := propget(t, repo, "svn:needs-lock", fileURL(repo)+"/photos/2026/new.jpg"); got != "*" {
+	if got := propget(t, repo, "svn:needs-lock", fileURL(repo)+"/mobile-uploads/photos/2026/new.jpg"); got != "*" {
 		t.Fatalf("needs-lock = %q, want *", got)
 	}
 	// Ledger records COMMITTED with the revision.
@@ -70,12 +70,12 @@ func TestAppendCommitsUniqueWithNeedsLock(t *testing.T) {
 
 func TestAppendIdempotentReplay(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
 	data := []byte("same bytes")
 	rid := uuid.NewString()
-	p := v1.UploadObjectPayload{RepoID: "r", ParentPath: "photos", Filename: "one.bin", Size: int64(len(data)), Sha256: sha(data)}
+	p := v1.UploadObjectPayload{RepoID: "r", ParentPath: "mobile-uploads/photos", Filename: "one.bin", Size: int64(len(data)), Sha256: sha(data)}
 
 	first, err := a.Upload(context.Background(), "c", rid, p, bytes.NewReader(data))
 	if err != nil {
@@ -97,20 +97,20 @@ func TestAppendIdempotentReplay(t *testing.T) {
 
 func TestAppendCollisionSameAndDiff(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
 	original := []byte("the original content")
-	a.mustUpload(t, "photos", "shared.bin", original) // rev 2
+	a.mustUpload(t, "mobile-uploads/photos", "shared.bin", original) // rev 2
 
 	// Identical content under the same name -> drop (SAME).
-	same := a.mustUpload(t, "photos", "shared.bin", original)
+	same := a.mustUpload(t, "mobile-uploads/photos", "shared.bin", original)
 	if same.Outcome != v1.OutcomeNameTakenSame || same.ExistingSha256 != sha(original) {
 		t.Fatalf("expected NAME_TAKEN_SAME, got %+v", same)
 	}
 
 	// Different content under the same name -> user decides (DIFF).
-	diff := a.mustUpload(t, "photos", "shared.bin", []byte("totally different"))
+	diff := a.mustUpload(t, "mobile-uploads/photos", "shared.bin", []byte("totally different"))
 	if diff.Outcome != v1.OutcomeNameTakenDiff || diff.ExistingSha256 != sha(original) {
 		t.Fatalf("expected NAME_TAKEN_DIFF, got %+v", diff)
 	}
@@ -135,7 +135,7 @@ func (a Appender) mustUpload(t *testing.T, parent, name string, data []byte) v1.
 
 func TestAppendCreatesMissingMobileUploadsTree(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 	data := []byte("z telefonu")
 	res := a.mustUpload(t, "mobile-uploads/Wakacje", "foto.jpg", data)
@@ -150,59 +150,39 @@ func TestAppendCreatesMissingMobileUploadsTree(t *testing.T) {
 
 func TestAppendDestinationGoneWhenParentIsAFile(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
-	res := a.mustUpload(t, "top.txt", "x.bin", []byte("data"))
+	res := a.mustUpload(t, "mobile-uploads/top.txt", "x.bin", []byte("data"))
 	if res.Outcome != v1.OutcomeDestGone {
 		t.Fatalf("expected DESTINATION_GONE when parent is a file, got %+v", res)
 	}
 }
 
-// TestAppendDestinationGoneWhenParentIsAbsent pins the half of the existence
-// check that the worker used to discard.
-//
-// "photos" exists in the seed and "photos/gone" does not, which is what a
-// directory deleted on the server looks like to a phone still holding it in a
-// stale manifest. That is the case DESTINATION_GONE was named for. Until the
-// scope was added, the worker recreated it and reported COMMITTED - so the
-// enum member was unreachable and the user was never told their album had
-// been removed. Recorded as unresolved since r906 and reproduced natively on
-// OpenBSD, so this is not a platform quirk.
-func TestAppendDestinationGoneWhenParentIsAbsent(t *testing.T) {
+// Outside paths are rejected even when their parent already exists.
+func TestAppendRejectsOutsideUploads(t *testing.T) {
 	requireSVN(t)
 	repo := newSeededRepo(t)
 	a := newAppender(t, repo, "rw")
-
-	res := a.mustUpload(t, "photos/gone", "x.bin", []byte("data"))
-	if res.Outcome != v1.OutcomeDestGone {
-		t.Fatalf("expected DESTINATION_GONE for an absent parent, got %+v", res)
+	for _, parent := range []string{"", "photos/2026", "photos/gone", "docs", "mobile-uploads/../docs", "mobile-uploads-other"} {
+		res := a.mustUpload(t, parent, "nowy.bin", []byte("data"))
+		if res.Outcome != v1.OutcomePolicyReject {
+			t.Fatalf("%q: %+v", parent, res)
+		}
 	}
-}
-
-// TestAppendIntoExistingDirectoryOutsideUploads guards the other edge of the
-// same rule. Appending a new file is neither a modification nor a deletion, so
-// section 0 still permits it anywhere the directory already exists; scoping
-// creation must not have quietly scoped appending too.
-func TestAppendIntoExistingDirectoryOutsideUploads(t *testing.T) {
-	requireSVN(t)
-	repo := newSeededRepo(t)
-	a := newAppender(t, repo, "rw")
-
-	res := a.mustUpload(t, "docs", "nowy.bin", []byte("data"))
-	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "docs/nowy.bin" {
-		t.Fatalf("append into an existing directory: %+v", res)
+	if rev, err := (SVNReader{}).Youngest(context.Background(), repo); err != nil || rev != 1 {
+		t.Fatalf("denial changed HEAD: %d %v", rev, err)
 	}
 }
 
 func TestAppendRejectsHashMismatch(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
 	data := []byte("actual bytes")
 	_, err := a.Upload(context.Background(), "c", uuid.NewString(), v1.UploadObjectPayload{
-		RepoID: "r", ParentPath: "photos", Filename: "y.bin", Size: int64(len(data)), Sha256: sha([]byte("wrong")),
+		RepoID: "r", ParentPath: "mobile-uploads/photos", Filename: "y.bin", Size: int64(len(data)), Sha256: sha([]byte("wrong")),
 	}, bytes.NewReader(data))
 	if err == nil {
 		t.Fatal("expected sha256 mismatch rejection")
@@ -210,7 +190,7 @@ func TestAppendRejectsHashMismatch(t *testing.T) {
 }
 
 func TestFileURLAtEncodesPolishSegments(t *testing.T) {
-	got := fileURLAt("/var/filees/repositories/repo", "00_Materiały-wyjsciowe/a.jpg")
+	got := fileURLAt("/var/filees/repositories/repo", "mobile-uploads/00_Materiały-wyjsciowe/a.jpg")
 	if !strings.Contains(got, "00_Materia%C5%82y-wyjsciowe/a.jpg") {
 		t.Fatalf("fileURLAt = %q, want percent-encoded ł", got)
 	}
@@ -225,23 +205,35 @@ func TestAppendIntoPolishDirectory(t *testing.T) {
 	repo := filepath.Join(dir, "repo")
 	run(t, "svnadmin", "create", repo)
 	seed := filepath.Join(dir, "seed")
-	writeSeed(t, seed, "00_Materiały-wyjsciowe/keep.txt", []byte("keep"))
+	writeSeed(t, seed, "mobile-uploads/00_Materiały-wyjsciowe/keep.txt", []byte("keep"))
 	run(t, "svn", "import", "-q", seed, fileURL(repo), "-m", "polish parent")
 	a := newAppender(t, repo, "rw")
 	data := []byte("z telefonu")
-	res := a.mustUpload(t, "00_Materiały-wyjsciowe", "foto.jpg", data)
-	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "00_Materiały-wyjsciowe/foto.jpg" {
+	res := a.mustUpload(t, "mobile-uploads/00_Materiały-wyjsciowe", "foto.jpg", data)
+	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "mobile-uploads/00_Materiały-wyjsciowe/foto.jpg" {
 		t.Fatalf("upload into Polish parent: %+v", res)
 	}
 }
 
 func TestAppendRequiresReadWrite(t *testing.T) {
 	requireSVN(t)
-	repo := newSeededRepo(t)
+	repo := newUploadSeededRepo(t)
 	a := newAppender(t, repo, "r") // read-only grant
 
-	res := a.mustUpload(t, "photos", "z.bin", []byte("data"))
+	res := a.mustUpload(t, "mobile-uploads/photos", "z.bin", []byte("data"))
 	if res.Outcome != v1.OutcomeAccessRevoked {
 		t.Fatalf("expected ACCESS_REVOKED for non-rw, got %+v", res)
 	}
+}
+
+func newUploadSeededRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	seed := filepath.Join(dir, "seed")
+	run(t, "svnadmin", "create", repo)
+	writeSeed(t, seed, "mobile-uploads/photos/2026/a.jpg", []byte("hello"))
+	writeSeed(t, seed, "mobile-uploads/top.txt", []byte("top"))
+	run(t, "svn", "import", "-q", seed, fileURL(repo), "-m", "mobile seed")
+	return repo
 }

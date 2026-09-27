@@ -230,3 +230,19 @@ func TestDispatchUploadTree(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 }
+
+func TestUploadTreeRejectsDeclaredCountMismatchBeforeCommit(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	a := newAppender(t, repo, "rw")
+	body := packTree(t, map[string][]byte{"one.txt": []byte("one"), "two.txt": []byte("two")})
+	for _, count := range []int{1, 3} {
+		_, err := a.UploadTree(context.Background(), "c", uuid.NewString(), v1.UploadTreePayload{RepoID: "r", ParentPath: "mobile-uploads", FileCount: count, Size: int64(len(body)), Sha256: sha(body)}, bytes.NewReader(body))
+		if !errors.Is(err, errTreeIncomplete) {
+			t.Fatalf("count %d: %v", count, err)
+		}
+	}
+	if rev, err := (SVNReader{}).Youngest(context.Background(), repo); err != nil || rev != 1 {
+		t.Fatalf("HEAD changed: %d %v", rev, err)
+	}
+}

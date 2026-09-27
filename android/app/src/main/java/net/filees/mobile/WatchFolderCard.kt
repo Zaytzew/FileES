@@ -30,7 +30,7 @@ object WatchFolderCard {
             val stopped = android.os.Build.VERSION.SDK_INT >= 31 && pending != null && pending.runAttemptCount > 0 &&
                 pending.stopReason != WorkInfo.STOP_REASON_NOT_STOPPED
             val busy = state.phase in setOf("checking","preparing","sending")
-            val phase = if (!busy && stopped) "paused" else state.phase
+            val phase = if (!busy && stopped && state.phase != "complete") "paused" else state.phase
             val lines = mutableListOf(store.label(phase),context.getString(R.string.watch_queue_count,state.waiting))
             if (phase == "paused") lines += store.pauseDescription(if(stopped) pending!!.stopReason else state.stopReason)
             if (!busy && state.waiting > 0 && pending != null) {

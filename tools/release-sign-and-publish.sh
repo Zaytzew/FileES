@@ -5,6 +5,8 @@
 # FILEES-BIN repository.
 set -eu
 
+tools_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
 FILEES_BIN_WC="${FILEES_BIN_WC:-$HOME/FILEES-BIN}"
 SIGNIFY_BIN="${SIGNIFY_BIN:-signify}"
 SIGNIFY_SEC_KEY="${SIGNIFY_SEC_KEY:-$HOME/.signify/filees-release.sec}"
@@ -15,6 +17,14 @@ CHANNEL="${CHANNEL:-}"
 die() {
 	echo "filees-release-sign: $*" >&2
 	exit 1
+}
+
+# Publication has its own atomic commit. Retention runs only after it succeeds;
+# a retention failure must not be reported as a failed signature/publication.
+prune_published_history() {
+	if ! FILEES_BIN_WC="$FILEES_BIN_WC" KEEP=5 APPLY=1 sh "$tools_dir/prune-release-history.sh"; then
+		die "release is already published; history cleanup failed (rerun the promoter to retry)"
+	fi
 }
 
 case "$RELEASE_ID" in
@@ -107,6 +117,7 @@ if [ -f "$channel_path" ] && cmp -s "$candidate" "$channel_path" &&
 fi
 if [ "$all_manifests_signed" = true ] && [ "$channel_current" = true ]; then
 	echo "release $RELEASE_ID is already signed and promoted on channel $CHANNEL"
+	prune_published_history
 	exit 0
 fi
 
@@ -187,3 +198,5 @@ Detached signify signatures for $manifests component/platform manifest(s), plus
 an atomic signed channel promotion verified on the signing machine."
 
 echo "done: FileES release $RELEASE_ID, manifests=$manifests, channel=$CHANNEL"
+
+prune_published_history

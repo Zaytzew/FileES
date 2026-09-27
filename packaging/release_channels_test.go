@@ -76,13 +76,19 @@ func TestReleaseChannelPromotionIsolation(t *testing.T) {
 					write("channels/"+channel+suffix+".sig", "old "+channel+" signature")
 				}
 				commands := `
-svn() {
+mkdir -p "$FILEES_BIN_WC/test-bin"
+cat >"$FILEES_BIN_WC/test-bin/svn" <<'STUB'
+#!/bin/sh
+
   case "$1" in
-    status|update) return 0 ;;
+    status|update|cleanup) exit 0 ;;
     commit) printf '%s\n' "$*" >>"$FILEES_BIN_WC/commits.log" ;;
-    *) return 1 ;;
+    *) exit 1 ;;
   esac
-}
+STUB
+chmod +x "$FILEES_BIN_WC/test-bin/svn"
+PATH="$FILEES_BIN_WC/test-bin:$PATH"
+export PATH
 signify_stub() {
   operation=$1
   shift
@@ -97,7 +103,7 @@ signify_stub() {
 }
 . "$1"
 `
-				cmd := exec.Command(shell, "-c", commands, "publisher-test", filepath.ToSlash(script))
+				cmd := exec.Command(shell, "-c", commands, filepath.ToSlash(script), filepath.ToSlash(script))
 				cmd.Env = append(os.Environ(), "FILEES_BIN_WC="+filepath.ToSlash(root), "SIGNIFY_BIN=signify_stub",
 					"SIGNIFY_SEC_KEY="+filepath.ToSlash(filepath.Join(root, "test.sec")), "SIGNIFY_PUB_KEY="+filepath.ToSlash(filepath.Join(root, "test.pub")), "RELEASE_ID=test-release", "CHANNEL="+tc.channel)
 				out, err := cmd.CombinedOutput()

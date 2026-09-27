@@ -15,7 +15,7 @@
 set -eu
 
 FILEES_BIN_WC="${FILEES_BIN_WC:-$HOME/FILEES-BIN}"
-KEEP="${KEEP:-10}"
+KEEP="${KEEP:-5}"
 APPLY="${APPLY:-0}"
 
 die() {
@@ -31,6 +31,7 @@ cd "$FILEES_BIN_WC"
 if [ "$APPLY" = 1 ]; then
 	[ -z "$(svn status)" ] || die "working copy has local or unversioned changes"
 	svn update --quiet
+	[ -z "$(svn status)" ] || die "working copy changed during update"
 fi
 
 referenced=$(cat channels/*.json 2>/dev/null | sed -n 's/.*"release_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sort -u)
@@ -74,7 +75,10 @@ IFS=$old_ifs
 echo "channels point at: $(printf '%s ' $referenced)"
 echo "keep $kept release(s), remove $removed (KEEP=$KEEP per kind)"
 for path in $remove; do echo "  remove $path"; done
-[ "$removed" -gt 0 ] || exit 0
+if [ "$removed" -eq 0 ]; then
+	if [ "$APPLY" = 1 ]; then svn cleanup --vacuum-pristines; fi
+	exit 0
+fi
 if [ "$APPLY" != 1 ]; then
 	echo "dry run - nothing changed; APPLY=1 to delete from HEAD (history keeps them)"
 	exit 0
@@ -85,4 +89,5 @@ svn delete --quiet $remove
 svn commit --quiet $remove -m "Prune release history: keep the $KEEP newest releases of each kind and every channel target
 
 $removed old release(s) removed from HEAD; they remain in the repository history."
-echo "done: removed $removed release(s) from HEAD"
+svn cleanup --vacuum-pristines
+echo "done: removed $removed release(s) from HEAD; unused WC pristines removed"

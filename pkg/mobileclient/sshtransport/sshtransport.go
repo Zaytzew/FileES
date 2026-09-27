@@ -44,8 +44,10 @@ type Config struct {
 
 // Transport dials a fresh SSH connection for every operation.
 type Transport struct {
-	cfg     Config
-	hostKey ssh.PublicKey
+	cfg               Config
+	hostKey           ssh.PublicKey
+	keepaliveInterval time.Duration
+	keepaliveTimeout  time.Duration
 }
 
 // New validates cfg and returns a ready Transport.
@@ -66,7 +68,7 @@ func New(cfg Config) (*Transport, error) {
 	if cfg.DialTimeout <= 0 {
 		cfg.DialTimeout = defaultDialTimeout
 	}
-	return &Transport{cfg: cfg, hostKey: hostKey}, nil
+	return &Transport{cfg: cfg, hostKey: hostKey, keepaliveInterval: 30 * time.Second, keepaliveTimeout: 15 * time.Second}, nil
 }
 
 // Do implements mobileclient.Transport: one connection, one exec session, one
@@ -100,10 +102,15 @@ func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: dial: %w", err)
 	}
 	defer connection.Close()
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := connection.SetDeadline(deadline); err != nil {
-			return v1.Response{}, nil, fmt.Errorf("sshtransport: set deadline: %w", err)
-		}
+	// ClientConfig.Timeout is used by ssh.Dial, not NewClientConn. Bound
+	// the handshake too: an accepting but stalled relay is not a live SSH peer.
+	handshakeDeadline := time.Now().Add(t.cfg.DialTimeout)
+	operationDeadline, hasDeadline := ctx.Deadline()
+	if hasDeadline && operationDeadline.Before(handshakeDeadline) {
+		handshakeDeadline = operationDeadline
+	}
+	if err := connection.SetDeadline(handshakeDeadline); err != nil {
+		return v1.Response{}, nil, fmt.Errorf("sshtransport: set deadline: %w", err)
 	}
 	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
 	defer stop()
@@ -112,8 +119,14 @@ func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.
 	if err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: handshake: %w", err)
 	}
+	if err := connection.SetDeadline(operationDeadline); err != nil {
+		_ = clientConn.Close()
+		return v1.Response{}, nil, fmt.Errorf("sshtransport: set operation deadline: %w", err)
+	}
 	client := ssh.NewClient(clientConn, channels, requests)
 	defer client.Close()
+	stopKeepalive := t.keepAlive(client)
+	defer stopKeepalive()
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -177,4 +190,36 @@ func keysEqual(a, b ssh.PublicKey) bool {
 		return false
 	}
 	return a.Type() == b.Type() && bytes.Equal(a.Marshal(), b.Marshal())
+}
+
+// SSH requests keep an otherwise silent commit/receipt wait alive through
+// idle TCP relays. A negative reply still proves the SSH peer is reachable.
+// Neither traffic nor a reply extends the operation's context deadline.
+func (t *Transport) keepAlive(client *ssh.Client) func() {
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(t.keepaliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				// Closing SSH interrupts both SendRequest and the session read.
+				timeout := time.AfterFunc(t.keepaliveTimeout, func() { _ = client.Close() })
+				_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+				timeout.Stop()
+				if err != nil {
+					_ = client.Close()
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		_ = client.Close()
+		<-done
+	}
 }

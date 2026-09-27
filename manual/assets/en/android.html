@@ -73,7 +73,7 @@
 <div class="note"><span class="status status-implemented">Implemented</span> The home screen, the localisation and the single journal entry per announcement have been in the app since the 2026-09-09 build. The client has since had further development (a watched-folder decision journal, APK self-update), and on 2026-09-26 the first publicly signed release shipped, <code>r1585-android</code>, distributed from <code>filees.space/android/</code>. There is no live device-verification report for this screen newer than the one above from 2026-09-09.</div>
 
 <h2 id="and-pair">Pairing</h2>
-<p>On an already activated desktop press <strong>Pair</strong> in the panel header, confirm your local PIN and choose the server. The FileES window shows a QR code valid for five minutes; no browser and no local web page are involved. The phone scans it. After a successful pair the home scan button goes away; emergency pairing stays under Settings (the gear).</p>
+<p>On an already activated desktop press <strong>Pair</strong> in the panel header, confirm your local PIN and choose the server. The FileES window shows a QR code valid for five minutes; no browser and no local web page are involved. The phone scans it. After a successful pair the home scan button goes away; emergency pairing stays under Settings → Advanced.</p>
 <p>The phone inherits that desktop's share list. It does not create a realm. How the desktop issues the QR is in the <a href="user-guide.html#ch2-gui">desktop guide</a>.</p>
 
 <h2 id="and-browse">Browse and download</h2>
@@ -91,11 +91,15 @@
 <div class="section-meta"><span class="status status-verified">Verified live</span><span>2026-08-29: fixed a real bug where background sending silently did nothing unless a repository happened to be open in the share browser.</span></div>
 <p>In Settings you pick a folder on the phone and a send destination (repository/share). The app checks the folder roughly every five minutes and sends new files automatically — the send destination is now independent of whichever repository you happen to be browsing. When you turn on tracking for a folder that already has content, the app asks whether to send all of it or only files added from now on. Successful background work is recorded in the journal and stays silent. Notifications report problems or files awaiting a decision. Changing the destination does not resend files already marked as delivered.</p>
 
+<p>From version 0.1.18, the header shows upload state and the number of waiting files. Each tracked folder has a status indicator; tap it for its queue, errors, scan time and journal. Complete refers to the selected tracking scope at the last successful scan. An empty queue alone does not prove the folder has been checked.</p>
+<h2 id="and-settings">Settings and updates</h2>
+<p>Language, tracked folders and version stay in the main settings. The <strong>Advanced</strong> subcard holds desktop activation, adding/removing servers and emergency pairing data. The lock simply asks you to <strong>Unlock the app</strong>.</p>
+<p>About offers an <strong>Auto-update</strong> switch, off by default. When enabled, the app checks the signed channel roughly daily when connected and storage is available, downloads the verified package and tells you it is ready. Android still asks you to confirm installation. Manual checking remains available. Turning the switch off stops background work and retains any prepared package for manual installation.</p>
 <h2 id="and-not">What the phone does not do</h2>
 <ul>
 <li>it does not edit or delete objects outside <code>mobile-uploads/</code>;</li>
 <li>it does not create shares and does not take a typed UUID;</li>
-<li>it does not show an upload queue — a spinner, then success or an error.</li>
+<li>it does not guarantee immediate background scans — the phone may delay background work.</li>
 </ul>
 <p>The server must support <code>UPLOAD_TREE</code> (signed server releases have carried it since 2026-09-09). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
 </div>

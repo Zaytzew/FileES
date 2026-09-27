@@ -46,27 +46,57 @@ object ApkUpdate {
         )
     }
 
-    fun download(context: Context, offer: Offer): File {
-        if (offer.url.isBlank() || offer.size <= 0 || offer.sha256.length != 64) {
-            throw IllegalStateException("incomplete update offer")
+    class DownloadCancellation {
+        @Volatile private var stopped = false
+        private var connection: HttpURLConnection? = null
+        @Synchronized fun attach(value: HttpURLConnection) { check(); connection = value }
+        @Synchronized fun detach() { connection = null }
+        @Synchronized fun cancel() { stopped = true; connection?.disconnect() }
+        fun check() { if(stopped) throw java.io.InterruptedIOException("Update download cancelled") }
+    }
+
+    fun verify(file: File, offer: Offer): Boolean {
+        if (!file.isFile || file.length() != offer.size) return false
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) { val count = input.read(buffer); if(count < 0) break; digest.update(buffer,0,count) }
         }
-        val dest = File(context.cacheDir, "filees-update.apk")
+        return digest.digest().joinToString("") { "%02x".format(it) } == offer.sha256
+    }
+
+    fun download(context: Context, offer: Offer, cancel: DownloadCancellation = DownloadCancellation()): File {
+        require(offer.url.isNotBlank() && offer.size > 0 && offer.sha256.matches(Regex("[0-9a-f]{64}"))) { "incomplete update offer" }
+        cancel.check()
+        val dest = File(context.cacheDir, "filees-update-${offer.sha256}.apk")
+        if (verify(dest,offer)) return dest
+        val part = File.createTempFile("filees-update-", ".part",context.cacheDir)
         val conn = URL(offer.url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 20_000
-        conn.readTimeout = 120_000
-        conn.instanceFollowRedirects = true
-        conn.inputStream.use { input -> dest.outputStream().use { input.copyTo(it) } }
-        if (dest.length() != offer.size) {
-            dest.delete()
-            throw IllegalStateException("apk size ${dest.length()} != ${offer.size}")
-        }
-        val digest = MessageDigest.getInstance("SHA-256").digest(dest.readBytes())
-        val hex = digest.joinToString("") { "%02x".format(it) }
-        if (hex != offer.sha256) {
-            dest.delete()
-            throw IllegalStateException("apk hash does not match the signed manifest")
-        }
-        return dest
+        try {
+            cancel.attach(conn)
+            conn.connectTimeout = 20_000; conn.readTimeout = 120_000
+            conn.instanceFollowRedirects = true
+            conn.inputStream.use { input -> part.outputStream().use { out ->
+                val buffer = ByteArray(64 * 1024); var total = 0L
+                while(true) {
+                    cancel.check()
+                    val count = input.read(buffer); if(count < 0) break
+                    total += count
+                    if(total > offer.size) throw IllegalStateException("apk exceeds the signed size")
+                    out.write(buffer,0,count)
+                }
+                out.fd.sync()
+            } }
+            cancel.check()
+            check(verify(part,offer)) { "apk does not match the signed manifest" }
+            check(part.renameTo(dest)) { "cannot retain verified apk" }
+            return dest
+        } finally { cancel.detach(); conn.disconnect(); part.delete() }
+    }
+
+    fun installedVersionCode(context: Context): Long {
+        val info = context.packageManager.getPackageInfo(context.packageName,0)
+        return if(Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
     }
 
     fun archiveVersionCode(context: Context, apk: File): Long {
@@ -124,6 +154,7 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 if (confirm != null) context.startActivity(confirm)
             }
             PackageInstaller.STATUS_SUCCESS -> {
+                AutoUpdate.clearReady(context)
                 val sequence = intent.getLongExtra(ApkUpdate.EXTRA_SEQUENCE, 0L)
                 if (sequence > 0) {
                     context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)

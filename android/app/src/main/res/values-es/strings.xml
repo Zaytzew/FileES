@@ -260,4 +260,7 @@
     <string name="watch_scope_note">Estado del alcance seleccionado y del último análisis.</string>
     <string name="watch_queue_more">Se muestran las primeras 200 entradas.</string>
     <string name="watch_state_idle">Sin tareas</string>
+    <string name="update_auto">Actualizaciones automáticas</string>
+    <string name="update_auto_copy">Comprobar y descargar en segundo plano. Confirmar la instalación cuando esté lista.</string>
+    <string name="update_ready_title">Actualización lista para instalar</string>
 </resources>

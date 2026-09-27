@@ -444,3 +444,23 @@ func TestAnInstallerNamedForAnotherPlatformIsRefused(t *testing.T) {
 		t.Fatal("a channel without the configured platform published something")
 	}
 }
+
+func TestVersionNotesFollowOfferedVersion(t *testing.T) {
+	c := Config{Notes: map[string]ReleaseNotes{"specific": {PL: "override"}}, VersionNotes: map[string]ReleaseNotes{"0.1.18": {PL: "new", EN: "new EN"}}}
+	for _, version := range []string{"0.1.18", "0.1.18.1665", "0.1.18.r1665", "0.1.18+r1665"} {
+		if got := c.releaseNotes("unknown", version); got.PL != "new" {
+			t.Fatalf("%s: %+v", version, got)
+		}
+	}
+	for _, version := range []string{"0.1.17.1665", "0.1.180.1665", "0.1.18evil", "0.1.18+r1665M", ""} {
+		if got := c.releaseNotes("unknown", version); got != (ReleaseNotes{}) {
+			t.Fatalf("unexpected notes for %s", version)
+		}
+	}
+	if got := c.releaseNotes("specific", "0.1.18.1665"); got.PL != "override" {
+		t.Fatal(got)
+	}
+	if notesCaption("prefix: ", "  ") != "" || notesCaption("prefix: ", " hello ") != "prefix: hello" {
+		t.Fatal("caption")
+	}
+}

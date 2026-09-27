@@ -151,3 +151,32 @@ fixture and run instrumentation with `-e process_phase prepare`, force-stop
 `net.filees.mobile`, then run `-e process_phase resume` with the same host key.
 Instrumentation waits for Application startup before creating its SAF payloads.
 See implementation notes (not distributed) for the exact run.
+
+## 0.1.18 UI and release identity (2026-09-27)
+
+The header reports watched-upload state rather than an empty decisions count.
+Each watched folder opens a status card with its latest scan, retained queue
+(up to 200 entries) and recent journal (30 transitions). Complete refers to
+the selected tracking scope and the last successful scan; an empty queue
+before scanning is not proof of completion. Advanced settings holds desktop
+activation, server management and emergency JSON pairing. The lock prompt is
+simply “Unlock the app”.
+
+About contains an opt-in automatic-update switch, off by default. WorkManager
+checks the signed channel roughly daily when connected and storage is not low,
+verifies/downloads the APK, and announces a new prepared update once. Installation
+still requires the Android confirmation. Manual checking remains available.
+Disabling stops future background work; an already prepared APK remains available
+for manual installation. No success notification is emitted for watched uploads.
+
+Gradle reads the root VERSION shared with desktop, and svnversion supplies
+versionName = VERSION+rREV and versionCode = REV (advancing from the former
+manual code 55). Dirty/mixed developer copies show the SVN suffix; release
+builds require a clean uniform WC. Rebuild the Go AAR from the same source
+before building the APK. After source commits and svn up, build the release
+APK; a newer source commit requires rebuilding it before staging.
+`tools/prepare-android-release.sh` uses `tools/check-android-apk.sh` to inspect
+the binary manifest with SDK aapt2, matching package, version and revision/code,
+and refuses a debug APK before mutating FILEES-BIN. Set ANDROID_HOME or AAPT2.
+The signed manifest keeps its existing VERSION.REV format and schema.
+Developer builds/tests do not promote any release channel.

@@ -6,8 +6,8 @@
 # The candidate is channel-android.json. Nothing here signs, and nothing here
 # touches channels/.
 #
-# The APK is built elsewhere (the debug or release package). This script only
-# hashes it and writes the unsigned channel candidate.
+# The release APK is built elsewhere. This script validates its identity,
+# hashes it and writes the unsigned channel candidate. Debug APKs are rejected.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -43,6 +43,10 @@ source_revision=$(svn info --show-item revision | tr -d '\r\n')
 base_version=$(sed -n '1p' "$root/VERSION" | tr -d '\r\n')
 # The signed manifest version cannot carry '+'. The APK's own versionName may.
 version="$base_version.$source_revision"
+# Read the binary AndroidManifest, not the filename or Gradle source. Reject
+# stale/debug APKs before making any change in the distribution working copy.
+EXPECTED_ANDROID_VERSION="$base_version+r$source_revision" EXPECTED_ANDROID_CODE="$source_revision" \
+  sh "$root/tools/check-android-apk.sh" "$APK"
 case "$version" in *[!A-Za-z0-9._-]*|'') die "version $version is not a release identifier" ;; esac
 
 cd "$FILEES_BIN_WC"

@@ -144,6 +144,10 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.buttonRequestDesktopJoin.setOnClickListener { confirmJoinThenSend() }
         binding.buttonAbout.setOnClickListener { showAbout() }
+        if (intent.getBooleanExtra(AutoUpdate.EXTRA_ABOUT,false)) {
+            intent.removeExtra(AutoUpdate.EXTRA_ABOUT)
+            binding.root.post { if(!isFinishing && !isDestroyed) showAbout() }
+        }
         binding.buttonAdvanced.setOnClickListener { showAdvanced() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
@@ -247,8 +251,16 @@ class SettingsActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.textAboutChannel).text = getString(R.string.about_channel_apk)
         view.findViewById<TextView>(R.id.textAboutRelease).text = version
         view.findViewById<TextView>(R.id.textAboutStatus).text = getString(R.string.about_status_apk)
+        val auto = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchAutoUpdate)
+        auto.isChecked = AutoUpdate.enabled(this)
+        auto.setOnCheckedChangeListener { _, value -> AutoUpdate.setEnabled(this,value) }
         val updateButton = view.findViewById<MaterialButton>(R.id.buttonCheckUpdate)
-        updateButton.setOnClickListener { checkUpdate(view.findViewById(R.id.textAboutStatus), updateButton) }
+        val ready = AutoUpdate.ready(this)
+        if (ready != null) {
+            view.findViewById<TextView>(R.id.textAboutStatus).text = getString(R.string.update_available,ready.version)
+            updateButton.setText(R.string.update_install)
+            updateButton.setOnClickListener { fetchAndInstall(view.findViewById(R.id.textAboutStatus),updateButton,ready) }
+        } else updateButton.setOnClickListener { checkUpdate(view.findViewById(R.id.textAboutStatus), updateButton) }
         val licenseBody = view.findViewById<TextView>(R.id.textAboutLicenseFull)
         val licenseToggle = view.findViewById<MaterialButton>(R.id.buttonAboutLicense)
         licenseToggle.setOnClickListener {

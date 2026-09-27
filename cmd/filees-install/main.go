@@ -8,12 +8,23 @@ import (
 	"strings"
 
 	"filees/internal/serverinstall/config"
+	"filees/internal/serverinstall/cronjob"
 	"filees/internal/serverinstall/platform"
 	"filees/internal/serverinstall/svnfetch"
 	"filees/internal/serverinstall/updater"
+	"path/filepath"
 )
 
 func main() {
+	// Bootstrap scripts have already installed the accounts and binaries. This
+	// narrow mode requires no release/network configuration and only repairs cron.
+	if len(os.Args) == 4 && os.Args[1] == "--ensure-capacity-cron" {
+		if err := cronjob.Ensure(context.Background(), filepath.Join(os.Args[2], "filees-admin"), os.Args[3]); err != nil {
+			die(err)
+		}
+		return
+	}
+
 	cfgFlag := flag.String("c", "", "configuration file")
 	checkConfig := flag.Bool("check-config", false, "print resolved configuration and exit")
 	check := flag.Bool("check", false, "check the configured channel without installing")

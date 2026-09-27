@@ -336,6 +336,13 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err := r.checkStorageCapacity(configMigrations); err != nil {
 		return err
 	}
+	cronPlan, err := r.capacityCron(ctx, m, st.IsFirstInstall())
+	if err != nil {
+		return err
+	}
+	if cronPlan != nil {
+		fmt.Fprintf(r.Out, "[SYS] capacity cron repair_needed=%t (apply repairs only its marked entry)\n", cronPlan.Changed)
+	}
 	base, err := r.baseUnveils()
 	if err != nil {
 		return err
@@ -483,6 +490,10 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	cronPlan, err := r.capacityCron(ctx, m, st.IsFirstInstall())
+	if err != nil {
+		return err
+	}
 	var staged []StagedFile
 	var stageRoot string
 	// Check before downloading payloads and before sandbox reduction. A dry
@@ -535,7 +546,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	// inherited by exec'd children — so those runs skip unveil entirely and
 	// keep the bootstrap pledge until their system phase completes.
 	// File-only runs (including every dry-run) get the full profile.
-	systemRun := !opts.DryRun && (st.IsFirstInstall() || r.manifestTouchesSSHD(m))
+	systemRun := !opts.DryRun && (st.IsFirstInstall() || r.manifestTouchesSSHD(m) || (cronPlan != nil && cronPlan.Changed))
 	if systemRun {
 		if r.Config.Talkative {
 			fmt.Fprintln(r.Out, "[SECURITY] system run: unveil skipped")
@@ -599,6 +610,12 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	}
 	if err := r.correctRepositoryOwnership(repositoriesRoot, false); err != nil {
 		return fmt.Errorf("repository ownership: %w", err)
+	}
+	if cronPlan != nil && cronPlan.Changed {
+		if err := cronPlan.Apply(ctx); err != nil {
+			return fmt.Errorf("capacity cron: %w", err)
+		}
+		fmt.Fprintln(r.Out, "[SYS] capacity cron installed/repaired; configure capacity-alerts.json (realm_id, admin_email) to enable alerts")
 	}
 	// All inode and system mutations are complete. Only now may OpenBSD
 	// pledge: its first call permanently disables setting set-id bits.

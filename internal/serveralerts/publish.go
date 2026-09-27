@@ -60,6 +60,14 @@ func output(ctx context.Context, bin string, args ...string) ([]byte, error) {
 // Publish uses optimistic SVN revision checks. Concurrent publication is safe:
 // an out-of-date write is retried against a freshly read snapshot.
 func (p Publisher) Publish(ctx context.Context, realm, key, severity, status, text string) (bool, error) {
+	return p.Update(ctx, realm, func(s alertchannel.Snapshot) (alertchannel.Snapshot, bool, error) {
+		return s.Change(realm, key, severity, status, text, time.Now())
+	})
+}
+
+// Update recomputes a batch against the latest snapshot on every CAS retry.
+// The callback must not perform side effects; unchanged batches do not write.
+func (p Publisher) Update(ctx context.Context, realm string, change func(alertchannel.Snapshot) (alertchannel.Snapshot, bool, error)) (bool, error) {
 	if _, err := uuid.Parse(realm); err != nil {
 		return false, err
 	}
@@ -99,13 +107,19 @@ func (p Publisher) Publish(ctx context.Context, realm, key, severity, status, te
 				return false, e
 			}
 		}
-		next, changed, err := s.Change(realm, key, severity, status, text, time.Now())
+		next, changed, err := change(s)
 		if err != nil || !changed {
+			return false, err
+		}
+		if err := next.Validate(realm); err != nil {
 			return false, err
 		}
 		raw, err := json.Marshal(next)
 		if err != nil {
 			return false, err
+		}
+		if len(raw) > alertchannel.MaxBytes {
+			return false, errors.New("alert snapshot too large")
 		}
 		f, err := os.CreateTemp(p.TempDir, "filees-alert-*.json")
 		if err != nil {

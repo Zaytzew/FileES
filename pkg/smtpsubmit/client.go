@@ -73,6 +73,8 @@ func Submit(ctx context.Context, config Config, request Request) error {
 		return &Error{Stage: "connect", Temporary: true, Err: err}
 	}
 	defer connection.Close()
+	stopCancellation := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stopCancellation()
 	client := &client{connection: connection, timeout: config.CommandTimeout}
 	if config.TLSMode == TLSImplicit {
 		if err := client.startTLS(ctx, config); err != nil {

@@ -53,10 +53,12 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|reap-lock-requests|rotate | erasure complete | demo reap | alert publish | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|reap-lock-requests|rotate | erasure complete | demo reap | alert publish|capacity | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
+	case "alert capacity":
+		return runAdminCapacity(path, args[2:], stdout, stderr)
 	case "alert publish":
 		return runAdminAlertPublish(path, args[2:], stdout, stderr)
 	case "demo reap":

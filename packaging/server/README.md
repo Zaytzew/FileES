@@ -415,3 +415,54 @@ this feature. A full filesystem may prevent publication itself; this channel
 cannot replace direct operation errors or independent infrastructure monitoring.
 Resolved records are pruned from snapshots when needed; this does not reclaim
 SVN history. Automated channel history rotation is not part of this first stage.
+
+
+## Capacity alerts and independent email fallback
+
+`filees-admin alert capacity` performs one filesystem-metadata pass (Linux or
+OpenBSD); no file-tree scan. It uses the existing server SMTP configuration.
+Copy `capacity-alerts.example.json` to `/etc/filees/capacity-alerts.json`, set
+`realm_id`, `admin_email`, and a private `state_dir` writable by `_filees-state`.
+The recipient realm is an explicit operator choice; this does not introduce
+administrator roles. Keep the config readable by the state user, mode 0600.
+Prefer a state directory on a different filesystem from the service repository.
+Prepare its parent with the correct ownership before enabling the monitor.
+
+Defaults: warning below 15% available blocks/inodes OR 1 GiB available bytes;
+critical below 5% OR 256 MiB. Recovery requires an additional 2 percentage points
+and 128 MiB above the triggering level. For small system volumes configure lower
+absolute thresholds using `policy.warning_bytes`, `critical_bytes`, and
+`hysteresis_bytes`. Other policy keys: `warning_percent`, `critical_percent`,
+`hysteresis_percent`. A volume is sampled once even when several configured paths
+use it. Add `paths: [{"label":"install-stage","path":"/actual/stage"}]` for
+storage outside server.json (installer staging/backups, public-links cache, etc.).
+Missing future directories use their nearest existing parent; this is not a
+mount-presence monitor. `--dry-run` prints measurements without sending or saving.
+
+New incidents/escalations go to both the GUI channel and SMTP. Resolution is
+silent. A failed channel write does not suppress the independently queued email;
+an SMTP failure retains its intent for the next invocation. SMTP acceptance is
+not proof of delivery to the mailbox. Crash after acceptance can retry the same
+Message-ID. Failure to persist the local intent is an error; this is not an
+out-of-band alert system when every writable filesystem is full. Errors reach
+stderr and cron mail; verify the system's cron-mail delivery too.
+
+Current `filees-install --check` reports a missing/stale capacity cron entry;
+`--apply` installs/repairs only its marked line in `_filees-state`'s crontab,
+preserving other jobs. Bootstrap scripts do the same after account creation.
+Install and enable cron/crond on Linux; there is no additional FileES service.
+The signed example file identifies releases supporting this job. To repair a
+legacy installation once the new installer is present:
+
+```sh
+/usr/local/sbin/filees-install --ensure-capacity-cron /usr/local/sbin /etc/filees/server.json
+```
+
+The job is installed even before the real configuration exists. `--scheduled`
+is then a quiet no-op: monitoring starts only after the operator configures the
+real recipient, email and state directory. Existing settings are never replaced
+with the example. Installing with an old installer cannot add this new behavior;
+use the new installer or the repair command for the first rollout. Binary rollback
+to a version without `alert capacity` requires removing only the marked cron line;
+keep the settings and state for the next upgrade. No production cron was enabled
+by the development tests themselves.

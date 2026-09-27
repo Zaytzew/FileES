@@ -182,3 +182,6 @@ rcctl reload sshd
 echo "FileES SSH entries, Public Shares users, binaries and disabled rc.d scripts installed; no Public Shares listener was started."
 echo "Upload requires matching intake_root=$public_upload_intake_root in both JSON configurations and upload-reap scheduled as $state_user."
 echo "Existing configuration and intake jobs were not migrated. Do not remove or relocate a running intake directory."
+
+/usr/local/sbin/filees-install --ensure-capacity-cron /usr/local/sbin /etc/filees/server.json
+echo "Capacity cron checked. Configure /etc/filees/capacity-alerts.json with realm_id and admin_email to enable it."

@@ -95,3 +95,10 @@ echo "Set install.public_downloads_dir=$public_downloads_dir in install.conf; us
 echo "No daemon or rc.d service was installed."
 echo "Manual pages installed under $prefix/man (man filees, man filees-admin)."
 echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."
+
+install -m 0644 "$bundle/share/filees/capacity-alerts.example.json" "$sysconfdir/capacity-alerts.example.json"
+if id _filees-state >/dev/null 2>&1; then
+ "$prefix/sbin/filees-install" --ensure-capacity-cron "$prefix/sbin" "$sysconfdir/server.json"
+else
+ echo "Capacity cron will be installed after platform setup creates _filees-state."
+fi

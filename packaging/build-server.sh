@@ -94,6 +94,7 @@ for command in filees-admin filees-onboard filees-bootstrap-entry filees-operati
 	)
 done
 
+cp "$root/packaging/server/capacity-alerts.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/public-links.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/install.example.conf" "$tmp/share/filees/"

@@ -164,6 +164,14 @@
       "mode": "4550",
       "owner": "_filees-state",
       "group": "auth"
+    },
+    {
+      "source": "share/filees/capacity-alerts.example.json",
+      "target": "{sysconf_dir}/capacity-alerts.example.json",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "wheel"
     }
   ]
 }

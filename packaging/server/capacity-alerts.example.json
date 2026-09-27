@@ -1,0 +1,10 @@
+{
+  "schema": "filees.capacity-alerts/v1",
+  "realm_id": "REPLACE_WITH_OPERATOR_REALM_UUID",
+  "admin_email": "admin@example.invalid",
+  "state_dir": "/home/_filees/capacity-alerts",
+  "paths": [
+    {"label": "installer", "path": "/var/filees"},
+    {"label": "public-cache", "path": "/var/filees-downloads/cache"}
+  ]
+}

@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// sendOneTimeout is the budget for a single upload attempt. A folder of
+// sendOneTimeout is the base processing budget; transfer size adds time. A folder of
 // many files must not share one deadline: the previous 2-minute batch
 // timer cancelled a later dial mid-lookup and looked like a DNS failure
 // even though earlier files had already landed.
@@ -326,11 +326,7 @@ func (c Client) DrainPending(ctx context.Context, repoID string) ([]PendingUploa
 			results = append(results, item)
 			continue
 		}
-		timeout := sendOneTimeout
-		if item.Operation == v1.OpUploadTree {
-			timeout = 10 * time.Minute
-		}
-		itemCtx, cancel := context.WithTimeout(ctx, timeout)
+		itemCtx, cancel := context.WithTimeout(ctx, uploadAttemptTimeout(item))
 		item, err = c.sendOne(itemCtx, ctx, item)
 		cancel()
 		if err != nil {

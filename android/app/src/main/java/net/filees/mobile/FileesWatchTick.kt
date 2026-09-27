@@ -21,7 +21,7 @@ object FileesWatchTick {
     private const val NOTIFICATION_FAIL_ID = 1002
     private const val NOTIFICATION_WAIT_ID = 1003
 
-    fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation()): Int = CaptureCoordinator.run(cancel) {
+    fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation(), onWork: (String) -> Unit = {}): Int = CaptureCoordinator.run(cancel) {
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
         FileesSession.migrate(prefs)
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null) ?: return@run 0
@@ -39,6 +39,7 @@ object FileesWatchTick {
             val client = Androidbind.newClient(context.filesDir.absolutePath, DialAddress.resolve(address), FileesSession.MOBILE_USER, hostKey)
             cancel.attach(client)
             val before = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).associateBy { it.id }
+            val ownedSources = before.values.flatMap { it.sources }.toSet()
             before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it) } }
             for (tree in trees) {
                 cancel.check()
@@ -48,6 +49,7 @@ object FileesWatchTick {
                     }
                     status.scanned(scope,tree)
                     if (unseen.isEmpty()) continue
+                    if (unseen.any { CaptureTransfers.source(it) !in ownedSources }) onWork(context.getString(R.string.watch_state_preparing))
                     status.phase(scope,tree,"preparing")
                     val part = CaptureTransfers.send(context, client, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true, progress = {
                         status.phase(scope,tree,"preparing")
@@ -69,6 +71,8 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)),finish = true)
             for (item in queued) {
                 cancel.check()
+                val remaining = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).filter { !it.delivered && it.state != "discarded" }.sumOf { it.fileCount }
+                onWork(context.getString(R.string.watch_queue_count,remaining))
                 trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
                     .forEach { status.phase(scope,it,"sending") }
                 client.sendUploadJSON(repoId,item.id)

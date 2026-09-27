@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkInfo
+import androidx.work.ForegroundInfo
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -25,12 +26,32 @@ class FileesWatchWorker(context: Context, params: WorkerParameters) : Worker(con
     override fun doWork(): Result {
         try {
             if (isStopped) return Result.retry()
-            FileesWatchTick.run(applicationContext, cancellation)
+            FileesWatchTick.run(applicationContext, cancellation) { text ->
+                setForegroundAsync(foregroundInfo(applicationContext,text,10000 + (id.hashCode() and 0x3fffffff))).get()
+            }
         } catch (_: Exception) {
             if (isStopped) return Result.retry()
         }
         if (!isStopped && inputData.getBoolean("reschedule", true)) FileesWatchScheduler.scheduleNext(applicationContext)
         return Result.success()
+    }
+
+    companion object {
+        internal fun foregroundInfo(context: Context, text: String, notificationId: Int): ForegroundInfo {
+            val channel = "filees-capture-active"
+            if (Build.VERSION.SDK_INT >= 26) {
+                context.getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(
+                    android.app.NotificationChannel(channel,context.getString(R.string.watch_state_sending),android.app.NotificationManager.IMPORTANCE_LOW))
+            }
+            val open = android.app.PendingIntent.getActivity(context,0,android.content.Intent(context,MainActivity::class.java),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            val notification = androidx.core.app.NotificationCompat.Builder(context,channel)
+                .setSmallIcon(R.drawable.ic_file).setContentTitle(context.getString(R.string.watch_state_sending))
+                .setContentText(text).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
+                .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_PRIVATE).build()
+            return if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(notificationId,notification,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                else ForegroundInfo(notificationId,notification)
+        }
     }
 }
 

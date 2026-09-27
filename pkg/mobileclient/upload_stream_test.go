@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -273,5 +274,79 @@ func TestStatusAlreadyInFlightStopsWithCaller(t *testing.T) {
 	case <-finished:
 	case <-time.After(time.Second):
 		t.Fatal("status ignored explicit stop")
+	}
+}
+
+// Inspect the transport deadline without moving a gigabyte through a fixture.
+// The artificial payload is never accepted as a valid server upload here.
+type budgetTransport struct {
+	t        *testing.T
+	min, max time.Duration
+	calls    int
+}
+
+func (b *budgetTransport) Do(ctx context.Context, req v1.Request, _ []byte) (v1.Response, []byte, error) {
+	if req.Operation == v1.OpUploadObject || req.Operation == v1.OpUploadTree {
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining < b.min || remaining > b.max {
+			b.t.Fatalf("upload budget %v outside [%v,%v]", remaining, b.min, b.max)
+		}
+		b.calls++
+	}
+	return v1.Response{}, nil, errors.New("offline test endpoint")
+}
+func (b *budgetTransport) DoStream(ctx context.Context, req v1.Request, _ io.Reader) (v1.Response, []byte, error) {
+	return b.Do(ctx, req, nil)
+}
+func TestCapturedVideoBudgetAndCallerDeadline(t *testing.T) {
+	const videoBytes = int64(1116709332) // measured phone file; ~30 min at 5 Mbit/s
+	for _, op := range []v1.Operation{v1.OpUploadObject, v1.OpUploadTree} {
+		for _, drain := range []bool{false, true} {
+			for _, shortCaller := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/drain=%v/caller=%v", op, drain, shortCaller), func(t *testing.T) {
+					store := Store{Root: t.TempDir()}
+					item, err := store.EnqueueReader(context.Background(), "repo", "mobile-uploads", "video.mp4", "video/mp4", op, 1, nil, bytes.NewReader([]byte("fixture")))
+					if err != nil {
+						t.Fatal(err)
+					}
+					item.Size = videoBytes
+					if err := os.Truncate(store.uploadPayloadPath(item.RepoID, item.ID), videoBytes); err != nil {
+						t.Fatal(err)
+					}
+					if err := store.recordUploadOutcome(item); err != nil {
+						t.Fatal(err)
+					}
+					transport := &budgetTransport{t: t, min: 30 * time.Minute, max: 3 * time.Hour}
+					ctx := context.Background()
+					if shortCaller {
+						var cancel context.CancelFunc
+						ctx, cancel = context.WithTimeout(ctx, time.Second)
+						defer cancel()
+						transport.min = 0
+						transport.max = time.Second
+					}
+					client := Client{Store: store, Transport: transport}
+					if drain {
+						_, err = client.DrainPending(ctx, "repo")
+					} else {
+						_, err = client.SendUpload(ctx, "repo", item.ID)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if transport.calls != 1 {
+						t.Fatalf("upload attempts=%d", transport.calls)
+					}
+					queued, err := store.ListUploads("repo")
+					if err != nil || len(queued) != 1 || queued[0].ID != item.ID || queued[0].State != UploadPendingCreate {
+						t.Fatalf("lost pending intent: %v %v", queued, err)
+					}
+				})
+			}
+		}
+	}
+	if uploadAttemptTimeout(PendingUpload{Size: 1<<63 - 1, Operation: v1.OpUploadTree}) > 3*time.Hour {
+		t.Fatal("unbounded duration")
 	}
 }

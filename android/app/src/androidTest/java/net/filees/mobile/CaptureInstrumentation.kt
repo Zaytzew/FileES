@@ -26,7 +26,9 @@ class CaptureInstrumentation : Instrumentation() {
             // Instrumentation.start() races Application.onCreate(); wait for
             // its startup cache sweep before producing test payloads.
             waitForIdleSync()
-            if (args.containsKey("ui_checks")) {
+            if (args.containsKey("watch_worker")) {
+                WatchForegroundChecks.run(this,args.getString("host_key")!!)
+            } else if (args.containsKey("ui_checks")) {
                 WatchStatusChecks.run(this)
             } else if (args.containsKey("process_phase")) {
                 testAcrossProcessRestart(args.getString("process_phase")!!)

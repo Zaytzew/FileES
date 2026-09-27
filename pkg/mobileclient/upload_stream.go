@@ -175,13 +175,29 @@ func (c Client) SendUpload(ctx context.Context, repoID, id string) (PendingUploa
 	if item.State.terminal() {
 		return item, nil
 	}
-	timeout := sendOneTimeout
-	if item.Operation == v1.OpUploadTree {
-		timeout = 10 * time.Minute
-	}
-	attempt, cancel := context.WithTimeout(ctx, timeout)
+	attempt, cancel := context.WithTimeout(ctx, uploadAttemptTimeout(item))
 	defer cancel()
 	return c.sendOne(attempt, ctx, item)
+}
+
+// Allow large captured videos to finish on mobile uplinks. The transfer
+// allowance assumes 256 KiB/s, in addition to the normal processing budget.
+// Cancellation, SSH liveness and the caller deadline still take precedence.
+func uploadAttemptTimeout(item PendingUpload) time.Duration {
+	base := sendOneTimeout
+	if item.Operation == v1.OpUploadTree {
+		base = 10 * time.Minute
+	}
+	const rate = int64(256 * 1024)
+	const maximum = 3 * time.Hour
+	if item.Size <= 0 {
+		return base
+	}
+	seconds := item.Size/rate + 1
+	if seconds >= int64((maximum-base)/time.Second) {
+		return maximum
+	}
+	return base + time.Duration(seconds)*time.Second
 }
 
 func (c Client) pendingError(item PendingUpload, err error) (PendingUpload, error) {

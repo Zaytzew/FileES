@@ -61,23 +61,27 @@ object TreeZip {
         return out
     }
 
-    fun pack(resolver: ContentResolver, files: List<WalkedFile>, cacheDir: File): File {
+    fun pack(resolver: ContentResolver, files: List<WalkedFile>, cacheDir: File, cancel: CaptureCancellation = CaptureCancellation()): File {
+        require(files.size <= FolderPreflight.MAX_CHUNK_FILES)
+        var remaining = CaptureTransfers.MAX_FILE_BYTES
         cacheDir.mkdirs()
-        val out = File(cacheDir, "pack-${System.currentTimeMillis()}.zip")
+        val out = File.createTempFile("pack-", ".zip", cacheDir)
         try {
             ZipOutputStream(out.outputStream().buffered()).use { zip ->
                 zip.setComment(COMMENT)
                 for (file in files) {
+                    cancel.check()
                     val name = listOf(file.relativeDir.trim('/'), file.filename)
                         .filter { it.isNotBlank() }
                         .joinToString("/")
                     val entry = ZipEntry(name)
+                    entry.time = 0L // deterministic pack on retries
                     if (stored(file.filename)) {
                         // SAF documents do not reliably report length() the way
                         // a local File does, so size comes from this same
                         // hashing pass rather than a second, provider-specific
                         // length query that could return UNKNOWN_LENGTH.
-                        val (crc, size) = (resolver.openInputStream(file.uri) ?: throw IOException("Cannot read source: ${file.filename}")).use { crcAndSizeOf(it) }
+                        val (crc, size) = cancel.reading(resolver.openAssetFileDescriptor(file.uri, "r", cancel.signal)?.createInputStream() ?: throw IOException("Cannot read source: ${file.filename}")) { crcAndSizeOf(it, remaining, cancel) }
                         entry.method = ZipEntry.STORED
                         entry.size = size
                         entry.compressedSize = size
@@ -85,9 +89,11 @@ object TreeZip {
                     } else {
                         entry.method = ZipEntry.DEFLATED
                     }
-                    (resolver.openInputStream(file.uri) ?: throw IOException("Cannot read source: ${file.filename}")).use { input ->
+                    cancel.reading(resolver.openAssetFileDescriptor(file.uri, "r", cancel.signal)?.createInputStream() ?: throw IOException("Cannot read source: ${file.filename}")) { input ->
                         zip.putNextEntry(entry)
-                        input.copyTo(zip, BUFFER_SIZE)
+                        val measured = CaptureTransfers.copy(input, zip, remaining, cancel)
+                        if (file.size > 0L && measured != file.size) throw IOException("Source size changed: ${file.filename}")
+                        remaining -= measured
                         zip.closeEntry()
                     }
                 }
@@ -101,15 +107,17 @@ object TreeZip {
 
     private fun crcOf(input: InputStream): Long = crcAndSizeOf(input).first
 
-    private fun crcAndSizeOf(input: InputStream): Pair<Long, Long> {
+    private fun crcAndSizeOf(input: InputStream, limit: Long = Long.MAX_VALUE, cancel: CaptureCancellation = CaptureCancellation()): Pair<Long, Long> {
         val crc = CRC32()
         val buf = ByteArray(BUFFER_SIZE)
         var size = 0L
         while (true) {
+            cancel.check()
             val n = input.read(buf)
             if (n < 0) break
             crc.update(buf, 0, n)
             size += n
+            if (size > limit) throw IOException("Capture exceeds size limit ($limit bytes)")
         }
         return crc.value to size
     }

@@ -23,15 +23,22 @@ type Ledger struct {
 
 // Record is one append operation's durable state.
 type Record struct {
-	RequestID   string     `json:"request_id"`
-	ClientID    string     `json:"client_id"`
-	RepoID      string     `json:"repo_id"`
-	Path        string     `json:"path"`
-	PayloadHash string     `json:"payload_hash"`
-	State       v1.OpState `json:"state"`
-	Revision    int64      `json:"revision,omitempty"`
-	FinalPath   string     `json:"final_path,omitempty"`
-	UpdatedAt   string     `json:"updated_at"`
+	RecoveryFenced bool         `json:"recovery_fenced,omitempty"`
+	Outcome        v1.Outcome   `json:"outcome,omitempty"`
+	NoChanges      bool         `json:"no_changes,omitempty"`
+	BeforeRevision int64        `json:"before_revision,omitempty"`
+	Operation      v1.Operation `json:"operation,omitempty"`
+	Size           int64        `json:"size,omitempty"`
+	FileCount      int          `json:"file_count,omitempty"`
+	RequestID      string       `json:"request_id"`
+	ClientID       string       `json:"client_id"`
+	RepoID         string       `json:"repo_id"`
+	Path           string       `json:"path"`
+	PayloadHash    string       `json:"payload_hash"`
+	State          v1.OpState   `json:"state"`
+	Revision       int64        `json:"revision,omitempty"`
+	FinalPath      string       `json:"final_path,omitempty"`
+	UpdatedAt      string       `json:"updated_at"`
 }
 
 func (l Ledger) path(requestID string) string {

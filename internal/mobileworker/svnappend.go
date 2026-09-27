@@ -2,6 +2,7 @@ package mobileworker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -81,22 +82,7 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	if err := s.propset(ctx, passport.AppendOnlyProperty, "*", fileInWC); err != nil {
 		return 0, err
 	}
-	if err := runStream(ctx, io.Discard, s.svn(), "commit", wc, "-m", "mobile append", "--with-revprop", "filees:request-id="+requestID); err != nil {
-		return 0, err
-	}
-
-	// The committed revision is HEAD after our commit. A per-repo worker lock
-	// makes this exact; the revprop remains the recovery anchor either way.
-	out, err := output(ctx, s.svnlook(), "youngest", repoPath)
-	if err != nil {
-		return 0, err
-	}
-	m := revLine.FindString(string(out))
-	rev, err := strconv.ParseInt(m, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("svnlook youngest: unexpected output %q", out)
-	}
-	return rev, nil
+	return s.commitRevision(ctx, wc, "mobile append", requestID)
 }
 
 // CommitTree checks out the repo root at depth empty and publishes every
@@ -157,19 +143,7 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 			}
 		}
 	}
-	if err := runStream(ctx, io.Discard, s.svn(), "commit", wc, "-m", "mobile tree ingest", "--with-revprop", "filees:request-id="+requestID); err != nil {
-		return 0, err
-	}
-	out, err := output(ctx, s.svnlook(), "youngest", repoPath)
-	if err != nil {
-		return 0, err
-	}
-	m := revLine.FindString(string(out))
-	rev, err := strconv.ParseInt(m, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("svnlook youngest: unexpected output %q", out)
-	}
-	return rev, nil
+	return s.commitRevision(ctx, wc, "mobile tree ingest", requestID)
 }
 
 // ensureParent brings each parent segment into the sparse WC: update if it
@@ -285,3 +259,19 @@ func (s SVNAppender) propset(ctx context.Context, name, value, target string) er
 	}
 	return runStream(ctx, io.Discard, s.svn(), "propset", "-q", name, "--file", f.Name(), target)
 }
+
+// Parse the actual commit receipt, never HEAD: desktop writes are concurrent.
+func (s SVNAppender) commitRevision(ctx context.Context, wc, message, requestID string) (int64, error) {
+	raw, err := output(ctx, s.svn(), "commit", wc, "-m", message, "--with-revprop", "filees:request-id="+requestID)
+	if err != nil {
+		return 0, err
+	}
+	match := regexp.MustCompile(`(?m)^Committed revision ([0-9]+)\.`).FindSubmatch(raw)
+	if len(match) != 2 {
+		return 0, errors.New("svn commit receipt missing; operation requires recovery")
+	}
+	return strconv.ParseInt(string(match[1]), 10, 64)
+}
+
+// recoveryFence marks the committer that propagates the operation lock to SVN.
+func (SVNAppender) recoveryFence() {}

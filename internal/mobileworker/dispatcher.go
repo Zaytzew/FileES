@@ -109,7 +109,7 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 	case v1.OpOperationStatus:
 		var p v1.OperationStatusPayload
 		_ = json.Unmarshal(req.Payload, &p)
-		return d.writeOK(out, req, d.status(p.TargetRequestID), nil)
+		return d.writeOK(out, req, d.status(ctx, p.TargetRequestID), nil)
 
 	case v1.OpListDrawers:
 		res, err := d.Browser.ListDrawers(ctx, d.ClientID)
@@ -136,10 +136,23 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 	}
 }
 
-func (d Dispatcher) status(targetRequestID string) v1.OperationStatusResult {
+func (d Dispatcher) status(ctx context.Context, targetRequestID string) v1.OperationStatusResult {
 	rec, err := d.Appender.Ledger.Lookup(targetRequestID)
-	if err != nil || rec == nil {
+	if err != nil || rec == nil || rec.ClientID != d.ClientID {
 		return v1.OperationStatusResult{State: v1.OpStateUnknown}
+	}
+	view, err := d.Appender.Authority.Resolve(ctx, d.ClientID, rec.RepoID)
+	if err != nil {
+		return v1.OperationStatusResult{State: v1.OpStateUnknown}
+	}
+	lock, err := d.Appender.Ledger.lockOperation(targetRequestID)
+	if err == nil {
+		defer lock.Close()
+		rec, err = d.Appender.Ledger.Lookup(targetRequestID)
+		if err != nil || rec == nil {
+			return v1.OperationStatusResult{State: v1.OpStateUnknown}
+		}
+		_ = d.Appender.recover(ctx, view.RepoPath, rec)
 	}
 	return v1.OperationStatusResult{State: rec.State, Revision: rec.Revision}
 }
@@ -167,6 +180,12 @@ func (d Dispatcher) writeOK(out io.Writer, req v1.Request, result any, payload [
 // puts the real cause in msg, so a second copy in the log would be noise.
 func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	code, msg := "worker.failed", "operation failed"
+	if errors.Is(err, errUploadLimit) {
+		code, msg = "tree.limit", "upload exceeds file count or size limit"
+	}
+	if errors.Is(err, errOperationUncertain) {
+		code, msg = "operation.uncertain", "operation commit is not yet confirmed"
+	}
 	if errors.Is(err, ErrAccessDenied) {
 		code = "access.denied"
 	}
@@ -175,6 +194,9 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	}
 	if errors.Is(err, ErrNotDirectory) {
 		code, msg = "path.not_directory", "path is not a directory"
+	}
+	if errors.Is(err, errNotTreePack) {
+		code, msg = "tree.not_pack", "archive is not a FileES tree pack"
 	}
 	if errors.Is(err, errTreeIncomplete) {
 		code, msg = "tree.incomplete", "zip file count does not match the header"

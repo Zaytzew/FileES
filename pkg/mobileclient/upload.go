@@ -1,8 +1,8 @@
 package mobileclient
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,8 +13,6 @@ import (
 	"time"
 
 	v1 "filees/pkg/mobile/v1"
-
-	"github.com/google/uuid"
 )
 
 // UploadState is the local lifecycle of one queued append-only-unique
@@ -61,15 +59,19 @@ func (s UploadState) terminal() bool {
 // retries (concept doc §10.1) — a fresh id is only minted by EnqueueUpload for
 // a genuinely new candidate.
 type PendingUpload struct {
-	ID          string      `json:"id"`
-	RepoID      string      `json:"repo_id"`
-	ParentPath  string      `json:"parent_path"`
-	Filename    string      `json:"filename"`
-	Size        int64       `json:"size"`
-	Sha256      string      `json:"sha256"`
-	ContentType string      `json:"content_type,omitempty"`
-	State       UploadState `json:"state"`
-	EnqueuedAt  time.Time   `json:"enqueued_at"`
+	Operation     v1.Operation `json:"operation,omitempty"`
+	FileCount     int          `json:"file_count,omitempty"`
+	Sources       []string     `json:"sources,omitempty"`
+	ID            string       `json:"id"`
+	RepoID        string       `json:"repo_id"`
+	ParentPath    string       `json:"parent_path"`
+	Filename      string       `json:"filename"`
+	Size          int64        `json:"size"`
+	Sha256        string       `json:"sha256"`
+	ContentType   string       `json:"content_type,omitempty"`
+	State         UploadState  `json:"state"`
+	LastAttemptAt time.Time    `json:"last_attempt_at,omitempty"`
+	EnqueuedAt    time.Time    `json:"enqueued_at"`
 
 	// Populated once a worker outcome is known.
 	Outcome        v1.Outcome `json:"outcome,omitempty"`
@@ -97,31 +99,7 @@ func (s Store) uploadPayloadPath(repoID, id string) string {
 // data). The payload is written and fsynced before the metadata that
 // references it, so a crash never leaves metadata pointing at a missing file.
 func (s Store) EnqueueUpload(repoID, parentPath, filename, contentType string, content []byte) (PendingUpload, error) {
-	if strings.TrimSpace(repoID) == "" {
-		return PendingUpload{}, errors.New("mobileclient: repo_id is required")
-	}
-	if strings.TrimSpace(filename) == "" {
-		return PendingUpload{}, errors.New("mobileclient: filename is required")
-	}
-	sum := sha256.Sum256(content)
-	item := PendingUpload{
-		ID:          uuid.NewString(),
-		RepoID:      repoID,
-		ParentPath:  parentPath,
-		Filename:    filename,
-		Size:        int64(len(content)),
-		Sha256:      hex.EncodeToString(sum[:]),
-		ContentType: contentType,
-		State:       UploadPendingCreate,
-		EnqueuedAt:  time.Now().UTC(),
-	}
-	if err := atomicWriteBytes(s.uploadPayloadPath(repoID, item.ID), content); err != nil {
-		return PendingUpload{}, fmt.Errorf("mobileclient: spool upload payload: %w", err)
-	}
-	if err := atomicWriteJSON(s.uploadMetaPath(repoID, item.ID), &item); err != nil {
-		return PendingUpload{}, fmt.Errorf("mobileclient: persist upload metadata: %w", err)
-	}
-	return item, nil
+	return s.EnqueueReader(context.Background(), repoID, parentPath, filename, contentType, v1.OpUploadObject, 1, nil, bytes.NewReader(content))
 }
 
 // ListUploads returns every queued candidate for repoID, oldest first,
@@ -141,6 +119,9 @@ func (s Store) ListUploads(repoID string) ([]PendingUpload, error) {
 			continue
 		}
 		item, err := s.loadUploadMeta(repoID, strings.TrimSuffix(entry.Name(), ".json"))
+		if os.IsNotExist(err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -194,6 +175,14 @@ func (s Store) recordUploadOutcome(item PendingUpload) error {
 // because §6.4 forbids rewriting the parked item; the old spool is discarded
 // only after the new one is durable.
 func (s Store) RetryUploadAs(repoID, id, filename string) (PendingUpload, error) {
+	return s.RetryUploadAsContext(context.Background(), repoID, id, filename)
+}
+func (s Store) RetryUploadAsContext(ctx context.Context, repoID, id, filename string) (PendingUpload, error) {
+	unlock, err := s.lockQueue(ctx)
+	if err != nil {
+		return PendingUpload{}, err
+	}
+	defer unlock()
 	item, err := s.loadUploadMeta(repoID, id)
 	if err != nil {
 		return PendingUpload{}, err
@@ -208,15 +197,27 @@ func (s Store) RetryUploadAs(repoID, id, filename string) (PendingUpload, error)
 	if name == "" || strings.ContainsAny(name, "/\\") {
 		return PendingUpload{}, errors.New("mobileclient: filename is invalid")
 	}
-	payload, err := s.loadUploadPayload(repoID, id)
+	payload, err := os.Open(s.uploadPayloadPath(repoID, id))
 	if err != nil {
 		return PendingUpload{}, err
 	}
-	next, err := s.EnqueueUpload(repoID, item.ParentPath, name, item.ContentType, payload)
+	defer payload.Close()
+	operation := item.Operation
+	if operation == "" {
+		operation = v1.OpUploadObject
+	}
+	if operation == v1.OpUploadTree {
+		if name != item.Filename {
+			return PendingUpload{}, errors.New("tree intent cannot be renamed")
+		}
+		item.State, item.LastError = UploadPendingCreate, ""
+		return item, s.recordUploadOutcome(item)
+	}
+	next, err := s.enqueueReaderLocked(ctx, repoID, item.ParentPath, name, item.ContentType, operation, 1, item.Sources, payload)
 	if err != nil {
 		return PendingUpload{}, err
 	}
-	if err := s.DiscardUpload(repoID, id); err != nil {
+	if err := s.discardUpload(repoID, id); err != nil {
 		return PendingUpload{}, err
 	}
 	return next, nil
@@ -226,6 +227,14 @@ func (s Store) RetryUploadAs(repoID, id, filename string) (PendingUpload, error)
 // half of the conflict/parked decision in §6.4 ("albo odrzuca"). It is a
 // caller decision, never automatic.
 func (s Store) DiscardUpload(repoID, id string) error {
+	unlock, err := s.lockQueue(context.Background())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return s.discardUpload(repoID, id)
+}
+func (s Store) discardUpload(repoID, id string) error {
 	if err := os.Remove(s.uploadMetaPath(repoID, id)); err != nil && !os.IsNotExist(err) {
 		return err
 	}

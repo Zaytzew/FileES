@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider android:name="net.filees.mobile.CaptureTestProvider"
+            android:authorities="net.filees.mobile.test.capture" android:exported="true" />
+    </application>
+</manifest>

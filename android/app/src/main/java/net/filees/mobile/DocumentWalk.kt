@@ -31,14 +31,15 @@ object DocumentWalk {
         return WalkedFile(uri, "", name, resolver.getType(uri).orEmpty(), size)
     }
 
-    fun tree(resolver: ContentResolver, treeUri: Uri): List<WalkedFile> {
+    fun tree(resolver: ContentResolver, treeUri: Uri, cancel: CaptureCancellation = CaptureCancellation()): List<WalkedFile> {
+        cancel.check()
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
         val rootName = queryName(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId))
             ?: "folder"
-        return walk(resolver, treeUri, rootId, rootName)
+        return walk(resolver, treeUri, rootId, rootName, cancel)
     }
 
-    private fun walk(resolver: ContentResolver, treeUri: Uri, parentId: String, relDir: String): List<WalkedFile> {
+    private fun walk(resolver: ContentResolver, treeUri: Uri, parentId: String, relDir: String, cancel: CaptureCancellation): List<WalkedFile> {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
         val out = mutableListOf<WalkedFile>()
         val projection = arrayOf(
@@ -48,19 +49,20 @@ object DocumentWalk {
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
-        resolver.query(children, projection, null, null, null)?.use { cursor ->
+        (resolver.query(children, projection, null, null, null, cancel.signal) ?: throw java.io.IOException("Cannot list source: $relDir")).use { cursor ->
             val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
             val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
             val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             val modifiedCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
             while (cursor.moveToNext()) {
+                cancel.check()
                 val id = cursor.getString(idCol) ?: continue
                 val name = cursor.getString(nameCol) ?: continue
                 if (name.startsWith(".")) continue
                 val mime = cursor.getString(mimeCol).orEmpty()
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    out += walk(resolver, treeUri, id, "$relDir/$name")
+                    out += walk(resolver, treeUri, id, "$relDir/$name", cancel)
                 } else {
                     val size = if (sizeCol >= 0 && !cursor.isNull(sizeCol)) cursor.getLong(sizeCol) else 0L
                     val modified = if (modifiedCol >= 0 && !cursor.isNull(modifiedCol)) cursor.getLong(modifiedCol) else 0L

@@ -1,12 +1,12 @@
 package mobileclient
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,8 +28,8 @@ type Transport interface {
 	Do(ctx context.Context, req v1.Request, reqPayload []byte) (resp v1.Response, respPayload []byte, err error)
 }
 
-// Client is the mobile core. It is read-only for existing objects and drives
-// append-only-unique uploads; it never modifies an existing path.
+// Client reads repository views and drives durable capture uploads. Object
+// uploads append unique names; tree uploads may replace within mobile-uploads.
 type Client struct {
 	Transport Transport
 	Store     Store
@@ -239,50 +239,31 @@ func (c Client) RequestDesktopJoin(ctx context.Context, email string) error {
 	return nil
 }
 
-// UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT), one
-// SSH session for the whole packed folder instead of N.
-//
-// A transport failure here is ambiguous by nature: sshtransport.Do reads the
-// server's response after the server has already committed (tree.go writes
-// the ledger's COMMITTED record and runs the SVN commit before it ever gets
-// to write a response frame), so a connection dropped between "server
-// committed" and "phone read the ack" is indistinguishable, from the raw
-// error alone, from a connection dropped before the server ever saw the
-// request. Reporting the former as a failure would be a false ack: the
-// caller would treat already-landed files as still unsent. Since the ledger
-// keys on this exact request_id (internal/mobileworker/tree.go's idempotent
-// Lookup), one cheap follow-up GET_OPERATION_STATUS on the same id turns
-// that ambiguity into a real answer instead of a guess - and a tiny status
-// request is far likelier to survive a bad link than the tree pack itself
-// was.
+// UploadTree is the byte-slice compatibility entrypoint. The durable queue
+// owns its ID and payload even if both the upload ACK and status are lost.
 func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileCount int, zip []byte) error {
-	sum := sha256.Sum256(zip)
-	requestID := uuid.NewString()
-	req, err := v1.NewRequest(requestID, v1.OpUploadTree, v1.UploadTreePayload{
-		RepoID:     repoID,
-		ParentPath: parentPath,
-		FileCount:  fileCount,
-		Size:       int64(len(zip)),
-		Sha256:     hex.EncodeToString(sum[:]),
-	})
+	item, err := c.Store.EnqueueReader(ctx, repoID, parentPath, "tree.zip", "application/zip", v1.OpUploadTree, fileCount, nil, bytes.NewReader(zip))
 	if err != nil {
 		return err
 	}
-	resp, _, err := c.Transport.Do(ctx, req, zip)
+	item, err = c.SendUpload(ctx, repoID, item.ID)
 	if err != nil {
-		if state, statusErr := c.operationStatus(ctx, requestID); statusErr == nil && state == v1.OpStateCommitted {
-			return nil
-		}
-		return fmt.Errorf("UPLOAD_TREE: %w", err)
+		return err
 	}
-	if resp.Status != v1.StatusOK {
-		return fmt.Errorf("UPLOAD_TREE: %w", respError(resp))
+	if item.State != UploadCommitted {
+		return fmt.Errorf("UPLOAD_TREE: %s: %s", item.State, item.LastError)
 	}
-	var receipt v1.UploadTreeResult
-	if err := json.Unmarshal(resp.Result, &receipt); err != nil {
-		return fmt.Errorf("UPLOAD_TREE: invalid receipt: %w", err)
+	return nil
+}
+
+func decodeTreeReceipt(resp v1.Response, item PendingUpload, receipt *v1.UploadTreeResult) error {
+	if resp.RequestID != item.ID || resp.Operation != v1.OpUploadTree {
+		return errors.New("UPLOAD_TREE: unrelated receipt")
 	}
-	if receipt.FileCount != fileCount || receipt.Size != int64(len(zip)) || receipt.Revision < 1 {
+	if err := json.Unmarshal(resp.Result, receipt); err != nil {
+		return err
+	}
+	if receipt.FileCount != item.FileCount || receipt.Size != item.Size || receipt.Revision < 1 {
 		return errors.New("UPLOAD_TREE: incomplete receipt")
 	}
 	return nil
@@ -293,23 +274,26 @@ func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileC
 // retry check reads). Any failure here - including one from the same flaky
 // link - returns OpStateUnknown: the caller must not read "the status check
 // itself failed" as "the operation failed", only as "still don't know".
-func (c Client) operationStatus(ctx context.Context, requestID string) (v1.OpState, error) {
+func (c Client) operationReceipt(ctx context.Context, requestID string) (v1.OperationStatusResult, error) {
 	req, err := v1.NewRequest(uuid.NewString(), v1.OpOperationStatus, v1.OperationStatusPayload{TargetRequestID: requestID})
 	if err != nil {
-		return v1.OpStateUnknown, err
+		return v1.OperationStatusResult{}, err
 	}
 	resp, _, err := c.Transport.Do(ctx, req, nil)
 	if err != nil {
-		return v1.OpStateUnknown, err
+		return v1.OperationStatusResult{}, err
+	}
+	if resp.RequestID != req.RequestID || resp.Operation != req.Operation {
+		return v1.OperationStatusResult{}, errors.New("unrelated status receipt")
 	}
 	if resp.Status != v1.StatusOK {
-		return v1.OpStateUnknown, respError(resp)
+		return v1.OperationStatusResult{}, respError(resp)
 	}
 	var result v1.OperationStatusResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return v1.OpStateUnknown, err
+		return v1.OperationStatusResult{}, err
 	}
-	return result.State, nil
+	return result, nil
 }
 
 // DrainPending sends every non-terminal queued upload for repoID, one at a
@@ -320,10 +304,19 @@ func (c Client) operationStatus(ctx context.Context, requestID string) (v1.OpSta
 // (pending-create) for a later drain rather than failing the whole batch, so
 // one bad connection does not strand unrelated candidates.
 func (c Client) DrainPending(ctx context.Context, repoID string) ([]PendingUpload, error) {
+	unlock, err := c.Store.lockQueue(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	queued, err := c.Store.ListUploads(repoID)
 	if err != nil {
 		return nil, err
 	}
+	// Unattempted work runs first. A huge/slow item cancelled by Android's
+	// worker budget must not remain the first item on every next tick.
+	sort.SliceStable(queued, func(i, j int) bool { return queued[i].LastAttemptAt.Before(queued[j].LastAttemptAt) })
+
 	results := make([]PendingUpload, 0, len(queued))
 	for _, item := range queued {
 		if err := ctx.Err(); err != nil {
@@ -333,8 +326,12 @@ func (c Client) DrainPending(ctx context.Context, repoID string) ([]PendingUploa
 			results = append(results, item)
 			continue
 		}
-		itemCtx, cancel := context.WithTimeout(ctx, sendOneTimeout)
-		item, err = c.sendOne(itemCtx, item)
+		timeout := sendOneTimeout
+		if item.Operation == v1.OpUploadTree {
+			timeout = 10 * time.Minute
+		}
+		itemCtx, cancel := context.WithTimeout(ctx, timeout)
+		item, err = c.sendOne(itemCtx, ctx, item)
 		cancel()
 		if err != nil {
 			return results, err
@@ -348,26 +345,35 @@ func (c Client) DrainPending(ctx context.Context, repoID string) ([]PendingUploa
 // transport-level error (dial/handshake/frame failure) is not a domain
 // outcome: item is left pending-create with LastError recorded, so the next
 // DrainPending call retries it with the same request_id.
-func (c Client) sendOne(ctx context.Context, item PendingUpload) (PendingUpload, error) {
-	payload, err := c.Store.loadUploadPayload(item.RepoID, item.ID)
-	if err != nil {
-		return item, err
+func (c Client) sendOne(ctx, caller context.Context, item PendingUpload) (PendingUpload, error) {
+	if !item.LastAttemptAt.IsZero() || item.State == UploadUploading {
+		if resolved, ok := c.recoverReceipt(caller, item); ok {
+			return resolved, c.Store.recordUploadOutcome(resolved)
+		}
+	}
+
+	if item.Operation == v1.OpUploadTree {
+		return c.sendTree(ctx, caller, item)
 	}
 	req, err := v1.NewRequest(item.ID, v1.OpUploadObject, v1.UploadObjectPayload{
 		RepoID: item.RepoID, ParentPath: item.ParentPath, Filename: item.Filename,
 		Size: item.Size, Sha256: item.Sha256, ContentType: item.ContentType,
 	})
 	if err != nil {
-		return item, err
+		item.State, item.LastError = UploadParked, err.Error()
+		return item, c.Store.recordUploadOutcome(item)
 	}
 
-	item.State = UploadUploading
+	item.State, item.LastAttemptAt = UploadUploading, time.Now().UTC()
 	if err := c.Store.recordUploadOutcome(item); err != nil {
 		return item, err
 	}
 
-	resp, _, err := c.Transport.Do(ctx, req, payload)
+	resp, _, err := c.sendPayload(ctx, req, item)
 	if err != nil {
+		if resolved, ok := c.recoverReceipt(caller, item); ok {
+			return resolved, c.Store.recordUploadOutcome(resolved)
+		}
 		item.State, item.LastError = UploadPendingCreate, err.Error()
 		if recErr := c.Store.recordUploadOutcome(item); recErr != nil {
 			return item, recErr
@@ -375,11 +381,17 @@ func (c Client) sendOne(ctx context.Context, item PendingUpload) (PendingUpload,
 		return item, nil
 	}
 	if resp.Status != v1.StatusOK {
-		return item, respError(resp)
+		return c.pendingError(item, respError(resp))
 	}
 	var result v1.UploadObjectResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return item, fmt.Errorf("decode upload result: %w", err)
+		return c.pendingError(item, fmt.Errorf("decode upload result: %w", err))
+	}
+
+	if resp.RequestID != item.ID || resp.Operation != v1.OpUploadObject ||
+		(result.Outcome == v1.OutcomeCommitted && (result.Revision < 1 || result.FinalPath != strings.Trim(item.ParentPath, "/")+"/"+item.Filename)) ||
+		(result.Outcome == v1.OutcomeNameTakenSame && result.ExistingSha256 != item.Sha256) {
+		return c.pendingError(item, errors.New("UPLOAD_OBJECT: incomplete receipt"))
 	}
 
 	item.Outcome, item.LastError = result.Outcome, ""

@@ -235,7 +235,7 @@ func saveConflictCopy(src, rel, kolizjeBase, ts string) error {
 
 	fi, _ := in.Stat()
 
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -263,7 +263,11 @@ func saveConflictCopy(src, rel, kolizjeBase, ts string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst+".meta", metaB, 0o644)
+	metaFile, err := os.OpenFile(dst+".meta", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return copyConflictContents(metaFile, bytes.NewReader(metaB))
 }
 
 type conflictCopyWriter interface {

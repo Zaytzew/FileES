@@ -25,7 +25,8 @@ func (a intentResolverAdapter) PlanCommitRecovery(ctx context.Context, repoID st
 	return &actions.CommitRecoveryPlan{
 		PlanID: plan.PlanID, RepoID: plan.RepoID, TransactionID: plan.TransactionID,
 		Choice: plan.Choice, FirstRevision: plan.FirstRevision, HeadRevision: plan.HeadRevision,
-		Paths: append([]string(nil), plan.Paths...),
+		Paths:     append([]string(nil), plan.Paths...),
+		Conflicts: append([]string(nil), plan.Conflicts...), ConflictCopy: plan.ConflictCopy,
 	}, nil
 }
 

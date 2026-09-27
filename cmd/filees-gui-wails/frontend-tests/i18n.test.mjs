@@ -144,6 +144,10 @@ test("composed GUI details preserve literal server data and every update variant
     assert.ok(body.includes("42"));
     assert.ok(body.includes(paths[1].Path));
     for (const part of ["title", "confirm", "cancel"]) assert.equal(typeof catalogues[locale]["details.intent." + part], "string");
+    const conflictArgs = {firstRevision:"140", headRevision:"139", conflicts:"<plan> {copy}.dwg", copy:"!kolizje/conflicted-copy-id"};
+    const conflictBody = promptDetailText("details.conflictRecovery", conflictArgs, text);
+    for (const value of Object.values(conflictArgs)) assert.ok(conflictBody.includes(value), conflictBody);
+    for (const part of ["title", "confirm", "cancel"]) assert.equal(typeof catalogues[locale]["details.conflictRecovery." + part], "string");
   }
 });
 

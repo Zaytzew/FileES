@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
+	contract "filees/pkg/contract/v1"
 	"fmt"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type CommitRecoveryPlan struct {
 	PlanID, RepoID, TransactionID, Choice string
 	FirstRevision, HeadRevision           int64
 	Paths                                 []string
+	Conflicts                             []string
+	ConflictCopy                          string
 }
 
 type IntentResolver interface {
@@ -57,8 +60,15 @@ func (c *Controller) startResolveCommitRecovery(ctx context.Context, serverID, r
 			c.reportActionError(ctx, key, "Nie można sprawdzić publikacji", c.actionErrorBody(err))
 			return
 		}
-		text := fmt.Sprintf("FileES ponownie sprawdził serwer. Próba %s nie utworzyła oczekiwanej rewizji r%d (HEAD: r%d). Zamknąć wyłącznie tę próbę i ponowić zachowaną kolejkę %d ścieżek?", plan.TransactionID, plan.FirstRevision, plan.HeadRevision, len(plan.Paths))
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "details.commitRecovery", PresentationArgs: map[string]string{"transaction": plan.TransactionID, "firstRevision": fmt.Sprint(plan.FirstRevision), "headRevision": fmt.Sprint(plan.HeadRevision), "pathCount": fmt.Sprint(len(plan.Paths))}, Title: "Uzgodnij wstrzymaną publikację", Text: text, ConfirmText: "Ponów zachowaną kolejkę", CancelText: "Anuluj"})
+		if plan == nil || plan.PlanID == "" || plan.RepoID != repoID {
+			return
+		}
+		prompt, err := commitRecoveryPrompt(plan)
+		if err != nil {
+			c.reportActionError(ctx, key, "Nie można sprawdzić publikacji", err.Error())
+			return
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, prompt)
 		if err != nil || !confirmed {
 			return
 		}
@@ -73,6 +83,29 @@ func (c *Controller) startResolveCommitRecovery(ctx context.Context, serverID, r
 			c.cfg.Refresh()
 		}
 	}()
+}
+
+func commitRecoveryPrompt(plan *CommitRecoveryPlan) (platform.ConfirmRequest, error) {
+	prompt := platform.ConfirmRequest{PresentationKey: "details.commitRecovery", PresentationArgs: map[string]string{"transaction": plan.TransactionID, "firstRevision": fmt.Sprint(plan.FirstRevision), "headRevision": fmt.Sprint(plan.HeadRevision), "pathCount": fmt.Sprint(len(plan.Paths))}, Title: "Uzgodnij wstrzymaną publikację", ConfirmText: "Ponów zachowaną kolejkę", CancelText: "Anuluj"}
+	prompt.Text = fmt.Sprintf("FileES ponownie sprawdził serwer. Próba %s nie utworzyła oczekiwanej rewizji r%d (HEAD: r%d). Zamknąć wyłącznie tę próbę i ponowić zachowaną kolejkę %d ścieżek?", plan.TransactionID, plan.FirstRevision, plan.HeadRevision, len(plan.Paths))
+	switch plan.Choice {
+	case contract.CommitRecoveryRetryQueue:
+		if len(plan.Conflicts) != 0 {
+			return prompt, fmt.Errorf("conflict decision missing")
+		}
+	case contract.CommitRecoveryServerCopy:
+		if len(plan.Conflicts) == 0 || plan.ConflictCopy == "" {
+			return prompt, fmt.Errorf("conflict preservation plan missing")
+		}
+		prompt.PresentationKey = "details.conflictRecovery"
+		prompt.PresentationArgs["conflicts"] = strings.Join(plan.Conflicts, "\n")
+		prompt.PresentationArgs["copy"] = plan.ConflictCopy
+		prompt.ConfirmText = "Zachowaj kopię i przyjmij serwerową"
+		prompt.Text = fmt.Sprintf("Serwer r%d wygrywa dla:\n%s\n\nLokalny plik i warianty konfliktu zostaną zachowane w %s. Dopiero po sprawdzeniu kopii FileES rozstrzygnie konflikt i wznowi kolejkę. Anulowanie niczego nie zmienia. Zamknij edytory tych plików przed potwierdzeniem.", plan.HeadRevision, strings.Join(plan.Conflicts, "\n"), plan.ConflictCopy)
+	default:
+		return prompt, fmt.Errorf("unsupported recovery choice")
+	}
+	return prompt, nil
 }
 
 func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID string) {

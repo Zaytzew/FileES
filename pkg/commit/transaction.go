@@ -22,6 +22,9 @@ type commitRecoveryPlanState struct {
 	id, transactionID           string
 	firstRevision, headRevision int64
 	expires                     time.Time
+	choice                      string
+	conflicts                   []recoveryConflict
+	copyDirectory               string
 }
 
 // CommitRecoveryRequired is part of every repo.status the interface asks for.
@@ -68,8 +71,21 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 	}
 	now := time.Now()
 	plan := &commitRecoveryPlanState{id: uuid.NewString(), transactionID: in.ID, firstRevision: in.FirstRevision, headRevision: head, expires: now.Add(2 * time.Minute)}
+	plan.conflicts, err = s.inspectRecoveryConflicts(ctx, head)
+	if err != nil {
+		return nil, err
+	}
+	plan.choice = contract.CommitRecoveryRetryQueue
+	var conflicts []string
+	if len(plan.conflicts) > 0 {
+		plan.choice = contract.CommitRecoveryServerCopy
+		plan.copyDirectory = kolizjeDir + "/conflicted-copy-" + plan.id
+		for _, conflict := range plan.conflicts {
+			conflicts = append(conflicts, conflict.Path)
+		}
+	}
 	s.commitRecoveryPlan = plan
-	return &contract.CommitRecoveryPlan{PlanID: plan.id, RepoID: in.RepoID, TransactionID: in.ID, Choice: contract.CommitRecoveryRetryQueue, FirstRevision: in.FirstRevision, HeadRevision: head, Paths: append([]string(nil), in.Paths...), ExpiresAt: plan.expires.UTC().Format(time.RFC3339Nano)}, nil
+	return &contract.CommitRecoveryPlan{PlanID: plan.id, RepoID: in.RepoID, TransactionID: in.ID, Choice: plan.choice, Conflicts: conflicts, ConflictCopy: plan.copyDirectory, FirstRevision: in.FirstRevision, HeadRevision: head, Paths: append([]string(nil), in.Paths...), ExpiresAt: plan.expires.UTC().Format(time.RFC3339Nano)}, nil
 }
 
 // ApplyCommitRecovery retires only an attempt proven to have had no remote
@@ -79,7 +95,7 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	defer s.wcOpMu.Unlock()
 	plan := s.commitRecoveryPlan
 	s.commitRecoveryPlan = nil
-	if plan == nil || plan.id != planID || choice != contract.CommitRecoveryRetryQueue || time.Now().After(plan.expires) {
+	if plan == nil || plan.id != planID || choice != plan.choice || time.Now().After(plan.expires) {
 		return nil, errors.New("commit recovery plan is absent, expired or mismatched")
 	}
 	in, err := s.readIntent(s.wc)
@@ -97,10 +113,25 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	// The plan proved the attempt had no effect; the native helper still
 	// holds its record and would refuse every later commit (E200004) until
 	// released. Only this attempt's record is released.
-	if releaser, ok := s.Cli.(commitWriterReleaser); ok {
-		if err := releaser.ReleaseCommitWriter(ctx, s.wc, in.ID); err != nil && !errors.Is(err, errors.ErrUnsupported) {
-			return nil, fmt.Errorf("release the native commit record: %w", err)
+	releaseWriter := func() error {
+		if releaser, ok := s.Cli.(commitWriterReleaser); ok {
+			if err := releaser.ReleaseCommitWriter(ctx, s.wc, in.ID); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+				return fmt.Errorf("release the native commit record: %w", err)
+			}
 		}
+		// A live helper can finish while copies are being prepared. Recheck
+		// after its exclusive writer guard has proved it is no longer active.
+		head, err := c.CommitHead(ctx, in.RepoURL)
+		if err != nil || head != plan.headRevision {
+			return errors.New("repository changed while preparing recovery")
+		}
+		return nil
+	}
+	if err := s.applyRecoveryConflicts(ctx, plan, in, releaseWriter); err != nil {
+		return nil, err
+	}
+	if err := s.cleanRecoveryArtifacts(ctx, in); err != nil {
+		return nil, err
 	}
 	in.Phase = "done"
 	if err := s.writeIntent(s.wc, in); err != nil {
@@ -110,6 +141,7 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 		return nil, err
 	}
 	s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = "", time.Time{}
+	s.commitRecoveryCached.Store(false)
 	return &contract.CommitRecoveryApplyResult{PlanID: planID, State: "queued"}, nil
 }
 
@@ -125,19 +157,21 @@ const transactionSchema = "filees.commit-intent/v1"
 // merely because its marker is currently absent: a remote transaction may
 // still be completing. Confirmed effects are projected by idempotent upserts.
 type commitIntent struct {
-	Schema        string                       `json:"schema"`
-	ID            string                       `json:"id"`
-	RepoURL       string                       `json:"repo_url"`
-	RepoID        string                       `json:"repo_id"`
-	WC            string                       `json:"wc"`
-	Phase         string                       `json:"phase"` // attempting, confirmed, empty, done
-	FirstRevision int64                        `json:"first_revision"`
-	Revision      int64                        `json:"revision"`
-	Comment       string                       `json:"comment,omitempty"`
-	Paths         []string                     `json:"paths"`
-	Items         []intentItem                 `json:"items"`
-	Observation   *watcher.PublicationSnapshot `json:"observation,omitempty"`
-	BusyMarker    string                       `json:"busy_marker,omitempty"`
+	Schema            string                       `json:"schema"`
+	ID                string                       `json:"id"`
+	RepoURL           string                       `json:"repo_url"`
+	RepoID            string                       `json:"repo_id"`
+	WC                string                       `json:"wc"`
+	Phase             string                       `json:"phase"` // attempting, confirmed, empty, done
+	FirstRevision     int64                        `json:"first_revision"`
+	Revision          int64                        `json:"revision"`
+	Comment           string                       `json:"comment,omitempty"`
+	Paths             []string                     `json:"paths"`
+	Items             []intentItem                 `json:"items"`
+	Observation       *watcher.PublicationSnapshot `json:"observation,omitempty"`
+	BusyMarker        string                       `json:"busy_marker,omitempty"`
+	ConflictCopies    []string                     `json:"conflict_copies,omitempty"`    // durable audit; never removed during retry
+	ConflictArtifacts []string                     `json:"conflict_artifacts,omitempty"` // backed-up SVN artifacts accidentally scheduled as adds
 }
 
 type intentItem struct {

@@ -287,4 +287,5 @@
     <string name="watch_pause_system">Wysyłka została wstrzymana. Kolejka jest zachowana.</string>
     <string name="watch_retry_earliest">Ponowna próba nie wcześniej niż %1$s.</string>
     <string name="watch_retry_scheduled">Oczekiwanie na uruchomienie przez Androida.</string>
+    <string name="watch_pause_start">Android wstrzymał wysyłkę w tle. Otwórz FileES, aby wznowić zachowaną kolejkę.</string>
 </resources>

@@ -26,6 +26,19 @@ object WatchForegroundChecks {
         try {
             prefs.edit().putString(FileesSession.PREF_ADDRESS,"10.0.2.2:22380")
                 .putString(FileesSession.PREF_HOST_KEY,hostKey).putString(FileesSession.PREF_UPLOAD_REPO_ID,"repo-1").commit()
+            // A platform refusal is a pause before the network, never a lost
+            // packet or a failed upload receipt. Retry the very same durable ID.
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val before = File(context.filesDir,"uploads/repo-1/$id.json").readBytes()
+                val denied = java.util.concurrent.ExecutionException(android.app.ForegroundServiceStartNotAllowedException("test background start denied"))
+                val failure = runCatching { FileesWatchTick.run(context,onWork={ throw denied }) }.exceptionOrNull()
+                check(failure === denied && FileesWatchWorker.backgroundStartDenied(failure))
+                check(File(context.filesDir,"uploads/repo-1/$id.json").readBytes().contentEquals(before))
+                check(File(context.filesDir,"uploads/repo-1/$id.bin").exists())
+                val notice = context.getSystemService(NotificationManager::class.java).activeNotifications.single { it.id==1003 }
+                check(notice.notification.contentIntent != null)
+                check(notice.notification.extras.getString(Notification.EXTRA_TEXT)==context.getString(R.string.watch_pause_start))
+            }
             var sawForeground = false
             repeat(2) {
                 val request = FileesWatchScheduler.request(0,false); jobs += request.id
@@ -44,6 +57,7 @@ object WatchForegroundChecks {
                 check(item.delivered == (it==1)) { "wrong ACK state: ${item.state}: ${item.lastError}" }
             }
             check(sawForeground) { "no actual foreground-service notification observed" }
+            check(!context.getSharedPreferences("filees_watch_scheduler",Context.MODE_PRIVATE).getBoolean("start_deferred_notice",false))
             check(!File(context.filesDir,"uploads/repo-1/$id.bin").exists())
         } finally {
             jobs.forEach { manager.cancelWorkById(it).result.get() }

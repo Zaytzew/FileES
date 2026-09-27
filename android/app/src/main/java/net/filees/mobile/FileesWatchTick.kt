@@ -39,6 +39,11 @@ object FileesWatchTick {
             val client = Androidbind.newClient(context.filesDir.absolutePath, DialAddress.resolve(address), FileesSession.MOBILE_USER, hostKey)
             cancel.attach(client)
             val before = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).associateBy { it.id }
+            // Recover an existing queue before a potentially slow SAF scan eats
+            // the temporary permission to start a foreground service.
+            val pendingCount = before.values.filter { it.state == "pending-create" || it.state == "uploading" }.sumOf { it.fileCount }
+            status.updateQueue(scope,trees,before.values.toList())
+            if (pendingCount > 0) onWork(context.getString(R.string.watch_queue_count,pendingCount))
             val ownedSources = before.values.flatMap { it.sources }.toSet()
             before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it) } }
             for (tree in trees) {
@@ -60,6 +65,7 @@ object FileesWatchTick {
                     part.errors.forEach { status.problem(scope,tree,it) }
                     status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)))
                 } catch (e: Exception) {
+                    if (FileesWatchWorker.backgroundStartDenied(e)) throw e
                     cancel.check()
                     status.problem(scope,tree,e.message ?: context.getString(R.string.error_send))
                     result.errors += "${tree.lastPathSegment}: ${e.message}"
@@ -91,6 +97,16 @@ object FileesWatchTick {
             }
 
         } catch (e: Exception) {
+            if (FileesWatchWorker.backgroundStartDenied(e)) {
+                trees.forEach { status.paused(scope,it,WatchStatusStore.START_NOT_ALLOWED) }
+                val notice = context.getSharedPreferences("filees_watch_scheduler",Context.MODE_PRIVATE)
+                if (!notice.getBoolean("start_deferred_notice",false)) {
+                    notifyMessage(context,context.getString(R.string.watch_state_paused),context.getString(R.string.watch_pause_start),NOTIFICATION_WAIT_ID)
+                    notice.edit().putBoolean("start_deferred_notice",true).apply()
+                }
+                android.util.Log.i("FileesWatch", "Foreground start deferred; queue preserved")
+                throw e
+            }
             if (cancel.isCancelled) {
                 trees.forEach { status.paused(scope,it,cancel.stopReason) }
                 throw e
@@ -106,6 +122,14 @@ object FileesWatchTick {
             context.getString(R.string.notification_watch_waiting_text, result.waiting), NOTIFICATION_WAIT_ID)
         // Receipt and journal are the success record; successful background work is silent.
         result.sent
+    }
+
+    internal fun clearStartDeferred(context: Context) {
+        val prefs = context.getSharedPreferences("filees_watch_scheduler",Context.MODE_PRIVATE)
+        if (prefs.getBoolean("start_deferred_notice",false)) {
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_WAIT_ID)
+            prefs.edit().remove("start_deferred_notice").apply()
+        }
     }
 
     // Real outcomes only. A tick that found nothing does not touch the journal.
@@ -172,6 +196,8 @@ object FileesWatchTick {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(android.app.PendingIntent.getActivity(context,0,android.content.Intent(context,MainActivity::class.java),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()

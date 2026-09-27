@@ -271,4 +271,5 @@
     <string name="watch_pause_system">Upload pausiert. Die Warteschlange bleibt erhalten.</string>
     <string name="watch_retry_earliest">Nächster Versuch frühestens um %1$s.</string>
     <string name="watch_retry_scheduled">Warten auf den Start durch Android.</string>
+    <string name="watch_pause_start">Android hat das Senden im Hintergrund angehalten. Öffne FileES, um die gespeicherte Warteschlange fortzusetzen.</string>
 </resources>

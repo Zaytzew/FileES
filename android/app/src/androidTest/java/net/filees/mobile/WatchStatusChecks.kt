@@ -10,6 +10,18 @@ object WatchStatusChecks {
     fun run(test: Instrumentation) {
         val context = test.targetContext
         checkRetryPolicy(context)
+        // A second worker must yield instead of waiting until its permission
+        // to start a foreground service has expired behind a long video.
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val owner = Thread { CaptureCoordinator.run(CaptureCancellation()) { entered.countDown(); release.await() } }
+        owner.start()
+        try {
+            check(entered.await(5,java.util.concurrent.TimeUnit.SECONDS))
+            check(CaptureCoordinator.tryRun(CaptureCancellation()) { error("second owner entered") } == null)
+        } finally { release.countDown(); owner.join(5000) }
+        check(CaptureCoordinator.tryRun(CaptureCancellation()) { 42 } == 42)
+        check(!FileesWatchWorker.backgroundStartDenied(java.io.IOException("network failure")))
         check(!AutoUpdate.enabled(context))
         val apk = java.io.File(context.cacheDir,"test-update-integrity.apk")
         try {
@@ -68,6 +80,8 @@ object WatchStatusChecks {
         check(store.state(scope,tree).stopReason == androidx.work.WorkInfo.STOP_REASON_DEVICE_STATE)
         store.updateQueue(scope,listOf(tree),listOf(item))
         check(store.state(scope,tree).phase == "paused") // a queue refresh cannot erase the stop reason
+        store.paused(scope,tree,WatchStatusStore.START_NOT_ALLOWED)
+        check(store.pauseDescription(store.state(scope,tree).stopReason)==context.getString(R.string.watch_pause_start))
         val resumed = store.begin(scope,listOf(tree))
         check(store.state(scope,tree).phase == "checking")
         check(store.state(scope,tree).stopReason == androidx.work.WorkInfo.STOP_REASON_NOT_STOPPED)

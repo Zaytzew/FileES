@@ -165,6 +165,7 @@ type Service struct {
 	mu                   sync.Mutex
 	unportableWake       chan struct{}
 	wcOpMu               sync.Mutex               // serialize publication, poll/update and event merging
+	commitWriterBlocked  bool                     // guarded by wcOpMu; an orphan native owner also requires recovery
 	commitRecoveryCached atomic.Bool              // last CommitRecoveryRequired answer, for callers that must not wait on wcOpMu
 	cacheSaveMu          sync.Mutex               // serialize cache snapshots and their durable replacement
 	staging              map[string]*stageItem    // rel path -> info

@@ -17,6 +17,8 @@
     "commit.not_versioned": "Esta ruta no está bajo control de versiones",
     "commit.outdated": "Su copia local está desactualizada. Obtenga primero los últimos cambios",
     "commit.recovery_held": "La recuperación de la publicación está en pausa. Revise el diagnóstico y no elimine los cambios pendientes",
+    "commit.recovery_refused": "La publicación sigue en pausa. No se pudo verificar con seguridad la escritura anterior. Consulte el diagnóstico.",
+    "commit.recovery_unavailable": "La recuperación de la publicación no está disponible para esta carpeta.",
     "hint.admin_only": "contacte con su administrador",
     "hint.require_action": "se requiere su decisión",
     "hint.retry_backoff": "FileES volverá a intentarlo más tarde",

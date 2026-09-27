@@ -17,6 +17,8 @@
     "commit.not_versioned": "This path is not under version control",
     "commit.outdated": "Your local copy is out of date — get the latest changes first",
     "commit.recovery_held": "Publication recovery is paused — check the diagnostics and do not remove the pending changes",
+    "commit.recovery_refused": "Publication remains paused. The previous write could not be safely reconciled; check the diagnostics.",
+    "commit.recovery_unavailable": "Publication recovery is unavailable for this folder.",
     "hint.admin_only": "contact your administrator",
     "hint.require_action": "your decision is needed",
     "hint.retry_backoff": "FileES will try again later",

@@ -34,6 +34,10 @@ type artifactRetryClient struct {
 	fail     bool
 }
 
+func (c *artifactRetryClient) InspectCommitWriter(ctx context.Context, wc string) (string, error) {
+	return c.Client.(commitWriterInspector).InspectCommitWriter(ctx, wc)
+}
+
 func (c *artifactRetryClient) Revert(ctx context.Context, wc string, paths []string) (string, error) {
 	if c.fail {
 		c.fail = false
@@ -197,6 +201,16 @@ func TestConflictCopyNeverOverwritesPreviousCopy(t *testing.T) {
 // Two isolated WCs, a real binary conflict and an old attempted receipt.
 // FILEES_SVN_PROBE additionally exercises the production native helper.
 func TestConflictRecoveryRealSVN(t *testing.T) {
+	t.Run("matching-owner", func(t *testing.T) { conflictRecoveryRealSVN(t, false) })
+	t.Run("legacy-mismatched-owner", func(t *testing.T) {
+		if os.Getenv("FILEES_SVN_PROBE") == "" {
+			t.Skip("native helper required")
+		}
+		conflictRecoveryRealSVN(t, true)
+	})
+}
+
+func conflictRecoveryRealSVN(t *testing.T, mismatch bool) {
 	for _, bin := range []string{"svn", "svnadmin"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skip(bin + " absent")
@@ -244,12 +258,42 @@ func TestConflictRecoveryRealSVN(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := &commitIntent{Schema: transactionSchema, ID: uuid.NewString(), RepoURL: repoURL, RepoID: "test", WC: b, Phase: "attempting", FirstRevision: 3, Paths: []string{"plan.dwg"}}
+	writerID := in.ID
+	if mismatch {
+		old := *in
+		old.ID = uuid.NewString()
+		old.Phase = "done"
+		writerID = old.ID
+		if err := s.writeIntent(b, &old); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := s.writeIntent(b, in); err != nil {
 		t.Fatal(err)
 	}
 	if os.Getenv("FILEES_SVN_PROBE") != "" {
 		// Simulate the durable native fence left by the old interrupted attempt.
-		write(filepath.Join(b, ".svn", "filees-native-writer-v1"), "filees.native-writer/v1\n"+in.ID+"\n")
+		write(filepath.Join(b, ".svn", "filees-native-writer-v1"), "filees.native-writer/v1\n"+writerID+"\n")
+	}
+	if mismatch {
+		previous := filepath.Join(b, ".filees", "commit_cache", "previous-transaction.json")
+		proof, err := os.ReadFile(previous)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.Remove(previous); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.PlanCommitRecovery(t.Context()); err == nil {
+			t.Fatal("native foreign owner accepted without original proof")
+		}
+		owner, err := cli.(commitWriterInspector).InspectCommitWriter(t.Context(), b)
+		if err != nil || owner != writerID {
+			t.Fatal("native fence changed on refusal", owner, err)
+		}
+		if err = os.WriteFile(previous, proof, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	plan, err := s.PlanCommitRecovery(t.Context())
 	if err != nil {

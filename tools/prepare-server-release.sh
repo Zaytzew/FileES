@@ -45,8 +45,9 @@ release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/openbsd-amd64"
 
 FILEES_SOURCE_REVISION="$source_revision" FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY" "$root/packaging/build-server.sh" openbsd-amd64
 bundle="${DIST:-$root/dist}/filees-server-openbsd-amd64"
-mkdir -p "$release_root/bin" "$release_root/examples"
+mkdir -p "$release_root/bin" "$release_root/examples" "$release_root/share/filees"
 cp "$bundle"/bin/* "$release_root/bin/"
+cp "$bundle/share/filees/capacity-alerts.example.json" "$release_root/share/filees/"
 cp "$bundle/share/filees/install.example.conf" "$release_root/examples/"
 cp "$bundle/share/filees/public-storage-migration.md" "$release_root/examples/"
 

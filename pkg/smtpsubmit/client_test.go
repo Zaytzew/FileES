@@ -409,3 +409,27 @@ func testCertificate(t *testing.T) (tls.Certificate, *x509.CertPool) {
 	pool.AddCert(parsed)
 	return certificate, pool
 }
+
+func TestSubmitCancellationInterruptsSilentRelay(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		c, e := listener.Accept()
+		if e == nil {
+			defer c.Close()
+			<-done
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = Submit(ctx, Config{Address: listener.Addr().String(), ClientName: "filees.test", TLSMode: TLSNone, CommandTimeout: time.Minute}, Request{EnvelopeFrom: "sender@example.test", Recipient: "admin@example.test", Message: []byte("Subject: test\r\n\r\ntest\r\n")})
+	if err == nil || time.Since(started) > 2*time.Second {
+		t.Fatalf("silent SMTP did not respect context: %v (%v)", err, time.Since(started))
+	}
+}

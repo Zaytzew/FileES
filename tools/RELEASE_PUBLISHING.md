@@ -213,9 +213,23 @@ WC w stanie, którego skrypt odmawia („local or unversioned changes”). Gdyby
 jednak WC zostało zmienione: `svn revert -R .` i usunięcie plików `?`
 wskazanych przez `svn status`.
 
-`tools/prune-release-history.sh` trzyma w HEAD FILEES-BIN 10 najnowszych
+`tools/prune-release-history.sh` trzyma w HEAD FILEES-BIN 5 najnowszych
 wydań każdego rodzaju (desktop, `-server`, `-beta`…) oraz każde wskazane przez
 kanał; starsze usuwa z HEAD (historia repozytorium je zachowuje; przywrócenie:
 `svn copy URL/releases/rNNNN@REV URL/releases/rNNNN`). Domyślnie próba,
 `APPLY=1` usuwa i zatwierdza. Pierwsze przycięcie: FILEES-BIN r180, 80 → 22
 wydań, `releases/` 7,2 → 2,4 GB.
+
+
+Od 2026-09-27 promotor automatycznie uruchamia retencję `KEEP=5 APPLY=1`
+po udanym commicie publikacji, także przy ponowieniu już opublikowanego
+wydania. Limit dotyczy każdej rodziny nazw osobno (desktop bez sufiksu,
+`-server`, `-beta`, `-stable`, `-android`); starsze cele wszystkich aktywnych
+kanałów są dodatkowo chronione. Pięć obejmuje najnowsze wydanie, nie pięć
+poprzedników. Usunięcie z HEAD jest osobnym commitem po promocji, a historia
+SVN zachowuje artefakty. `svn cleanup --vacuum-pristines` usuwa niepotrzebne
+kopie bazowe z lokalnej WC. Inne istniejące WC muszą wykonać `svn up` i takie
+cleanup; repozytorium serwerowe nadal przechowuje historyczne rewizje.
+Nieudany podpis/promocja nie uruchamia retencji. Błąd późniejszego sprzątania
+jest zgłaszany z informacją, że publikacja już się udała; ponowienie promotora
+po usunięciu przyczyny ponawia sprzątanie. Lokalne zmiany blokują retencję.

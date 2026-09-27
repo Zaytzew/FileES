@@ -1131,13 +1131,9 @@ class MainActivity : AppCompatActivity() {
     private fun scanWatchedFolders() {
         FileesWatchScheduler.ensure(this)
         if (client == null || selectedRepoId.isNullOrBlank() || watched.uris().isEmpty()) return
-        io.execute {
-            try {
-                FileesWatchTick.run(this, captureCancellation)
-            } catch (_: Exception) {
-            }
-            main.post { refreshDecisions() }
-        }
+        // Watch lifetime belongs to WorkManager, not this Activity. Large
+        // videos need the long-running worker even while a screen is open.
+        FileesWatchScheduler.runSoon(this)
     }
 
     private fun failBusy(headline: String, err: Exception) {

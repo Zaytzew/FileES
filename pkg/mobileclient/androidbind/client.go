@@ -19,7 +19,6 @@ import (
 const (
 	refreshTimeout  = 30 * time.Second
 	downloadTimeout = 2 * time.Minute
-	treeTimeout     = 10 * time.Minute
 )
 
 // Client is the gomobile-bindable handle onto the whole mobile core: a

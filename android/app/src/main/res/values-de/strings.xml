@@ -239,9 +239,10 @@
     <string name="about_license_summary">FileES wird unter der BSD-2-Clause-Lizenz bereitgestellt. Die Software wird „wie besehen“ ohne ausdrückliche oder stillschweigende Garantie geliefert; die Haftung ist im gesetzlich zulässigen Umfang ausgeschlossen.</string>
     <string name="about_license_full">Vollständiger Text der BSD-2-Clause-Lizenz</string>
     <string name="about_license_hide">Lizenztext ausblenden</string>
-    <string name="device_lock_title">FileES ist gesperrt</string>
-    <string name="device_lock_copy">Das ist die Sperre dieses Telefons, keine Anmeldung an den Bereich. SSH-Schlüssel und Kopplung bleiben.</string>
-    <string name="device_lock_unlock">Entsperren</string>
-    <string name="device_lock_prompt_title">FileES entsperren</string>
-    <string name="device_lock_prompt_subtitle">Displaysperre oder Biometrie dieses Telefons.</string>
+    <string name="device_lock_title">App entsperren</string>
+    <string name="device_lock_copy">App entsperren</string>
+    <string name="device_lock_unlock">App entsperren</string>
+    <string name="device_lock_prompt_title">App entsperren</string>
+    <string name="device_lock_prompt_subtitle">App entsperren</string>
+    <string name="settings_advanced">Erweitert</string>
 </resources>

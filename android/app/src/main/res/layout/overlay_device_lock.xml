@@ -29,6 +29,7 @@
         android:layout_marginTop="8dp"
         android:gravity="center"
         android:text="@string/device_lock_copy"
+            android:visibility="gone"
         android:textAppearance="@style/TextAppearance.Filees.Body"
         android:textColor="@color/filees_white" />
 

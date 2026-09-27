@@ -115,7 +115,6 @@ object FileesDeviceGate {
     private fun promptInfo(activity: FragmentActivity): BiometricPrompt.PromptInfo {
         val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle(activity.getString(R.string.device_lock_prompt_title))
-            .setSubtitle(activity.getString(R.string.device_lock_prompt_subtitle))
             .setConfirmationRequired(false)
         if (Build.VERSION.SDK_INT >= 30) {
             builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)

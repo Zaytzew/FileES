@@ -75,6 +75,30 @@ class SettingsActivity : AppCompatActivity() {
         joinAlert(getString(R.string.join_error_cancelled))
     }
 
+    private val watchStatus by lazy { WatchStatusStore(this) }
+    private val watchLabels = mutableMapOf<Uri, TextView>()
+    private val watchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        uiSafe { refreshWatchLabels() }
+    }
+    override fun onResume() {
+        super.onResume()
+        watchStatus.prefs.registerOnSharedPreferenceChangeListener(watchListener)
+        refreshWatchLabels()
+    }
+    override fun onPause() {
+        watchStatus.prefs.unregisterOnSharedPreferenceChangeListener(watchListener)
+        super.onPause()
+    }
+    private fun refreshWatchLabels() {
+        val scope = WatchStatusStore.scope(this)
+        watchLabels.forEach { (uri,label) ->
+            val state = watchStatus.state(scope,uri)
+            label.text = "● ${watchStatus.label(state.phase)} · ${getString(R.string.watch_queue_count,state.waiting)}"
+            label.setTextColor(androidx.core.content.ContextCompat.getColor(this,
+                if(state.phase == "error") R.color.filees_destructive else R.color.filees_text))
+        }
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(FileesLocale.wrap(newBase))
     }
@@ -801,6 +825,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun renderWatched() {
         binding.listWatched.removeAllViews()
+        watchLabels.clear()
         val uris = watched.uris()
         if (uris.isEmpty()) {
             binding.listWatched.addView(fileesMetaText(getString(R.string.watched_empty)))
@@ -821,10 +846,20 @@ class SettingsActivity : AppCompatActivity() {
                 watched.remove(uri)
                 renderWatched()
             }
-            row.addView(label)
+            val labels = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+            }
+            label.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+            val status = fileesMetaText("")
+            watchLabels[uri] = status
+            labels.addView(label); labels.addView(status)
+            labels.setOnClickListener { WatchFolderCard.show(this,uri) }
+            row.addView(labels)
             row.addView(remove)
             binding.listWatched.addView(row)
         }
+        refreshWatchLabels()
     }
 
     private fun fileesSettingsRow(): LinearLayout {

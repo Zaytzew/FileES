@@ -167,8 +167,8 @@
     <string name="home_metric_servers_note">emparejados</string>
     <string name="home_metric_repos">Carpetas</string>
     <string name="home_metric_repos_note">en el ámbito</string>
-    <string name="home_metric_pending">Por decidir</string>
-    <string name="home_metric_pending_note">cola local</string>
+    <string name="home_metric_pending">Envíos</string>
+    <string name="home_metric_pending_note">Estado de carpetas</string>
     <string name="home_server_eyebrow">Servidor</string>
     <string name="home_server_switch">Toque para cambiar</string>
     <string name="home_chevron">⌄</string>
@@ -245,4 +245,19 @@
     <string name="device_lock_prompt_title">Desbloquear la aplicación</string>
     <string name="device_lock_prompt_subtitle">Desbloquear la aplicación</string>
     <string name="settings_advanced">Avanzado</string>
+    <string name="watch_state_checking">Comprobando</string>
+    <string name="watch_state_preparing">Preparando</string>
+    <string name="watch_state_sending">Enviando</string>
+    <string name="watch_state_complete">Todo enviado</string>
+    <string name="watch_state_waiting">En espera</string>
+    <string name="watch_state_attention">Requiere atención</string>
+    <string name="watch_state_unknown">Sin comprobar</string>
+    <string name="watch_queue_count">Por enviar: %1$d</string>
+    <string name="watch_last_checked">Comprobado: %1$s</string>
+    <string name="watch_queue_title">Cola</string>
+    <string name="watch_queue_empty">Sin archivos pendientes</string>
+    <string name="watch_journal_title">Registro de carpeta</string>
+    <string name="watch_scope_note">Estado del alcance seleccionado y del último análisis.</string>
+    <string name="watch_queue_more">Se muestran las primeras 200 entradas.</string>
+    <string name="watch_state_idle">Sin tareas</string>
 </resources>

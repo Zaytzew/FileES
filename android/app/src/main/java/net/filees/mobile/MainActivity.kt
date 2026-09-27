@@ -84,6 +84,11 @@ class MainActivity : AppCompatActivity() {
         if (granted) launchScanner()
     }
 
+    private val watchStatus by lazy { WatchStatusStore(this) }
+    private val watchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        main.post { if (!isDestroyed) browseAdapter.updateCaptureSummary(watchStatus.summary(WatchStatusStore.scope(this),watched.uris())) }
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(FileesLocale.wrap(newBase))
     }
@@ -122,6 +127,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        watchStatus.prefs.registerOnSharedPreferenceChangeListener(watchListener)
         if (FileesLocale.mismatch(this)) {
             recreate()
             return
@@ -189,6 +195,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        watchStatus.prefs.unregisterOnSharedPreferenceChangeListener(watchListener)
         super.onPause()
         pulseAnimator?.pause()
     }
@@ -349,7 +356,8 @@ class MainActivity : AppCompatActivity() {
                 kind = BrowseRow.Kind.METRICS,
                 metricServers = servers.size.toString(),
                 metricRepos = selectableShares.size.toString(),
-                metricPending = pendingDecisions.size.toString(),
+                metricPending = watchStatus.summary(WatchStatusStore.scope(this),watched.uris()).first,
+                metricPendingNote = watchStatus.summary(WatchStatusStore.scope(this),watched.uris()).second,
             ),
         )
         for (server in servers) {
@@ -539,6 +547,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: BrowseRow) {
+        if (row.kind == BrowseRow.Kind.METRICS) {
+            startActivity(Intent(this,SettingsActivity::class.java))
+            return
+        }
         if (row.kind == BrowseRow.Kind.HEADER && row.drawerId.isNotEmpty()) {
             toggleDrawer(row.drawerId)
             return
@@ -962,10 +974,14 @@ class MainActivity : AppCompatActivity() {
             bindDecisions(emptyList())
             return
         }
+        val captureScope = WatchStatusStore.scope(this)
         io.execute {
             try {
-                val items = PendingUpload.listFromJson(active.listUploadsJSON(repoId)).filter { it.needsDecision }
-                main.post { bindDecisions(items) }
+                val all = PendingUpload.listFromJson(active.listUploadsJSON(repoId))
+                if (captureScope == WatchStatusStore.scope(this) && repoId == prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID,null)) {
+                    watchStatus.updateSummary(captureScope,all)
+                }
+                main.post { if(captureScope == WatchStatusStore.scope(this)) bindDecisions(all.filter { it.needsDecision }) }
             } catch (_: Exception) {
                 main.post { bindDecisions(emptyList()) }
             }

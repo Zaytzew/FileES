@@ -21,6 +21,16 @@ class BrowseAdapter(
         notifyDataSetChanged()
     }
 
+    fun updateCaptureSummary(summary: Pair<String,String>) {
+        val index = rows.indexOfFirst { it.kind == BrowseRow.Kind.METRICS }
+        if (index < 0) return
+        val old = rows[index]
+        val updated = old.copy(metricPending = summary.first, metricPendingNote = summary.second)
+        if (updated == old) return
+        rows = rows.toMutableList().also { it[index] = updated }
+        notifyItemChanged(index, "capture-status")
+    }
+
     override fun getItemViewType(position: Int): Int = when (rows[position].kind) {
         BrowseRow.Kind.HERO -> VIEW_HERO
         BrowseRow.Kind.METRICS -> VIEW_METRICS
@@ -52,7 +62,7 @@ class BrowseAdapter(
         val row = rows[position]
         when (holder) {
             is HeroHolder -> holder.bind(row)
-            is MetricsHolder -> holder.bind(row)
+            is MetricsHolder -> holder.bind(row, onOpen)
             is ServerHolder -> holder.bind(row, onOpen)
             is FactsHolder -> holder.bind(row)
             is JournalPanelHolder -> holder.bind(row)
@@ -76,10 +86,13 @@ class BrowseAdapter(
         private val servers: TextView = itemView.findViewById(R.id.textMetricServers)
         private val repos: TextView = itemView.findViewById(R.id.textMetricRepos)
         private val pending: TextView = itemView.findViewById(R.id.textMetricPending)
-        fun bind(row: BrowseRow) {
+        private val note: TextView = itemView.findViewById(R.id.textMetricPendingNote)
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
             servers.text = row.metricServers
             repos.text = row.metricRepos
             pending.text = row.metricPending
+            note.text = row.metricPendingNote
+            (pending.parent as View).setOnClickListener { onOpen(row) }
         }
     }
 

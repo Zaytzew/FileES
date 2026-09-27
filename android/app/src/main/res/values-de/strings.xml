@@ -167,8 +167,8 @@
     <string name="home_metric_servers_note">gekoppelt</string>
     <string name="home_metric_repos">Ordner</string>
     <string name="home_metric_repos_note">im Bereich</string>
-    <string name="home_metric_pending">Zu entscheiden</string>
-    <string name="home_metric_pending_note">lokale Warteschlange</string>
+    <string name="home_metric_pending">Uploads</string>
+    <string name="home_metric_pending_note">Ordnerstatus</string>
     <string name="home_server_eyebrow">Server</string>
     <string name="home_server_switch">Tippen zum Wechseln</string>
     <string name="home_chevron">⌄</string>
@@ -245,4 +245,19 @@
     <string name="device_lock_prompt_title">App entsperren</string>
     <string name="device_lock_prompt_subtitle">App entsperren</string>
     <string name="settings_advanced">Erweitert</string>
+    <string name="watch_state_checking">Prüfung</string>
+    <string name="watch_state_preparing">Vorbereitung</string>
+    <string name="watch_state_sending">Übertragung</string>
+    <string name="watch_state_complete">Alles gesendet</string>
+    <string name="watch_state_waiting">Wartet</string>
+    <string name="watch_state_attention">Prüfung nötig</string>
+    <string name="watch_state_unknown">Noch nicht geprüft</string>
+    <string name="watch_queue_count">Ausstehend: %1$d</string>
+    <string name="watch_last_checked">Geprüft: %1$s</string>
+    <string name="watch_queue_title">Warteschlange</string>
+    <string name="watch_queue_empty">Keine ausstehenden Dateien</string>
+    <string name="watch_journal_title">Ordnerprotokoll</string>
+    <string name="watch_scope_note">Status für den gewählten Umfang und den letzten Scan.</string>
+    <string name="watch_queue_more">Die ersten 200 Einträge.</string>
+    <string name="watch_state_idle">Keine Aufgaben</string>
 </resources>

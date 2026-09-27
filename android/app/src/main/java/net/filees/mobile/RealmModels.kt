@@ -129,6 +129,7 @@ data class BrowseRow(
     val metricServers: String = "",
     val metricRepos: String = "",
     val metricPending: String = "",
+    val metricPendingNote: String = "",
     val factServer: String = "",
     val factRevision: String = "",
     val factAccess: String = "",

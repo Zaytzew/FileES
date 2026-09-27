@@ -167,8 +167,8 @@
     <string name="home_metric_servers_note">appariés</string>
     <string name="home_metric_repos">Dossiers</string>
     <string name="home_metric_repos_note">dans le domaine</string>
-    <string name="home_metric_pending">À décider</string>
-    <string name="home_metric_pending_note">file locale</string>
+    <string name="home_metric_pending">Envois</string>
+    <string name="home_metric_pending_note">État des dossiers</string>
     <string name="home_server_eyebrow">Serveur</string>
     <string name="home_server_switch">Toucher pour changer</string>
     <string name="home_chevron">⌄</string>
@@ -245,4 +245,19 @@
     <string name="device_lock_prompt_title">Déverrouiller l’application</string>
     <string name="device_lock_prompt_subtitle">Déverrouiller l’application</string>
     <string name="settings_advanced">Avancé</string>
+    <string name="watch_state_checking">Vérification</string>
+    <string name="watch_state_preparing">Préparation</string>
+    <string name="watch_state_sending">Envoi</string>
+    <string name="watch_state_complete">Tout envoyé</string>
+    <string name="watch_state_waiting">En attente</string>
+    <string name="watch_state_attention">À vérifier</string>
+    <string name="watch_state_unknown">Pas encore vérifié</string>
+    <string name="watch_queue_count">À envoyer : %1$d</string>
+    <string name="watch_last_checked">Vérifié : %1$s</string>
+    <string name="watch_queue_title">File en attente</string>
+    <string name="watch_queue_empty">Aucun fichier en attente</string>
+    <string name="watch_journal_title">Journal du dossier</string>
+    <string name="watch_scope_note">État du périmètre choisi lors de la dernière analyse.</string>
+    <string name="watch_queue_more">Les 200 premières entrées.</string>
+    <string name="watch_state_idle">Aucune tâche</string>
 </resources>

@@ -180,8 +180,8 @@
     <string name="home_metric_servers_note">sparowane</string>
     <string name="home_metric_repos">Foldery</string>
     <string name="home_metric_repos_note">w strefie</string>
-    <string name="home_metric_pending">Do decyzji</string>
-    <string name="home_metric_pending_note">lokalna kolejka</string>
+    <string name="home_metric_pending">Wysyłanie</string>
+    <string name="home_metric_pending_note">Stan folderów</string>
     <string name="home_server_eyebrow">Serwer</string>
     <string name="home_server_switch">Dotknij, żeby przełączyć</string>
     <string name="home_chevron">⌄</string>
@@ -261,4 +261,19 @@
     <string name="device_lock_prompt_subtitle">Odblokuj aplikację</string>
     <string name="about_license_bsd" translatable="false">Copyright (c) 2026, ATM Projekt\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</string>
     <string name="settings_advanced">Zaawansowane</string>
+    <string name="watch_state_checking">Sprawdzanie</string>
+    <string name="watch_state_preparing">Przygotowanie</string>
+    <string name="watch_state_sending">Wysyłanie</string>
+    <string name="watch_state_complete">Wszystko wysłane</string>
+    <string name="watch_state_waiting">Oczekuje</string>
+    <string name="watch_state_attention">Wymaga uwagi</string>
+    <string name="watch_state_unknown">Przed sprawdzeniem</string>
+    <string name="watch_queue_count">Do wysłania: %1$d</string>
+    <string name="watch_last_checked">Sprawdzono: %1$s</string>
+    <string name="watch_queue_title">Kolejka</string>
+    <string name="watch_queue_empty">Brak oczekujących plików</string>
+    <string name="watch_journal_title">Dziennik folderu</string>
+    <string name="watch_scope_note">Stan obejmuje wybrany zakres śledzenia i ostatni skan.</string>
+    <string name="watch_queue_more">Pokazano pierwsze 200 pozycji.</string>
+    <string name="watch_state_idle">Brak zadań</string>
 </resources>

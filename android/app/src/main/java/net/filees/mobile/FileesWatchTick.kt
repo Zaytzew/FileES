@@ -31,27 +31,51 @@ object FileesWatchTick {
         if (address.isBlank() || hostKey.isBlank() || repoId.isBlank()) return@run 0
         val watched = WatchedFolders(context)
         val result = CaptureTransfers.Result()
+        val status = WatchStatusStore(context)
+        val scope = WatchStatusStore.scope(context)
+        val trees = watched.uris()
+        val token = status.begin(scope, trees)
         try {
             val client = Androidbind.newClient(context.filesDir.absolutePath, DialAddress.resolve(address), FileesSession.MOBILE_USER, hostKey)
             cancel.attach(client)
             val before = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).associateBy { it.id }
             before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it) } }
-            for (tree in watched.uris()) {
+            for (tree in trees) {
                 cancel.check()
                 try {
                     val unseen = DocumentWalk.tree(context.contentResolver, tree, cancel).filterNot {
                         watched.alreadySeen(CaptureTransfers.source(it))
                     }
+                    status.scanned(scope,tree)
                     if (unseen.isEmpty()) continue
-                    val part = CaptureTransfers.send(context, client, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true)
+                    status.phase(scope,tree,"preparing")
+                    val part = CaptureTransfers.send(context, client, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true, progress = {
+                        status.phase(scope,tree,"preparing")
+                        status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)))
+                    })
                     result.sent += part.sent
                     result.errors += part.errors
+                    part.errors.forEach { status.problem(scope,tree,it) }
+                    status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)))
                 } catch (e: Exception) {
                     cancel.check()
+                    status.problem(scope,tree,e.message ?: context.getString(R.string.error_send))
                     result.errors += "${tree.lastPathSegment}: ${e.message}"
                 }
             }
-            val drained = PendingUpload.listFromJson(client.drainPendingJSON(repoId))
+            val queued = PendingUpload.listFromJson(client.listUploadsJSON(repoId))
+                .filter { it.state == "pending-create" || it.state == "uploading" }
+                .sortedBy { it.lastAttemptAt }
+            status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)),finish = true)
+            for (item in queued) {
+                cancel.check()
+                trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
+                    .forEach { status.phase(scope,it,"sending") }
+                client.sendUploadJSON(repoId,item.id)
+                status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)),finish = true)
+            }
+            val drained = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).filter { it.state != "discarded" }
+            status.updateQueue(scope,trees,drained,finish = true)
             for (item in drained) {
                 if (item.delivered) {
                     item.sources.forEach { watched.markSeen(it) }
@@ -63,9 +87,10 @@ object FileesWatchTick {
             }
 
         } catch (e: Exception) {
+            trees.forEach { status.problem(scope,it,e.message ?: context.getString(R.string.error_send)) }
             cancel.check()
             result.errors += e.message ?: context.getString(R.string.error_send)
-        }
+        } finally { status.end(token) }
         val failure = result.errors.distinct().take(5).joinToString("\n").ifBlank { null }
         recordJournal(context, result.sent, result.waiting, repoName, failure)
         if (failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)

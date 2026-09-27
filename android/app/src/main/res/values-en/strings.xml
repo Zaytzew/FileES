@@ -173,8 +173,8 @@
     <string name="home_metric_servers_note">paired</string>
     <string name="home_metric_repos">Folders</string>
     <string name="home_metric_repos_note">in the realm</string>
-    <string name="home_metric_pending">To decide</string>
-    <string name="home_metric_pending_note">local queue</string>
+    <string name="home_metric_pending">Uploads</string>
+    <string name="home_metric_pending_note">Folder status</string>
     <string name="home_server_eyebrow">Server</string>
     <string name="home_server_switch">Tap to switch</string>
     <string name="home_chevron">⌄</string>
@@ -251,4 +251,19 @@
     <string name="device_lock_prompt_title">Unlock the app</string>
     <string name="device_lock_prompt_subtitle">Unlock the app</string>
     <string name="settings_advanced">Advanced</string>
+    <string name="watch_state_checking">Checking</string>
+    <string name="watch_state_preparing">Preparing</string>
+    <string name="watch_state_sending">Sending</string>
+    <string name="watch_state_complete">All sent</string>
+    <string name="watch_state_waiting">Waiting</string>
+    <string name="watch_state_attention">Needs attention</string>
+    <string name="watch_state_unknown">Not checked yet</string>
+    <string name="watch_queue_count">To send: %1$d</string>
+    <string name="watch_last_checked">Checked: %1$s</string>
+    <string name="watch_queue_title">Queue</string>
+    <string name="watch_queue_empty">No pending files</string>
+    <string name="watch_journal_title">Folder journal</string>
+    <string name="watch_scope_note">Status covers the selected watch scope and the last scan.</string>
+    <string name="watch_queue_more">Showing the first 200 entries.</string>
+    <string name="watch_state_idle">No tasks</string>
 </resources>

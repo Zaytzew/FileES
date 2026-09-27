@@ -63,7 +63,7 @@ object CaptureTransfers {
     }
 
     fun send(context: Context, client: Client, repoId: String, files: List<WalkedFile>, packed: Boolean,
-             cancel: CaptureCancellation, watched: WatchedFolders? = null, queueOnly: Boolean = false): Result = CaptureCoordinator.run(cancel) {
+             cancel: CaptureCancellation, watched: WatchedFolders? = null, queueOnly: Boolean = false, progress: (() -> Unit)? = null): Result = CaptureCoordinator.run(cancel) {
         cancel.attach(client)
         val result = Result()
         val toSend = linkedMapOf<String, Int>()
@@ -94,6 +94,7 @@ object CaptureTransfers {
 
         fun sendChunk(chunk: List<WalkedFile>, tree: Boolean) {
             cancel.check()
+            progress?.invoke()
             var spool: File? = null
             var queued = false
             try {
@@ -115,6 +116,7 @@ object CaptureTransfers {
                 // Durable ID + sources already exist before this first network call.
                 queued = true
                 toSend[id] = chunk.size
+                progress?.invoke()
             } catch (e: Exception) {
                 cancel.check()
                 // Splitting is safe ONLY before an intent was queued. Never

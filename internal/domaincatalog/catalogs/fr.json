@@ -17,6 +17,8 @@
     "commit.not_versioned": "Ce chemin n’est pas sous contrôle de version",
     "commit.outdated": "Votre copie locale n’est pas à jour. Récupérez d’abord les dernières modifications",
     "commit.recovery_held": "La récupération de la publication est en pause. Consultez le diagnostic et ne supprimez pas les modifications en attente",
+    "commit.recovery_refused": "La publication reste en pause. La précédente écriture n’a pas pu être vérifiée en toute sécurité. Consultez le diagnostic.",
+    "commit.recovery_unavailable": "La récupération de la publication est indisponible pour ce dossier.",
     "hint.admin_only": "contactez votre administrateur",
     "hint.require_action": "votre décision est requise",
     "hint.retry_backoff": "FileES réessaiera plus tard",

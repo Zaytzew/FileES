@@ -598,6 +598,22 @@ static svn_error_t *repair_keep_text(svn_wc_conflict_result_t **result,
     return SVN_NO_ERROR;
 }
 
+/* A bounded observation under the same OS lease as mutations. The durable
+ * owner is returned intact; inspection never retires a pending record. */
+svn_error_t *filees_writer_inspect(const char *wc_arg, svn_boolean_t live,
+                                   apr_pool_t *pool)
+{
+    const char *wc, *pending;
+    svn_client_ctx_t *ctx;
+    apr_file_t *writer;
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_open(&writer, &pending, wc, pool));
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"commit_id\":");
+    filees_json_string(pending ? pending : "");
+    puts("}");
+    return SVN_NO_ERROR;
+}
+
 /* Releases the writer record of one commit a caller has proven had no effect
  * (the repository never reached the revision it would have made). Only the
  * named commit's record is released; any other stays for its own recovery. */
@@ -993,7 +1009,11 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
     if (err && !log_message.requested) {
         /* Nothing reached the server: release the record, and say so first
          * in the chain so the caller need not hold the queue for recovery. */
-        if (marker) err = svn_error_compose_create(err, filees_writer_set(writer, NULL, pool));
+        if (marker) {
+            svn_error_t *release_err = filees_writer_set(writer, NULL, pool);
+            /* not-sent also promises a released fence to the caller. */
+            if (release_err) return svn_error_compose_create(err, release_err);
+        }
         return svn_error_create(err->apr_err, err, FILEES_COMMIT_NOT_SENT);
     }
     SVN_ERR(err);

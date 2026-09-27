@@ -586,3 +586,25 @@ func TestWriterReleaseFreesOnlyTheNamedCommit(t *testing.T) {
 		t.Fatalf("second release: %#v", again)
 	}
 }
+
+func TestWriterInspectPreservesOwnerAndRejectsMalformedRecord(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	record := filepath.Join(f.wc, ".svn", "filees-native-writer-v1")
+	for _, id := range []string{"", "OLDER-OWNER"} {
+		raw := ""
+		if id != "" {
+			raw = "filees.native-writer/v1\n" + id + "\n"
+		}
+		write(t, record, raw)
+		got := f.jsonCall(t, true, "writer-inspect", "--disposable-wc", f.wc)
+		if got["commit_id"] != id {
+			t.Fatalf("identity missing %#v", got)
+		}
+		after, err := os.ReadFile(record)
+		if err != nil || string(after) != raw {
+			t.Fatal("inspection changed record", err)
+		}
+	}
+	write(t, record, "filees.native-writer/v1\nbroken")
+	f.jsonCall(t, false, "writer-inspect", "--disposable-wc", f.wc)
+}

@@ -74,6 +74,7 @@ svn_error_t *filees_ra_lock(const char *wc, svn_boolean_t live,
                             apr_pool_t *pool);
 /* First message of a commit failure that sent nothing to the server. */
 #define FILEES_COMMIT_NOT_SENT "filees.commit-not-sent"
+svn_error_t *filees_writer_inspect(const char *wc, svn_boolean_t live, apr_pool_t *pool);
 svn_error_t *filees_writer_release(const char *wc, svn_boolean_t live,
                                    const char *marker, apr_pool_t *pool);
 svn_error_t *filees_recover_commit(const char *wc, svn_boolean_t live,

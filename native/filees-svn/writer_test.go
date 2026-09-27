@@ -95,6 +95,7 @@ func TestWriterLeaseCrashAndRecovery(t *testing.T) {
 	for _, args := range [][]string{
 		{"add", "--", "other.txt"}, {"delete", "--", "old.txt"},
 		{"propset", "custom:x", "y", "--", "old.txt"}, {"propdel", "custom:x", "--", "old.txt"},
+		{"writer-inspect"}, {"writer-release", "--commit-id", repairMarker},
 		{"cleanup"}, {"revert", "--", "new.txt"}, {"resolve", "--accept", "mine-full", "--", "new.txt"},
 		{"update"}, {"lock", "--", "old.txt"}, {"unlock", "--", "old.txt"},
 		{"commit", "-m", "must refuse", "--", "old.txt"},

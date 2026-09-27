@@ -17,6 +17,8 @@
     "commit.not_versioned": "Ścieżka nie jest pod kontrolą wersji",
     "commit.outdated": "Kopia robocza jest nieaktualna — najpierw pobierz zmiany",
     "commit.recovery_held": "Odtwarzanie publikacji wstrzymane — sprawdź diagnostykę; nie usuwaj stanu oczekujących zmian",
+    "commit.recovery_refused": "Publikacja pozostaje wstrzymana. Nie udało się bezpiecznie uzgodnić poprzedniego zapisu — sprawdź szczegóły diagnostyczne.",
+    "commit.recovery_unavailable": "Uzgodnienie publikacji jest niedostępne dla tego folderu.",
     "hint.admin_only": "skontaktuj się z administratorem",
     "hint.require_action": "wymagane działanie użytkownika",
     "hint.retry_backoff": "ponowienie nastąpi później",

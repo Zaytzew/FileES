@@ -15,34 +15,36 @@ const (
 	CodePolicyWait  Code = "POLICY-2201"
 	CodeWCBusy      Code = "SYNC-2001"
 
-	KeyUnknown                  Key = "sync.unknown"
-	KeyNetUnreachable           Key = "net.unreachable"
-	KeyConnectionDropped        Key = "net.connection_dropped"
-	KeyAuthFailed               Key = "auth.failed"
-	KeySessionEnded             Key = "auth.session_ended"
-	KeyLockHeldByOther          Key = "lock.held_by_other"
-	KeyLockOperation            Key = "lock.operation_failed"
-	KeyLockInvalidPath          Key = "lock.invalid_path"
-	KeyLockNotPublished         Key = "lock.not_published"
-	KeyCommitFailed             Key = "commit.failed"
-	KeyCommitRecoveryHeld       Key = "commit.recovery_held"
-	KeyCommitOutdated           Key = "commit.outdated"
-	KeyCommitNoVCS              Key = "commit.not_versioned"
-	KeyReconConflict            Key = "recon.conflict"
-	KeyPolicyDeferred           Key = "policy.deferred"
-	KeyWorkingCopyBusy          Key = "sync.working_copy_busy"
-	KeyMobileOpNotOnServer      Key = "mobile.op.not_on_server"
-	KeyMobileTreeNotIngested    Key = "mobile.tree.not_ingested"
-	KeyMobileTreeNotAPack       Key = "mobile.tree.not_a_pack"
-	KeyMobileTreeCorrupt        Key = "mobile.tree.payload_corrupt"
-	KeyMobileStorageFull        Key = "mobile.storage.full"
-	KeyMobileOperationUncertain Key = "mobile.operation.uncertain"
-	KeyWhaleFailed              Key = "whale.operation_failed"
-	KeyWhalePathBusy            Key = "whale.path_busy"
-	KeyWhaleAccessDenied        Key = "whale.access_denied"
-	KeyWhaleOffsetConflict      Key = "whale.offset_conflict"
-	KeyWhaleDigestMismatch      Key = "whale.digest_mismatch"
-	KeyWhaleInsufficientSpace   Key = "whale.insufficient_space"
+	KeyUnknown                   Key = "sync.unknown"
+	KeyNetUnreachable            Key = "net.unreachable"
+	KeyConnectionDropped         Key = "net.connection_dropped"
+	KeyAuthFailed                Key = "auth.failed"
+	KeySessionEnded              Key = "auth.session_ended"
+	KeyLockHeldByOther           Key = "lock.held_by_other"
+	KeyLockOperation             Key = "lock.operation_failed"
+	KeyLockInvalidPath           Key = "lock.invalid_path"
+	KeyLockNotPublished          Key = "lock.not_published"
+	KeyCommitFailed              Key = "commit.failed"
+	KeyCommitRecoveryHeld        Key = "commit.recovery_held"
+	KeyCommitRecoveryRefused     Key = "commit.recovery_refused"
+	KeyCommitRecoveryUnavailable Key = "commit.recovery_unavailable"
+	KeyCommitOutdated            Key = "commit.outdated"
+	KeyCommitNoVCS               Key = "commit.not_versioned"
+	KeyReconConflict             Key = "recon.conflict"
+	KeyPolicyDeferred            Key = "policy.deferred"
+	KeyWorkingCopyBusy           Key = "sync.working_copy_busy"
+	KeyMobileOpNotOnServer       Key = "mobile.op.not_on_server"
+	KeyMobileTreeNotIngested     Key = "mobile.tree.not_ingested"
+	KeyMobileTreeNotAPack        Key = "mobile.tree.not_a_pack"
+	KeyMobileTreeCorrupt         Key = "mobile.tree.payload_corrupt"
+	KeyMobileStorageFull         Key = "mobile.storage.full"
+	KeyMobileOperationUncertain  Key = "mobile.operation.uncertain"
+	KeyWhaleFailed               Key = "whale.operation_failed"
+	KeyWhalePathBusy             Key = "whale.path_busy"
+	KeyWhaleAccessDenied         Key = "whale.access_denied"
+	KeyWhaleOffsetConflict       Key = "whale.offset_conflict"
+	KeyWhaleDigestMismatch       Key = "whale.digest_mismatch"
+	KeyWhaleInsufficientSpace    Key = "whale.insufficient_space"
 )
 
 var (
@@ -130,6 +132,8 @@ var specs = []Spec{
 	{CodeCommitNoVCS, KeyCommitNoVCS, SevWarn, HintRetryLocal, nil, "Path not under version control"},
 	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, detailOnly(), "Commit failed"},
 	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, detailOnly(), "Publication recovery paused — inspect diagnostics; do not remove pending state"},
+	{CodeCommitFail, KeyCommitRecoveryRefused, SevError, HintRequireAction, detailOnly(), "Publication remains paused. The previous write could not be safely reconciled; check the diagnostics."},
+	{CodeCommitFail, KeyCommitRecoveryUnavailable, SevError, HintRequireAction, nil, "Publication recovery is unavailable for this folder."},
 	{CodeRecon, KeyReconConflict, SevError, HintRequireAction, nil, "Conflict detected during update"},
 	{CodePolicyWait, KeyPolicyDeferred, SevWarn, HintRetryLocal, nil, "Editing-policy migration waiting on a clean working copy"},
 	{CodeWCBusy, KeyWorkingCopyBusy, SevWarn, HintRetryLocal, nil, "Working copy is busy in another local process"},

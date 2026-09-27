@@ -413,3 +413,21 @@ the r896 report (implementation notes, not distributed).
 Linux r898 deployment and first real two-realm move are recorded in
 the live report (implementation notes, not distributed).
 API: [Apache SVN move7](https://subversion.apache.org/docs/api/1.14/group__Move.html).
+
+### Recovery owner consistency (2026-09-28)
+
+`writer-inspect` / `writer_inspect_v1` returns `commit_id` under the existing
+nonblocking OS lease without clearing the durable owner. A busy or malformed
+record refuses. Desktop commit/recovery requires this feature in the selected
+native runtime; ship the daemon and rebuilt helper together. A CLI client has
+no native record. Unsupported writer release is an error, never permission to
+retire the daemon intent. `commit-not-sent` is emitted only after successful
+fence clearing, and the daemon verifies that the record is empty.
+
+The desktop retains one previous completed transaction before replacing the
+current transaction. A mismatched owner can be retired only with its own
+matching WC/repository record and a first_revision the server has not reached,
+then exact-owner native release and a second HEAD check. The newer intent's
+baseline or absence of a log marker cannot substitute for that proof. Legacy
+installations without the previous record retain HOLD; recover the original
+record from an operator backup for inspection, never manufacture its baseline.

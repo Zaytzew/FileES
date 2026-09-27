@@ -17,6 +17,8 @@
     "commit.not_versioned": "Dieser Pfad steht nicht unter Versionskontrolle",
     "commit.outdated": "Ihre lokale Kopie ist veraltet. Rufen Sie zuerst die neuesten Änderungen ab",
     "commit.recovery_held": "Die Wiederherstellung der Veröffentlichung ist pausiert. Prüfen Sie die Diagnose und entfernen Sie keine ausstehenden Änderungen",
+    "commit.recovery_refused": "Die Veröffentlichung bleibt pausiert. Der vorherige Schreibvorgang konnte nicht sicher abgeglichen werden. Prüfen Sie die Diagnose.",
+    "commit.recovery_unavailable": "Die Wiederherstellung der Veröffentlichung ist für diesen Ordner nicht verfügbar.",
     "hint.admin_only": "wenden Sie sich an Ihren Administrator",
     "hint.require_action": "Ihre Entscheidung ist erforderlich",
     "hint.retry_backoff": "FileES versucht es später erneut",

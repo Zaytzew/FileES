@@ -328,3 +328,23 @@ func (c *execClient) nativeResolve(ctx context.Context, wc string, paths []strin
 	}
 	return "", nil
 }
+
+// InspectCommitWriter observes a quiescent native record without clearing it.
+// CLI clients have no native fence; an old native helper must be upgraded.
+func (c *execClient) InspectCommitWriter(ctx context.Context, wc string) (string, error) {
+	if !nativeWCOps(c) {
+		return "", nil
+	}
+	if err := c.nativeRequireFeature(ctx, "writer_inspect_v1"); err != nil {
+		return "", err
+	}
+	raw, err := c.nativeRun(ctx, wc, "writer-inspect", "--wc", wc)
+	if err != nil {
+		return "", err
+	}
+	id, ok := raw["commit_id"].(string)
+	if !ok {
+		return "", errors.New("native writer identity missing from receipt")
+	}
+	return id, nil
+}

@@ -25,6 +25,8 @@ type commitRecoveryPlanState struct {
 	choice                      string
 	conflicts                   []recoveryConflict
 	copyDirectory               string
+	writerID, writerProof       string
+	transactionProof            string
 }
 
 // CommitRecoveryRequired is part of every repo.status the interface asks for.
@@ -41,7 +43,7 @@ func (s *Service) CommitRecoveryRequired() bool {
 	}
 	defer s.wcOpMu.Unlock()
 	in, err := s.readIntent(s.wc)
-	required := err != nil || (in != nil && in.Phase == "attempting")
+	required := err != nil || (in != nil && in.Phase == "attempting") || s.commitWriterBlocked
 	s.commitRecoveryCached.Store(required)
 	return required
 }
@@ -55,8 +57,11 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 	if err != nil {
 		return nil, fmt.Errorf("read attempted commit transaction: %w", err)
 	}
-	if in == nil || in.Phase != "attempting" {
+	if in == nil || (in.Phase != "attempting" && !(in.Phase == "done" && in.Revision == 0)) {
 		return nil, errors.New("no attempted commit transaction requires recovery")
+	}
+	if in.RepoID != s.repoID || in.RepoURL != s.RepoURL || in.WC != filepath.Clean(s.wc) {
+		return nil, errors.New("recovery transaction belongs to another working copy or repository")
 	}
 	c, ok := s.Cli.(client.TransactionCommitter)
 	if !ok {
@@ -71,6 +76,14 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 	}
 	now := time.Now()
 	plan := &commitRecoveryPlanState{id: uuid.NewString(), transactionID: in.ID, firstRevision: in.FirstRevision, headRevision: head, expires: now.Add(2 * time.Minute)}
+	plan.transactionProof = recoveryIntentDigest(in)
+	plan.writerID, plan.writerProof, err = s.recoveryWriter(ctx, in, head)
+	if err != nil {
+		return nil, err
+	}
+	if in.Phase == "done" && plan.writerID == "" {
+		return nil, errors.New("no pending native writer requires recovery")
+	}
 	plan.conflicts, err = s.inspectRecoveryConflicts(ctx, head)
 	if err != nil {
 		return nil, err
@@ -99,7 +112,7 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 		return nil, errors.New("commit recovery plan is absent, expired or mismatched")
 	}
 	in, err := s.readIntent(s.wc)
-	if err != nil || in == nil || in.Phase != "attempting" || in.ID != plan.transactionID || in.FirstRevision != plan.firstRevision {
+	if err != nil || in == nil || (in.Phase != "attempting" && !(in.Phase == "done" && in.Revision == 0)) || in.ID != plan.transactionID || in.FirstRevision != plan.firstRevision || recoveryIntentDigest(in) != plan.transactionProof {
 		return nil, errors.New("commit transaction changed after the recovery plan")
 	}
 	c, ok := s.Cli.(client.TransactionCommitter)
@@ -110,12 +123,22 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	if err != nil || head != plan.headRevision || head >= in.FirstRevision {
 		return nil, errors.New("repository changed after the recovery plan")
 	}
+	writerID, proof, err := s.recoveryWriter(ctx, in, head)
+	if err != nil || writerID != plan.writerID || proof != plan.writerProof {
+		return nil, errors.New("native writer or its proof changed after recovery plan")
+	}
 	// The plan proved the attempt had no effect; the native helper still
 	// holds its record and would refuse every later commit (E200004) until
 	// released. Only this attempt's record is released.
 	releaseWriter := func() error {
+		if plan.writerID != "" {
+			in.RecoveryWriterPlans = dedup(append(in.RecoveryWriterPlans, plan.writerID))
+			if err := s.writeIntent(s.wc, in); err != nil {
+				return err
+			}
+		}
 		if releaser, ok := s.Cli.(commitWriterReleaser); ok {
-			if err := releaser.ReleaseCommitWriter(ctx, s.wc, in.ID); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+			if err := releaser.ReleaseCommitWriter(ctx, s.wc, recoveryWriterID(plan, in)); err != nil {
 				return fmt.Errorf("release the native commit record: %w", err)
 			}
 		}
@@ -142,6 +165,7 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	}
 	s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = "", time.Time{}
 	s.commitRecoveryCached.Store(false)
+	s.commitWriterBlocked = false
 	return &contract.CommitRecoveryApplyResult{PlanID: planID, State: "queued"}, nil
 }
 
@@ -157,21 +181,22 @@ const transactionSchema = "filees.commit-intent/v1"
 // merely because its marker is currently absent: a remote transaction may
 // still be completing. Confirmed effects are projected by idempotent upserts.
 type commitIntent struct {
-	Schema            string                       `json:"schema"`
-	ID                string                       `json:"id"`
-	RepoURL           string                       `json:"repo_url"`
-	RepoID            string                       `json:"repo_id"`
-	WC                string                       `json:"wc"`
-	Phase             string                       `json:"phase"` // attempting, confirmed, empty, done
-	FirstRevision     int64                        `json:"first_revision"`
-	Revision          int64                        `json:"revision"`
-	Comment           string                       `json:"comment,omitempty"`
-	Paths             []string                     `json:"paths"`
-	Items             []intentItem                 `json:"items"`
-	Observation       *watcher.PublicationSnapshot `json:"observation,omitempty"`
-	BusyMarker        string                       `json:"busy_marker,omitempty"`
-	ConflictCopies    []string                     `json:"conflict_copies,omitempty"`    // durable audit; never removed during retry
-	ConflictArtifacts []string                     `json:"conflict_artifacts,omitempty"` // backed-up SVN artifacts accidentally scheduled as adds
+	Schema              string                       `json:"schema"`
+	ID                  string                       `json:"id"`
+	RepoURL             string                       `json:"repo_url"`
+	RepoID              string                       `json:"repo_id"`
+	WC                  string                       `json:"wc"`
+	Phase               string                       `json:"phase"` // attempting, confirmed, empty, done
+	FirstRevision       int64                        `json:"first_revision"`
+	Revision            int64                        `json:"revision"`
+	Comment             string                       `json:"comment,omitempty"`
+	Paths               []string                     `json:"paths"`
+	Items               []intentItem                 `json:"items"`
+	Observation         *watcher.PublicationSnapshot `json:"observation,omitempty"`
+	BusyMarker          string                       `json:"busy_marker,omitempty"`
+	RecoveryWriterPlans []string                     `json:"recovery_writer_plans,omitempty"` // write-ahead audit of attempted native owner retirement
+	ConflictCopies      []string                     `json:"conflict_copies,omitempty"`       // durable audit; never removed during retry
+	ConflictArtifacts   []string                     `json:"conflict_artifacts,omitempty"`    // backed-up SVN artifacts accidentally scheduled as adds
 }
 
 type intentItem struct {
@@ -215,7 +240,10 @@ func safeIntentPath(p string) bool {
 }
 
 func (s *Service) readIntent(wc string) (*commitIntent, error) {
-	p := transactionPath(wc)
+	return s.readIntentFile(wc, transactionPath(wc))
+}
+
+func (s *Service) readIntentFile(wc, p string) (*commitIntent, error) {
 	st, err := os.Lstat(p)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -295,6 +323,24 @@ func (s *Service) writeIntent(wc string, in *commitIntent) error {
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("commit intent WC is unavailable")
 	}
+	old, err := s.readIntent(wc)
+	if err != nil {
+		return err
+	}
+	if old != nil && old.ID != in.ID {
+		if old.Phase != "done" {
+			return errors.New("cannot replace an unfinished commit intent")
+		}
+		previous := filepath.Join(wc, ".filees", "commit_cache", "previous-transaction.json")
+		if s.RequireSVNMetadata {
+			err = atomicWriteJSONSliceInExistingDir(previous, old)
+		} else {
+			err = atomicWriteJSONSlice(previous, old)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	if s.RequireSVNMetadata {
 		return atomicWriteJSONSliceInExistingDir(transactionPath(wc), in)
 	}
@@ -317,6 +363,9 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, res
 		return true, err
 	}
 	if in == nil || in.Phase == "done" {
+		if err := s.requireIdleCommitWriter(ctx, wc); err != nil {
+			return true, err
+		}
 		if in != nil {
 			// Completed transactions are the durable source of truth for their
 			// presentation too. Replaying this idempotent upsert repairs journals
@@ -360,6 +409,17 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, res
 }
 
 func (s *Service) commitDurable(ctx context.Context, wc string, c client.TransactionCommitter, paths []string, message, comment string, pending []pendingEntry) error {
+	old, err := s.readIntent(wc)
+	if err != nil {
+		return err
+	}
+	if old != nil && old.Phase != "done" {
+		return errors.New("unfinished intent must be recovered before a new commit")
+	}
+
+	if err := s.requireIdleCommitWriter(ctx, wc); err != nil {
+		return err
+	}
 	head, err := c.CommitHead(ctx, s.RepoURL)
 	if err == nil && head < 0 {
 		err = errors.New("invalid repository baseline")
@@ -409,6 +469,11 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 	_, rev, commitErr := c.CommitWithID(client.WithCommitProgress(ctx, report), wc, s.RepoURL, paths, message, s.Rules.NeedsLock, in.ID, in.FirstRevision)
 	endProgress()
 	if commitErr != nil && errors.Is(commitErr, client.ErrCommitNotSent) {
+		// Check the complete contract even with an older/misbehaving helper: a
+		// not-sent response must not retire provenance while its fence survives.
+		if err := s.requireIdleCommitWriter(ctx, wc); err != nil {
+			return errors.Join(commitErr, err)
+		}
 		// Proven: the server never saw this transaction, and the helper has
 		// released its writer record. Close the intent and keep the queue for
 		// an ordinary retry; holding it for recovery was the loop the owner

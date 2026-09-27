@@ -277,4 +277,5 @@
     <string name="watch_pause_system">Uploads paused. The queue is preserved.</string>
     <string name="watch_retry_earliest">Next attempt no earlier than %1$s.</string>
     <string name="watch_retry_scheduled">Waiting for Android to start the task.</string>
+    <string name="watch_pause_start">Android paused background sending. Open FileES to resume the saved queue.</string>
 </resources>

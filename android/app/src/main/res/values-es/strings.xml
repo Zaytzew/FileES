@@ -271,4 +271,5 @@
     <string name="watch_pause_system">Envíos en pausa. La cola se conserva.</string>
     <string name="watch_retry_earliest">Próximo intento no antes de %1$s.</string>
     <string name="watch_retry_scheduled">Esperando a que Android inicie la tarea.</string>
+    <string name="watch_pause_start">Android ha pausado el envío en segundo plano. Abre FileES para reanudar la cola guardada.</string>
 </resources>

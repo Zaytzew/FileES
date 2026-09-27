@@ -271,4 +271,5 @@
     <string name="watch_pause_system">Envois suspendus. La file est conservée.</string>
     <string name="watch_retry_earliest">Nouvelle tentative au plus tôt à %1$s.</string>
     <string name="watch_retry_scheduled">En attente du démarrage de la tâche par Android.</string>
+    <string name="watch_pause_start">Android a suspendu l’envoi en arrière-plan. Ouvrez FileES pour reprendre la file enregistrée.</string>
 </resources>

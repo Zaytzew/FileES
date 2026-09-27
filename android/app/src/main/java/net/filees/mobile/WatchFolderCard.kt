@@ -32,7 +32,7 @@ object WatchFolderCard {
             val busy = state.phase in setOf("checking","preparing","sending")
             val phase = if (!busy && stopped && state.phase != "complete") "paused" else state.phase
             val lines = mutableListOf(store.label(phase),context.getString(R.string.watch_queue_count,state.waiting))
-            if (phase == "paused") lines += store.pauseDescription(if(stopped) pending!!.stopReason else state.stopReason)
+            if (phase == "paused") lines += store.pauseDescription(if(state.stopReason == WatchStatusStore.START_NOT_ALLOWED) state.stopReason else if(stopped) pending!!.stopReason else state.stopReason)
             if (!busy && state.waiting > 0 && pending != null) {
                 val earliest = pending.nextScheduleTimeMillis
                 lines += if (earliest > System.currentTimeMillis() && earliest != Long.MAX_VALUE)

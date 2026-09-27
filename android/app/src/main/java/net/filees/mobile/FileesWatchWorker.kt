@@ -26,17 +26,31 @@ class FileesWatchWorker(context: Context, params: WorkerParameters) : Worker(con
     override fun doWork(): Result {
         try {
             if (isStopped) return Result.retry()
-            FileesWatchTick.run(applicationContext, cancellation) { text ->
-                setForegroundAsync(foregroundInfo(applicationContext,text,10000 + (id.hashCode() and 0x3fffffff))).get()
+            val ran = CaptureCoordinator.tryRun(cancellation) {
+                FileesWatchTick.run(applicationContext, cancellation) { text ->
+                    setForegroundAsync(foregroundInfo(applicationContext,text,10000 + (id.hashCode() and 0x3fffffff))).get()
+                    FileesWatchTick.clearStartDeferred(applicationContext)
+                }
             }
-        } catch (_: Exception) {
-            if (isStopped) return Result.retry()
+            if (ran == null) return Result.retry()
+        } catch (e: Exception) {
+            if (isStopped || backgroundStartDenied(e)) return Result.retry()
+            android.util.Log.w("FileesWatch", "Watch worker failed", e)
+            return Result.retry()
         }
         if (!isStopped && inputData.getBoolean("reschedule", true)) FileesWatchScheduler.scheduleNext(applicationContext)
         return Result.success()
     }
 
     companion object {
+        internal fun backgroundStartDenied(error: Throwable): Boolean {
+            var cause: Throwable? = error
+            repeat(8) {
+                if (Build.VERSION.SDK_INT >= 31 && cause is android.app.ForegroundServiceStartNotAllowedException) return true
+                cause = cause?.cause
+            }
+            return false
+        }
         internal fun foregroundInfo(context: Context, text: String, notificationId: Int): ForegroundInfo {
             val channel = "filees-capture-active"
             if (Build.VERSION.SDK_INT >= 26) {

@@ -16,6 +16,12 @@ import java.util.concurrent.locks.ReentrantLock
 /** One owner of scan/spool/drain across foreground and WorkManager. */
 object CaptureCoordinator {
     private val lock = ReentrantLock()
+    // A scheduled scan must not spend its background-start allowance waiting
+    // behind another transfer. The existing owner is already draining the queue.
+    fun <T> tryRun(cancel: CaptureCancellation, action: () -> T): T? {
+        if (!lock.tryLock()) return null
+        try { cancel.check(); return action() } finally { lock.unlock() }
+    }
     fun <T> run(cancel: CaptureCancellation, action: () -> T): T {
         while (!lock.tryLock(100, TimeUnit.MILLISECONDS)) cancel.check()
         try { cancel.check(); return action() } finally { lock.unlock() }

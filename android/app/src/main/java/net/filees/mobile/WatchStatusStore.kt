@@ -14,6 +14,8 @@ class WatchStatusStore(context: Context) {
     private val context = context.applicationContext
     data class State(val phase: String, val checked: Long, val waiting: Int, val errors: List<String>, val queue: List<String>, val events: List<String>, val stopReason: Int)
     companion object {
+        // Local pause reason, not a JobScheduler stop code.
+        const val START_NOT_ALLOWED = -1001
         private val guard = Any()
         private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         private val busy = setOf("checking", "preparing", "sending")
@@ -96,6 +98,7 @@ class WatchStatusStore(context: Context) {
         else -> R.string.watch_state_unknown
     })
     fun pauseDescription(reason: Int): String = context.getString(when(reason) {
+        START_NOT_ALLOWED -> R.string.watch_pause_start
         androidx.work.WorkInfo.STOP_REASON_DEVICE_STATE -> R.string.watch_pause_device
         androidx.work.WorkInfo.STOP_REASON_TIMEOUT -> R.string.watch_pause_timeout
         androidx.work.WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY -> R.string.watch_pause_network

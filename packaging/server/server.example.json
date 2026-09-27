@@ -30,6 +30,9 @@
     "recovery_admin_contact": "filees-admin@example.net",
     "data_erasure_max_days": 90
   },
+  "mobile": {
+    "temp_root": "/var/filees-mobile/tmp"
+  },
   "upload": {
     "intake_root": "/var/filees-downloads/intake",
     "trash_root": "/var/filees/repository-operations/upload-reject",

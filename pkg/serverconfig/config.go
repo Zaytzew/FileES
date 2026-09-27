@@ -45,6 +45,7 @@ type File struct {
 	SMTP                 SMTPFile             `json:"smtp"`
 	PublicShares         PublicSharesFile     `json:"public_shares,omitempty"`
 	Upload               UploadFile           `json:"upload,omitempty"`
+	Mobile               MobileFile           `json:"mobile,omitempty"`
 	OperatorBranding     OperatorBrandingFile `json:"operator_branding,omitempty"`
 	Demo                 *DemoFile            `json:"demo,omitempty"`
 }
@@ -115,6 +116,12 @@ type UploadFile struct {
 	IntakeRoot string   `json:"intake_root,omitempty"`
 	TrashRoot  string   `json:"trash_root,omitempty"`
 	AVCommand  []string `json:"av_command,omitempty"`
+}
+
+// MobileFile controls only the hosting-side workspace of mobile capture.
+// Empty TempRoot preserves the legacy process TMPDIR for existing installs.
+type MobileFile struct {
+	TempRoot string `json:"temp_root,omitempty"`
 }
 
 type PublicSharesFile struct {
@@ -265,6 +272,7 @@ type Config struct {
 	PublicShares         PublicSharesFile
 	PublicShareFrostKey  []byte
 	Upload               UploadFile
+	Mobile               MobileFile
 	OperatorBranding     realmbranding.Branding
 	Demo                 DemoPolicy
 }
@@ -511,6 +519,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		Invitation:   file.Invitation,
 		PublicShares: file.PublicShares, PublicShareFrostKey: publicShareFrostKey,
 		Upload:           file.Upload,
+		Mobile:           file.Mobile,
 		OperatorBranding: operatorBranding,
 		Activation:       activationConfig,
 		Repositories:     file.Repositories,
@@ -535,6 +544,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if err := validateUpload(file.Upload, file.Repositories.ResultsRoot); err != nil {
 		return Config{}, err
+	}
+	if file.Mobile.TempRoot != "" && (!filepath.IsAbs(file.Mobile.TempRoot) || filepath.Clean(file.Mobile.TempRoot) == string(filepath.Separator) || strings.ContainsAny(file.Mobile.TempRoot, "\x00\r\n")) {
+		return Config{}, errors.New("mobile.temp_root must be an absolute dedicated directory")
 	}
 	if _, err := onboarding.CanonicalEmail(config.Repositories.RecoveryAdminContact); err != nil {
 		return Config{}, errors.New("repositories recovery_admin_contact must be a plain mailbox address")

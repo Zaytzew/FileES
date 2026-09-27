@@ -236,6 +236,12 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		RepositoriesRoot:   config.Repositories.Root,
 	}
 	guiBlobRoot := filepath.Join(config.Repositories.ResultsRoot, "gui-blobs")
+	restoreTemp, err := prepareMobileTemp(config.Mobile.TempRoot)
+	if err != nil {
+		report(stderr, "filees-mobile-v1 mobile.temp_root", err)
+		return ExitConfig
+	}
+	defer restoreTemp()
 
 	profile := obsandbox.Profile{
 		Name:     "filees-mobile-v1",
@@ -303,7 +309,8 @@ func mobileUnveilPaths(repositoriesRoot, serviceWorkingCopy, guiBlobRoot, ledger
 		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
 		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
-		{Label: "tmp", Name: os.TempDir(), Perms: "rwc"},
+		// prepareMobileTemp selects the same root for Go and subprocesses.
+		{Label: "mobile-temp", Name: os.TempDir(), Perms: "rwc"},
 		// exec.Command opens /dev/null itself for any std stream left unset
 		// (svn/svnlook invocations here never wire up Stdin), so the parent
 		// process needs it unveiled even though it never execs into svn

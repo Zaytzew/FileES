@@ -9,6 +9,15 @@ public_downloads_dir=${PUBLIC_DOWNLOADS_DIR:-/var/filees-downloads}
 public_authority_staging_root=${PUBLIC_AUTHORITY_STAGING_ROOT:-$public_downloads_dir/authority}
 public_links_cache_root=${PUBLIC_LINKS_CACHE_ROOT:-$public_downloads_dir/cache}
 public_upload_intake_root=${PUBLIC_UPLOAD_INTAKE_ROOT:-$public_downloads_dir/intake}
+mobile_temp_root=${MOBILE_TEMP_ROOT:-/var/filees-mobile/tmp}
+case "$mobile_temp_root" in
+    /|/tmp|/var|/home|/var/tmp) echo "Mobile uploads require a dedicated temporary directory" >&2; exit 1 ;;
+    /*) ;;
+    *) echo "MOBILE_TEMP_ROOT must be absolute" >&2; exit 1 ;;
+esac
+if [ -L "$mobile_temp_root" ]; then
+    echo "MOBILE_TEMP_ROOT must not be a symlink" >&2; exit 1
+fi
 for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root" "$public_upload_intake_root"; do
 	case "$public_path" in
 		/|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "Public downloads require dedicated persistent directories" >&2; exit 1 ;;
@@ -85,6 +94,8 @@ if [ ! -e /var/filees/activation/repositories.authz ]; then
 	install -m 600 /dev/null /var/filees/activation/repositories.authz
 fi
 
+install -d -m 700 "$mobile_temp_root"
+echo "Set mobile.temp_root=$mobile_temp_root in server.json; grant ownership to the mobile worker account."
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
 echo "Set public_shares.authority_staging_root=$public_authority_staging_root in server.json"
 echo "Set cache.root=$public_links_cache_root in public-links.json; examples are not rewritten."

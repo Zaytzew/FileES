@@ -17,6 +17,21 @@ if (buildingRelease && (!releaseKeystore.isFile || !releaseKeyProps.isFile)) {
     error("Release APK requires ${releaseKeystore}. Debug builds do not use this key.")
 }
 
+// Share the product version with desktop. Every source revision has a larger
+// Android versionCode; dirty/mixed working copies stay visibly developer builds.
+val sourceRoot = rootProject.projectDir.parentFile
+val productVersion = file("$sourceRoot/VERSION").readText().trim()
+val svnProcess = ProcessBuilder("svnversion", sourceRoot.absolutePath).redirectErrorStream(true).start()
+val sourceStamp = svnProcess.inputStream.bufferedReader().readText().trim()
+check(svnProcess.waitFor() == 0 && Regex("[0-9]+(:[0-9]+)?[MSP]*").matches(sourceStamp)) {
+    "Cannot determine Android source revision: $sourceStamp"
+}
+val sourceCode = Regex("[0-9]+").findAll(sourceStamp).last().value.toInt()
+check(sourceCode in 56..2100000000) { "Android source revision must advance versionCode" }
+if (buildingRelease) check(Regex("[0-9]+").matches(sourceStamp)) {
+    "Release APK requires a clean, uniform SVN working copy; got $sourceStamp"
+}
+
 android {
     namespace = "net.filees.mobile"
     compileSdk = 36
@@ -26,8 +41,8 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 55
-        versionName = "0.1.17+r1646"
+        versionCode = sourceCode
+        versionName = "$productVersion+r$sourceStamp"
     }
 
     signingConfigs {

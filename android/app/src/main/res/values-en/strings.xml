@@ -266,4 +266,7 @@
     <string name="watch_scope_note">Status covers the selected watch scope and the last scan.</string>
     <string name="watch_queue_more">Showing the first 200 entries.</string>
     <string name="watch_state_idle">No tasks</string>
+    <string name="update_auto">Automatic updates</string>
+    <string name="update_auto_copy">Check and download in the background. Confirm installation when ready.</string>
+    <string name="update_ready_title">Update ready to install</string>
 </resources>

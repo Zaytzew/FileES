@@ -260,4 +260,7 @@
     <string name="watch_scope_note">État du périmètre choisi lors de la dernière analyse.</string>
     <string name="watch_queue_more">Les 200 premières entrées.</string>
     <string name="watch_state_idle">Aucune tâche</string>
+    <string name="update_auto">Mises à jour automatiques</string>
+    <string name="update_auto_copy">Vérifier et télécharger en arrière-plan. Confirmer ensuite l’installation.</string>
+    <string name="update_ready_title">Mise à jour prête à installer</string>
 </resources>

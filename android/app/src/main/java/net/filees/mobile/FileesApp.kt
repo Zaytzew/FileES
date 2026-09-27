@@ -18,6 +18,7 @@ class FileesApp : Application() {
         FileesDeviceGate.install(this)
         createWatchNotificationChannel()
         FileesWatchScheduler.ensure(this)
+        AutoUpdate.ensure(this)
     }
 
     private fun createWatchNotificationChannel() {

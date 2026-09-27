@@ -34,17 +34,38 @@ type Config struct {
 	// Platform is the single platform of a one-platform page; Platforms is
 	// the list a page offering several downloads of one release uses. Exactly
 	// one of the two is configured.
-	Platform  string                  `json:"platform,omitempty"`
-	Platforms []string                `json:"platforms,omitempty"`
-	KeyID     string                  `json:"key_id"`
-	Notes     map[string]ReleaseNotes `json:"notes"`
-	Server    *ServerConfig           `json:"server,omitempty"`
+	Platform     string                  `json:"platform,omitempty"`
+	Platforms    []string                `json:"platforms,omitempty"`
+	KeyID        string                  `json:"key_id"`
+	Notes        map[string]ReleaseNotes `json:"notes"`
+	VersionNotes map[string]ReleaseNotes `json:"version_notes,omitempty"`
+	Server       *ServerConfig           `json:"server,omitempty"`
 }
 
 // ReleaseNotes is the optional highlighted sentence for one release.
 type ReleaseNotes struct {
 	PL string `json:"pl"`
 	EN string `json:"en"`
+}
+
+// releaseNotes uses the offered manifest version, never the website's source
+// version. An exact release entry overrides the product-version fallback.
+func (c Config) releaseNotes(releaseID, version string) ReleaseNotes {
+	if notes, ok := c.Notes[releaseID]; ok {
+		return notes
+	}
+	match := regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+)(?:\.(?:r)?[0-9]+|\+r[0-9]+)?$`).FindStringSubmatch(version)
+	if match == nil {
+		return ReleaseNotes{}
+	}
+	return c.VersionNotes[match[1]]
+}
+
+func notesCaption(prefix, note string) string {
+	if note = strings.TrimSpace(note); note != "" {
+		return prefix + note
+	}
+	return ""
 }
 
 // Dater reports when a repository path last changed. The signing commit of a
@@ -188,7 +209,7 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if server != nil {
 		template = server.render(template)
 	}
-	page, err := renderPage(template, envelope, downloads, p.Config.Notes[envelope.ReleaseID])
+	page, err := renderPage(template, envelope, downloads, p.Config.releaseNotes(envelope.ReleaseID, downloads[0].Version))
 	if err != nil {
 		return Result{}, err
 	}
@@ -294,8 +315,8 @@ func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads [
 	values := map[string]string{
 		"VERSION":    downloads[0].Version,
 		"RELEASE_ID": envelope.ReleaseID,
-		"NOTES_PL":   strings.TrimSpace(notes.PL),
-		"NOTES_EN":   strings.TrimSpace(notes.EN),
+		"NOTES_PL":   notesCaption("Co nowego w tej wersji: ", notes.PL),
+		"NOTES_EN":   notesCaption("What’s new in this version: ", notes.EN),
 	}
 	for _, download := range downloads {
 		// One release, one version. Two platforms disagreeing about it would

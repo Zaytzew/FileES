@@ -9,6 +9,40 @@ import android.widget.TextView
 object WatchStatusChecks {
     fun run(test: Instrumentation) {
         val context = test.targetContext
+        check(!AutoUpdate.enabled(context))
+        val apk = java.io.File(context.cacheDir,"test-update-integrity.apk")
+        try {
+            apk.writeText("verified update fixture")
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(apk.readBytes()).joinToString("") { "%02x".format(it) }
+            val offer = ApkUpdate.Offer("available","","0.1.18+r1",1,hash,apk.length(),"https://example.invalid/test.apk")
+            check(ApkUpdate.verify(apk,offer))
+            check(!ApkUpdate.verify(apk,offer.copy(size=offer.size+1)))
+            apk.writeText("corrupted update fixture")
+            check(!ApkUpdate.verify(apk,offer))
+            AutoUpdate.saveReady(context,offer)
+            check(AutoUpdate.ready(context)?.sha256 == hash)
+            AutoUpdate.clearReady(context)
+            check(AutoUpdate.ready(context) == null)
+            val preferences = context.getSharedPreferences(FileesSession.PREFS,0)
+            var notices = 0
+            try {
+                // Exercise the worker engine without scheduling a real channel fetch.
+                preferences.edit().putBoolean("android_auto_update",true).commit()
+                repeat(2) { AutoUpdate.prepare(context,offer,{ false },{ apk },{ true },{ notices++ }) }
+                check(notices == 1 && AutoUpdate.ready(context)?.sha256 == hash)
+                AutoUpdate.clearReady(context)
+                AutoUpdate.prepare(context,offer,{ false },{
+                    preferences.edit().putBoolean("android_auto_update",false).commit(); apk
+                },{ true },{ notices++ })
+                check(AutoUpdate.ready(context) == null && notices == 1)
+                AutoUpdate.prepare(context,offer,{ false },{ error("disabled must not download") },{ true })
+            } finally {
+                preferences.edit().putBoolean("android_auto_update",false).commit()
+                AutoUpdate.clearReady(context)
+            }
+            val cancel = ApkUpdate.DownloadCancellation(); cancel.cancel()
+            check(runCatching { ApkUpdate.download(context,offer,cancel) }.exceptionOrNull() is java.io.InterruptedIOException)
+        } finally { apk.delete() }
         val store = WatchStatusStore(context)
         val scope = "test-${System.nanoTime()}"
         val tree = Uri.parse("content://test.documents/tree/root")
@@ -56,7 +90,10 @@ object WatchStatusChecks {
         test.waitForIdleSync()
         test.runOnMainSync {
             check(activity.findViewById<View>(R.id.panelAdvanced).visibility == View.GONE)
-            activity.finish()
+            activity.findViewById<View>(R.id.buttonAbout).performClick()
         }
+        test.waitForIdleSync()
+        test.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        test.runOnMainSync { activity.finish() }
     }
 }

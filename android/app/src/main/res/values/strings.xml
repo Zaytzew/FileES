@@ -276,4 +276,7 @@
     <string name="watch_scope_note">Stan obejmuje wybrany zakres śledzenia i ostatni skan.</string>
     <string name="watch_queue_more">Pokazano pierwsze 200 pozycji.</string>
     <string name="watch_state_idle">Brak zadań</string>
+    <string name="update_auto">Automatyczne aktualizacje</string>
+    <string name="update_auto_copy">Sprawdzaj i pobieraj w tle. Potwierdź instalację, gdy będzie gotowa.</string>
+    <string name="update_ready_title">Aktualizacja jest gotowa do instalacji</string>
 </resources>

@@ -260,4 +260,7 @@
     <string name="watch_scope_note">Status für den gewählten Umfang und den letzten Scan.</string>
     <string name="watch_queue_more">Die ersten 200 Einträge.</string>
     <string name="watch_state_idle">Keine Aufgaben</string>
+    <string name="update_auto">Automatische Updates</string>
+    <string name="update_auto_copy">Im Hintergrund prüfen und laden. Installation bestätigen, sobald sie bereit ist.</string>
+    <string name="update_ready_title">Update zur Installation bereit</string>
 </resources>

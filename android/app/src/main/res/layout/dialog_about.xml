@@ -99,6 +99,17 @@
             android:layout_marginTop="12dp"
             android:textAppearance="@style/TextAppearance.Filees.Body" />
 
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchAutoUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/update_auto" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/update_auto_copy"
+            android:textAppearance="@style/TextAppearance.Filees.Meta" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonCheckUpdate"
             style="@style/Widget.Filees.Button.OutlinedButton"

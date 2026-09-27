@@ -285,6 +285,9 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
     assert.ok(html.includes('data-repo-id="id&quot;&lt;raw>"'));
     assert.ok(html.includes("Projekt &lt;DWG>"));
     assert.ok(html.includes(catalogues[locale]["repo.lock"]));
+    const decisions = render.renderRepo({...repo, intent_resolution_required:true, commit_recovery_required:true});
+    assert.ok(decisions.includes('data-action="resolve_intents"'));
+    assert.ok(decisions.includes('data-action="resolve_commit_recovery"'));
     assert.ok(render.renderRepo({...repo, server_deleted: true, cleanup_error: "Błąd <raw>"}).includes("Błąd &lt;raw>"));
     // A12: a stalled deletion resumes from its row; a live row keeps the retry
     // in its folder window.

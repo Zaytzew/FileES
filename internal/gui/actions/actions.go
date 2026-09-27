@@ -529,6 +529,10 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startRealmAlias(ctx, intent.ServerID)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
+	case tray.IntentResolveIntents:
+		c.startResolveIntents(ctx, intent.ServerID, intent.RepoID)
+	case tray.IntentResolveCommitRecovery:
+		c.startResolveCommitRecovery(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentSettings:
 		c.startSettings(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentJournal:

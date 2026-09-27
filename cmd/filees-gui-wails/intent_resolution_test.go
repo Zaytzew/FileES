@@ -6,6 +6,7 @@ import (
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
 	"filees/internal/gui/platform"
+	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
 	"testing"
 )
@@ -90,5 +91,46 @@ func TestRecoveryPlanAdapterChecksRepositoryAndCopiesProof(t *testing.T) {
 	failure := errors.New("transport unavailable")
 	if got, err := (intentResolverAdapter{client: recoveryPlanClient{err: failure}}).PlanCommitRecovery(context.Background(), "docs"); !errors.Is(err, failure) || got != nil {
 		t.Fatalf("transport failure lost: %+v %v", got, err)
+	}
+}
+
+func TestDirectDecisionActionChecksCurrentRepository(t *testing.T) {
+	for _, kind := range []tray.IntentKind{tray.IntentResolveCommitRecovery, tray.IntentResolveIntents} {
+		for _, mode := range []string{"allowed", "stale", "disconnected", "read-only", "detached", "deleted", "service-repo", "wrong-server", "unknown-repo", "no-capability", "resolved"} {
+			t.Run(string(kind)+"/"+mode, func(t *testing.T) {
+				vm := guiapp.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoCommitRecovery: true, contract.CapRepoIntentResolution: true}, Repos: []guiapp.RepoViewModel{{ID: "docs", ServerID: "spot", Attached: true, Access: "rw", CommitRecoveryRequired: true, Pending: contract.PendingStats{RenameUncertain: 1}}}}
+				req := ActionRequest{Kind: string(kind), RepoID: "docs", ServerID: "spot"}
+				switch mode {
+				case "stale":
+					vm.Stale = true
+				case "disconnected":
+					vm.Connected = false
+				case "read-only":
+					vm.Repos[0].Access = "ro"
+				case "detached":
+					vm.Repos[0].Attached = false
+				case "deleted":
+					vm.Repos[0].ServerDeleted = true
+				case "service-repo":
+					vm.Repos[0].Purpose = "service"
+				case "wrong-server":
+					req.ServerID = "elsewhere"
+				case "unknown-repo":
+					req.RepoID = "unknown"
+				case "no-capability":
+					vm.Capabilities = nil
+				case "resolved":
+					vm.Repos[0].CommitRecoveryRequired = false
+					vm.Repos[0].Pending.RenameUncertain = 0
+				}
+				intent, ok := translateAction(vm, req)
+				if ok != (mode == "allowed") {
+					t.Fatalf("allowed=%v", ok)
+				}
+				if ok && (intent.Kind != kind || intent.ServerID != "spot" || intent.RepoID != "docs") {
+					t.Fatalf("wrong target %+v", intent)
+				}
+			})
+		}
 	}
 }

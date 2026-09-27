@@ -640,8 +640,8 @@ function renderRepo(repo) {
     <div class="repo-tools">${settings}${actions}</div>
     <div class="repo-meta repo-size"><small>${escapeHTML(t("repo.size"))}</small><span>${escapeHTML(size)}</span></div>
     ${renderUnportable(repo)}
-    ${repo.intent_resolution_required ? `<div class="intent-folder-warning"><strong>${escapeHTML(t("intent.required"))}</strong><button type="button" data-action="settings">${escapeHTML(t("intent.resolve"))}</button></div>` : ""}
-    ${recoveryRequired ? `<div class="intent-folder-warning"><div><strong>${escapeHTML(t("commitRecovery.required"))}</strong><p>${escapeHTML(t("commitRecovery.help"))}</p></div><button type="button" data-action="settings">${escapeHTML(t("commitRecovery.resolve"))}</button></div>` : ""}
+    ${repo.intent_resolution_required ? `<div class="intent-folder-warning"><strong>${escapeHTML(t("intent.required"))}</strong><button type="button" data-action="resolve_intents">${escapeHTML(t("intent.resolve"))}</button></div>` : ""}
+    ${recoveryRequired ? `<div class="intent-folder-warning"><div><strong>${escapeHTML(t("commitRecovery.required"))}</strong><p>${escapeHTML(t("commitRecovery.help"))}</p></div><button type="button" data-action="resolve_commit_recovery">${escapeHTML(t("commitRecovery.resolve"))}</button></div>` : ""}
   </article>`;
 }
 
@@ -937,7 +937,7 @@ function renderAnnouncementBanner(snapshot) {
   alerts.hidden = decisions.length === 0;
   // This is persistent state from IPC, not an event toast or notice ACK.
   // Stable markup avoids re-announcing the same decision on every tick.
-  replaceHTMLIfChanged(alerts, decisions.map(({repo,kind}) => `<div class="announcement-banner" role="alert" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>${escapeHTML(t(kind === "recovery" ? "commitRecovery.paused" : "intent.paused", { name: repo.display_name || repo.id }))}</strong><p>${escapeHTML(t(kind === "recovery" ? "commitRecovery.help" : "intent.help"))}</p></div><button type="button" data-action="settings">${escapeHTML(t(kind === "recovery" ? "commitRecovery.resolve" : "intent.resolve"))}</button></div>`).join(""));
+  replaceHTMLIfChanged(alerts, decisions.map(({repo,kind}) => `<div class="announcement-banner" role="alert" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>${escapeHTML(t(kind === "recovery" ? "commitRecovery.paused" : "intent.paused", { name: repo.display_name || repo.id }))}</strong><p>${escapeHTML(t(kind === "recovery" ? "commitRecovery.help" : "intent.help"))}</p></div><button type="button" data-action="${kind === "recovery" ? "resolve_commit_recovery" : "resolve_intents"}">${escapeHTML(t(kind === "recovery" ? "commitRecovery.resolve" : "intent.resolve"))}</button></div>`).join(""));
   const banner = $("#announcement-banner");
   banner.hidden = unread.length === 0;
   $("#top").classList.toggle("has-announcements", unread.length > 0 || decisions.length > 0);

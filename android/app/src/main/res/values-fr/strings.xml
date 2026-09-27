@@ -239,9 +239,10 @@
     <string name="about_license_summary">FileES est fourni sous licence BSD 2-Clause. Le logiciel est fourni « en l’état », sans garantie expresse ou implicite ; la responsabilité est exclue dans la mesure permise par la loi.</string>
     <string name="about_license_full">Texte intégral de la licence BSD 2-Clause</string>
     <string name="about_license_hide">Masquer le texte de la licence</string>
-    <string name="device_lock_title">FileES est verrouillé</string>
-    <string name="device_lock_copy">C’est le verrouillage de ce téléphone, pas une connexion à la zone. La clé SSH et l’association restent.</string>
-    <string name="device_lock_unlock">Déverrouiller</string>
-    <string name="device_lock_prompt_title">Déverrouiller FileES</string>
-    <string name="device_lock_prompt_subtitle">Verrouillage d’écran ou biométrie de ce téléphone.</string>
+    <string name="device_lock_title">Déverrouiller l’application</string>
+    <string name="device_lock_copy">Déverrouiller l’application</string>
+    <string name="device_lock_unlock">Déverrouiller l’application</string>
+    <string name="device_lock_prompt_title">Déverrouiller l’application</string>
+    <string name="device_lock_prompt_subtitle">Déverrouiller l’application</string>
+    <string name="settings_advanced">Avancé</string>
 </resources>

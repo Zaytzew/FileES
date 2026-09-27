@@ -120,6 +120,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.buttonRequestDesktopJoin.setOnClickListener { confirmJoinThenSend() }
         binding.buttonAbout.setOnClickListener { showAbout() }
+        binding.buttonAdvanced.setOnClickListener { showAdvanced() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)
@@ -195,6 +196,24 @@ class SettingsActivity : AppCompatActivity() {
         } catch (_: Exception) {
             getString(R.string.about_unknown)
         }
+    }
+
+    private fun showAdvanced() {
+        val panel = binding.panelAdvanced
+        val parent = panel.parent as android.view.ViewGroup
+        val index = parent.indexOfChild(panel)
+        parent.removeView(panel)
+        panel.visibility = View.VISIBLE
+        val scroll = android.widget.ScrollView(this).apply { addView(panel) }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_advanced)
+            .setView(scroll)
+            .setPositiveButton(R.string.action_close, null)
+            .setOnDismissListener {
+                scroll.removeView(panel)
+                panel.visibility = View.GONE
+                parent.addView(panel, index)
+            }.show()
     }
 
     private fun showAbout() {

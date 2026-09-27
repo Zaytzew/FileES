@@ -37,14 +37,14 @@ func TestConflictRecoveryRequiresExplicitServerChoice(t *testing.T) {
 			resolver := &fakeCommitRecoveryResolver{calls: make(chan string, 1), conflicts: true}
 			shown := make(chan platform.ConfirmRequest, 1)
 			fake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
-				return platform.SettingsDialogResult{Action: platform.SettingsDialogResolveCommitRecovery, ServerID: "office", RepoID: "repo-1"}, nil
+				return platform.SettingsDialogResult{}, errors.New("direct decision must not open settings")
 			}, ConfirmFunc: func(_ context.Context, r platform.ConfirmRequest) (bool, error) { shown <- r; return confirm, nil }}
 			view := lifecycleView(contract.CapRepoCommitRecovery)
 			view.Repos[0].CommitRecoveryRequired = true
 			view.Servers[0].Repos[0] = view.Repos[0]
 			intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: fake, Prompter: fake, IntentResolver: resolver})
 			defer cancel()
-			send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+			send(t, intents, tray.Intent{Kind: tray.IntentResolveCommitRecovery, ServerID: "office", RepoID: "repo-1"})
 			dialog := awaitCh(t, shown, "conflict decision")
 			if dialog.PresentationKey != "details.conflictRecovery" || dialog.PresentationArgs["conflicts"] != "plan.dwg" || dialog.PresentationArgs["copy"] != "!kolizje/conflicted-copy-plan" || !strings.Contains(dialog.ConfirmText, "serwerową") {
 				t.Fatalf("missing explicit choice: %+v", dialog)
@@ -112,7 +112,7 @@ func TestIntentDialogConfirmationAndCancellation(t *testing.T) {
 			resolver := &fakeIntentResolver{calls: make(chan string, 1)}
 			shown := make(chan platform.ConfirmRequest, 1)
 			fake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
-				return platform.SettingsDialogResult{Action: platform.SettingsDialogResolveIntents, ServerID: "office", RepoID: "repo-1"}, nil
+				return platform.SettingsDialogResult{}, errors.New("direct decision must not open settings")
 			}, ConfirmFunc: func(_ context.Context, r platform.ConfirmRequest) (bool, error) { shown <- r; return confirm, nil }}
 			view := lifecycleView(contract.CapRepoIntentResolution)
 			view.Repos[0].Pending.RenameUncertain = 1
@@ -120,7 +120,7 @@ func TestIntentDialogConfirmationAndCancellation(t *testing.T) {
 			lifecycle := newRecordingActionLifecycle()
 			intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: fake, Prompter: fake, IntentResolver: resolver, ActionLifecycle: lifecycle})
 			defer cancel()
-			send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+			send(t, intents, tray.Intent{Kind: tray.IntentResolveIntents, ServerID: "office", RepoID: "repo-1"})
 			dialog := awaitCh(t, shown, "intent confirmation")
 			if !strings.Contains(dialog.Text, "DODAJ: new V2.txt") || !strings.Contains(dialog.Text, "USUŃ: old.txt") {
 				t.Fatalf("dialog=%+v", dialog)

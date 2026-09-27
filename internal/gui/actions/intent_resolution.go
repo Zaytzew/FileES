@@ -50,7 +50,7 @@ func (c *Controller) startResolveCommitRecovery(ctx context.Context, serverID, r
 		defer c.endOperation(key)
 		vm := c.cfg.ViewModel()
 		repo, ok := findRepo(vm, repoID)
-		if !ok || repo.ServerID != serverID || !repo.CommitRecoveryRequired || !vm.Connected || vm.Stale || !vm.CanResolveCommitRecovery() {
+		if !ok || repo.ServerID != serverID || !repo.CommitRecoveryRequired || !repo.Attached || repo.ServerDeleted || repo.Purpose != "" || repo.Access != "rw" || !vm.Connected || vm.Stale || !vm.CanResolveCommitRecovery() {
 			return
 		}
 		readCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)

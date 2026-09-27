@@ -88,7 +88,8 @@ currentSnapshot.repositories=[{id:"r",server_id:"s",display_name:"<Test>",intent
 renderAnnouncementBanner(currentSnapshot);
 assert.equal($("#intent-alerts").hidden,false);
 assert.match($("#intent-alerts").html,/&lt;Test>/);
-assert.match($("#intent-alerts").html,/data-action="settings"/);
+assert.match($("#intent-alerts").html,/data-action="resolve_intents"/);
+assert.doesNotMatch($("#intent-alerts").html,/data-action="settings"/);
 assert.match($("#hero-title").html,/na Twoją decyzję/);
 const alertHTML=$("#intent-alerts").html;
 for(let tick=0;tick<10;tick++) renderAnnouncementBanner(currentSnapshot);
@@ -105,6 +106,8 @@ assert.equal($("#intent-alerts").hidden,false);
 assert.match($("#intent-alerts").html,/GWIAŹDZISTA/);
 assert.match($("#intent-alerts").html,/commit|publikac/i);
 assert.match($("#intent-alerts").html,/role="alert"/);
+assert.match($("#intent-alerts").html,/data-action="resolve_commit_recovery"/);
+assert.doesNotMatch($("#intent-alerts").html,/data-action="settings"/);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `
 	cmd := exec.CommandContext(t.Context(), node)

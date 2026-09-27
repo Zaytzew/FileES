@@ -828,6 +828,15 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		}
 		repo, ok := projectedRepo(vm, request.RepoID)
 		return intent, ok && repo.ServerID == request.ServerID
+	case string(tray.IntentResolveIntents), string(tray.IntentResolveCommitRecovery):
+		repo, ok := projectedRepo(vm, request.RepoID)
+		allowed := ok && repo.ServerID == request.ServerID && repo.Purpose == "" && repo.Attached && !repo.ServerDeleted && repo.Access == "rw" && vm.Connected && !vm.Stale
+		if request.Kind == string(tray.IntentResolveCommitRecovery) {
+			allowed = allowed && repo.CommitRecoveryRequired && vm.CanResolveCommitRecovery()
+		} else {
+			allowed = allowed && repo.Pending.RenameUncertain > 0 && vm.CanResolveIntents()
+		}
+		return tray.Intent{Kind: tray.IntentKind(request.Kind), ServerID: repo.ServerID, RepoID: repo.ID}, allowed
 	case string(tray.IntentSettings):
 		intent := tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID, RepoID: request.RepoID}
 		if request.RepoID == "" {

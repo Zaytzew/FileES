@@ -466,3 +466,41 @@ use the new installer or the repair command for the first rollout. Binary rollba
 to a version without `alert capacity` requires removing only the marked cron line;
 keep the settings and state for the next upgrade. No production cron was enabled
 by the development tests themselves.
+
+
+## Mobile upload temporary filesystem
+
+In `/etc/filees/server.json`, configure a dedicated directory on a volume
+with enough working space (the example uses `/var/filees-mobile/tmp`):
+
+```json
+"mobile": { "temp_root": "/path/on/capacity-volume/filees-mobile-tmp" }
+```
+
+On OpenBSD prepare it as root, replacing the example path with your selection:
+
+```sh
+install -d -o _filees-state -g wheel -m 700 /path/on/capacity-volume/filees-mobile-tmp
+```
+
+The worker reads this setting on each new SSH invocation. It validates an
+existing private directory and uses it as `TMPDIR` for the received spool,
+ZIP extraction, transient SVN working copy and SVN child processes. Its
+sandbox grants the same temporary root; an invalid configured path fails
+closed, without falling back to `/tmp`. The root must not be a symlink.
+Do not change the path while an upload is active; finish or stop the old
+invocation first. The setting does not move existing temporary files or
+change repository/ledger locations. It is separate from public upload intake.
+
+Bootstrap scripts accept `MOBILE_TEMP_ROOT` and prepare the directory (the
+OpenBSD SSH stage sets ownership to `_filees-state`). They preserve an existing
+`server.json`; match its `mobile.temp_root` to the prepared path. Other systems
+must give the actual mobile worker account ownership. Existing configurations
+without the field retain the previous process `TMPDIR` behavior. Old binaries
+reject the new field: upgrade the server before adding it.
+
+The capacity monitor includes the configured root. Allow space for several
+simultaneous representations of each upload and concurrent workers: available
+space equal to the source file size is insufficient. This setting supplies
+neither a reservation nor an exact peak-space guarantee. Normal completion
+and errors clean their temporary files; a killed process can leave remnants.

@@ -1,4 +1,4 @@
-.Dd September 9, 2026
+.Dd September 27, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
@@ -84,6 +84,29 @@ There is no
 on the
 .Sy _filees-mobile
 match block.
+.Sh TEMPORARY STORAGE
+The optional
+.Cm mobile.temp_root
+in
+.Pa /etc/filees/server.json
+selects a dedicated temporary directory.
+It must exist, be private (mode 0700), and be writable by
+.Sy _filees-state .
+Symbolic links are rejected.
+The worker sets its process
+.Ev TMPDIR
+before applying the sandbox or executing SVN.
+Spool, ZIP extraction, transient working copies and SVN children use the
+same directory; the sandbox allows that root instead of the default temporary
+location. An invalid explicit setting fails without a fallback.
+.Pp
+An omitted setting preserves the legacy process temporary directory.
+The bundle example uses
+.Pa /var/filees-mobile/tmp ;
+choose a sufficiently large filesystem, allowing for concurrent uploads
+and multiple temporary copies of each file.
+The capacity monitor includes the configured directory.
+Upgrade the server binary before adding the field to an old configuration.
 .Sh FILES
 .Bl -tag -width Ds
 .It Pa /var/filees-mobile/ledger

@@ -76,6 +76,7 @@ func capacityPaths(c serverconfig.Config) []storagewatch.Path {
 		}
 	}
 	add("whale", c.Repositories.EffectiveWhaleRoot())
+	add("mobile-temp", c.Mobile.TempRoot)
 	add("deleted", c.Repositories.DeletionArchiveRoot)
 	add("rotated", c.Repositories.RotationArchiveRoot)
 	if c.PublicShares.Enabled {

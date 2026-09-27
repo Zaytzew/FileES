@@ -14,6 +14,15 @@ public_downloads_dir=${PUBLIC_DOWNLOADS_DIR:-/var/filees-downloads}
 public_authority_staging_root=${PUBLIC_AUTHORITY_STAGING_ROOT:-$public_downloads_dir/authority}
 public_links_cache_root=${PUBLIC_LINKS_CACHE_ROOT:-$public_downloads_dir/cache}
 public_upload_intake_root=${PUBLIC_UPLOAD_INTAKE_ROOT:-$public_downloads_dir/intake}
+mobile_temp_root=${MOBILE_TEMP_ROOT:-/var/filees-mobile/tmp}
+case "$mobile_temp_root" in
+    /|/tmp|/var|/home|/var/tmp) echo "Mobile uploads require a dedicated temporary directory" >&2; exit 1 ;;
+    /*) ;;
+    *) echo "MOBILE_TEMP_ROOT must be absolute" >&2; exit 1 ;;
+esac
+if [ -L "$mobile_temp_root" ]; then
+    echo "MOBILE_TEMP_ROOT must not be a symlink" >&2; exit 1
+fi
 for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root" "$public_upload_intake_root"; do
 	case "$public_path" in
 		/|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "Public downloads require dedicated persistent directories" >&2; exit 1 ;;
@@ -124,6 +133,8 @@ install -d -o root -g wheel -m 755 /etc/sasl2 /etc/subversion
 install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repositories /var/filees/repository-operations
 install -d -o "$state_user" -g wheel -m 700 /var/filees-mobile /var/filees-mobile/ledger
+install -d -o "$state_user" -g wheel -m 700 "$mobile_temp_root"
+echo "Set mobile.temp_root=$mobile_temp_root in server.json; existing config is preserved."
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repository-operations/public-shares
 install -d -o root -g wheel -m 755 "$public_downloads_dir"
 install -d -o "$state_user" -g wheel -m 700 "$public_authority_staging_root"

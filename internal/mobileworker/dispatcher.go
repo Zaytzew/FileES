@@ -175,11 +175,14 @@ func (d Dispatcher) writeOK(out io.Writer, req v1.Request, result any, payload [
 // writeError maps an internal error to a domain code, never leaking raw tool
 // text to the phone. The generic "worker.failed" fallback is the one case
 // where nothing in the mapped code/message names the real cause - so that
-// one case, and only that one, is also logged for an administrator (see
+// case and storage exhaustion are also logged for an administrator (see
 // Ledger.LogError) before the mask is applied. Every other branch already
 // puts the real cause in msg, so a second copy in the log would be noise.
 func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	code, msg := "worker.failed", "operation failed"
+	if IsStorageFull(err) {
+		code, msg = "storage.full", "server storage is full; upload retained for retry"
+	}
 	if errors.Is(err, errUploadLimit) {
 		code, msg = "tree.limit", "upload exceeds file count or size limit"
 	}
@@ -207,7 +210,7 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	if errors.Is(err, ErrDrawersUnavailable) {
 		code, msg = "op.unsupported", "operation not supported"
 	}
-	if code == "worker.failed" {
+	if code == "worker.failed" || code == "storage.full" {
 		d.Appender.Ledger.LogError(req.RequestID, d.ClientID, string(req.Operation), err.Error())
 	}
 	return d.writeErrorBody(out, req, v1.ErrorBody{Code: code, Message: msg})

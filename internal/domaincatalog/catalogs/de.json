@@ -68,6 +68,8 @@
     "lock_release.stale": "Die Reservierung hat sich geändert. Aktualisieren Sie ihren Status",
     "lock_release.unavailable": "Der Dienst für Freigabeanfragen ist nicht verfügbar",
     "messages.catalog_unavailable": "Nachrichtenkatalog konnte nicht geladen werden",
+    "mobile.storage.full": "Auf dem Server ist kein Speicherplatz mehr verfügbar. Der Upload bleibt zum erneuten Versuch in der Warteschlange, bis Platz frei ist.",
+    "mobile.operation.uncertain": "Der Server hat das Speichern nicht bestätigt. Der Upload bleibt in der Warteschlange. Wenn dies anhält, wenden Sie sich an die Serveradministration.",
     "mobile.op.not_on_server": "Der Server kennt diesen mobilen Vorgang nicht. Meist ist filees-mobile-v1 veraltet (Status 70); der signierte apply-Vorgang fehlt.",
     "mobile.tree.not_a_pack": "Dies ist eine normale ZIP-Datei, kein FileES-Paket. Eine solche Datei wird als einzelnes Objekt gesendet, nicht als Verzeichnisbaum.",
     "mobile.tree.not_ingested": "Das Telefon hat den Ordner gepackt und in einer Verbindung gesendet. Der Server nimmt noch keine Pakete an; der apply-Vorgang von filees-mobile-v1 fehlt.",

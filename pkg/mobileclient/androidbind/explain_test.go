@@ -167,3 +167,16 @@ func TestExplainDoesNotChangeTheWireDiagnostic(t *testing.T) {
 		t.Fatal("Explain returned the wire diagnostic instead of the reader's sentence")
 	}
 }
+
+func TestExplainMobileStorageAndUncertain(t *testing.T) {
+	for _, code := range []string{"storage.full", "operation.uncertain"} {
+		raw := "UPLOAD_TREE: mobile operation failed: " + code + ": diagnostic"
+		pl, en := ExplainIn(raw, "pl"), ExplainIn(raw, "en")
+		if pl == "" || en == "" || pl == en {
+			t.Fatalf("missing translations %q %q", pl, en)
+		}
+	}
+	if got := ExplainIn("filename storage.full.txt", "pl"); got != "" {
+		t.Fatalf("classified filename: %s", got)
+	}
+}

@@ -68,6 +68,8 @@
     "lock_release.stale": "La réservation a changé. Actualisez son état",
     "lock_release.unavailable": "Le service de demandes de libération est indisponible",
     "messages.catalog_unavailable": "Impossible de charger le catalogue de messages",
+    "mobile.storage.full": "Le serveur manque d’espace de stockage. L’envoi reste en attente et sera réessayé lorsque de l’espace sera disponible.",
+    "mobile.operation.uncertain": "Le serveur n’a pas confirmé l’enregistrement. L’envoi reste en attente ; si cela persiste, contactez l’administrateur du serveur.",
     "mobile.op.not_on_server": "Le serveur ne connaît pas cette opération mobile. Il s’agit généralement d’une ancienne version de filees-mobile-v1 (statut 70) : l’opération apply signée manque.",
     "mobile.tree.not_a_pack": "Ceci est un simple fichier ZIP, pas un paquet FileES. Il est envoyé comme un seul objet, et non comme une arborescence.",
     "mobile.tree.not_ingested": "Le téléphone a empaqueté le dossier et l’a envoyé en une seule connexion. Le serveur n’accepte pas encore les paquets : l’opération apply de filees-mobile-v1 manque.",

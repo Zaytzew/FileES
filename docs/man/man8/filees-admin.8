@@ -303,3 +303,23 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID \e
 .Xr filees-mail 8 ,
 .Xr filees-operation 8 ,
 .Xr filees-rotate 8
+.Sh MOBILE RECOVERY
+Run
+.Cm mobile recover --request-id UUID
+as the owner of the mobile ledger directory, normally
+.Ql doas -u _filees-state filees-admin .
+The command locks the operation and searches repository history to restore
+an existing receipt without replaying the upload.
+An unresolved legacy operation remains blocked by default.
+.Pp
+Only after disabling new mobile sessions and stopping all prior workers and
+SVN children may the administrator add
+.Cm --allow-retry --confirm-workers-stopped --reason TEXT .
+This is an explicit operator attestation of maintenance quiescence, not a
+process scan. A free lock is not sufficient for pre-upgrade children.
+The command writes a private durable before-image/planned-decision audit
+before replacing the ledger record. It preserves the request ID.
+The optional
+.Cm --ledger PATH
+selects a private ledger owned by the effective user.
+Do not edit or remove pending records manually.

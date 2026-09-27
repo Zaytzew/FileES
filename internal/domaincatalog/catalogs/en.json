@@ -68,6 +68,8 @@
     "lock_release.stale": "The reservation has changed — refresh its state",
     "lock_release.unavailable": "The release request service is not available",
     "messages.catalog_unavailable": "The message catalogue could not be loaded",
+    "mobile.storage.full": "The server is out of storage space. The upload remains queued for retry after space is freed.",
+    "mobile.operation.uncertain": "The server has not confirmed the save. The upload remains queued; if this persists, contact the server administrator.",
     "mobile.op.not_on_server": "The server does not know this mobile operation. Usually an old filees-mobile-v1 (status 70) — the signed apply is missing.",
     "mobile.tree.not_a_pack": "This is a plain ZIP file, not a FileES pack. Such a file is sent as a single object, not as a tree.",
     "mobile.tree.not_ingested": "The phone packed the folder and sent it in one connection. The server does not accept packs yet — the filees-mobile-v1 apply is missing.",

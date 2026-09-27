@@ -57,10 +57,10 @@ class WatchStatusStore(context: Context) {
             val count = pending.sumOf { item -> item.sources.count { belongs(it,tree) }.coerceAtLeast(1) }
             val rows = pending.flatMap { item ->
                 val suffix = when { item.needsDecision -> context.getString(R.string.watch_state_attention); item.state == "uploading" -> context.getString(R.string.watch_state_sending); else -> context.getString(R.string.watch_state_waiting) }
-                item.sources.filter { belongs(it,tree) }.map { "${it.substringAfterLast('/')} · $suffix" + if(item.lastError.isBlank()) "" else "\n${item.lastError}" }
+                item.sources.filter { belongs(it,tree) }.map { "${it.substringAfterLast('/')} · $suffix" + if(item.lastError.isBlank()) "" else "\n${mobileRecoveryMessage(context,item.lastError) ?: item.lastError}" }
             }.take(200)
             record.put("waiting",count).put("queue",JSONArray(rows))
-            record.put("queue_errors",JSONArray(pending.filter { it.needsDecision || it.lastError.isNotBlank() }.map { it.lastError.ifBlank { context.getString(R.string.watch_state_attention) } }.distinct().take(10)))
+            record.put("queue_errors",JSONArray(pending.filter { it.needsDecision || it.lastError.isNotBlank() }.map { mobileRecoveryMessage(context,it.lastError) ?: it.lastError.ifBlank { context.getString(R.string.watch_state_attention) } }.distinct().take(10)))
             if (finish || (record.optString("phase") !in busy && record.optString("phase") != "paused")) {
                 val errors = strings(record.optJSONArray("errors")) + strings(record.optJSONArray("queue_errors"))
                 val next = when { errors.isNotEmpty() -> "error"; count > 0 || unassigned -> "waiting"; record.optBoolean("scanned") -> "complete"; else -> "unknown" }
@@ -87,7 +87,7 @@ class WatchStatusStore(context: Context) {
         var phase = record.optString("phase","unknown")
         if (phase in busy && record.optString("token") !in active) phase = "waiting"
         return State(phase,record.optLong("checked"),record.optInt("waiting"),
-            (strings(record.optJSONArray("errors"))+strings(record.optJSONArray("queue_errors"))).distinct(),strings(record.optJSONArray("queue")),strings(record.optJSONArray("events")),record.optInt("stop_reason",androidx.work.WorkInfo.STOP_REASON_NOT_STOPPED))
+            (strings(record.optJSONArray("errors"))+strings(record.optJSONArray("queue_errors"))).map { mobileRecoveryMessage(context,it) ?: it }.distinct(),strings(record.optJSONArray("queue")),strings(record.optJSONArray("events")),record.optInt("stop_reason",androidx.work.WorkInfo.STOP_REASON_NOT_STOPPED))
     }
     fun label(phase: String): String = context.getString(when(phase) {
         "idle" -> R.string.watch_state_idle

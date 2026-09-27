@@ -504,3 +504,49 @@ simultaneous representations of each upload and concurrent workers: available
 space equal to the source file size is insufficient. This setting supplies
 neither a reservation nor an exact peak-space guarantee. Normal completion
 and errors clean their temporary files; a killed process can leave remnants.
+
+### Recovering an old mobile operation after an upgrade
+
+`operation.uncertain` means the server cannot prove the outcome of an older
+attempt; it does not mean the upload succeeded. Keep the phone queue and ledger.
+Use the ledger owner account (normally `_filees-state`), so atomic writes retain
+worker access. The command is local administration, never a phone operation:
+
+```sh
+doas -u _filees-state /usr/local/sbin/filees-admin mobile recover --request-id UUID
+```
+
+This takes the per-operation lock and searches the repository's full history
+for `filees:request-id`. If found, it restores the original receipt without
+replaying data, even if newer edits exist. Without a matching commit or durable
+no-change receipt, it refuses to authorize another write.
+
+To permit retry of an unresolved legacy attempt, first prevent new mobile SSH
+sessions and stop/wait for **all** old mobile workers and their SVN children.
+A paused phone alone does not prove there are no orphan server processes.
+Verify that maintenance state, then run:
+
+```sh
+doas -u _filees-state /usr/local/sbin/filees-admin mobile recover \
+  --request-id UUID --allow-retry --confirm-workers-stopped \
+  --reason 'Maintenance: mobile sessions disabled and all old worker/SVN processes stopped'
+```
+
+The flag is an operator attestation, not automatic process detection. Old
+processes did not inherit the new fence, so a free operation lock alone is
+insufficient. The command rechecks history under the lock, writes a private,
+fsynced `recovery-UUID-*.json` audit (before image, planned decision, operator UID,
+reason), then atomically updates the existing record. If interrupted, an audit
+may describe a planned action not yet applied. Retry is safe; inspect the ledger
+for the actual outcome. It never deletes the ledger or creates a new request ID.
+Run without `--allow-retry` whenever the quiescence condition is not assured.
+
+After successful reconciliation, restore mobile access and resume the same
+queue. `REJECTED` plus `recovery_fenced=true` authorizes retry, not success.
+`COMMITTED` identifies an existing saved revision. A busy operation, inaccessible
+repository, invalid ID or failed audit leaves the record unchanged.
+
+Mobile capacity errors now use `storage.full`; Go ENOSPC/EDQUOT and SVN E000028
+are classified without disclosing paths in the response. Detailed diagnostics
+remain in the local errors.log where writable. Android retains the upload and
+its request ID for retry after storage is available. Success stays silent.

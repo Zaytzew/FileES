@@ -163,6 +163,7 @@ object FileesWatchTick {
     // here mirrors what showTransportError already does for user-triggered
     // sends, so a background failure is diagnosable from the app alone.
     private fun failureSentence(context: Context, raw: String): String {
+        mobileRecoveryMessage(context,raw)?.let { return it }
         val text = raw.trim()
         if (text.isEmpty()) return context.getString(R.string.journal_watch_failed)
         val catalog = try {

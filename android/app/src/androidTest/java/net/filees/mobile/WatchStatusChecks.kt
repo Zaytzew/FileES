@@ -88,6 +88,12 @@ object WatchStatusChecks {
         store.scanned(scope,tree); store.end(resumed)
         store.updateQueue(scope,listOf(tree),listOf(item.copy(state="conflict")),finish=true)
         check(store.state(scope,tree).phase == "error")
+        val full = "UPLOAD_TREE: mobile operation failed: storage.full: server storage is full"
+        val translated = mobileRecoveryMessage(context,full)
+        check(!translated.isNullOrBlank() && !translated.contains("storage.full"))
+        store.updateQueue(scope,listOf(tree),listOf(item.copy(lastError=full)),finish=true)
+        check(store.state(scope,tree).waiting == 1 && store.state(scope,tree).errors.contains(translated))
+        check(store.state(scope,tree).queue.any { it.contains(translated!!) })
         store.updateQueue(scope,listOf(tree),listOf(item.copy(state="committed")),finish=true)
         check(store.state(scope,tree).phase == "complete")
         check(store.state("other-target",tree).phase == "unknown")

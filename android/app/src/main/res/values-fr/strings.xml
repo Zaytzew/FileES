@@ -263,4 +263,12 @@
     <string name="update_auto">Mises à jour automatiques</string>
     <string name="update_auto_copy">Vérifier et télécharger en arrière-plan. Confirmer ensuite l’installation.</string>
     <string name="update_ready_title">Mise à jour prête à installer</string>
+
+    <string name="watch_state_paused">En pause</string>
+    <string name="watch_pause_device">Le système a suspendu les envois en raison de l’état du téléphone.</string>
+    <string name="watch_pause_timeout">Le temps d’exécution en arrière-plan est écoulé. La file attend une nouvelle tentative.</string>
+    <string name="watch_pause_network">Envois suspendus après la perte de connexion.</string>
+    <string name="watch_pause_system">Envois suspendus. La file est conservée.</string>
+    <string name="watch_retry_earliest">Nouvelle tentative au plus tôt à %1$s.</string>
+    <string name="watch_retry_scheduled">En attente du démarrage de la tâche par Android.</string>
 </resources>

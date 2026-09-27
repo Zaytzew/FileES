@@ -25,16 +25,20 @@ object CaptureCoordinator {
 class CaptureCancellation {
     val signal = CancellationSignal()
     @Volatile private var stopped = false
+    @Volatile var stopReason: Int = androidx.work.WorkInfo.STOP_REASON_UNKNOWN
+        private set
+    val isCancelled: Boolean get() = stopped || Thread.currentThread().isInterrupted
     private var client: Client? = null
     private val streams = mutableSetOf<Closeable>()
     @Synchronized fun attach(client: Client) { check(); this.client = client }
-    @Synchronized fun cancel() {
+    @Synchronized fun cancel(reason: Int = androidx.work.WorkInfo.STOP_REASON_UNKNOWN) {
+        stopReason = reason
         stopped = true
         signal.cancel()
         client?.cancel()
         streams.toList().forEach { runCatching { it.close() } }
     }
-    fun check() { if (stopped || Thread.currentThread().isInterrupted) throw InterruptedIOException("Capture cancelled") }
+    fun check() { if (isCancelled) throw InterruptedIOException("Capture cancelled") }
     fun <T> reading(stream: InputStream, action: (InputStream) -> T): T {
         try { synchronized(this) { check(); streams.add(stream) } }
         catch (e: Exception) { stream.close(); throw e }

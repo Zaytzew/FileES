@@ -263,4 +263,12 @@
     <string name="update_auto">Actualizaciones automáticas</string>
     <string name="update_auto_copy">Comprobar y descargar en segundo plano. Confirmar la instalación cuando esté lista.</string>
     <string name="update_ready_title">Actualización lista para instalar</string>
+
+    <string name="watch_state_paused">En pausa</string>
+    <string name="watch_pause_device">El sistema ha pausado los envíos por el estado del teléfono.</string>
+    <string name="watch_pause_timeout">Se agotó el tiempo de ejecución en segundo plano. La cola espera otro intento.</string>
+    <string name="watch_pause_network">Envíos en pausa tras perder la conexión.</string>
+    <string name="watch_pause_system">Envíos en pausa. La cola se conserva.</string>
+    <string name="watch_retry_earliest">Próximo intento no antes de %1$s.</string>
+    <string name="watch_retry_scheduled">Esperando a que Android inicie la tarea.</string>
 </resources>

@@ -87,6 +87,10 @@ object FileesWatchTick {
             }
 
         } catch (e: Exception) {
+            if (cancel.isCancelled) {
+                trees.forEach { status.paused(scope,it,cancel.stopReason) }
+                throw e
+            }
             trees.forEach { status.problem(scope,it,e.message ?: context.getString(R.string.error_send)) }
             cancel.check()
             result.errors += e.message ?: context.getString(R.string.error_send)

@@ -269,4 +269,12 @@
     <string name="update_auto">Automatic updates</string>
     <string name="update_auto_copy">Check and download in the background. Confirm installation when ready.</string>
     <string name="update_ready_title">Update ready to install</string>
+
+    <string name="watch_state_paused">Paused</string>
+    <string name="watch_pause_device">The system paused uploads because of the device state.</string>
+    <string name="watch_pause_timeout">Background execution time ran out. The queue is waiting to retry.</string>
+    <string name="watch_pause_network">Uploads paused after the connection was lost.</string>
+    <string name="watch_pause_system">Uploads paused. The queue is preserved.</string>
+    <string name="watch_retry_earliest">Next attempt no earlier than %1$s.</string>
+    <string name="watch_retry_scheduled">Waiting for Android to start the task.</string>
 </resources>

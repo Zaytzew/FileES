@@ -12,7 +12,7 @@ import java.util.UUID
 class WatchStatusStore(context: Context) {
     val prefs = context.getSharedPreferences("filees_watch_status", Context.MODE_PRIVATE)
     private val context = context.applicationContext
-    data class State(val phase: String, val checked: Long, val waiting: Int, val errors: List<String>, val queue: List<String>, val events: List<String>)
+    data class State(val phase: String, val checked: Long, val waiting: Int, val errors: List<String>, val queue: List<String>, val events: List<String>, val stopReason: Int)
     companion object {
         private val guard = Any()
         private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -38,11 +38,12 @@ class WatchStatusStore(context: Context) {
     }
     fun begin(scope: String, trees: List<Uri>): String {
         val token = UUID.randomUUID().toString(); active.add(token)
-        trees.forEach { tree -> write(scope,tree) { it.put("token",token).put("phase","checking").put("errors",JSONArray()).put("scanned",false) } }
+        trees.forEach { tree -> write(scope,tree) { it.put("token",token).put("phase","checking").put("errors",JSONArray()).put("scanned",false).remove("stop_reason") } }
         return token
     }
     fun end(token: String) { active.remove(token) }
     fun phase(scope: String, tree: Uri, phase: String) = write(scope,tree) { it.put("phase",phase) }
+    fun paused(scope: String, tree: Uri, reason: Int) = write(scope,tree) { it.put("phase","paused").put("stop_reason",reason) }
     fun scanned(scope: String, tree: Uri) = write(scope,tree) { it.put("scanned",true).put("checked",System.currentTimeMillis()) }
     fun problem(scope: String, tree: Uri, error: String) = write(scope,tree) {
         it.put("errors",JSONArray((strings(it.optJSONArray("errors")) + error).distinct().take(10))).put("phase","error")
@@ -58,7 +59,7 @@ class WatchStatusStore(context: Context) {
             }.take(200)
             record.put("waiting",count).put("queue",JSONArray(rows))
             record.put("queue_errors",JSONArray(pending.filter { it.needsDecision || it.lastError.isNotBlank() }.map { it.lastError.ifBlank { context.getString(R.string.watch_state_attention) } }.distinct().take(10)))
-            if (finish || record.optString("phase") !in busy) {
+            if (finish || (record.optString("phase") !in busy && record.optString("phase") != "paused")) {
                 val errors = strings(record.optJSONArray("errors")) + strings(record.optJSONArray("queue_errors"))
                 val next = when { errors.isNotEmpty() -> "error"; count > 0 || unassigned -> "waiting"; record.optBoolean("scanned") -> "complete"; else -> "unknown" }
                 if (finish) {
@@ -84,19 +85,26 @@ class WatchStatusStore(context: Context) {
         var phase = record.optString("phase","unknown")
         if (phase in busy && record.optString("token") !in active) phase = "waiting"
         return State(phase,record.optLong("checked"),record.optInt("waiting"),
-            (strings(record.optJSONArray("errors"))+strings(record.optJSONArray("queue_errors"))).distinct(),strings(record.optJSONArray("queue")),strings(record.optJSONArray("events")))
+            (strings(record.optJSONArray("errors"))+strings(record.optJSONArray("queue_errors"))).distinct(),strings(record.optJSONArray("queue")),strings(record.optJSONArray("events")),record.optInt("stop_reason",androidx.work.WorkInfo.STOP_REASON_NOT_STOPPED))
     }
     fun label(phase: String): String = context.getString(when(phase) {
         "idle" -> R.string.watch_state_idle
         "checking" -> R.string.watch_state_checking; "preparing" -> R.string.watch_state_preparing
         "sending" -> R.string.watch_state_sending; "complete" -> R.string.watch_state_complete
         "waiting" -> R.string.watch_state_waiting; "error" -> R.string.watch_state_attention
+        "paused" -> R.string.watch_state_paused
         else -> R.string.watch_state_unknown
+    })
+    fun pauseDescription(reason: Int): String = context.getString(when(reason) {
+        androidx.work.WorkInfo.STOP_REASON_DEVICE_STATE -> R.string.watch_pause_device
+        androidx.work.WorkInfo.STOP_REASON_TIMEOUT -> R.string.watch_pause_timeout
+        androidx.work.WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY -> R.string.watch_pause_network
+        else -> R.string.watch_pause_system
     })
     fun summary(scope: String, trees: List<Uri>): Pair<String,String> {
         val states = trees.map { state(scope,it) }
         val count = prefs.getInt("$scope|pending",0)
-        val phase = listOf("sending","preparing","checking","error","waiting","unknown").firstOrNull { p -> states.any { it.phase == p } }
+        val phase = listOf("sending","preparing","checking","paused","error","waiting","unknown").firstOrNull { p -> states.any { it.phase == p } }
             ?: if(prefs.getBoolean("$scope|attention",false)) "error" else if(count>0) "waiting" else if(states.isNotEmpty()) "complete" else "idle"
         return label(phase) to context.getString(R.string.watch_queue_count,count)
     }

@@ -263,4 +263,12 @@
     <string name="update_auto">Automatische Updates</string>
     <string name="update_auto_copy">Im Hintergrund prüfen und laden. Installation bestätigen, sobald sie bereit ist.</string>
     <string name="update_ready_title">Update zur Installation bereit</string>
+
+    <string name="watch_state_paused">Pausiert</string>
+    <string name="watch_pause_device">Das System hat den Upload wegen des Gerätezustands pausiert.</string>
+    <string name="watch_pause_timeout">Die Hintergrundlaufzeit ist abgelaufen. Die Warteschlange wartet auf einen neuen Versuch.</string>
+    <string name="watch_pause_network">Upload nach Verbindungsverlust pausiert.</string>
+    <string name="watch_pause_system">Upload pausiert. Die Warteschlange bleibt erhalten.</string>
+    <string name="watch_retry_earliest">Nächster Versuch frühestens um %1$s.</string>
+    <string name="watch_retry_scheduled">Warten auf den Start durch Android.</string>
 </resources>

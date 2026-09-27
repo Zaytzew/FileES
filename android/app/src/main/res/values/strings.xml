@@ -279,4 +279,12 @@
     <string name="update_auto">Automatyczne aktualizacje</string>
     <string name="update_auto_copy">Sprawdzaj i pobieraj w tle. Potwierdź instalację, gdy będzie gotowa.</string>
     <string name="update_ready_title">Aktualizacja jest gotowa do instalacji</string>
+
+    <string name="watch_state_paused">Wstrzymane</string>
+    <string name="watch_pause_device">System wstrzymał wysyłkę ze względu na stan telefonu.</string>
+    <string name="watch_pause_timeout">Wyczerpano czas pracy w tle. Kolejka czeka na ponowienie.</string>
+    <string name="watch_pause_network">Wysyłka wstrzymana po utracie połączenia.</string>
+    <string name="watch_pause_system">Wysyłka została wstrzymana. Kolejka jest zachowana.</string>
+    <string name="watch_retry_earliest">Ponowna próba nie wcześniej niż %1$s.</string>
+    <string name="watch_retry_scheduled">Oczekiwanie na uruchomienie przez Androida.</string>
 </resources>

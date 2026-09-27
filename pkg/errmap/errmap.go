@@ -89,6 +89,10 @@ func Classify(err error) Entry {
 	low := strings.ToLower(msg)
 
 	switch {
+	case strings.Contains(low, "mobile operation failed: storage.full:"):
+		return entryFrom(errcat.KeyMobileStorageFull, msg)
+	case strings.Contains(low, "mobile operation failed: operation.uncertain:"):
+		return entryFrom(errcat.KeyMobileOperationUncertain, msg)
 	case containsAny(low, mobileCorruptNeedles):
 		return entryFrom(errcat.KeyMobileTreeCorrupt, msg)
 	case containsAny(low, mobilePackNeedles):

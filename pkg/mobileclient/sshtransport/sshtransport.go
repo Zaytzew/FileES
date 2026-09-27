@@ -162,6 +162,16 @@ func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.
 	respHeader, respPayload, readErr := v1.ReadFrame(stdout, v1.ResponseMagic, v1.MaxHeaderBytes)
 
 	if waitErr := session.Wait(); waitErr != nil {
+		// A server can reject a full upload before consuming its body. SSH then
+		// reports a stdin copy EOF despite delivering a complete domain error.
+		// Only an error bound to THIS request may outrank that transport error;
+		// never accept a success receipt after an incomplete session.
+		if readErr == nil {
+			rejected, parseErr := v1.ParseResponse(respHeader)
+			if parseErr == nil && rejected.RequestID == req.RequestID && rejected.Operation == req.Operation && rejected.Status == v1.StatusError && rejected.Error != nil {
+				return rejected, respPayload, nil
+			}
+		}
 		detail := strings.TrimSpace(stderr.String())
 		switch {
 		case detail != "" && readErr != nil:
@@ -181,6 +191,9 @@ func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.
 	resp, err := v1.ParseResponse(respHeader)
 	if err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: parse response: %w", err)
+	}
+	if resp.RequestID != req.RequestID || resp.Operation != req.Operation {
+		return v1.Response{}, nil, errors.New("sshtransport: response identity mismatch")
 	}
 	return resp, respPayload, nil
 }

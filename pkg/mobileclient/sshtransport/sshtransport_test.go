@@ -1,12 +1,15 @@
 package sshtransport
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	crand "crypto/rand"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +25,7 @@ import (
 // repo or a system sshd.
 type handlerFunc func(reqHeader, reqPayload []byte) (respHeader, respPayload []byte, exitOK bool)
 
-func startFakeServer(t *testing.T, hostSigner ssh.Signer, clientKey ssh.PublicKey, handle handlerFunc) string {
+func startFakeServer(t *testing.T, hostSigner ssh.Signer, clientKey ssh.PublicKey, handle handlerFunc, headerOnly ...bool) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -60,13 +63,13 @@ func startFakeServer(t *testing.T, hostSigner ssh.Signer, clientKey ssh.PublicKe
 			if err != nil {
 				continue
 			}
-			go serveOneExec(channel, requests, handle)
+			go serveOneExec(channel, requests, handle, headerOnly...)
 		}
 	}()
 	return listener.Addr().String()
 }
 
-func serveOneExec(channel ssh.Channel, requests <-chan *ssh.Request, handle handlerFunc) {
+func serveOneExec(channel ssh.Channel, requests <-chan *ssh.Request, handle handlerFunc, headerOnly ...bool) {
 	defer channel.Close()
 	for req := range requests {
 		if req.Type != "exec" {
@@ -74,7 +77,13 @@ func serveOneExec(channel ssh.Channel, requests <-chan *ssh.Request, handle hand
 			continue
 		}
 		req.Reply(true, nil)
-		reqHeader, reqPayload, err := v1.ReadFrame(channel, v1.RequestMagic, v1.MaxHeaderBytes)
+		var reqHeader, reqPayload []byte
+		var err error
+		if len(headerOnly) > 0 && headerOnly[0] {
+			reqHeader, err = v1.ReadHeader(bufio.NewReader(channel), v1.RequestMagic, v1.MaxHeaderBytes)
+		} else {
+			reqHeader, reqPayload, err = v1.ReadFrame(channel, v1.RequestMagic, v1.MaxHeaderBytes)
+		}
 		status := uint32(0)
 		if err != nil {
 			status = 1
@@ -213,3 +222,46 @@ func TestNewRejectsMissingFields(t *testing.T) {
 		}
 	}
 }
+
+func TestEarlyStorageRejectionRetainsDomainResponse(t *testing.T) {
+	for _, mode := range []string{"storage.full", "wrong-id", "wrong-operation"} {
+		t.Run(mode, func(t *testing.T) {
+			host, _ := generateEd25519(t)
+			signer, pub := generateEd25519(t)
+			addr := startFakeServer(t, host, pub, func(h, _ []byte) ([]byte, []byte, bool) {
+				req, err := v1.ParseRequest(h)
+				if err != nil {
+					return nil, nil, false
+				}
+				resp, _ := v1.NewError(req.RequestID, req.Operation, v1.ErrorBody{Code: "storage.full", Message: "server storage is full"})
+				switch mode {
+				case "wrong-id":
+					resp.RequestID = uuid.NewString()
+				case "wrong-operation":
+					resp.Operation = v1.OpUploadObject
+				}
+				raw, _ := json.Marshal(resp)
+				return raw, nil, true
+			}, true)
+			tr, err := New(Config{Address: addr, User: "mobile", HostPublicKey: string(ssh.MarshalAuthorizedKey(host.PublicKey())), Signer: signer, DialTimeout: 2 * time.Second})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, _ := v1.NewRequest(uuid.NewString(), v1.OpUploadTree, v1.UploadTreePayload{RepoID: "r", ParentPath: "mobile-uploads", FileCount: 1, Size: 64 << 20, Sha256: strings.Repeat("a", 64)})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			resp, _, err := tr.DoStream(ctx, req, io.LimitReader(zeroReader{}, 64<<20))
+			if mode == "storage.full" {
+				if err != nil || resp.Error == nil || resp.Error.Code != "storage.full" {
+					t.Fatalf("lost rejection: %+v %v", resp, err)
+				}
+			} else if err == nil {
+				t.Fatalf("accepted invalid early response: %+v", resp)
+			}
+		})
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(b []byte) (int, error) { clear(b); return len(b), nil }

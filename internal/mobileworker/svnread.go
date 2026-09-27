@@ -224,7 +224,11 @@ func runStream(ctx context.Context, stdout io.Writer, name string, args ...strin
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, stderrTail(errb.Bytes()))
+		detail := fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, stderrTail(errb.Bytes()))
+		if svnStorageFull(errb.String()) {
+			return fmt.Errorf("%w: %v", ErrStorageFull, detail)
+		}
+		return detail
 	}
 	return nil
 }

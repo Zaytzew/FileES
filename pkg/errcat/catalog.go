@@ -15,32 +15,34 @@ const (
 	CodePolicyWait  Code = "POLICY-2201"
 	CodeWCBusy      Code = "SYNC-2001"
 
-	KeyUnknown                Key = "sync.unknown"
-	KeyNetUnreachable         Key = "net.unreachable"
-	KeyConnectionDropped      Key = "net.connection_dropped"
-	KeyAuthFailed             Key = "auth.failed"
-	KeySessionEnded           Key = "auth.session_ended"
-	KeyLockHeldByOther        Key = "lock.held_by_other"
-	KeyLockOperation          Key = "lock.operation_failed"
-	KeyLockInvalidPath        Key = "lock.invalid_path"
-	KeyLockNotPublished       Key = "lock.not_published"
-	KeyCommitFailed           Key = "commit.failed"
-	KeyCommitRecoveryHeld     Key = "commit.recovery_held"
-	KeyCommitOutdated         Key = "commit.outdated"
-	KeyCommitNoVCS            Key = "commit.not_versioned"
-	KeyReconConflict          Key = "recon.conflict"
-	KeyPolicyDeferred         Key = "policy.deferred"
-	KeyWorkingCopyBusy        Key = "sync.working_copy_busy"
-	KeyMobileOpNotOnServer    Key = "mobile.op.not_on_server"
-	KeyMobileTreeNotIngested  Key = "mobile.tree.not_ingested"
-	KeyMobileTreeNotAPack     Key = "mobile.tree.not_a_pack"
-	KeyMobileTreeCorrupt      Key = "mobile.tree.payload_corrupt"
-	KeyWhaleFailed            Key = "whale.operation_failed"
-	KeyWhalePathBusy          Key = "whale.path_busy"
-	KeyWhaleAccessDenied      Key = "whale.access_denied"
-	KeyWhaleOffsetConflict    Key = "whale.offset_conflict"
-	KeyWhaleDigestMismatch    Key = "whale.digest_mismatch"
-	KeyWhaleInsufficientSpace Key = "whale.insufficient_space"
+	KeyUnknown                  Key = "sync.unknown"
+	KeyNetUnreachable           Key = "net.unreachable"
+	KeyConnectionDropped        Key = "net.connection_dropped"
+	KeyAuthFailed               Key = "auth.failed"
+	KeySessionEnded             Key = "auth.session_ended"
+	KeyLockHeldByOther          Key = "lock.held_by_other"
+	KeyLockOperation            Key = "lock.operation_failed"
+	KeyLockInvalidPath          Key = "lock.invalid_path"
+	KeyLockNotPublished         Key = "lock.not_published"
+	KeyCommitFailed             Key = "commit.failed"
+	KeyCommitRecoveryHeld       Key = "commit.recovery_held"
+	KeyCommitOutdated           Key = "commit.outdated"
+	KeyCommitNoVCS              Key = "commit.not_versioned"
+	KeyReconConflict            Key = "recon.conflict"
+	KeyPolicyDeferred           Key = "policy.deferred"
+	KeyWorkingCopyBusy          Key = "sync.working_copy_busy"
+	KeyMobileOpNotOnServer      Key = "mobile.op.not_on_server"
+	KeyMobileTreeNotIngested    Key = "mobile.tree.not_ingested"
+	KeyMobileTreeNotAPack       Key = "mobile.tree.not_a_pack"
+	KeyMobileTreeCorrupt        Key = "mobile.tree.payload_corrupt"
+	KeyMobileStorageFull        Key = "mobile.storage.full"
+	KeyMobileOperationUncertain Key = "mobile.operation.uncertain"
+	KeyWhaleFailed              Key = "whale.operation_failed"
+	KeyWhalePathBusy            Key = "whale.path_busy"
+	KeyWhaleAccessDenied        Key = "whale.access_denied"
+	KeyWhaleOffsetConflict      Key = "whale.offset_conflict"
+	KeyWhaleDigestMismatch      Key = "whale.digest_mismatch"
+	KeyWhaleInsufficientSpace   Key = "whale.insufficient_space"
 )
 
 var (
@@ -277,6 +279,8 @@ var specs = []Spec{
 	{"MOBILE-2001", KeyMobileOpNotOnServer, SevError, HintRequireAction, nil, "Mobile worker exited 70 — applied filees-mobile-v1 does not know this operation"},
 	{"MOBILE-2002", KeyMobileTreeNotIngested, SevError, HintRequireAction, nil, "UPLOAD_TREE reached the host but the worker does not ingest zip-on-wire yet"},
 	{"MOBILE-2003", KeyMobileTreeNotAPack, SevError, HintNone, nil, "UPLOAD_TREE payload is a repository zip, not a FileES tree pack"},
+	{"MOBILE-2005", KeyMobileStorageFull, SevError, HintRetryBackoff, nil, "Server storage is full; upload retained for retry"},
+	{"MOBILE-2006", KeyMobileOperationUncertain, SevWarn, HintAdminOnly, nil, "Upload outcome is not confirmed; keep the queue and ask the server administrator"},
 	{"MOBILE-2004", KeyMobileTreeCorrupt, SevError, HintRetry, nil, "UPLOAD_TREE zip sha256 or size does not match the header"},
 
 	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, detailOnly(), "Whale operation failed"},

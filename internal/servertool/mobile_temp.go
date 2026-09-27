@@ -1,6 +1,7 @@
 package servertool
 
 import (
+	"filees/internal/mobileworker"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,16 +26,20 @@ func prepareMobileTemp(root string) (func(), error) {
 		return nil, fmt.Errorf("%s must be a private directory (0700), not a symlink", root)
 	}
 	probe, err := os.CreateTemp(root, ".filees-write-check-")
-	if err != nil {
+	if err != nil && !mobileworker.IsStorageFull(err) {
 		return nil, err
 	}
-	closeErr := probe.Close()
-	removeErr := os.Remove(probe.Name())
-	if closeErr != nil {
-		return nil, closeErr
-	}
-	if removeErr != nil {
-		return nil, removeErr
+	// Let a full filesystem reach the framed dispatcher, which can return
+	// storage.full after reading the request. Other configuration errors fail here.
+	if probe != nil {
+		closeErr := probe.Close()
+		removeErr := os.Remove(probe.Name())
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if removeErr != nil {
+			return nil, removeErr
+		}
 	}
 	previous, present := os.LookupEnv("TMPDIR")
 	if err := os.Setenv("TMPDIR", root); err != nil {

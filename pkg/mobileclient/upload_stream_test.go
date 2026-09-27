@@ -350,3 +350,33 @@ func TestCapturedVideoBudgetAndCallerDeadline(t *testing.T) {
 		t.Fatal("unbounded duration")
 	}
 }
+
+// A full server must not discard or replace an intent; retry obtains a real
+// receipt for exactly the same durable bytes and ID after capacity is restored.
+func TestServerStorageFullRetainsTreeUntilRetry(t *testing.T) {
+	requireSVN(t)
+	c := newClient(t, newSeededRepo(t), "rw")
+	normal := c.Transport
+	c.Transport = fullServerTransport{}
+	body := packTreeForTest(t, map[string][]byte{"note.txt": []byte("retained")})
+	if err := c.UploadTree(context.Background(), "repo-1", "mobile-uploads", 1, body); err == nil {
+		t.Fatal("false success")
+	}
+	queued, err := c.Store.ListUploads("repo-1")
+	if err != nil || len(queued) != 1 || queued[0].State != UploadPendingCreate {
+		t.Fatalf("queue %+v %v", queued, err)
+	}
+	id := queued[0].ID
+	restarted := Client{Store: Store{Root: c.Store.Root}, Transport: normal}
+	got, err := restarted.SendUpload(context.Background(), "repo-1", id)
+	if err != nil || got.State != UploadCommitted || got.ID != id {
+		t.Fatalf("retry %+v %v", got, err)
+	}
+}
+
+type fullServerTransport struct{}
+
+func (fullServerTransport) Do(_ context.Context, req v1.Request, _ []byte) (v1.Response, []byte, error) {
+	resp := v1.Response{RequestID: req.RequestID, Operation: req.Operation, Status: v1.StatusError, Error: &v1.ErrorBody{Code: "storage.full", Message: "server storage is full; upload retained for retry"}}
+	return resp, nil, nil
+}

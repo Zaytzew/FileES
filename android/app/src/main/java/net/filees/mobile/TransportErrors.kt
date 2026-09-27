@@ -4,6 +4,16 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
+// Share the catalogue across foreground errors, notifications and folder cards.
+fun mobileRecoveryMessage(context: android.content.Context, raw: String): String? {
+    val text = raw.lowercase()
+    if (!text.contains("mobile operation failed: storage.full:") &&
+        !text.contains("mobile operation failed: operation.uncertain:")) return null
+    return runCatching {
+        androidbind.Androidbind.explainIn(raw, context.resources.configuration.locales[0].language)
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+}
+
 fun AppCompatActivity.showTransportError(headline: String, err: Throwable, address: String?) {
     val raw = err.message?.takeIf { it.isNotBlank() } ?: err.toString()
     val catalog = try {
@@ -16,14 +26,14 @@ fun AppCompatActivity.showTransportError(headline: String, err: Throwable, addre
             ""
         }
     }
+    val recovery = mobileRecoveryMessage(this, raw)
     val body = buildString {
-        append(catalog.ifBlank { explainTransport(raw) })
+        append(recovery ?: catalog.ifBlank { explainTransport(raw) })
         if (!address.isNullOrBlank()) {
             append("\n\n")
             append(getString(R.string.error_address, address))
         }
-        append("\n\n")
-        append(raw)
+        if (recovery == null) { append("\n\n"); append(raw) }
     }
     val dialog = AlertDialog.Builder(this)
         .setTitle(headline)

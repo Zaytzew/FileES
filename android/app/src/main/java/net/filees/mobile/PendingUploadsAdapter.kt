@@ -68,7 +68,7 @@ class PendingUploadsAdapter(
                 text += "\nistniejący sha256: ${item.existingSha256.take(16)}…"
             }
             if (item.lastError.isNotEmpty()) {
-                text += "\n${item.lastError}"
+                text += "\n${mobileRecoveryMessage(itemView.context,item.lastError) ?: item.lastError}"
             }
             summary.text = text
             discard.visibility = if (item.needsDecision) View.VISIBLE else View.GONE

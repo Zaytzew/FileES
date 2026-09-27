@@ -68,6 +68,8 @@
     "lock_release.stale": "Rezerwacja uległa zmianie — odśwież jej stan",
     "lock_release.unavailable": "Usługa próśb o zwolnienie rezerwacji jest niedostępna",
     "messages.catalog_unavailable": "Katalog komunikatów jest niedostępny",
+    "mobile.storage.full": "Brak miejsca na serwerze. Wysyłka pozostaje w kolejce do ponowienia po zwolnieniu miejsca.",
+    "mobile.operation.uncertain": "Serwer nie potwierdził zapisu. Wysyłka pozostaje w kolejce; jeśli stan się utrzymuje, potrzebna jest pomoc administratora serwera.",
     "mobile.op.not_on_server": "Serwer nie zna tej operacji mobilnej. Zwykle stary filees-mobile-v1 (status 70) — brakuje podpisanego apply.",
     "mobile.tree.not_a_pack": "To zwykły plik ZIP, nie paczka FileES. Taki artefakt idzie jako jeden obiekt, nie jako drzewo.",
     "mobile.tree.not_ingested": "Telefon spakował folder i wysłał jednym połączeniem. Serwer paczki jeszcze nie przyjmuje — brakuje apply filees-mobile-v1.",

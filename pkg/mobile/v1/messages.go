@@ -137,6 +137,9 @@ type Response struct {
 }
 
 // ErrorBody is a transport/validation failure. It never carries raw tool output.
+// storage.full retains the upload for retry after server capacity is restored;
+// operation.uncertain retains it pending recovery of the existing request ID.
+// Neither code is a success receipt or permission to allocate a new intent.
 type ErrorBody struct {
 	Code    string            `json:"code"`
 	Message string            `json:"message"`

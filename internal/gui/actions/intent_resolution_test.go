@@ -19,10 +19,49 @@ func (f *fakeIntentResolver) PlanCommitRecovery(context.Context, string) (*actio
 	return nil, errors.New("unused")
 }
 
-type fakeCommitRecoveryResolver struct{ calls chan string }
+type fakeCommitRecoveryResolver struct {
+	calls     chan string
+	conflicts bool
+}
 
 func (f *fakeCommitRecoveryResolver) PlanCommitRecovery(_ context.Context, repoID string) (*actions.CommitRecoveryPlan, error) {
+	if f.conflicts {
+		return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryServerCopy, FirstRevision: 44, HeadRevision: 43, Paths: []string{"plan.dwg"}, Conflicts: []string{"plan.dwg"}, ConflictCopy: "!kolizje/conflicted-copy-plan"}, nil
+	}
 	return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryRetryQueue, FirstRevision: 44, HeadRevision: 43, Paths: []string{"old/folder", "new/file.pdf"}}, nil
+}
+
+func TestConflictRecoveryRequiresExplicitServerChoice(t *testing.T) {
+	for _, confirm := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "accept"}[confirm], func(t *testing.T) {
+			resolver := &fakeCommitRecoveryResolver{calls: make(chan string, 1), conflicts: true}
+			shown := make(chan platform.ConfirmRequest, 1)
+			fake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+				return platform.SettingsDialogResult{Action: platform.SettingsDialogResolveCommitRecovery, ServerID: "office", RepoID: "repo-1"}, nil
+			}, ConfirmFunc: func(_ context.Context, r platform.ConfirmRequest) (bool, error) { shown <- r; return confirm, nil }}
+			view := lifecycleView(contract.CapRepoCommitRecovery)
+			view.Repos[0].CommitRecoveryRequired = true
+			view.Servers[0].Repos[0] = view.Repos[0]
+			intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: fake, Prompter: fake, IntentResolver: resolver})
+			defer cancel()
+			send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+			dialog := awaitCh(t, shown, "conflict decision")
+			if dialog.PresentationKey != "details.conflictRecovery" || dialog.PresentationArgs["conflicts"] != "plan.dwg" || dialog.PresentationArgs["copy"] != "!kolizje/conflicted-copy-plan" || !strings.Contains(dialog.ConfirmText, "serwerową") {
+				t.Fatalf("missing explicit choice: %+v", dialog)
+			}
+			if confirm {
+				if got := awaitCh(t, resolver.calls, "decision"); got != "repo-1:recovery-plan:"+contract.CommitRecoveryServerCopy {
+					t.Fatal(got)
+				}
+			} else {
+				select {
+				case <-resolver.calls:
+					t.Fatal("cancel applied decision")
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+		})
+	}
 }
 func (f *fakeCommitRecoveryResolver) ApplyCommitRecovery(_ context.Context, repoID, planID, choice string) error {
 	f.calls <- repoID + ":" + planID + ":" + choice

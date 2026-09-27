@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.conflictRecovery.title": "Resolve conflict and recover publication",
+  "details.conflictRecovery.confirm": "Keep a copy and use server version",
+  "details.conflictRecovery.cancel": "Cancel",
+  "details.conflictRecovery.warning": "The publication attempt did not create r{firstRevision}; the server is at r{headRevision}. The server version will replace the local version of:\n{conflicts}\n\nCurrent local files and conflict variants will first be preserved and verified in:\n{copy}\n\nFileES will then resume the preserved queue. Close editors for these files before confirming. File or server changes invalidate the plan. Cancel changes nothing.",
   "progress.published": "Sent {done} of {total} files · {sent} of {size}",
   "progress.createRepository.server.title": "Creating the repository",
   "progress.createRepository.server.text": "“{name}” — setting up the repository on the server. This usually takes a dozen seconds or so.",

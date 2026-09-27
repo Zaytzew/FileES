@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.conflictRecovery.title": "Konflikt lösen und Veröffentlichung fortsetzen",
+  "details.conflictRecovery.confirm": "Kopie sichern und Serverversion übernehmen",
+  "details.conflictRecovery.cancel": "Abbrechen",
+  "details.conflictRecovery.warning": "Der Versuch hat r{firstRevision} nicht erstellt; der Server steht bei r{headRevision}. Die Serverversion ersetzt die lokale Version von:\n{conflicts}\n\nLokale Dateien und Konfliktvarianten werden zuerst hier gesichert und geprüft:\n{copy}\n\nDanach setzt FileES die erhaltene Warteschlange fort. Schließen Sie vorher die Editoren dieser Dateien. Änderungen an Datei oder Server machen den Plan ungültig. Abbrechen ändert nichts.",
   "progress.published": "{done} von {total} Dateien gesendet · {sent} von {size}",
   "progress.createRepository.server.title": "Repository wird erstellt",
   "progress.createRepository.server.text": "„{name}“ — das Repository wird auf dem Server angelegt. Das dauert meist etwa zehn bis zwanzig Sekunden.",

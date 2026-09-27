@@ -4,6 +4,7 @@ const (
 	CmdRepoCommitRecoveryPlan  = "repo.commit_recovery.plan"
 	CmdRepoCommitRecoveryApply = "repo.commit_recovery.apply"
 	CommitRecoveryRetryQueue   = "retry_preserved_queue"
+	CommitRecoveryServerCopy   = "server_wins_preserve_local"
 )
 
 // CommitRecoveryPlan describes one failed publication attempt whose remote
@@ -18,6 +19,8 @@ type CommitRecoveryPlan struct {
 	HeadRevision  int64    `json:"head_revision"`
 	Paths         []string `json:"paths"`
 	ExpiresAt     string   `json:"expires_at"`
+	Conflicts     []string `json:"conflicts,omitempty"`
+	ConflictCopy  string   `json:"conflict_copy,omitempty"`
 }
 
 type CommitRecoveryApplyPayload struct {

@@ -66,7 +66,7 @@ func (c recoveryPlanClient) RepoCommitRecoveryPlan(context.Context, string) (*co
 }
 
 func TestRecoveryPlanAdapterChecksRepositoryAndCopiesProof(t *testing.T) {
-	wire := &contract.CommitRecoveryPlan{PlanID: "plan", RepoID: "docs", TransactionID: "attempt", Choice: contract.CommitRecoveryRetryQueue, FirstRevision: 44, HeadRevision: 43, Paths: []string{"file.pdf"}}
+	wire := &contract.CommitRecoveryPlan{PlanID: "plan", RepoID: "docs", TransactionID: "attempt", Choice: contract.CommitRecoveryServerCopy, FirstRevision: 44, HeadRevision: 43, Paths: []string{"file.pdf"}, Conflicts: []string{"file.pdf"}, ConflictCopy: "!kolizje/conflicted-copy-plan"}
 	plan, err := (intentResolverAdapter{client: recoveryPlanClient{plan: wire}}).PlanCommitRecovery(context.Background(), "docs")
 	if err != nil || plan == nil {
 		t.Fatalf("plan=%+v err=%v", plan, err)
@@ -75,6 +75,10 @@ func TestRecoveryPlanAdapterChecksRepositoryAndCopiesProof(t *testing.T) {
 		t.Fatalf("proof changed: %+v", plan)
 	}
 	wire.Paths[0] = "mutated"
+	wire.Conflicts[0] = "mutated"
+	if plan.Conflicts[0] != "file.pdf" || plan.ConflictCopy != wire.ConflictCopy {
+		t.Fatal("conflict proof lost or aliased")
+	}
 	if plan.Paths[0] != "file.pdf" {
 		t.Fatal("presentation shares mutable transport data")
 	}

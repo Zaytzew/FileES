@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.conflictRecovery.title": "Résoudre le conflit et reprendre la publication",
+  "details.conflictRecovery.confirm": "Garder une copie et utiliser la version serveur",
+  "details.conflictRecovery.cancel": "Annuler",
+  "details.conflictRecovery.warning": "La tentative n’a pas créé r{firstRevision} ; le serveur est à r{headRevision}. La version serveur remplacera la version locale de :\n{conflicts}\n\nLes fichiers locaux et variantes du conflit seront d’abord conservés et vérifiés dans :\n{copy}\n\nFileES reprendra ensuite la file conservée. Fermez les éditeurs avant de confirmer. Toute modification du fichier ou du serveur invalide le plan. Annuler ne change rien.",
   "progress.published": "{done} fichiers envoyés sur {total} · {sent} sur {size}",
   "progress.createRepository.server.title": "Création du dépôt",
   "progress.createRepository.server.text": "« {name} » — création du dépôt sur le serveur. Cela prend généralement une quinzaine de secondes.",

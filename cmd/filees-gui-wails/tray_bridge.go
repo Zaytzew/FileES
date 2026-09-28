@@ -336,6 +336,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	var alerts announcementAlertPolicy
 	var intentAlerts intentAlertPolicy
 	var grantAlerts grantAlertPolicy
+	var receivedAlerts receivedAlertPolicy
 	var trayMu sync.Mutex
 	var lastRevision uint64
 	var lastSnapshot Snapshot
@@ -420,7 +421,8 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 			systemTray.SetIcon(icon)
 		}
 		if notifier != nil {
-			for _, notification := range append(append(alerts.Observe(snapshot, language), intentAlerts.Observe(snapshot, language)...), grantAlerts.Observe(snapshot, language)...) {
+			notifications := append(append(alerts.Observe(snapshot, language), intentAlerts.Observe(snapshot, language)...), grantAlerts.Observe(snapshot, language)...)
+			for _, notification := range append(notifications, receivedAlerts.Observe(snapshot, language)...) {
 				notification := notification
 				go func() {
 					if err := notifier.Notify(host.Context(), notification); err != nil {

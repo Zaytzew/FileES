@@ -13,6 +13,7 @@ package main
 // Opt-in because it registers a real sync root; it always unregisters it.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/url"
@@ -37,6 +38,82 @@ func probeTool(t *testing.T, key string) string {
 		t.Fatalf("set %s", key)
 	}
 	return value
+}
+
+func TestAnchorDetachKeepsDownloadedFilesWithoutFetching(t *testing.T) {
+	helper := probeTool(t, "FILEES_CFAPI")
+	root := filepath.Join(t.TempDir(), "point")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	m := &anchorManager{helper: helper}
+	call := func(stdin string, args ...string) {
+		t.Helper()
+		answer, err := m.call(t.Context(), stdin, args...)
+		if err != nil || !answer.OK {
+			t.Fatalf("%v: %+v %v", args, answer, err)
+		}
+	}
+	call("", "register", "--root", root, "--identity", "test\x1frepo")
+	t.Cleanup(func() { _ = exec.Command(helper, "unregister", "--root", root).Run() })
+	call("d\t0\tfolder\tfolder\nf\t5000000\tunread.dwg\tunread.dwg\n", "placeholders", "--root", root)
+	call("f\t7000000\tfolder/unread.bin\tunread.bin\n", "placeholders", "--root", root, "--rel", "folder")
+	retained := filepath.Join(root, "folder", "downloaded.txt")
+	if err := os.WriteFile(retained, []byte("local changes must survive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithCancel(t.Context())
+	command := exec.CommandContext(ctx, helper, "connect", "--root", root)
+	input, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _ = command.Wait(); close(done) }()
+	t.Cleanup(func() { stop(); _ = input.Close(); <-done })
+	ready := make(chan string, 1)
+	go func() {
+		reader := bufio.NewScanner(output)
+		if reader.Scan() {
+			ready <- reader.Text()
+		} else {
+			ready <- ""
+		}
+	}()
+	select {
+	case line := <-ready:
+		if !strings.Contains(line, `"ok":true`) {
+			t.Fatalf("helper not connected: %s", line)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("helper connection timed out")
+	}
+	record := localrepo.Record{ServerID: "test", RepoID: "repo", LocalPath: root, Anchor: true, State: localrepo.StateDetaching}
+	m.running = map[string]anchorConnection{anchorKey(record): {cancel: stop, done: done}}
+	if err := m.detach(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(retained); err != nil || string(got) != "local changes must survive" {
+		t.Fatalf("retained=%q err=%v", got, err)
+	}
+	for _, rel := range []string{"unread.dwg", "folder/unread.bin"} {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("placeholder survived: %s (%v)", rel, err)
+		}
+	}
+	if cloudfiles.IsSyncRoot(root) {
+		t.Fatal("sync root still registered")
+	}
+	if err := m.detach(t.Context(), record); err != nil {
+		t.Fatalf("retry after unregister: %v", err)
+	}
 }
 
 func probeRun(t *testing.T, dir, program string, args ...string) {

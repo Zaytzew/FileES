@@ -178,13 +178,13 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	bridge.queueMu.Unlock()
 	writing.Wait()
 	_ = streams.stdin.Close()
-	if err := reader.Err(); err != nil {
-		return err
-	}
 	if streams.wait != nil {
 		if err := streams.wait(); err != nil {
 			return fmt.Errorf("%w: %v", errAnchorHelperGone, err)
 		}
+	}
+	if err := reader.Err(); err != nil {
+		return err
 	}
 	return errAnchorHelperGone
 }

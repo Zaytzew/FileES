@@ -36,6 +36,7 @@ type daemonProvisioner struct {
 	provisioning     *provisioning.Store
 	mu               sync.RWMutex
 	detachMu         sync.Mutex
+	detachAnchor     func(context.Context, localrepo.Record) error
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
 	attachments      chan<- provisionedAttachment
@@ -809,6 +810,14 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	}
 	if err := p.quiesceAttachment(ctx, current); err != nil {
 		return current, err
+	}
+	if current.Anchor {
+		if p.detachAnchor == nil {
+			return current, errors.New("Explorer anchor cleanup is unavailable; keep the folder and retry with the Cloud Files helper installed")
+		}
+		if err := p.detachAnchor(ctx, current); err != nil {
+			return current, err
+		}
 	}
 	if current.State == localrepo.StateDeleting && !current.ServerDeleteCompleted {
 		deleted, err := p.deleteServerRepository(ctx, current, profile)

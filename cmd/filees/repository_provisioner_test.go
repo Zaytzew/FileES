@@ -129,6 +129,60 @@ func TestDaemonProvisionerCompletesDetachAfterRemovingMetadata(t *testing.T) {
 	}
 }
 
+func TestAnchorDetachFailurePreservesMetadataAndDoesNotComplete(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "point")
+	for _, name := range []string{".svn", ".filees"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repoID := uuid.NewString()
+	record, err := local.BeginAnchorAttach("office", repoID, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = local.ApproveAttach(record.OperationID, "office", repoID, "svn+ssh://example/"+repoID, "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = local.MarkAttached(record.OperationID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.BeginDetach("office", repoID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan provisionedAttachment)
+	p := newDaemonProvisioner(local, nil, nil)
+	p.attachments = events
+	go func() {
+		for i := 0; i < 3; i++ {
+			request := <-events
+			request.Result <- nil
+		}
+	}()
+	if _, err = p.runDetach(t.Context(), record, clientprofile.Profile{}); err == nil {
+		t.Fatal("missing helper must refuse")
+	}
+	p.detachAnchor = func(context.Context, localrepo.Record) error { return errors.New("unregister refused") }
+	if _, err = p.runDetach(t.Context(), record, clientprofile.Profile{}); err == nil {
+		t.Fatal("failed unregister must refuse")
+	}
+	for _, name := range []string{".svn", ".filees"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p.detachAnchor = func(context.Context, localrepo.Record) error { return nil }
+	completed, err := p.runDetach(t.Context(), record, clientprofile.Profile{})
+	if err != nil || completed.State != localrepo.StateDetached {
+		t.Fatalf("retry: %+v %v", completed, err)
+	}
+}
+
 func TestDaemonProvisionerCleanupRetryDoesNotWaitForRecovery(t *testing.T) {
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

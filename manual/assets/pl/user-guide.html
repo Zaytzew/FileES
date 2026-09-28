@@ -82,7 +82,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <h4>Linux (AppImage)</h4>
 <p>Plik <code>FileES-&lt;wersja&gt;-x86_64.AppImage</code> jest najprostszą drogą: nadaj mu prawo wykonania (<code>chmod +x</code>) i uruchom. AppImage korzysta z tego samego instalatora co pakiet powyżej, więc instaluje parę demon + GUI w sesji użytkownika i nie nadpisuje istniejącego <code>config.json</code>. Przy nowej instalacji pyta o kanał aktualizacji (§2.7).</p>
 <h4>Microsoft Store</h4><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Pakiet przeszedł odbiór na czystym Windowsie; wariant ze Sklepu jest w certyfikacji Microsoft (2026-09).</span></div>
-<p>Wersja ze Sklepu Microsoft zawiera tę samą parę co MSI i odpowiada kanałowi beta: jest budowana bez funkcji w przygotowaniu, w tym bez kotwicy w Eksploratorze Windows. Aktualizacje dostarcza Sklep. MSI i wersja ze Sklepu wykluczają się: ta, którą uruchomisz jako drugą, zaproponuje usunięcie poprzedniej z zachowaniem ustawień.</p>
+<p>Wersja ze Sklepu Microsoft zawiera tę samą parę co MSI i odpowiada kanałowi beta: jest budowana bez funkcji w przygotowaniu, w tym bez punktu zaczepienia w Eksploratorze Windows. Aktualizacje dostarcza Sklep. MSI i wersja ze Sklepu wykluczają się: ta, którą uruchomisz jako drugą, zaproponuje usunięcie poprzedniej z zachowaniem ustawień.</p>
 <h4>Wymagania</h4>
 <div class="table-wrap"><table>
 <tr><th>Platforma</th><th>Wymagania</th></tr>
@@ -230,7 +230,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <h2 id="ch2-update">2.7 Podpisane aktualizacje pulpitu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane od początku do końca</span><span>Podpisane wydanie SVN, przebieg próbny, obecny instalator Linuksa, blokada cofnięcia wersji i kontrolowany restart GUI są pokryte odtwarzalnym testem integracyjnym.</span></div>
 <p>Aktualizacje programu na komputerze są opcjonalne. Program ma wbudowany jeden zaufany klucz publiczny; ustawienia nie pozwalają go zastąpić ani pominąć weryfikacji podpisu. Format pakietu aktualizacji i zasady ochrony przed instalacją starszego wydania opisuje rozdział „Eksploatacja”.</p>
 <h4>Kanały: alfa i beta</h4>
-<p>Wydania pulpitu ukazują się w dwóch podpisanych kanałach, budowanych z tej samej rewizji źródeł. <strong>Alfa</strong> zawiera wszystkie funkcje, także te w przygotowaniu (np. kotwicę w Eksploratorze Windows). <strong>Beta</strong> to odebrane wydanie bez funkcji w przygotowaniu; z niej pochodzi wersja ze Sklepu Microsoft. Nowa instalacja pyta o kanał; zmiana później:</p>
+<p>Wydania pulpitu ukazują się w dwóch podpisanych kanałach, budowanych z tej samej rewizji źródeł. <strong>Alfa</strong> zawiera wszystkie funkcje, także te w przygotowaniu (np. punkt zaczepienia w Eksploratorze Windows). <strong>Beta</strong> to odebrane wydanie bez funkcji w przygotowaniu; z niej pochodzi wersja ze Sklepu Microsoft. Nowa instalacja pyta o kanał; zmiana później:</p>
 <pre><code>filees update-channel --config /ścieżka/config.json        # odczyt
 filees update-channel beta --config /ścieżka/config.json   # zmiana, potem restart pary</code></pre>
 <p>Zmiana kanału nie cofa wersji: jeśli zainstalowana alfa jest nowsza niż beta, program czeka, aż beta ją dogoni.</p>

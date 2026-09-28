@@ -10,6 +10,9 @@ roboczej. Wszystko, co wie, dostaje w argumentach i na wejściu.
 
 Wymaga Windows 10 1709+ (Cloud Files API, `cldflt.sys`). Na innych systemach
 CMake odmawia konfiguracji — to nie jest przenośny kod.
+Opcjonalna rejestracja powłoki używa także `ProviderId` z Windows 10 1809+.
+Budowa wymaga C++17 oraz nagłówków C++/WinRT z Windows SDK. Pozostały helper
+pozostaje w C; adapter nie dodaje zewnętrznych bibliotek wykonawczych.
 
 ## Czasowniki
 
@@ -20,7 +23,8 @@ Każdy wypisuje **jeden obiekt JSON** na standardowe wyjście
 |---|---|
 | `version` | schemat, lista czasowników i flagi funkcji |
 | `register --root <folder> --identity <tekst>` | rejestruje folder jako kotwicę; tożsamość wraca w callbackach |
-| `unregister --root <folder>` | zdejmuje rejestrację |
+| `shell-register --root <folder> --identity <tekst> --icon <plik.ico>` | rejestruje istniejący punkt FileES w powłoce użytkownika; tryb testowy |
+| `unregister --root <folder>` | zdejmuje rejestrację CFAPI i powłoki, również przy ponowieniu |
 | `info --root <folder>` | czy to kotwica, czyja i czy dostawca działa |
 | `placeholders --root <folder> [--rel <podkatalog>]` | tworzy placeholdery z listingu na wejściu |
 | `connect --root <folder>` | podłącza dostawcę i **trzyma połączenie do zamknięcia wejścia** |
@@ -71,6 +75,30 @@ filtra. Zmierzone: z odbieranym wyjściem odmowa kasowania trwa 1,5 ms, bez
 niego 4 minuty.
 
 ## Co pierwsze cięcie robi, a czego nie
+
+### Oznaczenia powłoki — próba z 2026-09-28
+
+`shell_root.cpp` rejestruje każdy rzeczywisty korzeń osobno przez
+`StorageProviderSyncRootManager`. ID to `FileES!SID!SHA256(ścieżka)`, nie nazwa
+serwera ani repozytorium. Rejestracja jest trwała, jej ponowienie nie tworzy
+duplikatu. Polecenie odrzuca zwykły folder i podfolder innego punktu.
+Odłączenie usuwa również wpis powłoki po wcześniejszym wyrejestrowaniu CFAPI.
+Nie porównuje wtedy dawnego GUID dostawcy: Windows może już go nie zwracać.
+
+Demon wywołuje ten krok **wyłącznie z `FILEES_CFAPI_SHELL_PREVIEW=1`**.
+Bez tej zmiennej zachowuje dotychczasowy wygląd. Odbiór w Eksploratorze
+potwierdził chmurki i kolumnę „Stan”, ale zwykłe lokalne pliki dostają stan
+„oczekiwanie na synchronizację”. Dotyczy to też docelowo plików przyjętych
+przez SVN i zamienionych w zwykłe pliki przez `revert`; nie jest to dowód
+oczekującego commitu. Dlatego nie włączamy oznaczeń automatycznie w wydaniu.
+Wyłączenie zmiennej nie usuwa już utworzonego wpisu — test kończy się
+wyrejestrowaniem własnego punktu. Nie używać tej próby na roboczych punktach.
+
+Menu przypinania i zwalniania miejsca jest wyłączone (`AllowPinning=false`).
+Nie ma własnego rozszerzenia nakładek ani zmiany kontraktu adopt/revert.
+Raport: `implementation notes (not distributed)`.
+
+### Dostarczanie plików
 
 - Placeholder wygląda w Eksploratorze jak zwykły plik swojego typu, ma
   prawdziwą nazwę i rozmiar z HEAD, a **na dysku zajmuje zero bajtów**

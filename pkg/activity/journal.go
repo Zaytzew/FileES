@@ -184,6 +184,10 @@ func (j *Journal) trim() {
 // It is shared by durable retention and IPC: neither may cut a commit in half.
 // The result can contain more paths than limit. This is a latest-path activity
 // feed, not immutable SVN history: a later stage for a path replaces its row.
+//
+// Received groups (what background updates brought in) have their own limit:
+// sharing one with the owner's publications let a few of his own commits push
+// every incoming change out of the journal (owner, 2026-09-28).
 func LimitGroups(entries []Entry, limit int) []Entry {
 	if limit <= 0 {
 		limit = DefaultLimit
@@ -192,6 +196,7 @@ func LimitGroups(entries []Entry, limit int) []Entry {
 		repo, stage, result string
 	}
 	selected := make(map[groupKey]bool)
+	receivedGroups, otherGroups := 0, 0
 	result := make([]Entry, 0, len(entries))
 	for _, entry := range entries {
 		key := groupKey{repo: entry.RepoID, stage: string(entry.Stage)}
@@ -201,8 +206,14 @@ func LimitGroups(entries []Entry, limit int) []Entry {
 		case Failed:
 			key.result = entry.ErrorID
 		}
-		if !selected[key] && len(selected) < limit {
-			selected[key] = true
+		if !selected[key] {
+			if entry.Stage == Received && receivedGroups < limit {
+				selected[key] = true
+				receivedGroups++
+			} else if entry.Stage != Received && otherGroups < limit {
+				selected[key] = true
+				otherGroups++
+			}
 		}
 		if selected[key] {
 			result = append(result, entry)

@@ -164,9 +164,31 @@ func TestLimitGroupsKeepsInterleavedMembersAndSeparatesDirections(t *testing.T) 
 		{RepoID: "a", Stage: Received, Revision: 7, Path: "incoming"},
 		{RepoID: "a", Stage: Published, Revision: 7, Path: "two"},
 	}
+	// Received groups have their own limit (2026-09-28): one publication group
+	// and one received group, neither cut, and "b" beyond the publication limit.
 	got := LimitGroups(entries, 1)
-	if len(got) != 2 || got[0].Path != "one" || got[1].Path != "two" {
+	if len(got) != 3 || got[0].Path != "one" || got[1].Path != "incoming" || got[2].Path != "two" {
 		t.Fatalf("cut or mixed groups: %+v", got)
+	}
+}
+
+// Owner, 2026-09-28: the journal showed only his own commits. His own
+// publications must not push what background updates brought in out of it.
+func TestOwnCommitsDoNotEvictReceivedChanges(t *testing.T) {
+	var entries []Entry
+	for rev := int64(40); rev > 10; rev-- { // newest first: 30 own commits
+		entries = append(entries, Entry{RepoID: "a", Stage: Published, Revision: rev, Path: "mine"})
+	}
+	entries = append(entries, Entry{RepoID: "a", Stage: Received, Revision: 9, Path: "from-phone.jpg"})
+	got := LimitGroups(entries, DefaultLimit)
+	kept := false
+	for _, e := range got {
+		if e.Stage == Received {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatal("own commits evicted the received change")
 	}
 }
 

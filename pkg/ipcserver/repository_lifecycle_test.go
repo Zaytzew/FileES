@@ -6,6 +6,7 @@ import (
 	"errors"
 	"filees/pkg/errcat"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 
 type lifecycleStub struct {
 	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, deleteCalls, statusCalls, repairCalls int
-	deleteRepository                                                                                                                      bool
+	deleteRepository, deleteLocal                                                                                                         bool
 	deleteDisplayName                                                                                                                     string
 	statusResult                                                                                                                          contract.RepoLifecycleResult
 	statusErr                                                                                                                             error
@@ -59,7 +60,8 @@ func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, requi
 	}
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: localPath, State: state}, nil
 }
-func (stub *lifecycleStub) BeginDetach(_ context.Context, serverID, repoID string, deleteRepository bool) (contract.RepoLifecycleResult, error) {
+func (stub *lifecycleStub) BeginDetach(_ context.Context, serverID, repoID string, deleteRepository, deleteLocal bool) (contract.RepoLifecycleResult, error) {
+	stub.deleteLocal = deleteLocal
 	stub.detachCalls++
 	stub.deleteRepository = deleteRepository
 	if stub.detachResult.OperationID != "" || stub.detachErr != nil {
@@ -488,5 +490,40 @@ func TestLocateEmitsTypedFailureWithoutMatchingDiagnosticText(t *testing.T) {
 	response := server.dispatch(request)
 	if response.Error == nil || response.Error.MessageKey != "repo.locate_not_working_copy" || !strings.Contains(response.Error.Details["detail"], "arbitrary diagnostic") {
 		t.Fatalf("typed diagnostic lost: %+v", response)
+	}
+}
+
+// Owner, 2026-09-28: "Usuń również lokalny folder". Deleting a folder with
+// unpublished changes needs the user's explicit answer; the daemon asks for it
+// with REPO-2013 instead of assuming it.
+func TestDetachDeletingLocalRequiresConsentForUnpublishedChanges(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	wc := t.TempDir()
+	server.RegisterRepoAccess("repo-1", "svn://example/repo-1", wc, "office", "rw")
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", "realm-1", "optional", true)
+	cache := filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+	if err := os.MkdirAll(filepath.Dir(cache), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cache, []byte(`[{"rel":"a.dwg","abs":"`+filepath.ToSlash(filepath.Join(wc, "a.dwg"))+`","op":"modified"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ask := lifecycleRequest(contract.CmdRepoDetach, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1", DeleteLocal: true})
+	response := server.dispatch(ask)
+	if response.Status == contract.StatusOK || response.Error == nil || response.Error.Code != "REPO-2013" || stub.detachCalls != 0 {
+		t.Fatalf("unpublished changes not refused: %+v calls=%d", response.Error, stub.detachCalls)
+	}
+	consent := lifecycleRequest(contract.CmdRepoDetach, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1", DeleteLocal: true, DiscardUnpublished: true})
+	if response := server.dispatch(consent); response.Status != contract.StatusOK || stub.detachCalls != 1 || !stub.deleteLocal {
+		t.Fatalf("consented delete: %+v calls=%d deleteLocal=%v", response.Error, stub.detachCalls, stub.deleteLocal)
+	}
+	if err := os.WriteFile(cache, []byte(`[]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stub.deleteLocal = false
+	if response := server.dispatch(ask); response.Status != contract.StatusOK || !stub.deleteLocal {
+		t.Fatalf("clean folder refused: %+v", response.Error)
 	}
 }

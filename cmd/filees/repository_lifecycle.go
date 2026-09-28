@@ -84,10 +84,14 @@ func (service repositoryLifecycleService) BeginLoadDump(serverID, repoID string,
 	return lifecycleResult(record), nil
 }
 
-func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serverID, repoID string, deleteRepository bool) (contract.RepoLifecycleResult, error) {
+func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serverID, repoID string, deleteRepository, deleteLocal bool) (contract.RepoLifecycleResult, error) {
 	if !deleteRepository && service.store.RemoteDeleted(serverID, repoID) {
 		record, err := service.store.DismissRemoteDeletedCopy(serverID, repoID)
 		return lifecycleResult(record), err
+	}
+	if deleteLocal && !deleteRepository {
+		record, err := service.store.BeginDetachDeletingLocal(serverID, repoID)
+		return service.finishDetach(ctx, record, err)
 	}
 	record, err := service.store.BeginDetach(serverID, repoID, deleteRepository)
 	return service.finishDetach(ctx, record, err)

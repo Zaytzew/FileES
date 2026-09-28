@@ -87,6 +87,10 @@ type Record struct {
 	RelocationMoveExisting  bool   `json:"relocation_move_existing,omitempty"`
 	DetachOperationID       string `json:"detach_operation_id,omitempty"`
 	DeleteRepository        bool   `json:"delete_repository,omitempty"`
+	// DeleteLocal: after the metadata is removed, the folder itself goes to
+	// the recycle bin (owner, 2026-09-28: "Usuń również lokalny folder").
+	// Persisted so a restart finishes what the user chose.
+	DeleteLocal bool `json:"delete_local,omitempty"`
 	// ServerDeleteCompleted is the durable semantic boundary between the
 	// remote deletion and best-effort removal of local working-copy metadata.
 	// Once set, retries must never issue DELETE_REPOSITORY again.
@@ -723,6 +727,27 @@ func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Rec
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.beginDetachLocked(serverID, repoID, false)
+}
+
+// BeginDetachDeletingLocal is BeginDetach for a detachment that also moves the
+// local folder to the recycle bin once its metadata is removed. The choice is
+// recorded with the operation; a resumed detachment keeps it.
+func (s *Store) BeginDetachDeletingLocal(serverID, repoID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, err := s.beginDetachLocked(serverID, repoID, false)
+	if err != nil || record.DeleteLocal {
+		return record, err
+	}
+	before := s.records[record.OperationID]
+	record.DeleteLocal = true
+	record.UpdatedAt = s.now().UTC()
+	s.records[record.OperationID] = record
+	if err := s.persist(); err != nil {
+		s.records[record.OperationID] = before
+		return Record{}, err
+	}
+	return record, nil
 }
 
 // BeginDelete starts one durable repository deletion whether or not this

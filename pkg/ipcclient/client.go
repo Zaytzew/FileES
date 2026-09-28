@@ -393,6 +393,17 @@ func (c *Client) RepoDetach(ctx context.Context, serverID, repoID string) (*cont
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+// RepoDetachDeletingLocal detaches and moves the local folder to the recycle
+// bin. discardUnpublished answers the daemon's REPO-2013 question.
+func (c *Client) RepoDetachDeletingLocal(ctx context.Context, serverID, repoID string, discardUnpublished bool) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoDetach, repoID, contract.RepoDetachPayload{ServerID: serverID, RepoID: repoID, DeleteLocal: true, DiscardUnpublished: discardUnpublished})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoLoadDump(ctx context.Context, serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoLoadDump, repoID, contract.RepoLoadDumpPayload{ServerID: serverID, RepoID: repoID, ApplyCurrentIgnorePolicy: applyIgnorePolicy, KeepLastRevisions: keepLastRevisions})
 	if err != nil {

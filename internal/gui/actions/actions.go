@@ -134,6 +134,14 @@ type RepositoryDetacher interface {
 	DetachRepository(context.Context, string, string, bool) error
 }
 
+// LocalFolderDetacher is an optional RepositoryDetacher extension: detach and
+// move the folder to the recycle bin ("Usuń również lokalny folder",
+// 2026-09-28). discardUnpublished is the user's answer to the daemon's
+// REPO-2013 question about unpublished local changes.
+type LocalFolderDetacher interface {
+	DetachRepositoryDeletingLocal(ctx context.Context, serverID, repoID string, discardUnpublished bool) error
+}
+
 type RepositoryLifecycleRepairer interface {
 	RepairRepositoryLifecycle(context.Context, string, string, string, string) (string, error)
 }
@@ -1622,7 +1630,17 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		if strings.TrimSpace(name) == "" {
 			name = repo.ID
 		}
-		if !deleteRepository {
+		deleteLocal := false
+		if !deleteRepository && !orphan {
+			if repo.AttachmentPolicy == "required" || !vm.CanDetachRepository() {
+				return
+			}
+			var chosen bool
+			deleteLocal, chosen = c.chooseDetachMode(ctx, name, repo.LocalPath)
+			if !chosen {
+				return
+			}
+		} else if !deleteRepository {
 			if repo.AttachmentPolicy == "required" || !vm.CanDetachRepository() {
 				return
 			}
@@ -1697,7 +1715,18 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			ExpectedRepoDetached: !deleteRepository && !orphan, ExpectedRepoDeleted: deleteRepository,
 			ExpectedLocalProjectionDismissed: orphan,
 		})
-		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
+		var err error
+		if deleteLocal {
+			var cancelled bool
+			cancelled, err = c.detachDeletingLocal(ctx, serverID, repoID, name)
+			if cancelled {
+				c.finishProjectedAction(actionID)
+				return
+			}
+		} else {
+			err = c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository)
+		}
+		if err != nil {
 			c.finishProjectedAction(actionID)
 			if ctx.Err() == nil {
 				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: c.uiText("feedback.n008", "Działanie wymaga dokończenia"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
@@ -1706,11 +1735,71 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		}
 		c.awaitProjectedAction(actionID)
 		title := c.uiText("feedback.detached", "Folder odłączony od FileES")
+		if deleteLocal {
+			title = c.uiText("feedback.detachedDeleted", "Folder odłączony od FileES i przeniesiony do Kosza")
+		}
 		if deleteRepository {
 			title = c.uiText("feedback.deleted", "Repozytorium trwale odłączone")
 		}
 		c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: title, Body: name, Urgency: platform.UrgencyNormal})
 	}()
+}
+
+// chooseDetachMode asks how to detach: keep the folder, or also delete it
+// (owner, 2026-09-28: radio "Zachowaj lokalny folder" / "Usuń również lokalny
+// folder"). Without a choice prompter or a detacher able to delete, it falls
+// back to the single confirmation that only keeps the folder.
+func (c *Controller) chooseDetachMode(ctx context.Context, name, path string) (deleteLocal, chosen bool) {
+	chooser, canChoose := c.cfg.Prompter.(platform.ChoicePrompter)
+	_, canDelete := c.cfg.RepositoryDetacher.(LocalFolderDetacher)
+	if !canChoose || !canDelete {
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			PresentationKey: "confirm.detachFolder", PresentationArgs: map[string]string{"name": name, "path": path},
+			Title:       "Odłącz folder od FileES",
+			Text:        fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.", name, path),
+			ConfirmText: "Odłącz folder", CancelText: "Anuluj",
+		})
+		return false, err == nil && confirmed
+	}
+	value, ok, err := chooser.ChooseOne(ctx, platform.ChoiceRequest{
+		PresentationKey: "select.detachFolder", PresentationArgs: map[string]string{"name": name, "path": path},
+		Title: "Odłącz folder od FileES",
+		Text:  fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Metadane .svn i .filees oraz ikona FileES zostaną usunięte. Usunięty folder trafi do Kosza.", name, path),
+		Options: []platform.ChoiceOption{
+			{Value: "keep", Label: "Zachowaj lokalny folder"},
+			{Value: "delete", Label: "Usuń również lokalny folder"},
+		},
+		Default: "keep", ConfirmText: "Odłącz folder", CancelText: "Anuluj",
+	})
+	if err != nil || !ok {
+		return false, false
+	}
+	return value == "delete", true
+}
+
+// detachDeletingLocal detaches and deletes the folder. When the daemon
+// answers that the folder has unpublished changes (REPO-2013), the user
+// decides: delete without publishing, or cancel (nothing changes).
+func (c *Controller) detachDeletingLocal(ctx context.Context, serverID, repoID, name string) (cancelled bool, err error) {
+	detacher := c.cfg.RepositoryDetacher.(LocalFolderDetacher)
+	err = detacher.DetachRepositoryDeletingLocal(ctx, serverID, repoID, false)
+	var presented presentationError
+	if err == nil || !errors.As(err, &presented) {
+		return false, err
+	}
+	if code, _, _, _ := presented.PresentationError(); code != "REPO-2013" {
+		return false, err
+	}
+	confirmed, promptErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		PresentationKey: "confirm.detachUnpublished", PresentationArgs: map[string]string{"name": name},
+		Title:       "Nieopublikowane zmiany",
+		Text:        name + "\n\nMasz lokalne nieopublikowane zmiany. Czy chcesz usunąć folder bez ich publikacji? Folder trafi do Kosza razem z tymi zmianami.",
+		ConfirmText: "Usuń bez publikacji", CancelText: "Anuluj",
+	})
+	if promptErr != nil || !confirmed {
+		return true, nil
+	}
+	return false, detacher.DetachRepositoryDeletingLocal(ctx, serverID, repoID, true)
 }
 
 // startLoadDump triggers LOAD_REPOSITORY_DUMP for repoID. First pass: no

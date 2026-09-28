@@ -592,7 +592,7 @@ test("only explicitly marked GUI dialog templates are translated", () => {
 test("operation confirmations keep literal arguments and explicit risk variants", () => {
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const keys = [...new Set([...controller.matchAll(/"(confirm\.[^"]+)"/g)].map(match => match[1]))];
-  assert.equal(keys.length, 29);
+  assert.equal(keys.length, 30); // + confirm.detachUnpublished (2026-09-28)
   for (const key of keys) {
     for (const locale of ["pl", "en"]) {
       for (const part of ["title", "text", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${key}.${part}`], "string", key);

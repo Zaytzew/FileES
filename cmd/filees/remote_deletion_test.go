@@ -89,7 +89,7 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 			t.Fatal("completed orphan called active detach executor")
 			return localrepo.Record{}, nil
 		}}
-		if _, err := service.BeginDetach(t.Context(), "lab", id, false); err != nil {
+		if _, err := service.BeginDetach(t.Context(), "lab", id, false, false); err != nil {
 			t.Fatal(err)
 		}
 	}

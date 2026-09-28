@@ -525,3 +525,68 @@ func TestControllerRestartsAndShutsDownWholeStack(t *testing.T) {
 func viewCopy(view app.ViewModel) func() app.ViewModel {
 	return func() app.ViewModel { return view }
 }
+
+type choosingPrompter struct {
+	*platformtest.Fake
+	choice  string
+	choices chan platform.ChoiceRequest
+}
+
+func (p *choosingPrompter) ChooseOne(_ context.Context, request platform.ChoiceRequest) (string, bool, error) {
+	p.choices <- request
+	return p.choice, true, nil
+}
+
+type unpublishedError struct{}
+
+func (unpublishedError) Error() string { return "local folder has unpublished changes" }
+func (unpublishedError) PresentationError() (string, string, string, string) {
+	return "REPO-2013", "WARN", "REQUIRE_ACTION", "repo.detach_unpublished_changes"
+}
+func (unpublishedError) PresentationDetails() map[string]string { return nil }
+
+type localDeletingDetacher struct {
+	fakeRepositoryDetacher
+	deletes chan bool // discardUnpublished of each call
+}
+
+func (d *localDeletingDetacher) DetachRepositoryDeletingLocal(_ context.Context, _, _ string, discard bool) error {
+	d.deletes <- discard
+	if !discard {
+		return unpublishedError{}
+	}
+	return nil
+}
+
+// Owner, 2026-09-28: one dialog with "Zachowaj lokalny folder" / "Usuń
+// również lokalny folder"; unpublished changes are a second question.
+func TestControllerDetachCanAlsoDeleteTheFolderAfterAskingAboutUnpublishedChanges(t *testing.T) {
+	detacher := &localDeletingDetacher{fakeRepositoryDetacher: fakeRepositoryDetacher{calls: make(chan detachCall, 1)}, deletes: make(chan bool, 2)}
+	prompter := &choosingPrompter{Fake: &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }}, choice: "delete", choices: make(chan platform.ChoiceRequest, 1)}
+	view := lifecycleView(contract.CapRepoDetach)
+	intents, cancel := setup(actions.Config{
+		ViewModel: viewCopy(view), Prompter: prompter, Notifier: prompter.Fake,
+		RepositoryDetacher: detacher,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentDetachRepository, ServerID: "office", RepoID: "repo-1"})
+	request := awaitCh(t, prompter.choices, "detach choice")
+	if request.PresentationKey != "select.detachFolder" || request.Default != "keep" || len(request.Options) != 2 || request.Options[0].Label != "Zachowaj lokalny folder" || request.Options[1].Label != "Usuń również lokalny folder" {
+		t.Fatalf("choice = %+v", request)
+	}
+	if first := awaitCh(t, detacher.deletes, "first delete"); first {
+		t.Fatal("unpublished changes discarded without asking")
+	}
+	if second := awaitCh(t, detacher.deletes, "delete after consent"); !second {
+		t.Fatal("consent not passed on")
+	}
+	confirmations := prompter.Snapshot().ConfirmRequests
+	if len(confirmations) != 1 || confirmations[0].PresentationKey != "confirm.detachUnpublished" {
+		t.Fatalf("confirmations = %+v", confirmations)
+	}
+	select {
+	case call := <-detacher.calls:
+		t.Fatalf("plain detach also called: %+v", call)
+	default:
+	}
+}

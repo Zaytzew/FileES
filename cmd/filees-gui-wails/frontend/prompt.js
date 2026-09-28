@@ -22,10 +22,14 @@ function promptText(next, part, original) {
 // The eyebrow names what is being decided. "prompt.select" reads "Choose a
 // server", which the version-replacement question showed above its title
 // (sandbox, 2026-09-25); a select about something else names it itself.
+// Prompts whose option labels are GUI copy, not data, and are translated.
+const localizedOptionPrompts = ["select.visibility", "select.updateChannel", "select.replacePredecessor", "select.detachFolder"];
+
 function modeLabelKey(next) {
   const named = {
     "select.updateChannel": "select.updateChannel.label",
     "select.replacePredecessor": "select.replacePredecessor.eyebrow",
+    "select.detachFolder": "select.detachFolder.eyebrow",
   }[next.presentation_key];
   if (named) return named;
   return next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm";
@@ -72,7 +76,29 @@ function render(next) {
   $("#prompt-label").textContent = next.label || t("field.value");
   $("#input-wrap").hidden = !inputMode;
   $("#prompt-select-label").textContent = next.label || t("field.server");
-  $("#select-wrap").hidden = !selectMode;
+  // A radio prompt shows every option at once (owner, 2026-09-28: the
+  // detach choice "Zachowaj lokalny folder" / "Usuń również lokalny folder").
+  const radioMode = selectMode && Boolean(next.radio);
+  $("#select-wrap").hidden = !selectMode || radioMode;
+  $("#radio-wrap").hidden = !radioMode;
+  $("#prompt-radio-label").textContent = radioMode ? (next.label || "") : "";
+  $("#prompt-radio").replaceChildren(...(radioMode ? next.options || [] : []).map((option) => {
+    const label = document.createElement("label");
+    label.className = "choice";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "prompt-choice";
+    input.value = option.value;
+    input.checked = option.value === (next.default || next.options[0]?.value);
+    const text = document.createElement("span");
+    text.textContent = option.label;
+    if (localizedOptionPrompts.includes(next.presentation_key)) {
+      text.dataset.i18n = next.presentation_key + "." + option.value;
+      text.textContent = t(text.dataset.i18n);
+    }
+    label.append(input, text);
+    return label;
+  }));
   $("#prompt-cancel").hidden = infoMode;
   $("#prompt-cancel").textContent = next.cancel_text || t("action.cancel");
   $("#prompt-confirm").textContent = next.confirm_text || t(next.mode === "info" ? "action.understood" : "action.continue");
@@ -87,7 +113,7 @@ function render(next) {
     const node = document.createElement("option");
     node.value = option.value;
     node.textContent = option.detail && option.detail !== option.label ? `${option.label} — ${option.detail}` : option.label;
-    if (["select.visibility", "select.updateChannel", "select.replacePredecessor"].includes(next.presentation_key)) {
+    if (localizedOptionPrompts.includes(next.presentation_key)) {
       node.dataset.i18n = next.presentation_key + "." + option.value;
       node.textContent = t(node.dataset.i18n);
     }
@@ -97,6 +123,7 @@ function render(next) {
   document.title = next.title ? `${next.title} — FileES` : "FileES";
   refreshPromptLabels();
   if (inputMode) window.setTimeout(() => { input.focus(); input.select(); }, 80);
+  else if (radioMode) window.setTimeout(() => $("#prompt-radio input:checked")?.focus(), 80);
   else if (selectMode) window.setTimeout(() => select.focus(), 80);
   else window.setTimeout(() => $("#prompt-confirm").focus(), 80);
 }
@@ -126,7 +153,8 @@ async function resolve(confirmed) {
   const resolvedRevision = snapshot.revision;
   setBusy(true);
   try {
-    const value = snapshot.mode === "select" ? $("#prompt-select").value : $("#prompt-value").value;
+    const value = snapshot.mode !== "select" ? $("#prompt-value").value
+      : snapshot.radio ? ($("#prompt-radio input:checked")?.value || "") : $("#prompt-select").value;
     const result = await PromptService.Resolve({revision: resolvedRevision, confirmed, value});
     if (!result.accepted) throw new Error(result.code || "dialog_rejected");
     // The Go prompt service owns window visibility. A flow may publish the

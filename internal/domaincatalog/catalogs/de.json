@@ -125,6 +125,7 @@
     "repo.delete_forbidden": "Dieses Repository kann nicht endgültig gelöscht werden",
     "repo.detach_failed": "Trennen des Repositorys fehlgeschlagen",
     "repo.detach_required_forbidden": "Ein erforderliches Repository kann nicht getrennt werden",
+    "repo.detach_unpublished_changes": "Der Ordner hat lokale Änderungen, die nicht veröffentlicht wurden",
     "repo.editing_policy_failed": "Die Reservierungsrichtlinie konnte nicht geändert werden",
     "repo.editing_policy_forbidden": "Nur der Eigentümer kann die Reservierungsrichtlinie ändern",
     "repo.editing_policy_unavailable": "Die Reservierungsrichtlinie kann derzeit nicht geändert werden",

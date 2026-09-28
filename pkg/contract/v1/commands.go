@@ -693,6 +693,14 @@ type RepoLocatePayload struct {
 type RepoDetachPayload struct {
 	ServerID string `json:"server_id"`
 	RepoID   string `json:"repo_id"`
+	// DeleteLocal also moves the local folder to the recycle bin once its
+	// metadata is removed ("Usuń również lokalny folder", 2026-09-28).
+	DeleteLocal bool `json:"delete_local,omitempty"`
+	// DiscardUnpublished is the user's explicit answer to "you have local
+	// unpublished changes - delete without publishing?". Without it a
+	// DeleteLocal detachment of a folder with such changes is refused
+	// (REPO-2013), so the question is always asked.
+	DiscardUnpublished bool `json:"discard_unpublished,omitempty"`
 }
 
 // RepoLoadDumpPayload triggers LOAD_REPOSITORY_DUMP for a repository the

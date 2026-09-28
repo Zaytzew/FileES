@@ -1104,6 +1104,35 @@ func (adapter repositoryAttachAdapter) AttachmentStatus(ctx context.Context, ope
 
 type repositoryDetachAdapter struct{ client repositoryDetachClient }
 
+type repositoryLocalDeleteClient interface {
+	RepoDetachDeletingLocal(context.Context, string, string, bool) (*contract.RepoLifecycleResult, error)
+}
+
+// DetachRepositoryDeletingLocal is actions.LocalFolderDetacher: detach, then
+// the folder goes to the recycle bin (owner, 2026-09-28).
+func (adapter repositoryDetachAdapter) DetachRepositoryDeletingLocal(ctx context.Context, serverID, repoID string, discardUnpublished bool) error {
+	client, ok := adapter.client.(repositoryLocalDeleteClient)
+	if !ok {
+		return errors.New("daemon client cannot delete a detached folder")
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	result, err := client.RepoDetachDeletingLocal(operationCtx, serverID, repoID, discardUnpublished)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty repository detach result")
+	}
+	if result.State != "detached" {
+		if result.LastError != "" {
+			return errors.New(result.LastError)
+		}
+		return errors.New("daemon did not confirm the detachment")
+	}
+	return nil
+}
+
 type repositoryLifecycleRepairClient interface {
 	RepoLifecycleRepair(context.Context, contract.RepoLifecycleRepairPayload) (*contract.RepoLifecycleResult, error)
 }

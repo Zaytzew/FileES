@@ -1481,6 +1481,7 @@ func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record local
 		return
 	}
 	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access, Purpose: record.Purpose, Sparse: record.Sparse}
+	repo.Anchor = record.Anchor
 	select {
 	case p.attachments <- provisionedAttachment{Repo: repo}:
 	case <-ctx.Done():

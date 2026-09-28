@@ -117,6 +117,20 @@ windows-amd64)
 		if grep -a -i -q -e cldapi -e CfGetPlaceholderState -e filees-cfapi.exe "$out/bin/$daemon"; then
 			die "a $FILEES_RELEASE_CHANNEL daemon still carries Cloud Files code"
 		fi
+		[ -z "${FILEES_CFAPI_HELPER:-}" ] || die "a $FILEES_RELEASE_CHANNEL bundle must not carry the Explorer anchor helper"
+		;;
+	*)
+		# The Explorer anchor helper ships next to the daemon, which looks for
+		# it there. Until 2026-09-28 no release carried it: the only copy was a
+		# manual one on the owner's station. An alpha release requires it; a
+		# local build without a channel takes it when given.
+		if [ "${FILEES_RELEASE_CHANNEL:-}" = alpha ] && [ -z "${FILEES_CFAPI_HELPER:-}" ]; then
+			die "an alpha bundle needs FILEES_CFAPI_HELPER (filees-cfapi.exe from packaging/windows/build-cfapi-helper.ps1)"
+		fi
+		if [ -n "${FILEES_CFAPI_HELPER:-}" ]; then
+			[ -f "$FILEES_CFAPI_HELPER" ] || die "Explorer anchor helper not found: $FILEES_CFAPI_HELPER"
+			cp "$FILEES_CFAPI_HELPER" "$out/bin/filees-cfapi.exe"
+		fi
 		;;
 	esac
 	cp "$root/packaging/windows/autostart-supervisor.ps1" "$out/autostart/start-filees.ps1"

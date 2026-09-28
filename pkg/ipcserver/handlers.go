@@ -1194,6 +1194,18 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 	if summary.AttachmentPolicy == "required" {
 		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "NONE", "repo.detach_required_forbidden", nil)
 	}
+	if payload.DeleteLocal {
+		if deleteRepository || orphan || !summary.Attached {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		// Deleting the folder would take unpublished work with it. The user
+		// answers that question in the GUI; the daemon never assumes it.
+		status := rs.Snapshot()
+		pending := status.Pending
+		if !payload.DiscardUnpublished && (pending.Added+pending.Modified+pending.Deleted+pending.Renamed+pending.RenameUncertain > 0 || pending.TotalBytes > 0 || status.CommitRecoveryRequired) {
+			return contract.ErrResponse(req.RequestID, "REPO-2013", "WARN", "REQUIRE_ACTION", "repo.detach_unpublished_changes", nil)
+		}
+	}
 	if deleteRepository {
 		s.mu.RLock()
 		activation, ok := s.activations[payload.ServerID]
@@ -1210,7 +1222,7 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 	if deleteRepository {
 		result, err = service.BeginDelete(ctx, payload.ServerID, payload.RepoID, summary.DisplayName)
 	} else {
-		result, err = service.BeginDetach(ctx, payload.ServerID, payload.RepoID, false)
+		result, err = service.BeginDetach(ctx, payload.ServerID, payload.RepoID, false, payload.DeleteLocal)
 	}
 	if err != nil {
 		if deleteRepository && result.ServerDeleteCompleted {

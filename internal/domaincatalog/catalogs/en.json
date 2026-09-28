@@ -125,6 +125,7 @@
     "repo.delete_forbidden": "This repository cannot be deleted permanently",
     "repo.detach_failed": "Detaching the repository failed",
     "repo.detach_required_forbidden": "A required repository cannot be detached",
+    "repo.detach_unpublished_changes": "The folder has local changes that were not published",
     "repo.editing_policy_failed": "The reservation policy could not be changed",
     "repo.editing_policy_forbidden": "Only the owner can change the reservation policy",
     "repo.editing_policy_unavailable": "Changing the reservation policy is not available right now",

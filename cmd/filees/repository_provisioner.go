@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"filees/internal/durable"
+	"filees/internal/trash"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
@@ -822,6 +823,16 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	if current.State == localrepo.StateDetaching {
 		if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
 			return current, err
+		}
+		// "Usuń również lokalny folder" (owner, 2026-09-28): only after the
+		// metadata is gone, into the recycle bin, never deleted outright. A
+		// refusal (the shell asked before destroying something it cannot
+		// recycle, and the user declined) keeps the detachment open for a
+		// retry and leaves an ordinary folder behind.
+		if current.DeleteLocal {
+			if err := trash.Move(current.LocalPath); err != nil {
+				return current, fmt.Errorf("move the detached folder to the recycle bin: %w", err)
+			}
 		}
 		return p.local.CompleteDetach(current.OperationID)
 	}

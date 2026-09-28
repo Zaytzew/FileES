@@ -125,6 +125,7 @@
     "repo.delete_forbidden": "Este repositorio no se puede eliminar permanentemente",
     "repo.detach_failed": "La desconexión del repositorio falló",
     "repo.detach_required_forbidden": "No se puede desconectar un repositorio obligatorio",
+    "repo.detach_unpublished_changes": "La carpeta tiene cambios locales que no se han publicado",
     "repo.editing_policy_failed": "No se pudieron cambiar las reglas de reserva",
     "repo.editing_policy_forbidden": "Solo el propietario puede cambiar las reglas de reserva",
     "repo.editing_policy_unavailable": "El cambio de las reglas de reserva no está disponible ahora",

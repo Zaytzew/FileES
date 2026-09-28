@@ -158,7 +158,9 @@ type RepositoryLifecycleService interface {
 	BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error)
 	BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error)
 	BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error)
-	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
+	// The last argument is DeleteLocal: move the folder to the recycle bin
+	// after its metadata is removed.
+	BeginDetach(context.Context, string, string, bool, bool) (contract.RepoLifecycleResult, error)
 	BeginDelete(context.Context, string, string, string) (contract.RepoLifecycleResult, error)
 	DismissRecovery(string, string, string) (contract.RepoRecoveryDismissResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)

@@ -125,6 +125,7 @@
     "repo.delete_forbidden": "Ce dépôt ne peut pas être supprimé définitivement",
     "repo.detach_failed": "Échec de la déconnexion du dépôt",
     "repo.detach_required_forbidden": "Un dépôt obligatoire ne peut pas être déconnecté",
+    "repo.detach_unpublished_changes": "Le dossier contient des modifications locales non publiées",
     "repo.editing_policy_failed": "Impossible de modifier les règles de réservation",
     "repo.editing_policy_forbidden": "Seul le propriétaire peut modifier les règles de réservation",
     "repo.editing_policy_unavailable": "La modification des règles de réservation est indisponible pour le moment",

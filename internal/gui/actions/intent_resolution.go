@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
-	contract "filees/pkg/contract/v1"
 	"fmt"
 	"strings"
 	"time"
@@ -21,6 +20,15 @@ type IntentResolutionPath struct {
 	Path, Operation string
 	Size            int64
 }
+
+// Commit recovery choices as the daemon names them (contract
+// CommitRecoveryRetryQueue / CommitRecoveryServerCopy). Repeated here because
+// the controller must not import the daemon contract (archtest); the Wails
+// adapter's test pins the two spellings together.
+const (
+	CommitRecoveryChoiceRetryQueue = "retry_preserved_queue"
+	CommitRecoveryChoiceServerCopy = "server_wins_preserve_local"
+)
 
 // CommitRecoveryPlan contains only the daemon proof displayed by the dialog.
 // The daemon remains responsible for validating and applying the decision.
@@ -89,11 +97,11 @@ func commitRecoveryPrompt(plan *CommitRecoveryPlan) (platform.ConfirmRequest, er
 	prompt := platform.ConfirmRequest{PresentationKey: "details.commitRecovery", PresentationArgs: map[string]string{"transaction": plan.TransactionID, "firstRevision": fmt.Sprint(plan.FirstRevision), "headRevision": fmt.Sprint(plan.HeadRevision), "pathCount": fmt.Sprint(len(plan.Paths))}, Title: "Uzgodnij wstrzymaną publikację", ConfirmText: "Ponów zachowaną kolejkę", CancelText: "Anuluj"}
 	prompt.Text = fmt.Sprintf("FileES ponownie sprawdził serwer. Próba %s nie utworzyła oczekiwanej rewizji r%d (HEAD: r%d). Zamknąć wyłącznie tę próbę i ponowić zachowaną kolejkę %d ścieżek?", plan.TransactionID, plan.FirstRevision, plan.HeadRevision, len(plan.Paths))
 	switch plan.Choice {
-	case contract.CommitRecoveryRetryQueue:
+	case CommitRecoveryChoiceRetryQueue:
 		if len(plan.Conflicts) != 0 {
 			return prompt, fmt.Errorf("conflict decision missing")
 		}
-	case contract.CommitRecoveryServerCopy:
+	case CommitRecoveryChoiceServerCopy:
 		if len(plan.Conflicts) == 0 || plan.ConflictCopy == "" {
 			return prompt, fmt.Errorf("conflict preservation plan missing")
 		}

@@ -39,10 +39,12 @@ type PromptSnapshot struct {
 	Label            string            `json:"label,omitempty"`
 	Options          []PromptOption    `json:"options,omitempty"`
 	Default          string            `json:"default,omitempty"`
-	Placeholder      string            `json:"placeholder,omitempty"`
-	Secret           bool              `json:"secret,omitempty"`
-	ConfirmText      string            `json:"confirm_text"`
-	CancelText       string            `json:"cancel_text,omitempty"`
+	// Radio shows every option at once instead of a drop-down.
+	Radio       bool   `json:"radio,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Secret      bool   `json:"secret,omitempty"`
+	ConfirmText string `json:"confirm_text"`
+	CancelText  string `json:"cancel_text,omitempty"`
 }
 
 type PromptOption struct {
@@ -57,6 +59,8 @@ type PromptSelectRequest struct {
 	PresentationArgs            map[string]string
 	Title, Text, Label, Default string
 	Options                     []PromptOption
+	Radio                       bool
+	ConfirmText, CancelText     string
 }
 
 type PromptSelectResult struct {
@@ -156,9 +160,27 @@ func (service *PromptService) SelectOne(ctx context.Context, request PromptSelec
 		Mode: "select", PresentationKey: request.PresentationKey,
 		PresentationArgs: maps.Clone(request.PresentationArgs),
 		Title:            request.Title, Text: request.Text, Label: request.Label,
-		Options: options, Default: defaultValue,
+		Options: options, Default: defaultValue, Radio: request.Radio,
+		ConfirmText: request.ConfirmText, CancelText: request.CancelText,
 	})
 	return PromptSelectResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err
+}
+
+// ChooseOne is platform.ChoicePrompter: a radio prompt.
+func (service *PromptService) ChooseOne(ctx context.Context, request platform.ChoiceRequest) (string, bool, error) {
+	options := make([]PromptOption, 0, len(request.Options))
+	for _, option := range request.Options {
+		options = append(options, PromptOption{Value: option.Value, Label: option.Label})
+	}
+	result, err := service.SelectOne(ctx, PromptSelectRequest{
+		PresentationKey: request.PresentationKey, PresentationArgs: request.PresentationArgs,
+		Title: request.Title, Text: request.Text, Default: request.Default, Options: options, Radio: true,
+		ConfirmText: request.ConfirmText, CancelText: request.CancelText,
+	})
+	if err != nil || result.Cancelled {
+		return "", false, err
+	}
+	return result.Value, true, nil
 }
 
 func (service *PromptService) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {

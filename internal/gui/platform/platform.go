@@ -552,6 +552,25 @@ type ConfirmRequest struct {
 	CancelText       string
 }
 
+// ChoicePrompter asks for exactly one of a few options, all shown at once
+// (radio buttons). Optional: a prompter without it keeps the older flows.
+type ChoicePrompter interface {
+	ChooseOne(ctx context.Context, request ChoiceRequest) (value string, chosen bool, err error)
+}
+
+type ChoiceOption struct{ Value, Label string }
+
+type ChoiceRequest struct {
+	// PresentationKey marks GUI-owned copy (title, text, option labels).
+	PresentationKey  string
+	PresentationArgs map[string]string
+	Title, Text      string
+	Options          []ChoiceOption
+	Default          string
+	ConfirmText      string
+	CancelText       string
+}
+
 type PromptTextRequest struct {
 	// PresentationKey marks a GUI-owned template; defaults remain literal input.
 	PresentationKey  string

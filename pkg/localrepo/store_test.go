@@ -743,3 +743,32 @@ func TestLocateFailureKeySurvivesRestartAndClearsOnRetry(t *testing.T) {
 		t.Fatalf("stale diagnostic after retry: %+v %v", got, err)
 	}
 }
+
+// "Usuń również lokalny folder" (2026-09-28) is part of the durable
+// detachment: a restart finishes what the user chose.
+func TestDetachDeletingLocalIsDurable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	if _, _, err := store.EnsureConfiguredAttached("spot", repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(t.TempDir(), "wc"), "Test"); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.BeginDetachDeletingLocal("spot", repoID)
+	if err != nil || record.State != StateDetaching || !record.DeleteLocal {
+		t.Fatalf("record=%+v err=%v", record, err)
+	}
+	again, err := store.BeginDetachDeletingLocal("spot", repoID)
+	if err != nil || again.OperationID != record.OperationID || again.DetachOperationID != record.DetachOperationID {
+		t.Fatalf("resumed=%+v err=%v", again, err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := reopened.Get(record.OperationID); !ok || !got.DeleteLocal || got.State != StateDetaching {
+		t.Fatalf("after reopen=%+v ok=%v", got, ok)
+	}
+}

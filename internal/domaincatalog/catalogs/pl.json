@@ -125,6 +125,7 @@
     "repo.delete_forbidden": "Nie można trwale usunąć tego repozytorium",
     "repo.detach_failed": "Odłączenie repozytorium nie powiodło się",
     "repo.detach_required_forbidden": "Wymaganego repozytorium nie można odłączyć",
+    "repo.detach_unpublished_changes": "Folder ma lokalne zmiany, które nie zostały opublikowane",
     "repo.editing_policy_failed": "Zmiana polityki blokad nie powiodła się",
     "repo.editing_policy_forbidden": "Tylko właściciel może zmienić politykę blokad",
     "repo.editing_policy_unavailable": "Zmiana polityki blokad jest teraz niedostępna",

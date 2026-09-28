@@ -1073,6 +1073,26 @@ type repositoryAttachClient interface {
 
 type repositoryAttachAdapter struct{ client repositoryAttachClient }
 
+type repositoryAnchorClient interface {
+	AnchorCreate(context.Context, contract.RepoAnchorCreatePayload) (*contract.RepoHeadWriteResult, error)
+}
+
+// CreateAnchor is actions.RepositoryAnchorCreator (Explorer anchor, 2026-09-28).
+func (adapter repositoryAttachAdapter) CreateAnchor(ctx context.Context, serverID, repoID, localPath string) (string, error) {
+	client, ok := adapter.client.(repositoryAnchorClient)
+	if !ok {
+		return "", errors.New("daemon client cannot create Explorer anchors")
+	}
+	result, err := client.AnchorCreate(ctx, contract.RepoAnchorCreatePayload{ServerID: serverID, RepoID: repoID, LocalPath: localPath})
+	if err != nil {
+		return "", err
+	}
+	if result == nil || result.OperationID == "" {
+		return "", errors.New("daemon returned an empty anchor operation")
+	}
+	return result.OperationID, nil
+}
+
 func (adapter repositoryAttachAdapter) AttachRepository(ctx context.Context, serverID, repoID, localPath string) (string, error) {
 	intent, err := adapter.client.RepoAttachIntent(ctx, contract.RepoAttachIntentPayload{ServerID: serverID, RepoID: repoID, LocalPath: localPath})
 	if err != nil {

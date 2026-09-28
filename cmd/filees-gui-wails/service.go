@@ -176,6 +176,9 @@ type RepoProjection struct {
 	CurrentOperation         string                     `json:"current_operation,omitempty"`
 	ReservationCount         int                        `json:"reservation_count"`
 	CanAttach                bool                       `json:"can_attach"`
+	// CanCreateAnchor: the daemon can make this repository's folder an
+	// Explorer anchor here (helper present, repository without a copy).
+	CanCreateAnchor bool `json:"can_create_anchor,omitempty"`
 	// CanBrowseHead offers "Browse on the server": a repository with no copy
 	// yet, or one holding only chosen paths (implementation notes (not distributed)).
 	CanBrowseHead bool `json:"can_browse_head"`
@@ -877,6 +880,8 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentAttachRepository):
 		allowed := repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
 		return tray.Intent{Kind: tray.IntentAttachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, allowed
+	case string(tray.IntentCreateAnchor):
+		return tray.Intent{Kind: tray.IntentCreateAnchor, RepoID: repo.ID, ServerID: repo.ServerID}, canCreateAnchor(vm, repo)
 	case string(tray.IntentLock):
 		allowed := repo.Purpose == "" && vm.CanMutateLock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && serverAllowsLock(vm, repo.ServerID)
 		return tray.Intent{Kind: tray.IntentLock, RepoID: repo.ID}, allowed
@@ -892,6 +897,12 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	default:
 		return tray.Intent{}, false
 	}
+}
+
+// canCreateAnchor: a repository without a copy here, on a daemon that can make
+// Explorer anchors (helper present).
+func canCreateAnchor(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
+	return repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository() && vm.HasCap(contract.CapRepoExplorerAnchor)
 }
 
 // canRetryDeletion: a deleted repository whose deletion stopped on an error.
@@ -1123,7 +1134,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			CanFoldInactive:          vm.CanFoldInactive(repo),
 			UnportableNames:          unportableNames(repo.UnportableNames),
 			CurrentOperation:         operation, ReservationCount: repo.ReservationCount,
-			CanAttach: canAttach, CanBrowseHead: canBrowseHead, Sparse: repo.Attached && repo.Sparse, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
+			CanAttach: canAttach, CanCreateAnchor: canCreateAnchor(vm, repo), CanBrowseHead: canBrowseHead, Sparse: repo.Attached && repo.Sparse, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			LocalCopyPreserved: repo.LocalCopyPreserved,

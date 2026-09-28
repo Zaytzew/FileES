@@ -20,6 +20,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/errcat"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
@@ -140,7 +141,7 @@ func (m *anchorManager) precheck(localPath string) error {
 				if provider == "" {
 					provider = "another program"
 				}
-				return fmt.Errorf("%s is inside a folder synchronised by %s; choose a folder outside it", local, provider)
+				return errcat.New("head.anchor_under_provider", map[string]string{"provider": provider}, fmt.Errorf("%s is inside a folder synchronised by %s", local, provider))
 			}
 			break
 		}

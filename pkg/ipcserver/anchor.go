@@ -1,9 +1,11 @@
 package ipcserver
 
 import (
+	"errors"
 	"strings"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 )
 
 // AnchorAttacher is the lifecycle's Explorer anchor entry point: an empty
@@ -71,6 +73,10 @@ func (s *Server) handleAnchorCreate(req contract.Request) contract.Response {
 		return contract.ErrResponse(req.RequestID, "HEAD-2005", "ERROR", "REQUIRE_ACTION", "head.anchor_required", nil)
 	}
 	if err := check(local); err != nil {
+		var fault errcat.Fault
+		if errors.As(err, &fault) {
+			return contract.ErrResponseFrom(req.RequestID, fault)
+		}
 		return contract.ErrResponse(req.RequestID, "HEAD-2011", "ERROR", "REQUIRE_ACTION", "head.anchor_refused", map[string]string{"detail": err.Error()})
 	}
 	service := s.repositoryLifecycleService()
@@ -82,6 +88,12 @@ func (s *Server) handleAnchorCreate(req contract.Request) contract.Response {
 		return contract.ErrResponse(req.RequestID, "REPO-2004", "ERROR", "RETRY", "repo.not_attachable", nil)
 	}
 	begun, err := anchor.BeginAnchorAttach(p.ServerID, p.RepoID, local, summary.AttachmentPolicy == "required")
+	var fault errcat.Fault
+	if errors.As(err, &fault) {
+		// Not empty, inside another working copy, overlapping a repository:
+		// said as what it is, not as raw text (2026-09-28).
+		return contract.ErrResponseFrom(req.RequestID, fault)
+	}
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", map[string]string{"detail": err.Error()})
 	}

@@ -706,3 +706,31 @@ func TestTranslateLockReleaseActionsRevalidatesRoleAndFence(t *testing.T) {
 		t.Fatal("requester projection was allowed to answer holder request")
 	}
 }
+
+// "Utwórz kotwicę w Eksploratorze" is offered only where the daemon can make
+// anchors (helper present) and only for a repository without a copy here.
+func TestAnchorIsOfferedOnlyWhereTheDaemonCanMakeIt(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true},
+		Servers: []guiapp.ServerViewModel{{ID: "office"}},
+		Repos:   []guiapp.RepoViewModel{{ID: "oppo", ServerID: "office", DisplayName: "Oppo", State: contract.StateUnattached}},
+	}
+	if projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
+		t.Fatal("anchor offered without the helper")
+	}
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentCreateAnchor), RepoID: "oppo"}); allowed {
+		t.Fatal("anchor intent accepted without the helper")
+	}
+	vm.Capabilities[contract.CapRepoExplorerAnchor] = true
+	if !projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
+		t.Fatal("anchor not offered with the helper")
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentCreateAnchor), RepoID: "oppo"})
+	if !allowed || intent.Kind != tray.IntentCreateAnchor || intent.ServerID != "office" {
+		t.Fatalf("intent=%+v allowed=%v", intent, allowed)
+	}
+	vm.Repos[0].Attached, vm.Repos[0].State = true, contract.StateActive
+	if projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
+		t.Fatal("anchor offered for a repository that already has a copy")
+	}
+}

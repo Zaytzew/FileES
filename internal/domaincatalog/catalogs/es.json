@@ -46,6 +46,7 @@
     "head.anchor_attached": "Este repositorio ya tiene una copia de trabajo aquí",
     "head.anchor_refused": "Esta carpeta no puede ser un anclaje del Explorador",
     "head.partial_is_anchor": "En este equipo una copia parcial es un anclaje del Explorador",
+    "head.anchor_under_provider": "Otro programa (como Nextcloud u OneDrive) ya sincroniza esta carpeta: elija una carpeta fuera de ella",
     "intent.ambiguous": "El envío está detenido: resuelva los cambios ambiguos en la configuración de la carpeta",
     "intent.resolution_refused": "Esta decisión ya no se puede aceptar. Abra de nuevo el plan de cambios; los archivos, la cola o su acceso pueden haber cambiado",
     "lock.held_by_other": [
@@ -127,6 +128,7 @@
     "repo.detach_failed": "La desconexión del repositorio falló",
     "repo.detach_required_forbidden": "No se puede desconectar un repositorio obligatorio",
     "repo.detach_unpublished_changes": "La carpeta tiene cambios locales que no se han publicado",
+    "repo.attach_target_not_empty": "La carpeta elegida no está vacía: un anclaje o una vinculación solo se crea en una carpeta nueva o vacía",
     "repo.editing_policy_failed": "No se pudieron cambiar las reglas de reserva",
     "repo.editing_policy_forbidden": "Solo el propietario puede cambiar las reglas de reserva",
     "repo.editing_policy_unavailable": "El cambio de las reglas de reserva no está disponible ahora",

@@ -6,15 +6,20 @@ import (
 	"testing"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 )
 
 type anchorLifecycleStub struct {
 	lifecycleStub
 	anchorLocal string
 	anchorCalls int
+	anchorErr   error
 }
 
 func (s *anchorLifecycleStub) BeginAnchorAttach(_, _, localPath string, _ bool) (contract.RepoLifecycleResult, error) {
+	if s.anchorErr != nil {
+		return contract.RepoLifecycleResult{}, s.anchorErr
+	}
 	s.anchorCalls++
 	s.anchorLocal = localPath
 	return contract.RepoLifecycleResult{OperationID: "anchor-op", LocalPath: localPath, State: "unattached"}, nil
@@ -110,5 +115,25 @@ func TestPartialAnchorModeRefusesPlainSparseCopies(t *testing.T) {
 	server.SetPartialAnchorMode(false)
 	if hasCapability(server.capabilities(), contract.CapRepoPartialAnchor) {
 		t.Fatal("sparse mode advertised as anchor mode")
+	}
+}
+
+// Validation comes back as what it is, not as raw text (2026-09-28): a folder
+// under another sync provider and a folder that is not empty.
+func TestAnchorRefusalsAreReadable(t *testing.T) {
+	server, _ := anchorServer(t, func(string) error {
+		return errcat.New("head.anchor_under_provider", map[string]string{"provider": "Nextcloud"}, nil)
+	})
+	response := server.dispatch(lifecycleRequest(contract.CmdRepoAnchorCreate,
+		contract.RepoAnchorCreatePayload{ServerID: "primary", RepoID: "repo-1", LocalPath: filepath.Join(t.TempDir(), "Atlas")}))
+	if response.Error == nil || response.Error.Code != "HEAD-2013" || response.Error.MessageKey != "head.anchor_under_provider" || response.Error.Details["provider"] != "Nextcloud" {
+		t.Fatalf("provider refusal = %+v", response.Error)
+	}
+	server, stub := anchorServer(t, func(string) error { return nil })
+	stub.anchorErr = errcat.New("repo.attach_target_not_empty", nil, errors.New("attach target must be absent or empty"))
+	response = server.dispatch(lifecycleRequest(contract.CmdRepoAnchorCreate,
+		contract.RepoAnchorCreatePayload{ServerID: "primary", RepoID: "repo-1", LocalPath: filepath.Join(t.TempDir(), "Atlas")}))
+	if response.Error == nil || response.Error.Code != "REPO-2014" || response.Error.MessageKey != "repo.attach_target_not_empty" {
+		t.Fatalf("not-empty refusal = %+v", response.Error)
 	}
 }

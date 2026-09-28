@@ -227,6 +227,7 @@ var specs = []Spec{
 	{"HEAD-2009", "head.anchor_unavailable", SevError, HintNone, nil, "Explorer anchors are not available on this computer"},
 	{"HEAD-2010", "head.anchor_attached", SevError, HintNone, nil, "The repository already has a working copy here"},
 	{"HEAD-2011", "head.anchor_refused", SevError, HintRequireAction, nil, "This folder cannot become an Explorer anchor"},
+	{"HEAD-2013", "head.anchor_under_provider", SevError, HintRequireAction, []Field{{"provider", ParamText}}, "The folder is synchronised by another program"},
 	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
@@ -305,6 +306,7 @@ var specs = []Spec{
 	{"UPDATE-1001", "update.status_failed", SevError, HintRetryBackoff, nil, "Update status failed"},
 	{"UPDATE-1002", "update.plan_failed", SevError, HintRetryBackoff, nil, "Update plan failed"},
 	{"UPDATE-1003", "update.apply_failed", SevError, HintRequireAction, nil, "Update apply failed"},
+	{"REPO-2014", "repo.attach_target_not_empty", SevError, HintRequireAction, nil, "The chosen folder is not empty"},
 	{"REPO-2013", "repo.detach_unpublished_changes", SevWarn, HintRequireAction, nil, "Local folder has unpublished changes"},
 	{"UPDATE-1004", "update.downloading", SevInfo, HintRetryBackoff, []Field{{"downloaded_bytes", ParamBytes}, {"total_bytes", ParamBytes}}, "Update bundle is still downloading"},
 }

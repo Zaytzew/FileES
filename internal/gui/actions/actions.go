@@ -118,6 +118,12 @@ type RepositoryAttacher interface {
 	AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+// RepositoryAnchorCreator is an optional RepositoryAttacher extension: make a
+// folder the Explorer anchor of a repository without a copy here.
+type RepositoryAnchorCreator interface {
+	CreateAnchor(ctx context.Context, serverID, repoID, localPath string) (operationID string, err error)
+}
+
 type RepositoryLocator interface {
 	LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (operationID string, err error)
 	// LocateStatus observes the durable outcome. A rejected locate returns to
@@ -559,6 +565,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startCreateRepository(ctx, intent.ServerID)
 	case tray.IntentAttachRepository:
 		c.startConnectRepositories(ctx, intent.ServerID, []string{intent.RepoID}, false)
+	case tray.IntentCreateAnchor:
+		c.startCreateAnchor(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentPairMobileDevice:
 		c.startPairMobileDevice(ctx, intent.ServerID)
 	case tray.IntentUpdatePlan:
@@ -1429,6 +1437,82 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			}(serverID, repoID, name, operationID, actionID, filepath.Clean(picked.Path))
 		}
 	}()
+}
+
+// startCreateAnchor makes a folder the Explorer anchor of a repository
+// without a copy on this computer (owner, 2026-09-28). The user picks where;
+// the anchor is a new folder named after the repository inside it, because an
+// anchor can only be made in a new or empty folder. Validation (not empty,
+// inside another working copy, under another sync provider) is the daemon's
+// and comes back as a readable message.
+func (c *Controller) startCreateAnchor(ctx context.Context, serverID, repoID string) {
+	key := "create-anchor:" + serverID + ":" + repoID
+	creator, ok := c.cfg.RepositoryAttacher.(RepositoryAnchorCreator)
+	if serverID == "" || repoID == "" || !ok || c.cfg.FolderPicker == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		repo, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID)
+		if !ok {
+			return
+		}
+		name := repo.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = repo.ID
+		}
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.anchor", "Wybierz folder, w którym powstanie kotwica „%s”"), name)})
+		if err != nil {
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — "+err.Error())
+			return
+		}
+		if picked.Cancelled {
+			return
+		}
+		if strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — wybrana ścieżka nie jest bezwzględna")
+			return
+		}
+		if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID); !ok {
+			return
+		}
+		localPath := filepath.Join(filepath.Clean(picked.Path), anchorFolderName(name, repo.ID))
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind: string(tray.IntentCreateAnchor), ServerID: serverID, RepoID: repoID,
+			Label: c.uiText("pending.anchor", "Tworzenie kotwicy"), ExpectedRepoAttached: true,
+		})
+		operationID, err := creator.CreateAnchor(ctx, serverID, repoID, localPath)
+		if err != nil {
+			c.finishProjectedAction(actionID)
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — "+c.actionErrorBody(err))
+			return
+		}
+		c.setPendingAttachment(serverID, repoID, localPath, operationID)
+		if !c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID) {
+			c.finishProjectedAction(actionID)
+			return
+		}
+		c.awaitProjectedAction(actionID)
+		c.notify(ctx, platform.Notification{ID: "repository-anchor." + repoID, Group: "repository-anchor." + repoID, Title: c.uiText("feedback.anchorCreated", "Utworzono kotwicę w Eksploratorze"), Body: name + " — " + localPath, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+// anchorFolderName keeps a repository name usable as one folder on Windows:
+// no separators or reserved characters, no trailing dots or spaces.
+func anchorFolderName(name, fallback string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || strings.ContainsRune(`<>:"/\|?*`, r) {
+			return '_'
+		}
+		return r
+	}, strings.TrimSpace(name))
+	cleaned = strings.TrimRight(cleaned, ". ")
+	if cleaned == "" || cleaned == "_" {
+		return fallback
+	}
+	return cleaned
 }
 
 func pendingAttachmentKey(serverID, repoID string) string {

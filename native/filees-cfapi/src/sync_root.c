@@ -89,9 +89,23 @@ int filees_cfapi_info(const WCHAR *root)
 
 int filees_cfapi_unregister(const WCHAR *root)
 {
-    HRESULT hr = CfUnregisterSyncRoot(root);
-    if (FAILED(hr)) {
+    HRESULT hr = filees_own_sync_root(root);
+    if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) &&
+        hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) && hr != HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND)) {
+        filees_cfapi_fail("unregister_root_not_owned", hr);
+        return 1;
+    }
+    hr = CfUnregisterSyncRoot(root);
+    if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) &&
+        hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) && hr != HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND)) {
         filees_cfapi_fail("unregister_sync_root", hr);
+        return 1;
+    }
+    /* Retry also removes an orphan Shell entry after native unregister had
+     * succeeded but the process stopped before Shell cleanup. */
+    hr = filees_shell_unregister(root);
+    if (FAILED(hr)) {
+        filees_cfapi_fail("unregister_shell_root", hr);
         return 1;
     }
     filees_cfapi_ok("unregistered");

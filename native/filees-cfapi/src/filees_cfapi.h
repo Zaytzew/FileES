@@ -10,6 +10,10 @@
 
 #include <windows.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FILEES_CFAPI_SCHEMA "filees.cfapi/v1"
 #define FILEES_CFAPI_PROVIDER L"FileES"
 /* One identity blob per anchor: "<server id>\0<repo id>", as the daemon sends
@@ -60,5 +64,14 @@ int filees_cfapi_revert(const WCHAR *path);
 HRESULT filees_revert_placeholder(const WCHAR *path);
 int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_connect(const WCHAR *root);
+
+/* Windows Runtime is isolated behind this C ABI; no network or SVN access. */
+int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon);
+HRESULT filees_shell_unregister(const WCHAR *root);
+HRESULT filees_own_sync_root(const WCHAR *root);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -3,6 +3,7 @@
  * Verbs:
  *   version
  *   register   --root <anchor> --identity <server id \0 repo id, as text>
+ *   shell-register --root <anchor> --identity <text> --icon <absolute .ico>
  *   unregister --root <anchor>
  *   info       --root <anchor>
  *   placeholders --root <anchor> [--rel <subdirectory>]   (listing on stdin)
@@ -14,7 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "unregister", "info", "placeholders", "connect", "revert", NULL};
+static const char *const k_verbs[] = {"version", "register", "shell-register", "unregister", "info", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -27,7 +28,7 @@ static void print_version(void)
     /* Features are how the daemon decides what this build can do, exactly as
      * with the native SVN helper: a name appears here only when the thing
      * behind it works. */
-    puts("],\"features\":[\"sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\"]}");
+    puts("],\"features\":[\"sync_root_v1\",\"shell_sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\"]}");
     fflush(stdout);
 }
 
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
     WCHAR root[MAX_PATH * 2];
     WCHAR identity[FILEES_CFAPI_MAX_IDENTITY];
     WCHAR relative[MAX_PATH];
+    WCHAR icon[FILEES_CFAPI_MAX_PATH];
     const char *verb, *value;
 
     if (argc < 2) {
@@ -74,11 +76,19 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    if (!strcmp(verb, "register")) {
+    if (!strcmp(verb, "register") || !strcmp(verb, "shell-register")) {
         value = option(argc, argv, "--identity");
         if (!value || !*value || !filees_cfapi_widen(value, identity, FILEES_CFAPI_MAX_IDENTITY)) {
             filees_cfapi_fail("identity_invalid", E_INVALIDARG);
             return 2;
+        }
+        if (!strcmp(verb, "shell-register")) {
+            value = option(argc, argv, "--icon");
+            if (!value || !filees_cfapi_widen(value, icon, FILEES_CFAPI_MAX_PATH) || !absolute_path(icon)) {
+                filees_cfapi_fail("icon_invalid", E_INVALIDARG);
+                return 2;
+            }
+            return filees_cfapi_shell_register(root, identity, icon);
         }
         return filees_cfapi_register(root, identity);
     }

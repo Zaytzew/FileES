@@ -126,6 +126,8 @@ func probeRun(t *testing.T, dir, program string, args ...string) {
 }
 
 func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("FILEES_CFAPI_SHELL_PREVIEW", "1")
 	helper := probeTool(t, "FILEES_CFAPI")
 	native := probeTool(t, "FILEES_SVN_PROBE")
 	svnCLI := probeTool(t, "FILEES_PROBE_SVN")
@@ -165,7 +167,11 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(anchor, ".filees"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = exec.Command(helper, "unregister", "--root", anchor).Run() })
+	t.Cleanup(func() {
+		if out, err := exec.Command(helper, "unregister", "--root", anchor).CombinedOutput(); err != nil {
+			t.Errorf("unregister: %s (%v)", out, err)
+		}
+	})
 
 	server := ipcserver.New("unused")
 	state := server.RegisterRepoAccess("atlas", repoURL, anchor, "lokalny", "rw")
@@ -205,6 +211,11 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	}
 
 	// Opened, as an application would.
+	// The seed is durable before connect starts; it is not provider readiness.
+	waitFor(t, 10*time.Second, "the connected provider", func() bool {
+		info, err := manager.call(ctx, "", "info", "--root", anchor)
+		return err == nil && info.OK && info.Status == 1 // CF_PROVIDER_STATUS_IDLE
+	})
 	opened := time.Now()
 	read, err := os.ReadFile(filepath.Join(anchor, "sala.dwg"))
 	if err != nil {

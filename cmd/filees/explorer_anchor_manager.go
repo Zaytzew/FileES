@@ -361,6 +361,13 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 		talk.With("anchor").Warnf("prepare folder icon: %v", err)
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
+	} else if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
+		// Opt-in until ordinary adopted SVN files have truthful Shell states.
+		// Windows otherwise labels them as pending sync after CfRevertPlaceholder.
+		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)
+		if err != nil || !answer.OK {
+			talk.With("anchor").Warnf("register Explorer provider: %s (%s): %v", answer.Error, answer.HResult, err)
+		}
 	}
 	if _, err := os.Stat(anchorSeedPath(record.LocalPath)); err == nil {
 		return nil

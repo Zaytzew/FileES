@@ -9,6 +9,17 @@ import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("Explorer attachment uses the agreed Polish name and explains local-only detach", () => {
+  assert.equal(catalogues.pl["repo.createAnchor"], "Utwórz punkt zaczepienia w Eksploratorze");
+  for (const key of ["select.detachFolder.text", "confirm.detachFolder.text"]) {
+    assert.ok(catalogues.pl[key].includes("tylko pliki już pobrane"));
+    assert.ok(catalogues.pl[key].includes("Niczego nie pobierzemy ani nie usuniemy z serwera"));
+    for (const language of Object.keys(catalogues)) {
+      assert.equal(catalogues[language][key].split("\n\n").length, 3, language + ": " + key);
+    }
+  }
+});
+
 test("language popup supports selection, dismissal and focus without IPC", () => {
   const handlers = new Map();
   const element = () => ({

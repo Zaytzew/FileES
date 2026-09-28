@@ -1463,16 +1463,16 @@ func (c *Controller) startCreateAnchor(ctx context.Context, serverID, repoID str
 		if strings.TrimSpace(name) == "" {
 			name = repo.ID
 		}
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.anchor", "Wybierz folder, w którym powstanie kotwica „%s”"), name)})
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.anchor", "Wybierz folder, w którym powstanie punkt zaczepienia „%s”"), name)})
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — "+err.Error())
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć punktu zaczepienia"), name+" — "+err.Error())
 			return
 		}
 		if picked.Cancelled {
 			return
 		}
 		if strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
-			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — wybrana ścieżka nie jest bezwzględna")
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć punktu zaczepienia"), name+" — wybrana ścieżka nie jest bezwzględna")
 			return
 		}
 		if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID); !ok {
@@ -1481,12 +1481,12 @@ func (c *Controller) startCreateAnchor(ctx context.Context, serverID, repoID str
 		localPath := filepath.Join(filepath.Clean(picked.Path), anchorFolderName(name, repo.ID))
 		actionID := c.startProjectedAction(app.PendingAction{
 			Kind: string(tray.IntentCreateAnchor), ServerID: serverID, RepoID: repoID,
-			Label: c.uiText("pending.anchor", "Tworzenie kotwicy"), ExpectedRepoAttached: true,
+			Label: c.uiText("pending.anchor", "Tworzenie punktu zaczepienia"), ExpectedRepoAttached: true,
 		})
 		operationID, err := creator.CreateAnchor(ctx, serverID, repoID, localPath)
 		if err != nil {
 			c.finishProjectedAction(actionID)
-			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć kotwicy"), name+" — "+c.actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć punktu zaczepienia"), name+" — "+c.actionErrorBody(err))
 			return
 		}
 		c.setPendingAttachment(serverID, repoID, localPath, operationID)
@@ -1495,7 +1495,7 @@ func (c *Controller) startCreateAnchor(ctx context.Context, serverID, repoID str
 			return
 		}
 		c.awaitProjectedAction(actionID)
-		c.notify(ctx, platform.Notification{ID: "repository-anchor." + repoID, Group: "repository-anchor." + repoID, Title: c.uiText("feedback.anchorCreated", "Utworzono kotwicę w Eksploratorze"), Body: name + " — " + localPath, Urgency: platform.UrgencyNormal})
+		c.notify(ctx, platform.Notification{ID: "repository-anchor." + repoID, Group: "repository-anchor." + repoID, Title: c.uiText("feedback.anchorCreated", "Utworzono punkt zaczepienia w Eksploratorze"), Body: name + " — " + localPath, Urgency: platform.UrgencyNormal})
 	}()
 }
 
@@ -1730,7 +1730,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			}
 			title := "Odłącz folder od FileES"
 			presentationKey := "confirm.detachFolder"
-			text := fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.", name, repo.LocalPath)
+			text := fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.\n\nJeśli to punkt zaczepienia w Eksploratorze, zachowane zostaną tylko pliki już pobrane. Niepobrane pozycje znikną z lokalnego folderu. Niczego nie pobierzemy ani nie usuniemy z serwera.", name, repo.LocalPath)
 			if orphan {
 				presentationKey = "confirm.detachOrphan"
 				title = "Odłącz lokalną projekcję"
@@ -1840,7 +1840,7 @@ func (c *Controller) chooseDetachMode(ctx context.Context, name, path string) (d
 		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
 			PresentationKey: "confirm.detachFolder", PresentationArgs: map[string]string{"name": name, "path": path},
 			Title:       "Odłącz folder od FileES",
-			Text:        fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.", name, path),
+			Text:        fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.\n\nJeśli to punkt zaczepienia w Eksploratorze, zachowane zostaną tylko pliki już pobrane. Niepobrane pozycje znikną z lokalnego folderu. Niczego nie pobierzemy ani nie usuniemy z serwera.", name, path),
 			ConfirmText: "Odłącz folder", CancelText: "Anuluj",
 		})
 		return false, err == nil && confirmed
@@ -1848,7 +1848,7 @@ func (c *Controller) chooseDetachMode(ctx context.Context, name, path string) (d
 	value, ok, err := chooser.ChooseOne(ctx, platform.ChoiceRequest{
 		PresentationKey: "select.detachFolder", PresentationArgs: map[string]string{"name": name, "path": path},
 		Title: "Odłącz folder od FileES",
-		Text:  fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Metadane .svn i .filees oraz ikona FileES zostaną usunięte. Usunięty folder trafi do Kosza.", name, path),
+		Text:  fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Metadane .svn i .filees oraz ikona FileES zostaną usunięte. Usunięty folder trafi do Kosza.\n\nJeśli to punkt zaczepienia w Eksploratorze, zachowane zostaną tylko pliki już pobrane. Niepobrane pozycje znikną z lokalnego folderu. Niczego nie pobierzemy ani nie usuniemy z serwera.", name, path),
 		Options: []platform.ChoiceOption{
 			{Value: "keep", Label: "Zachowaj lokalny folder"},
 			{Value: "delete", Label: "Usuń również lokalny folder"},

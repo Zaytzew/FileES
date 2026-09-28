@@ -76,10 +76,15 @@ func TestReleaseChannelPromotionIsolation(t *testing.T) {
 					write("channels/"+channel+suffix+".sig", "old "+channel+" signature")
 				}
 				commands := `
+# Windows drive letters are not valid PATH entries in the POSIX shell.
+# Normalize before installing the stub, including for the retention subprocess.
+FILEES_BIN_WC=$(cd "$FILEES_BIN_WC" && pwd)
+export FILEES_BIN_WC
 mkdir -p "$FILEES_BIN_WC/test-bin"
 cat >"$FILEES_BIN_WC/test-bin/svn" <<'STUB'
 #!/bin/sh
 
+  printf '%s\n' "$*" >>"$FILEES_BIN_WC/svn-calls.log"
   case "$1" in
     status|update|cleanup) exit 0 ;;
     commit) printf '%s\n' "$*" >>"$FILEES_BIN_WC/commits.log" ;;
@@ -148,6 +153,11 @@ signify_stub() {
 						t.Fatal("failed promotion committed")
 					}
 				} else {
+					// Publication invokes retention in a child shell. It must use
+					// the same fake SVN, not escape into the host installation.
+					if !strings.Contains(read("svn-calls.log"), "cleanup --vacuum-pristines") {
+						t.Fatal("retention did not finish through the isolated SVN stub")
+					}
 					commit := read("commits.log")
 					if !strings.Contains(commit, "channels/"+tc.channel+suffix) {
 						t.Fatal("channel absent from commit")

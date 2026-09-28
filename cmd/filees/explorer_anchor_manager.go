@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -20,6 +21,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/cloudfiles"
 	"filees/pkg/errcat"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -28,7 +30,7 @@ import (
 
 // explorerAnchors wires the anchor manager into the IPC server and answers its
 // loop, or nil when the Cloud Files helper is not installed next to the daemon.
-func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store) func(context.Context) {
+func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisioner *daemonProvisioner) func(context.Context) {
 	// A Windows build with the Cloud Files API attaches partially only as an
 	// anchor, helper or not (owner, 2026-09-28): a missing helper makes
 	// anchors unavailable, it does not switch to plain sparse copies.
@@ -44,6 +46,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store) func(con
 		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
 	}
 	ipc.SetAnchorPrecheck(anchors.precheck)
+	provisioner.detachAnchor = anchors.detach
 	return anchors.run
 }
 
@@ -70,7 +73,12 @@ type anchorManager struct {
 	newSVN func(serverID string) (client.Client, error)
 
 	mu      sync.Mutex
-	running map[string]context.CancelFunc
+	running map[string]anchorConnection
+}
+
+type anchorConnection struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // anchorHelperPath finds filees-cfapi next to the daemon. FILEES_CFAPI points a
@@ -180,21 +188,25 @@ func (m *anchorManager) run(ctx context.Context) {
 }
 
 func (m *anchorManager) reconcile(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	wanted := map[string]localrepo.Record{}
 	for _, record := range m.lifecycle.List() {
 		if record.Anchor && record.State == localrepo.StateAttached && filepath.IsAbs(record.LocalPath) {
 			wanted[anchorKey(record)] = record
 		}
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.running == nil {
-		m.running = map[string]context.CancelFunc{}
+		m.running = map[string]anchorConnection{}
 	}
-	for key, stop := range m.running {
+	for key, connection := range m.running {
 		if _, ok := wanted[key]; !ok {
-			stop()
-			delete(m.running, key)
+			connection.cancel()
+			select {
+			case <-connection.done:
+				delete(m.running, key)
+			default:
+			}
 		}
 	}
 	for key, record := range wanted {
@@ -202,9 +214,78 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 			continue
 		}
 		anchorCtx, stop := context.WithCancel(ctx)
-		m.running[key] = stop
-		go m.keep(anchorCtx, record)
+		done := make(chan struct{})
+		m.running[key] = anchorConnection{cancel: stop, done: done}
+		go func() {
+			defer close(done)
+			m.keep(anchorCtx, record)
+		}()
 	}
+}
+
+// detach runs after the durable lifecycle fence and before removing metadata.
+// Waiting includes fetch/adopt jobs and the connected helper's exit. Windows
+// unregisters without fetching: fully hydrated files stay, unhydrated entries
+// disappear locally. No SVN deletion is scheduled (owner, 2026-09-28).
+func (m *anchorManager) detach(ctx context.Context, record localrepo.Record) error {
+	m.mu.Lock()
+	connection, active := m.running[anchorKey(record)]
+	if active {
+		connection.cancel()
+	}
+	m.mu.Unlock()
+	if active {
+		select {
+		case <-connection.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if !filepath.IsAbs(record.LocalPath) {
+		return errors.New("anchor detach requires an absolute folder path")
+	}
+	if _, err := os.Lstat(record.LocalPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil // retry after a successful move to the recycle bin
+		}
+		return err
+	}
+	info, err := m.call(ctx, "", "info", "--root", record.LocalPath)
+	if err != nil {
+		return err
+	}
+	if info.OK && (!info.Ours || !cloudfiles.IsSyncRoot(record.LocalPath)) {
+		return errors.New("refusing to unregister a different sync root or provider")
+	}
+	if !info.OK && !strings.EqualFold(info.HResult, "0x80070186") {
+		return fmt.Errorf("inspect Explorer anchor: %s (%s)", info.Error, info.HResult)
+	}
+	answer, err := m.call(ctx, "", "unregister", "--root", record.LocalPath)
+	if err != nil {
+		return err
+	}
+	// ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT: a previous attempt may have
+	// unregistered successfully and crashed before metadata cleanup.
+	if !answer.OK && !strings.EqualFold(answer.HResult, "0x80070186") {
+		return fmt.Errorf("unregister Explorer anchor: %s (%s)", answer.Error, answer.HResult)
+	}
+	// Windows can skip locked entries during unregister. Do not silently
+	// abandon them, strip metadata, or move the folder to the recycle bin.
+	return filepath.WalkDir(record.LocalPath, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if cloudfiles.IsPlaceholder(path) || cloudfiles.IsSyncRoot(path) {
+			return fmt.Errorf("Explorer placeholder remains after unregister: %s", path)
+		}
+		if entry.IsDir() && (entry.Name() == ".svn" || entry.Name() == ".filees") {
+			return filepath.SkipDir
+		}
+		return nil
+	})
 }
 
 // keep holds one anchor: prepare once, then connect, and connect again after a

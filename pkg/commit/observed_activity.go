@@ -136,6 +136,49 @@ func (s *Service) RecordUpdate(ctx context.Context, repoID, wc, output string) {
 	s.emit(contract.EvActivityChanged, nil)
 }
 
+// RecordIncoming journals what an update of a read-only attachment brought
+// in, with the post-update revision. Read-only copies have no local queue to
+// protect, so this is RecordUpdate without the staging checks. Before, their
+// background updates reached no journal at all and the owner saw only his own
+// commits (2026-09-28). Reports whether anything was recorded.
+func RecordIncoming(ctx context.Context, journal interface{ Record(activity.Entry) error }, cli interface {
+	Revision(context.Context, string) (int64, error)
+}, repoID, wc, output string, logger interface{ Warnf(string, ...any) }) bool {
+	paths := updateActivityPaths(output)
+	if journal == nil || len(paths) == 0 {
+		return false
+	}
+	rev, err := cli.Revision(ctx, wc)
+	if err != nil || rev <= 0 {
+		return false
+	}
+	recorded := false
+	for rel, op := range paths {
+		kind := activity.Modified
+		switch op {
+		case watcher.Added:
+			kind = activity.Added
+		case watcher.Deleted:
+			kind = activity.Deleted
+		}
+		var size *int64
+		if op != watcher.Deleted {
+			if info, err := os.Stat(filepath.Join(wc, filepath.FromSlash(rel))); err == nil && info.Mode().IsRegular() {
+				n := info.Size()
+				size = &n
+			}
+		}
+		if err := journal.Record(activity.Entry{RepoID: repoID, Path: rel, Kind: kind, Stage: activity.Received, Revision: rev, Size: size}); err != nil {
+			if logger != nil {
+				logger.Warnf("incoming activity: %v", err)
+			}
+			continue
+		}
+		recorded = true
+	}
+	return recorded
+}
+
 // SVN update's four notification columns are locale-independent. Accept only
 // plain A/U/D: merges, conflicts, skipped paths and unrecognised output never
 // prove an incoming replacement. Paths are relative to the requested WC;

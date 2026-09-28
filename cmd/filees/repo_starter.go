@@ -761,6 +761,11 @@ type daemonRepoStarter struct {
 	startReadWrite readWriteFactory
 	retryInterval  time.Duration
 	reservations   *reservationProjectionCoordinator
+	// Read-only attachments journal what their updates bring in, like the
+	// read-write path; before, only the owner's own commits reached the
+	// journal (owner, 2026-09-28).
+	activity *activity.Journal
+	ipc      *ipcserver.Server
 }
 
 func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
@@ -1021,7 +1026,16 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		sink = nil
 	}
 	return reposupervisor.StartManaged(lifecycle, func(ctx context.Context) error {
-		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger, s.pause)
+		repoID := runtime.config.ID
+		var received func(context.Context, string)
+		if s.activity != nil {
+			received = func(ctx context.Context, out string) {
+				if commit.RecordIncoming(ctx, s.activity, svn, repoID, wc, out, logger) && s.ipc != nil {
+					s.ipc.Emit(s.ipc.NewRepoEvent(repoID, contract.EvActivityChanged, nil))
+				}
+			}
+		}
+		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger, received, s.pause)
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationReleaseFunc(nil)

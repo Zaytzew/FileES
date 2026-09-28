@@ -125,7 +125,7 @@ func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runReadOnlyRepo(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: 10 * time.Millisecond}, rs, fake, nil, talk.With("test-readonly"))
+		runReadOnlyRepo(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: 10 * time.Millisecond}, rs, fake, nil, talk.With("test-readonly"), nil)
 	}()
 
 	select {
@@ -171,7 +171,7 @@ func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
 	fake := &updateOnlyClient{called: make(chan struct{}, 2)}
 	done := make(chan struct{})
 	go func() {
-		runReadOnlyRepo(t.Context(), config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, nil, talk.With("test-readonly-move"))
+		runReadOnlyRepo(t.Context(), config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, nil, talk.With("test-readonly-move"), nil)
 		close(done)
 	}()
 	select {
@@ -208,5 +208,5 @@ func TestReadOnlyCycleHonoursGeneralPause(t *testing.T) {
 	state := server.RegisterRepo("docs", "svn://example/docs", wc)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
-	runReadOnlyRepo(ctx, config.Repo{ID: "docs", LocalPath: wc, PollInterval: time.Millisecond}, state, nil, nil, talk.With("pause-test"), p)
+	runReadOnlyRepo(ctx, config.Repo{ID: "docs", LocalPath: wc, PollInterval: time.Millisecond}, state, nil, nil, talk.With("pause-test"), nil, p)
 }

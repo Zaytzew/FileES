@@ -373,7 +373,9 @@ func recordSyncFailure(sink *errmap.Sink, lg talk.Logger, what string, err error
 	lg.Warnf("%s [%s]: %v", what, entry.Code, err)
 }
 
-func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger, pauses ...*runtime.SyncPause) {
+// received, when set, journals what an update brought in; the read-write
+// path does the same through commit.Service.RecordUpdate.
+func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger, received func(context.Context, string), pauses ...*runtime.SyncPause) {
 	var pause *runtime.SyncPause
 	if len(pauses) > 0 {
 		pause = pauses[0]
@@ -434,6 +436,9 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		rs.SetConnectivity(contract.ConnOnline)
 		rs.SetState(contract.StateActive)
 		rs.SetLastSyncAt(time.Now())
+		if received != nil {
+			received(ctx, out)
+		}
 		scanShoutsAfterUpdate(ctx, cli, repo, rs, lg)
 		return true
 	}

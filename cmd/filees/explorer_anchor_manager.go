@@ -355,6 +355,13 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 			return fmt.Errorf("register: %s %s", answer.Error, answer.HResult)
 		}
 	}
+	// Also refresh already seeded points after an upgrade. Decoration is best
+	// effort; an icon failure must not stop registration or file delivery.
+	if icon, err := anchorFolderIconPath(); err != nil {
+		talk.With("anchor").Warnf("prepare folder icon: %v", err)
+	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
+		talk.With("anchor").Warnf("mark anchor folder: %v", err)
+	}
 	if _, err := os.Stat(anchorSeedPath(record.LocalPath)); err == nil {
 		return nil
 	}

@@ -49,15 +49,19 @@ func managedFolderIconPath() (string, error) {
 // Shelf decoration reuses the official folder artwork with the same violet
 // purpose dot used by the desktop. Every embedded ICO size retains its artwork.
 func shelfFolderIconPath() (string, error) {
+	return decoratedFolderIconPath("filees-shelf.ico", shelfFolderIconBytes)
+}
+
+func decoratedFolderIconPath(name string, artwork func() ([]byte, error)) (string, error) {
 	base, err := managedFolderIconPath()
 	if err != nil {
 		return "", err
 	}
-	data, err := shelfFolderIconBytes()
+	data, err := artwork()
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(filepath.Dir(base), "filees-shelf.ico")
+	path := filepath.Join(filepath.Dir(base), name)
 	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
 		return path, nil
 	}
@@ -68,6 +72,21 @@ func shelfFolderIconPath() (string, error) {
 }
 
 func shelfFolderIconBytes() ([]byte, error) {
+	return decoratedFolderIconBytes(func(canvas *image.NRGBA) {
+		b := canvas.Bounds()
+		radius := b.Dx() / 6
+		cx, cy := b.Max.X-radius-1, b.Max.Y-radius-1
+		for y := cy - radius; y <= cy+radius; y++ {
+			for x := cx - radius; x <= cx+radius; x++ {
+				if (x-cx)*(x-cx)+(y-cy)*(y-cy) <= radius*radius {
+					canvas.Set(x, y, color.NRGBA{R: 115, G: 101, B: 207, A: 255})
+				}
+			}
+		}
+	})
+}
+
+func decoratedFolderIconBytes(decorate func(*image.NRGBA)) ([]byte, error) {
 	n := int(binary.LittleEndian.Uint16(managedFolderIcon[4:6]))
 	header := append([]byte(nil), managedFolderIcon[:6+16*n]...)
 	result := append([]byte(nil), header...)
@@ -85,15 +104,7 @@ func shelfFolderIconBytes() ([]byte, error) {
 		b := img.Bounds()
 		canvas := image.NewNRGBA(b)
 		draw.Draw(canvas, b, img, b.Min, draw.Src)
-		radius := b.Dx() / 6
-		cx, cy := b.Max.X-radius-1, b.Max.Y-radius-1
-		for y := cy - radius; y <= cy+radius; y++ {
-			for x := cx - radius; x <= cx+radius; x++ {
-				if (x-cx)*(x-cx)+(y-cy)*(y-cy) <= radius*radius {
-					canvas.Set(x, y, color.NRGBA{R: 115, G: 101, B: 207, A: 255})
-				}
-			}
-		}
+		decorate(canvas)
 		var encoded bytes.Buffer
 		if err := png.Encode(&encoded, canvas); err != nil {
 			return nil, err

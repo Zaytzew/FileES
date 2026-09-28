@@ -325,7 +325,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	// of his project directories are being kept and which are not without
 	// opening anything. Best effort in both halves: a repository that syncs
 	// perfectly must never fail to start because a decoration did.
-	if iconPath, err := managedFolderIconPath(); err != nil {
+	if iconPath, err := repositoryFolderIconPath(repo.Anchor); err != nil {
 		logger.Warnf("prepare folder icon: %v", err)
 	} else if err := markManagedFolder(wc, iconPath); err != nil {
 		logger.Warnf("mark managed folder: %v", err)

@@ -42,6 +42,7 @@ type Repo struct {
 	Purpose string `json:"-"`
 	// Sparse is daemon-local too: the working copy holds only chosen paths.
 	Sparse         bool          `json:"-"`
+	Anchor         bool          `json:"-"` // daemon-local lifecycle identity, never inferred from a folder name
 	RealmID        string        `json:"-"` // z clientview.View.RealmID (własna tożsamość klienta)
 	OwnerRealmID   string        `json:"-"` // z clientview.View.Repository.OwnerRealmID (właściciel tego repo)
 	WatchInterval  time.Duration `json:"-"` // z pola JSON "watch_interval"

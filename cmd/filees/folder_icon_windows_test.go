@@ -85,6 +85,49 @@ func TestAManagedFolderGetsTheIconWithoutBecomingUnwritable(t *testing.T) {
 	}
 }
 
+func TestAnchorFolderIconMarksOnlyRepositoryChildAndCleansUp(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	parent := t.TempDir()
+	root, sibling := filepath.Join(parent, "Project-A"), filepath.Join(parent, "Project-B")
+	for _, dir := range []string{root, sibling} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	icon, err := anchorFolderIconPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := markManagedFolder(root, icon); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "desktop.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decodeUTF16LE(t, raw), "IconResource="+icon+",0") {
+		t.Fatal("wrong icon")
+	}
+	for _, untouched := range []string{parent, sibling} {
+		if _, err := os.Stat(filepath.Join(untouched, "desktop.ini")); !os.IsNotExist(err) {
+			t.Fatal("parent or sibling decorated")
+		}
+	}
+	file := filepath.Join(root, "downloaded.txt")
+	if err := os.WriteFile(file, []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := unmarkManagedFolder(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "desktop.ini")); !os.IsNotExist(err) {
+		t.Fatal("decoration not removed")
+	}
+	if raw, err := os.ReadFile(file); err != nil || string(raw) != "kept" {
+		t.Fatal("downloaded file changed")
+	}
+}
+
 func TestMarkingIsIdempotentAndRewritesNothingUnchanged(t *testing.T) {
 	root := t.TempDir()
 	icon := filepath.Join(t.TempDir(), "filees-folder.ico")

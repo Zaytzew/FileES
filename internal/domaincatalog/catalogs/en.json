@@ -46,6 +46,7 @@
     "head.anchor_attached": "This repository already has a working copy here",
     "head.anchor_refused": "This folder cannot become an Explorer anchor",
     "head.partial_is_anchor": "On this computer a partial copy is an Explorer anchor",
+    "head.anchor_under_provider": "Another program (such as Nextcloud or OneDrive) already synchronises this folder — choose a folder outside it",
     "intent.ambiguous": "Sending is on hold: resolve the ambiguous changes in the folder settings",
     "intent.resolution_refused": "This decision can no longer be accepted. Open the change plan again; the files, the queue or your access may have changed",
     "lock.held_by_other": [
@@ -127,6 +128,7 @@
     "repo.detach_failed": "Detaching the repository failed",
     "repo.detach_required_forbidden": "A required repository cannot be detached",
     "repo.detach_unpublished_changes": "The folder has local changes that were not published",
+    "repo.attach_target_not_empty": "The chosen folder is not empty — an anchor or attachment is created only in a new or empty folder",
     "repo.editing_policy_failed": "The reservation policy could not be changed",
     "repo.editing_policy_forbidden": "Only the owner can change the reservation policy",
     "repo.editing_policy_unavailable": "Changing the reservation policy is not available right now",

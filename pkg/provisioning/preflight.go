@@ -90,7 +90,10 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 		return LocalPathCheck{}, err
 	}
 	if mode == LocalPathAttach && !empty {
-		return LocalPathCheck{}, errors.New("attach target must be absent or empty")
+		// Its own key, so the interface can say it plainly (an anchor in a
+		// folder with files would mix them with placeholders; owner,
+		// 2026-09-28).
+		return LocalPathCheck{}, errcat.New("repo.attach_target_not_empty", nil, errors.New("attach target must be absent or empty"))
 	}
 	return LocalPathCheck{CanonicalPath: canonical, Exists: true, Empty: empty}, nil
 }

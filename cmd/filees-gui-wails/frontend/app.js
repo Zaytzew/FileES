@@ -439,6 +439,7 @@ function updateRetentionCountdowns() {
 }
 
 const repoIcons = {
+  anchor: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14M7 11h10M5 14a7 7 0 0 0 14 0"/></svg>',
   retry: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg>',
   lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
@@ -603,6 +604,9 @@ function renderRepo(repo) {
     repo.can_browse_head ? repoAction("browse_head", t("repo.browseHead"), repoIcons.browse, "browse") : "",
     deleted && repo.local_copy_preserved ? `<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="${escapeHTML(t("copy.info"))}" aria-label="${escapeHTML(t("copy.info"))}" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">` + repoIcons.info + `</button>` : "",
     repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
+    // A folder in Explorer with placeholders of the whole tree (Windows builds
+    // with the Cloud Files API; owner, 2026-09-28).
+    repo.can_create_anchor ? repoAction("create_anchor", t("repo.createAnchor"), repoIcons.anchor, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", t("repo.recovery"), repoIcons.recovery, "recovery") : "",
     repo.can_dismiss_recovery ? repoAction("dismiss_recovery", t("repo.dismissRecovery"), repoIcons.remove, "recovery-dismiss") : "",
     // A deletion stopped on an error: the folder window that offers this is

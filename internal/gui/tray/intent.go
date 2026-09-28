@@ -25,7 +25,10 @@ const (
 	IntentDismissRecovery       IntentKind = "dismiss_recovery"
 	// Resumes a repository deletion stopped on an error (server deletion,
 	// archive issuance or local cleanup) from its row.
-	IntentRetryLifecycle     IntentKind = "retry_lifecycle"
+	IntentRetryLifecycle IntentKind = "retry_lifecycle"
+	// Makes a folder the Explorer anchor of a repository without a copy here
+	// (Windows builds with the Cloud Files API; owner, 2026-09-28).
+	IntentCreateAnchor       IntentKind = "create_anchor"
 	IntentJournal            IntentKind = "journal"
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"

@@ -46,6 +46,7 @@
     "head.anchor_attached": "Dieses Repository hat hier bereits eine Arbeitskopie",
     "head.anchor_refused": "Dieser Ordner kann kein Explorer-Anker werden",
     "head.partial_is_anchor": "Auf diesem Computer ist eine Teilkopie ein Explorer-Anker",
+    "head.anchor_under_provider": "Ein anderes Programm (z. B. Nextcloud oder OneDrive) synchronisiert diesen Ordner bereits — wählen Sie einen Ordner außerhalb",
     "intent.ambiguous": "Der Versand ist angehalten: Klären Sie die mehrdeutigen Änderungen in den Ordnereinstellungen",
     "intent.resolution_refused": "Diese Entscheidung kann nicht mehr angenommen werden. Öffnen Sie den Änderungsplan erneut; Dateien, Warteschlange oder Zugriffsrechte könnten sich geändert haben",
     "lock.held_by_other": [
@@ -127,6 +128,7 @@
     "repo.detach_failed": "Trennen des Repositorys fehlgeschlagen",
     "repo.detach_required_forbidden": "Ein erforderliches Repository kann nicht getrennt werden",
     "repo.detach_unpublished_changes": "Der Ordner hat lokale Änderungen, die nicht veröffentlicht wurden",
+    "repo.attach_target_not_empty": "Der gewählte Ordner ist nicht leer — ein Anker oder eine Verbindung entsteht nur in einem neuen oder leeren Ordner",
     "repo.editing_policy_failed": "Die Reservierungsrichtlinie konnte nicht geändert werden",
     "repo.editing_policy_forbidden": "Nur der Eigentümer kann die Reservierungsrichtlinie ändern",
     "repo.editing_policy_unavailable": "Die Reservierungsrichtlinie kann derzeit nicht geändert werden",

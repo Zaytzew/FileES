@@ -46,6 +46,7 @@
     "head.anchor_attached": "Ce dépôt a déjà une copie de travail ici",
     "head.anchor_refused": "Ce dossier ne peut pas devenir un ancrage de l’Explorateur",
     "head.partial_is_anchor": "Sur cet ordinateur, une copie partielle est un ancrage de l’Explorateur",
+    "head.anchor_under_provider": "Un autre programme (comme Nextcloud ou OneDrive) synchronise déjà ce dossier — choisissez un dossier en dehors",
     "intent.ambiguous": "L’envoi est suspendu : résolvez les modifications ambiguës dans les paramètres du dossier",
     "intent.resolution_refused": "Cette décision ne peut plus être acceptée. Rouvrez le plan de modifications ; les fichiers, la file d’attente ou vos accès ont peut-être changé",
     "lock.held_by_other": [
@@ -127,6 +128,7 @@
     "repo.detach_failed": "Échec de la déconnexion du dépôt",
     "repo.detach_required_forbidden": "Un dépôt obligatoire ne peut pas être déconnecté",
     "repo.detach_unpublished_changes": "Le dossier contient des modifications locales non publiées",
+    "repo.attach_target_not_empty": "Le dossier choisi n’est pas vide — un ancrage ou une liaison ne se crée que dans un dossier nouveau ou vide",
     "repo.editing_policy_failed": "Impossible de modifier les règles de réservation",
     "repo.editing_policy_forbidden": "Seul le propriétaire peut modifier les règles de réservation",
     "repo.editing_policy_unavailable": "La modification des règles de réservation est indisponible pour le moment",

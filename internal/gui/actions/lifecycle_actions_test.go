@@ -590,3 +590,50 @@ func TestControllerDetachCanAlsoDeleteTheFolderAfterAskingAboutUnpublishedChange
 	default:
 	}
 }
+
+type anchorAttacher struct {
+	fakeRepositoryAttacher
+	anchors chan attachCall
+}
+
+func (a *anchorAttacher) CreateAnchor(_ context.Context, serverID, repoID, localPath string) (string, error) {
+	a.anchors <- attachCall{serverID: serverID, repoID: repoID, localPath: localPath}
+	return "anchor-" + repoID, nil
+}
+
+// Owner, 2026-09-28: "Utwórz kotwicę w Eksploratorze". The user picks where;
+// the anchor is a new folder named after the repository inside it.
+func TestControllerCreatesAnAnchorInANewFolderNamedAfterTheRepository(t *testing.T) {
+	attacher := &anchorAttacher{fakeRepositoryAttacher: fakeRepositoryAttacher{calls: make(chan attachCall, 1)}, anchors: make(chan attachCall, 1)}
+	parent := filepath.Join(os.TempDir(), "FileES-Kotwice")
+	var pickerTitle string
+	platformFake := &platformtest.Fake{PickFolderFunc: func(_ context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
+		pickerTitle = request.Title
+		return platform.PickFolderResult{Path: parent}, nil
+	}}
+	view := app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true, contract.CapRepoExplorerAnchor: true},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{
+			{ID: "oppo", DisplayName: "Oppo: Reno", State: contract.StateUnattached},
+		}}},
+	}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake,
+		RepositoryAttacher: attacher, Notifier: platformFake, CreationStatusPollInterval: time.Millisecond,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateAnchor, ServerID: "office", RepoID: "oppo"})
+	call := awaitCh(t, attacher.anchors, "anchor")
+	if call.serverID != "office" || call.repoID != "oppo" || call.localPath != filepath.Join(parent, "Oppo_ Reno") {
+		t.Fatalf("anchor call = %+v", call)
+	}
+	if !strings.Contains(pickerTitle, "Oppo: Reno") {
+		t.Fatalf("picker title = %q", pickerTitle)
+	}
+	select {
+	case plain := <-attacher.calls:
+		t.Fatalf("a full attachment was started too: %+v", plain)
+	default:
+	}
+}

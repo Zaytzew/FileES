@@ -93,3 +93,22 @@ func TestAnAnchorNeedsTheSameTrustAsBrowsing(t *testing.T) {
 		t.Fatal("an anchor was created without an activation")
 	}
 }
+
+// Where anchors are the partial mode, a plain sparse copy is refused, helper
+// or not; the capability says which mode this daemon has (2026-09-28).
+func TestPartialAnchorModeRefusesPlainSparseCopies(t *testing.T) {
+	server, stub := anchorServer(t, nil) // the helper is missing: still anchor mode
+	server.SetPartialAnchorMode(true)
+	if !hasCapability(server.capabilities(), contract.CapRepoPartialAnchor) || hasCapability(server.capabilities(), contract.CapRepoExplorerAnchor) {
+		t.Fatalf("capabilities = %v", server.capabilities())
+	}
+	response := server.dispatch(lifecycleRequest(contract.CmdRepoHeadMaterialize,
+		contract.RepoHeadMaterializePayload{ServerID: "primary", RepoID: "repo-1", Path: "a.dwg", LocalPath: filepath.Join(t.TempDir(), "Docs")}))
+	if response.Status == contract.StatusOK || response.Error == nil || response.Error.Code != "HEAD-2012" || stub.anchorCalls != 0 {
+		t.Fatalf("sparse copy in anchor mode: %+v", response.Error)
+	}
+	server.SetPartialAnchorMode(false)
+	if hasCapability(server.capabilities(), contract.CapRepoPartialAnchor) {
+		t.Fatal("sparse mode advertised as anchor mode")
+	}
+}

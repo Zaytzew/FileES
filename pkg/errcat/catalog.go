@@ -227,6 +227,7 @@ var specs = []Spec{
 	{"HEAD-2009", "head.anchor_unavailable", SevError, HintNone, nil, "Explorer anchors are not available on this computer"},
 	{"HEAD-2010", "head.anchor_attached", SevError, HintNone, nil, "The repository already has a working copy here"},
 	{"HEAD-2011", "head.anchor_refused", SevError, HintRequireAction, nil, "This folder cannot become an Explorer anchor"},
+	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid"},

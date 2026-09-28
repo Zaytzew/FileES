@@ -179,3 +179,39 @@ func TestWindowsMSIReplacesSelfUpdatedFilesAndRestartsThePair(t *testing.T) {
 		t.Fatal("pair actions are not scheduled around the file replacement")
 	}
 }
+
+// The Explorer anchor helper ships in alpha Windows bundles only (2026-09-28;
+// before, no release carried it). The script, the MSI and the self-updater
+// have to agree: the script requires it for alpha and refuses it for beta,
+// the MSI includes it when the bundle has it, and the updater installs it as
+// an optional file.
+func TestTheAnchorHelperIsPackagedForAlphaOnly(t *testing.T) {
+	script, err := os.ReadFile("build-client-bundle.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`cp "$FILEES_CFAPI_HELPER" "$out/bin/filees-cfapi.exe"`, `"${FILEES_RELEASE_CHANNEL:-}" = alpha ] && [ -z "${FILEES_CFAPI_HELPER:-}" ]`, `bundle must not carry the Explorer anchor helper`} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf("bundle script lacks %q", want)
+		}
+	}
+	wxs, err := os.ReadFile("windows/filees.wxs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(wxs), `<?if $(var.WithCfapi) = "1" ?>`) != 2 || !strings.Contains(string(wxs), `$(var.SourceDir)\filees-cfapi.exe`) {
+		t.Error("the MSI does not include the helper conditionally")
+	}
+	msi, err := os.ReadFile("windows/build-msi.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(msi), `-d "WithCfapi=$withCfapi"`) {
+		t.Error("build-msi.ps1 does not pass WithCfapi")
+	}
+	for _, name := range clientupdate.RequiredBundleFiles() {
+		if name == "bin/filees-cfapi.exe" {
+			t.Error("the helper is required from every bundle, beta included")
+		}
+	}
+}

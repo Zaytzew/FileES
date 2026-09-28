@@ -233,3 +233,23 @@ cleanup; repozytorium serwerowe nadal przechowuje historyczne rewizje.
 Nieudany podpis/promocja nie uruchamia retencji. Błąd późniejszego sprzątania
 jest zgłaszany z informacją, że publikacja już się udała; ponowienie promotora
 po usunięciu przyczyny ponawia sprzątanie. Lokalne zmiany blokują retencję.
+
+## Alfa Windows: pomocnik kotwicy w paczce (od 2026-09-28)
+
+Alfa Windows wymaga `FILEES_CFAPI_HELPER` — `filees-cfapi.exe` zbudowanego
+przez `packaging/windows/build-cfapi-helper.ps1` (statyczny runtime C, tylko
+biblioteki systemowe, sprawdzane `dumpbin`):
+
+```powershell
+$bt = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools'
+& packaging\windows\build-cfapi-helper.ps1 `
+  -CMake "$bt\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" `
+  -OutputDir dist\cfapi-helper `
+  -Dumpbin "$bt\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe"
+```
+
+potem `FILEES_CFAPI_HELPER=dist/cfapi-helper/filees-cfapi.exe` obok
+`FILEES_NATIVE_RUNTIME` przy `tools/prepare-client-release-windows.sh`.
+Paczka niesie `bin/filees-cfapi.exe`, samoaktualizacja instaluje go jako plik
+opcjonalny, MSI ma komponent tylko wtedy, gdy paczka go zawiera. Beta i
+stable (`nocfapi`) odmawiają paczki z pomocnikiem.

@@ -137,6 +137,16 @@
       <File Id="FileESLauncherScript" Source="$(var.SourceDir)\start-filees.vbs" KeyPath="yes" />
     </Component>
 
+    <!-- The Explorer anchor helper, next to the daemon that looks for it there.
+         Only alpha bundles carry it; beta and the Store are built without the
+         Cloud Files API (build-msi.ps1 sets WithCfapi). Before 2026-09-28 no
+         package installed it at all. -->
+    <?if $(var.WithCfapi) = "1" ?>
+    <Component Id="FileESAnchorHelper" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESAnchorHelperExe" Source="$(var.SourceDir)\filees-cfapi.exe" KeyPath="yes" />
+    </Component>
+    <?endif?>
+
     <Component Id="FileESFolderIcon" Directory="INSTALLFOLDER" Guid="*">
       <File Id="FileESFolderIconFile" Source="$(var.SourceDir)\filees-folder.ico" KeyPath="yes" />
     </Component>
@@ -175,6 +185,9 @@
       <ComponentRef Id="FileESSupervisor" />
       <ComponentRef Id="FileESLauncher" />
       <ComponentRef Id="FileESLegacyLauncher" />
+      <?if $(var.WithCfapi) = "1" ?>
+      <ComponentRef Id="FileESAnchorHelper" />
+      <?endif?>
       <ComponentRef Id="FileESFolderIcon" />
       <ComponentRef Id="FileESRegistry" />
       <ComponentRef Id="FileESLogs" />

@@ -15,4 +15,8 @@ target_compile_definitions(filees-cfapi PRIVATE _WIN32_WINNT=0x0A00 NTDDI_VERSIO
 target_link_libraries(filees-cfapi PRIVATE CldApi)
 if(MSVC)
   target_compile_options(filees-cfapi PRIVATE /W4 /utf-8)
+  # Static C runtime: the helper ships next to filees.exe, where the native
+  # runtime's DLLs are not (they are unpacked into a cache), so it may depend
+  # on system libraries only (packaging/windows/build-cfapi-helper.ps1 checks).
+  set_property(TARGET filees-cfapi PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()

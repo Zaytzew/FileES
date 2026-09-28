@@ -50,10 +50,10 @@ func newInstaller(installDir, configPath string) DirectoryInstaller {
 // The installer's own work starts once a bundle is on disk.
 func applyBundle(t *testing.T, installer DirectoryInstaller, bundleRoot string) error {
 	t.Helper()
-	files := installer.managedFiles()
-	if err := validateDirectoryBundle(bundleRoot, files); err != nil {
+	if err := validateDirectoryBundle(bundleRoot, installer.managedFiles()); err != nil {
 		return err
 	}
+	files := presentFiles(bundleRoot, installer.managedFiles())
 	if err := os.MkdirAll(installer.Paths.InstallDir, 0o755); err != nil {
 		return err
 	}
@@ -213,5 +213,28 @@ func TestABundleMissingItsVersionIsRefused(t *testing.T) {
 	err := validateDirectoryBundle(writeBundle(t, contents), installer.managedFiles())
 	if err == nil || !strings.Contains(err.Error(), "VERSION") {
 		t.Fatalf("error = %v; a bundle nobody can identify afterwards is not a release", err)
+	}
+}
+
+// The Explorer anchor helper is installed when an alpha bundle carries it and
+// is not required from a beta bundle, which is built without it (2026-09-28).
+func TestTheAnchorHelperIsOptional(t *testing.T) {
+	installDir := t.TempDir()
+	withHelper := completeBundle("0.1.18.1692")
+	withHelper["bin/filees-cfapi.exe"] = "anchor helper"
+	installer := newInstaller(installDir, "")
+	if err := applyBundle(t, installer, writeBundle(t, withHelper)); err != nil {
+		t.Fatalf("alpha bundle: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(installDir, "filees-cfapi.exe")); err != nil || string(got) != "anchor helper" {
+		t.Fatalf("helper = %q, %v", got, err)
+	}
+	if err := applyBundle(t, installer, writeBundle(t, completeBundle("0.1.18.1693"))); err != nil {
+		t.Fatalf("a bundle without the helper was refused: %v", err)
+	}
+	for _, name := range RequiredBundleFiles() {
+		if name == "bin/filees-cfapi.exe" {
+			t.Fatal("the helper is required from every bundle")
+		}
 	}
 }

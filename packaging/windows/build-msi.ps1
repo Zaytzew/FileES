@@ -131,6 +131,14 @@ try {
     Copy-Item (Join-Path $bundle "autostart\start-filees.ps1") $staging
     Copy-Item (Join-Path $bundle "autostart\start-filees.vbs") $staging
     Copy-Item (Join-Path $PSScriptRoot "License.rtf") $staging
+    # The Explorer anchor helper ships only in alpha bundles (2026-09-28);
+    # the package includes it exactly when the bundle carries it.
+    $withCfapi = "0"
+    $cfapiHelper = Join-Path $bundle "bin\filees-cfapi.exe"
+    if (Test-Path -LiteralPath $cfapiHelper) {
+        Copy-Item $cfapiHelper $staging
+        $withCfapi = "1"
+    }
     Copy-Item (Join-Path $PSScriptRoot "..\..\cmd\filees\assets\filees-folder.ico") $staging
 
     & $wixCommand build $Wxs `
@@ -140,6 +148,7 @@ try {
         -d "SourceDir=$staging" `
         -d "ProductVersion=$msiVersion" `
         -d "BundleVersion=$bundleVersion" `
+        -d "WithCfapi=$withCfapi" `
         -out $Output
     if ($LASTEXITCODE -ne 0) {
         throw "WiX build failed with exit code $LASTEXITCODE"

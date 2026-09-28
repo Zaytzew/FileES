@@ -52,6 +52,10 @@ type managedFile struct {
 	source string
 	target string
 	detail string
+	// optional files are installed when the bundle carries them and are not
+	// required otherwise: the Explorer anchor helper ships in alpha only
+	// (beta and the Store are built without the Cloud Files API).
+	optional bool
 }
 
 // windowsBundleFiles is the layout a windows-amd64 bundle must have.
@@ -63,14 +67,32 @@ type managedFile struct {
 func (installer DirectoryInstaller) managedFiles() []managedFile {
 	dir := installer.Paths.InstallDir
 	return []managedFile{
-		{"bin/filees.exe", filepath.Join(dir, "filees.exe"), "demon"},
-		{"bin/filees-gui-wails.exe", filepath.Join(dir, "filees-gui-wails.exe"), "interfejs"},
-		{"autostart/start-filees.ps1", filepath.Join(dir, "start-filees.ps1"), "nadzorca autostartu"},
-		{"bin/filees-launch.exe", filepath.Join(dir, "filees-launch.exe"), "uruchamianie bez okna"},
+		{"bin/filees.exe", filepath.Join(dir, "filees.exe"), "demon", false},
+		{"bin/filees-gui-wails.exe", filepath.Join(dir, "filees-gui-wails.exe"), "interfejs", false},
+		{"autostart/start-filees.ps1", filepath.Join(dir, "start-filees.ps1"), "nadzorca autostartu", false},
+		{"bin/filees-launch.exe", filepath.Join(dir, "filees-launch.exe"), "uruchamianie bez okna", false},
 		// Kept for shortcuts an MSI older than filees-launch.exe created: they
 		// target wscript and this file until the next MSI upgrade rewrites them.
-		{"autostart/start-filees.vbs", filepath.Join(dir, "start-filees.vbs"), "uruchamianie bez okna (starsze skróty)"},
+		{"autostart/start-filees.vbs", filepath.Join(dir, "start-filees.vbs"), "uruchamianie bez okna (starsze skróty)", false},
+		// The Explorer anchor helper; the daemon looks for it next to itself.
+		// Before 2026-09-28 no release carried it: the only copy was a manual
+		// one on the owner's station, so a clean install had no anchor.
+		{"bin/filees-cfapi.exe", filepath.Join(dir, "filees-cfapi.exe"), "kotwica w Eksploratorze", true},
 	}
+}
+
+// presentFiles drops optional files the staged bundle does not carry.
+func presentFiles(root string, files []managedFile) []managedFile {
+	present := make([]managedFile, 0, len(files))
+	for _, file := range files {
+		if file.optional {
+			if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(file.source))); err != nil {
+				continue
+			}
+		}
+		present = append(present, file)
+	}
+	return present
 }
 
 func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releaseenvelope.Resolved) ([]contract.UpdateChange, bool, error) {
@@ -86,7 +108,7 @@ func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releasee
 	if err := validateDirectoryBundle(staged.Root, installer.managedFiles()); err != nil {
 		return nil, false, err
 	}
-	files := installer.managedFiles()
+	files := presentFiles(staged.Root, installer.managedFiles())
 	changes := make([]contract.UpdateChange, 0, len(files)+1)
 	for _, file := range files {
 		action, err := compareFile(filepath.Join(staged.Root, filepath.FromSlash(file.source)), file.target)
@@ -121,10 +143,10 @@ func (installer DirectoryInstaller) Apply(ctx context.Context, resolved *release
 	if err != nil {
 		return err
 	}
-	files := installer.managedFiles()
-	if err := validateDirectoryBundle(staged.Root, files); err != nil {
+	if err := validateDirectoryBundle(staged.Root, installer.managedFiles()); err != nil {
 		return err
 	}
+	files := presentFiles(staged.Root, installer.managedFiles())
 	if err := os.MkdirAll(paths.InstallDir, 0o755); err != nil {
 		return err
 	}
@@ -250,7 +272,7 @@ func (installer DirectoryInstaller) normalizedPaths() (DirectoryPaths, error) {
 func validateDirectoryBundle(root string, files []managedFile) error {
 	required := make([]string, 0, len(files)+2)
 	required = append(required, "VERSION", "SHA256SUMS")
-	for _, file := range files {
+	for _, file := range presentFiles(root, files) {
 		required = append(required, file.source)
 	}
 	sort.Strings(required)
@@ -310,7 +332,9 @@ func RequiredBundleFiles() []string {
 	required := make([]string, 0, len(files)+2)
 	required = append(required, "VERSION", "SHA256SUMS")
 	for _, file := range files {
-		required = append(required, file.source)
+		if !file.optional {
+			required = append(required, file.source)
+		}
 	}
 	sort.Strings(required)
 	return required

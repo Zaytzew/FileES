@@ -18,6 +18,12 @@ type fakeHeadBrowserDaemon struct {
 	cats         []contract.RepoHeadCatPayload
 	materialized []contract.RepoHeadMaterializePayload
 	fills        []contract.RepoHeadFillPayload
+	anchors      []contract.RepoAnchorCreatePayload
+}
+
+func (f *fakeHeadBrowserDaemon) AnchorCreate(_ context.Context, p contract.RepoAnchorCreatePayload) (*contract.RepoHeadWriteResult, error) {
+	f.anchors = append(f.anchors, p)
+	return &contract.RepoHeadWriteResult{LocalPath: p.LocalPath, State: "attaching", OperationID: "anchor-op"}, nil
 }
 
 func (f *fakeHeadBrowserDaemon) HeadList(_ context.Context, p contract.RepoHeadListPayload) (*contract.RepoHeadListResult, error) {
@@ -198,5 +204,29 @@ func TestHeadBrowserOpenLocalStaysInsideTheCopy(t *testing.T) {
 	want := filepath.Join(copyRoot, "art", "model.blend")
 	if len(opened) != 1 || opened[0] != want {
 		t.Fatalf("opened = %v, want %s", opened, want)
+	}
+}
+
+// One kind of partial attachment per build (owner, 2026-09-28): where the
+// daemon attaches partially as Explorer anchors, the first path makes the
+// chosen folder an anchor instead of a plain sparse copy.
+func TestFirstPathMakesAnAnchorWhereAnchorsAreThePartialMode(t *testing.T) {
+	snapshot := headBrowserSnapshot()
+	snapshot.Capabilities = append(snapshot.Capabilities, contract.CapRepoPartialAnchor, contract.CapRepoExplorerAnchor)
+	service, daemon := newTestHeadBrowser(snapshot)
+	parent := filepath.Join(filepath.FromSlash("/home/user"), "Kotwice")
+	service.attachPlatform(func(context.Context, string, string) (string, error) { return parent, nil }, nil)
+	if err := service.Open("office", "remote"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Materialize("art/model.blend")
+	if err != nil || result.OperationID != "anchor-op" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if len(daemon.materialized) != 0 || len(daemon.anchors) != 1 {
+		t.Fatalf("sparse copies=%d anchors=%d", len(daemon.materialized), len(daemon.anchors))
+	}
+	if got := daemon.anchors[0]; got.ServerID != "office" || got.RepoID != "remote" || got.LocalPath != filepath.Join(parent, "Projekt_ Atlas") {
+		t.Fatalf("anchor payload = %+v", got)
 	}
 }

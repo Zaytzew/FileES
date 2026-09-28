@@ -25,6 +25,21 @@ func (s *Server) SetAnchorPrecheck(check AnchorPrecheck) {
 	s.mu.Unlock()
 }
 
+// SetPartialAnchorMode makes Explorer anchors this daemon's only kind of
+// partial attachment (Windows builds with the Cloud Files API). A plain sparse
+// copy is then refused (HEAD-2012), also when the helper is missing.
+func (s *Server) SetPartialAnchorMode(anchor bool) {
+	s.mu.Lock()
+	s.partialAnchor = anchor
+	s.mu.Unlock()
+}
+
+func (s *Server) partialAnchorMode() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.partialAnchor
+}
+
 func (s *Server) anchorPrecheck() AnchorPrecheck {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -28,6 +28,12 @@ import (
 // explorerAnchors wires the anchor manager into the IPC server and answers its
 // loop, or nil when the Cloud Files helper is not installed next to the daemon.
 func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store) func(context.Context) {
+	// A Windows build with the Cloud Files API attaches partially only as an
+	// anchor, helper or not (owner, 2026-09-28): a missing helper makes
+	// anchors unavailable, it does not switch to plain sparse copies.
+	if runtime.GOOS == "windows" {
+		ipc.SetPartialAnchorMode(true)
+	}
 	cfapi := anchorHelperPath()
 	if cfapi == "" {
 		return nil

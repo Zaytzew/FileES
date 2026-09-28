@@ -27,6 +27,17 @@ func (c *Client) HeadCat(ctx context.Context, payload contract.RepoHeadCatPayloa
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+// AnchorCreate makes a folder the Explorer anchor of a repository without a
+// copy here (capability repo.explorer_anchor).
+func (c *Client) AnchorCreate(ctx context.Context, payload contract.RepoAnchorCreatePayload) (*contract.RepoHeadWriteResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoAnchorCreate, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoHeadWriteResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) HeadMaterialize(ctx context.Context, payload contract.RepoHeadMaterializePayload) (*contract.RepoHeadWriteResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoHeadMaterialize, "", payload)
 	if err != nil {

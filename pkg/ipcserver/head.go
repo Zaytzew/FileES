@@ -179,6 +179,12 @@ func (s *Server) handleHeadMaterialize(req contract.Request) contract.Response {
 		}
 		return contract.OKResponse(req.RequestID, contract.RepoHeadWriteResult{LocalPath: summary.LocalPath, Path: path, State: "attached"})
 	}
+	// One kind of partial attachment per build: where Explorer anchors exist,
+	// a repository without a copy is attached as an anchor, never as a plain
+	// sparse copy (owner, 2026-09-28).
+	if s.partialAnchorMode() {
+		return contract.ErrResponse(req.RequestID, "HEAD-2012", "ERROR", "REQUIRE_ACTION", "head.partial_is_anchor", nil)
+	}
 	local := strings.TrimSpace(p.LocalPath)
 	if !filepath.IsAbs(local) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2005", "ERROR", "REQUIRE_ACTION", "head.anchor_required", nil)

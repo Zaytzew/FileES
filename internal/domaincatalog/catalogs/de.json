@@ -45,6 +45,7 @@
     "head.anchor_unavailable": "Explorer-Anker sind auf diesem Computer nicht verfügbar",
     "head.anchor_attached": "Dieses Repository hat hier bereits eine Arbeitskopie",
     "head.anchor_refused": "Dieser Ordner kann kein Explorer-Anker werden",
+    "head.partial_is_anchor": "Auf diesem Computer ist eine Teilkopie ein Explorer-Anker",
     "intent.ambiguous": "Der Versand ist angehalten: Klären Sie die mehrdeutigen Änderungen in den Ordnereinstellungen",
     "intent.resolution_refused": "Diese Entscheidung kann nicht mehr angenommen werden. Öffnen Sie den Änderungsplan erneut; Dateien, Warteschlange oder Zugriffsrechte könnten sich geändert haben",
     "lock.held_by_other": [

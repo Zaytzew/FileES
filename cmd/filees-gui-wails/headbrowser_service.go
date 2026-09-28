@@ -26,6 +26,7 @@ type headBrowserDaemon interface {
 	HeadList(context.Context, contract.RepoHeadListPayload) (*contract.RepoHeadListResult, error)
 	HeadCat(context.Context, contract.RepoHeadCatPayload) (*contract.RepoHeadCatResult, error)
 	HeadMaterialize(context.Context, contract.RepoHeadMaterializePayload) (*contract.RepoHeadWriteResult, error)
+	AnchorCreate(context.Context, contract.RepoAnchorCreatePayload) (*contract.RepoHeadWriteResult, error)
 	HeadFill(context.Context, contract.RepoHeadFillPayload) (*contract.RepoHeadWriteResult, error)
 	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
 }
@@ -265,11 +266,34 @@ func (service *HeadBrowserService) Materialize(path string) (contract.RepoHeadWr
 		if err != nil || anchor == "" {
 			return contract.RepoHeadWriteResult{State: "cancelled"}, err
 		}
+		// Where partial attachments are Explorer anchors (Windows builds with
+		// the Cloud Files API), the first path makes the chosen folder an
+		// anchor; its placeholders then show the whole tree (owner,
+		// 2026-09-28: one mode per build).
+		if service.partialAnchor() {
+			return headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoHeadWriteResult, error) {
+				return service.daemon.AnchorCreate(ctx, contract.RepoAnchorCreatePayload{ServerID: repo.ServerID, RepoID: repo.RepoID, LocalPath: anchor})
+			})
+		}
 		payload.LocalPath = anchor
 	}
 	return headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoHeadWriteResult, error) {
 		return service.daemon.HeadMaterialize(ctx, payload)
 	})
+}
+
+// partialAnchor reports whether the daemon attaches partially as Explorer
+// anchors only (capability repo.partial_anchor).
+func (service *HeadBrowserService) partialAnchor() bool {
+	if service.projection == nil {
+		return false
+	}
+	for _, capability := range service.projection().Capabilities {
+		if capability == contract.CapRepoPartialAnchor {
+			return true
+		}
+	}
+	return false
 }
 
 // chooseAnchor asks for the parent folder and names the copy after the

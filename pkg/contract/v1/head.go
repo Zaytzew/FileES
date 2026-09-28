@@ -14,6 +14,15 @@ const CapRepoHeadBrowse = "repo.head_browse"
 // Explorer anchor: Windows with the filees-cfapi helper installed.
 const CapRepoExplorerAnchor = "repo.explorer_anchor"
 
+// CapRepoPartialAnchor says how this daemon does partial attachments: as
+// Explorer anchors (Windows builds with the Cloud Files API) and never as
+// plain sparse copies. Absent, partial attachments are sparse copies driven
+// from the repository browser (Linux, and Windows builds tagged nocfapi).
+// One mode per build (owner, 2026-09-28); advertised even when the helper is
+// missing, which then makes partial attachment unavailable rather than
+// switching to the other mode.
+const CapRepoPartialAnchor = "repo.partial_anchor"
+
 // RepoAnchorCreatePayload names the repository and the folder that becomes
 // its anchor. The folder must not exist yet or be empty, and must not lie
 // inside a folder another provider (Nextcloud, OneDrive) synchronises.

@@ -56,6 +56,7 @@ type Server struct {
 	historyReads         HistoryService
 	headReads            HeadService
 	anchorCheck          AnchorPrecheck
+	partialAnchor        bool
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
 	historyDensity       HistoryDensityService
@@ -378,6 +379,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.anchorPrecheck() != nil {
 		caps = append(caps, contract.CapRepoExplorerAnchor)
+	}
+	if s.partialAnchorMode() {
+		caps = append(caps, contract.CapRepoPartialAnchor)
 	}
 	if s.whaleService() != nil {
 		caps = append(caps, contract.CapWhaleList, contract.CapWhaleGet, contract.CapWhalePutBegin, contract.CapWhaleGetBegin, contract.CapWhaleGetConfirm, contract.CapWhaleRetry, contract.CapWhaleCancel)

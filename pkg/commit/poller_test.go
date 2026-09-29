@@ -62,6 +62,10 @@ type revisionClient struct {
 	theirs string
 }
 
+func (c *revisionClient) ConflictDetails(context.Context, string, string) ([]client.ConflictDetail, error) {
+	return []client.ConflictDetail{{Type: "tree"}}, nil
+}
+
 func (c *revisionClient) Revision(_ context.Context, target string) (int64, error) {
 	if filepath.IsAbs(target) {
 		return c.local, c.localErr

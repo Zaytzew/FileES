@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,16 @@ type conflictRecoveryClient struct {
 	resolves   int
 	head       int64
 	props      string
+	details    []client.ConflictDetail
+	detailErr  error
+}
+
+func (c *conflictRecoveryClient) ConflictDetails(context.Context, string, string) ([]client.ConflictDetail, error) {
+	return c.details, c.detailErr
+}
+
+func (c *artifactRetryClient) ConflictDetails(ctx context.Context, wc, path string) ([]client.ConflictDetail, error) {
+	return c.Client.(client.ConflictReader).ConflictDetails(ctx, wc, path)
 }
 
 type artifactRetryClient struct {
@@ -78,6 +89,7 @@ func conflictRecoveryFixture(t *testing.T) (*Service, *conflictRecoveryClient, s
 	t.Helper()
 	s, c, _, wc := transactionFixture(t)
 	cli := &conflictRecoveryClient{transactionFake: c, conflicted: true, head: 4, props: "none"}
+	cli.details = []client.ConflictDetail{{Type: "text", Mine: "a.txt.mine", Base: "a.txt.r3", Theirs: "a.txt.r4"}}
 	s.Cli = cli
 	for path, data := range map[string]string{"a.txt": "current edit", "a.txt.mine": "earlier local", "a.txt.r3": "base", "a.txt.r4": "server"} {
 		if err := os.WriteFile(filepath.Join(wc, path), []byte(data), 0600); err != nil {
@@ -126,7 +138,7 @@ func TestConflictRecoveryPreservesBothLocalVariantsAndDoesNotCommit(t *testing.T
 }
 
 func TestConflictRecoveryRefusalsPreserveHold(t *testing.T) {
-	for _, mode := range []string{"old-client-choice", "changed-working", "changed-mine", "changed-head", "new-conflict", "expired", "backup-blocked", "resolve-failed", "status-failed", "property-conflict"} {
+	for _, mode := range []string{"old-client-choice", "changed-working", "changed-mine", "changed-head", "new-conflict", "expired", "backup-blocked", "resolve-failed", "status-failed", "property-conflict", "missing-metadata", "metadata-error", "changed-artifact", "deleted-artifact"} {
 		t.Run(mode, func(t *testing.T) {
 			s, c, wc := conflictRecoveryFixture(t)
 			if mode == "new-conflict" {
@@ -158,6 +170,15 @@ func TestConflictRecoveryRefusalsPreserveHold(t *testing.T) {
 				c.statusErr = errors.New("status unavailable")
 			case "property-conflict":
 				c.props = "conflicted"
+			case "missing-metadata":
+				c.details = nil
+			case "metadata-error":
+				c.detailErr = errors.New("metadata unavailable")
+			case "changed-artifact":
+				err = os.WriteFile(filepath.Join(wc, "a.txt.2.mine"), []byte("earlier local"), 0600)
+				c.details[0].Mine = "a.txt.2.mine"
+			case "deleted-artifact":
+				err = os.Remove(filepath.Join(wc, "a.txt.mine"))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -201,16 +222,17 @@ func TestConflictCopyNeverOverwritesPreviousCopy(t *testing.T) {
 // Two isolated WCs, a real binary conflict and an old attempted receipt.
 // FILEES_SVN_PROBE additionally exercises the production native helper.
 func TestConflictRecoveryRealSVN(t *testing.T) {
-	t.Run("matching-owner", func(t *testing.T) { conflictRecoveryRealSVN(t, false) })
+	t.Run("matching-owner", func(t *testing.T) { conflictRecoveryRealSVN(t, false, false) })
+	t.Run("numbered-text-artifacts", func(t *testing.T) { conflictRecoveryRealSVN(t, false, true) })
 	t.Run("legacy-mismatched-owner", func(t *testing.T) {
-		if os.Getenv("FILEES_SVN_PROBE") == "" {
-			t.Skip("native helper required")
+		if os.Getenv("FILEES_SVN_PROBE") == "" || (runtime.GOOS != "windows" && runtime.GOOS != "linux") {
+			t.Skip("native desktop adapter and helper required (Windows/Linux)")
 		}
-		conflictRecoveryRealSVN(t, true)
+		conflictRecoveryRealSVN(t, true, false)
 	})
 }
 
-func conflictRecoveryRealSVN(t *testing.T, mismatch bool) {
+func conflictRecoveryRealSVN(t *testing.T, mismatch, numbered bool) {
 	for _, bin := range []string{"svn", "svnadmin"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skip(bin + " absent")
@@ -239,19 +261,43 @@ func conflictRecoveryRealSVN(t *testing.T, mismatch bool) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(a, "plan.dwg"), "base\x00")
+	base, local, server := "base\x00", "local\x00", "server\x00"
+	if numbered {
+		base, local, server = "base\n", "local\n", "server\n"
+	}
+	write(filepath.Join(a, "plan.dwg"), base)
 	run("svn", "add", filepath.Join(a, "plan.dwg"))
-	run("svn", "propset", "svn:mime-type", "application/octet-stream", filepath.Join(a, "plan.dwg"))
+	if !numbered {
+		run("svn", "propset", "svn:mime-type", "application/octet-stream", filepath.Join(a, "plan.dwg"))
+	}
 	run("svn", "commit", "-m", "base", a)
 	run("svn", "checkout", repoURL, b)
-	write(filepath.Join(b, "plan.dwg"), "local\x00")
-	write(filepath.Join(a, "plan.dwg"), "server\x00")
+	write(filepath.Join(b, "plan.dwg"), local)
+	write(filepath.Join(a, "plan.dwg"), server)
+	ordinary := []string{"plan.dwg.mine", "plan.dwg.r1", "plan.dwg.r2"}
+	if numbered {
+		for _, path := range ordinary {
+			write(filepath.Join(b, path), "ordinary document")
+		}
+	}
 	run("svn", "commit", "-m", "server", a)
 	run("svn", "update", "--accept", "postpone", b)
 	// Reproduce the old watcher's queue: SVN's conflict artifacts were
 	// accidentally scheduled for addition before the failed publication.
-	run("svn", "add", filepath.Join(b, "plan.dwg.r1"), filepath.Join(b, "plan.dwg.r2"))
 	cli := client.New(client.Options{NativeSVNPath: os.Getenv("FILEES_SVN_PROBE"), Timeout: 20 * time.Second})
+	details, err := cli.(client.ConflictReader).ConflictDetails(t.Context(), b, "plan.dwg")
+	if err != nil || len(details) != 1 || details[0].Type != "text" {
+		t.Fatalf("metadata: %+v %v", details, err)
+	}
+	detail := details[0]
+	if numbered {
+		if detail.Mine == "" || detail.Mine == "plan.dwg.mine" || detail.Base == "plan.dwg.r1" || detail.Theirs == "plan.dwg.r2" {
+			t.Fatalf("SVN did not uniquify the fixture: %+v", detail)
+		}
+		// The live file and the saved local variant now differ; both must survive.
+		write(filepath.Join(b, "plan.dwg"), "edited after conflict")
+	}
+	run("svn", "add", filepath.Join(b, detail.Base), filepath.Join(b, detail.Theirs))
 	s := &Service{Cli: cli, RepoURL: repoURL, wc: b, repoID: "test", staging: map[string]*stageItem{}}
 	s.Cli = &artifactRetryClient{Client: cli, TransactionCommitter: cli.(client.TransactionCommitter), commitWriterReleaser: cli.(commitWriterReleaser), reverter: cli.(pathReverter), fail: true}
 	if err := os.MkdirAll(filepath.Join(b, ".filees", "commit_cache"), 0700); err != nil {
@@ -320,12 +366,31 @@ func conflictRecoveryRealSVN(t *testing.T, mismatch bool) {
 		t.Fatal(err)
 	}
 	actual, err := os.ReadFile(filepath.Join(b, "plan.dwg"))
-	if err != nil || string(actual) != "server\x00" {
+	if err != nil || string(actual) != server {
 		t.Fatalf("server bytes %q %v", actual, err)
 	}
 	saved, err := os.ReadFile(filepath.Join(b, filepath.FromSlash(plan.ConflictCopy), "plan.dwg"))
-	if err != nil || string(saved) != "local\x00" {
+	wantSaved := local
+	if numbered {
+		wantSaved = "edited after conflict"
+	}
+	if err != nil || string(saved) != wantSaved {
 		t.Fatalf("local bytes %q %v", saved, err)
+	}
+	if numbered {
+		mine, err := os.ReadFile(filepath.Join(b, filepath.FromSlash(plan.ConflictCopy), detail.Mine))
+		if err != nil || string(mine) != local {
+			t.Fatalf("saved local variant %q %v", mine, err)
+		}
+		for _, path := range ordinary {
+			got, err := os.ReadFile(filepath.Join(b, path))
+			if err != nil || string(got) != "ordinary document" {
+				t.Fatalf("ordinary file changed: %s %q %v", path, got, err)
+			}
+			if _, err := os.Stat(filepath.Join(b, filepath.FromSlash(plan.ConflictCopy), path)); !os.IsNotExist(err) {
+				t.Fatalf("ordinary file treated as artifact: %s %v", path, err)
+			}
+		}
 	}
 	head, err := cli.Revision(t.Context(), repoURL)
 	if err != nil || head != 2 {

@@ -85,10 +85,25 @@ func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string)
 	for _, rel := range conflicted {
 		absFile := filepath.Join(wc, filepath.FromSlash(rel))
 
-		// SVN creates <file>.mine for binary conflicts; prefer it as it is the pure local version.
-		src := absFile + ".mine"
-		if _, err := os.Stat(src); err != nil {
-			src = absFile // fallback: use the file itself
+		// Read the actual local variant from SVN, never an unrelated .mine.
+		reader, ok := s.Cli.(client.ConflictReader)
+		if !ok {
+			s.Logger.Warnf("reconcile: conflict metadata unavailable for %s", rel)
+			continue
+		}
+		details, err := reader.ConflictDetails(ctx, wc, rel)
+		if err != nil || len(details) != 1 || (details[0].Type != "text" && details[0].Type != "tree") {
+			s.Logger.Warnf("reconcile: incomplete or unsupported conflict metadata for %s: %v", rel, err)
+			continue
+		}
+		sourceRel := rel
+		if details[0].Type == "text" && details[0].Mine != "" {
+			sourceRel = details[0].Mine
+		}
+		src, err := intentSafePath(wc, cacheEntry{Rel: sourceRel, Abs: filepath.Join(wc, filepath.FromSlash(sourceRel))})
+		if err != nil {
+			s.Logger.Warnf("reconcile: unsafe conflict copy for %s: %v", rel, err)
+			continue
 		}
 
 		if _, err := os.Stat(src); err != nil {

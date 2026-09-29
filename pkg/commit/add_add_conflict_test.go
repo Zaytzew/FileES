@@ -25,6 +25,10 @@ type addAddClient struct {
 	reverted []string
 }
 
+func (c *addAddClient) ConflictDetails(context.Context, string, string) ([]client.ConflictDetail, error) {
+	return []client.ConflictDetail{{Type: "tree"}}, nil
+}
+
 func (c *addAddClient) Status(_ context.Context, _ string, paths []string) ([]client.StatusEntry, error) {
 	if paths == nil {
 		entries := []client.StatusEntry{{Path: "clean.txt", Item: "normal"}}

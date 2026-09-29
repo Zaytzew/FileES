@@ -383,12 +383,58 @@ func TestPasswordVerificationHasHardMemoryConcurrencyBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newWebFixture(t, func(share *manifest.Share) { share.Password = verifier })
-	passwordCheckSlot <- struct{}{}
+	holdPasswordCheckSlots(t, passwordCheckConcurrency)
 	blocked := perform(f.handler, http.MethodPost, "https://example.test/atmprojekt/przetarg-2026", "password="+url.QueryEscape("sekretne haslo"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
-	<-passwordCheckSlot
-	if blocked.Code != http.StatusNotFound {
-		t.Fatalf("concurrent password check status=%d", blocked.Code)
+	if blocked.Code != http.StatusServiceUnavailable || blocked.Header().Get("Retry-After") != "5" || blocked.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("saturated password check status=%d headers=%v", blocked.Code, blocked.Header())
 	}
+	if blocked.Header().Get("Location") != "" || blocked.Header().Get("Set-Cookie") != "" {
+		t.Fatal("saturated check must not grant a visit")
+	}
+	missing := perform(f.handler, http.MethodPost, "https://example.test/atmprojekt/missing", "password=sekretne", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	if missing.Code != http.StatusNotFound || missing.Header().Get("Retry-After") != "" {
+		t.Fatalf("missing channel during saturation status=%d headers=%v", missing.Code, missing.Header())
+	}
+	form := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil)
+	if form.Code != http.StatusOK {
+		t.Fatalf("password form should remain available: status=%d", form.Code)
+	}
+}
+
+func TestPasswordVerificationProceedsWhileSlotsRemain(t *testing.T) {
+	verifier, err := gate.HashPassword("sekretne haslo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newWebFixture(t, func(share *manifest.Share) { share.Password = verifier })
+	holdPasswordCheckSlots(t, passwordCheckConcurrency-1)
+	for _, password := range []string{"wrong password", "sekretne haslo"} {
+		response := perform(f.handler, http.MethodPost, "https://example.test/atmprojekt/przetarg-2026", "password="+url.QueryEscape(password), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+		if password == "sekretne haslo" {
+			visitFromRedirect(t, response)
+		} else if response.Code != http.StatusNotFound || response.Header().Get("Location") != "" {
+			t.Fatalf("wrong password status=%d headers=%v", response.Code, response.Header())
+		}
+		if len(passwordCheckSlot) != passwordCheckConcurrency-1 {
+			t.Fatalf("verification leaked a slot: occupied=%d", len(passwordCheckSlot))
+		}
+	}
+}
+
+// Tests using the process-wide semaphore must not run in parallel.
+func holdPasswordCheckSlots(t *testing.T, count int) {
+	t.Helper()
+	if passwordCheckConcurrency != 4 || cap(passwordCheckSlot) != 4 || len(passwordCheckSlot) != 0 {
+		t.Fatalf("expected four initially free slots: cap=%d occupied=%d", cap(passwordCheckSlot), len(passwordCheckSlot))
+	}
+	for range count {
+		passwordCheckSlot <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range count {
+			<-passwordCheckSlot
+		}
+	})
 }
 
 func TestFetchCoordinatorCoalescesOneOpaqueLeaf(t *testing.T) {

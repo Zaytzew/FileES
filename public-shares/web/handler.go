@@ -48,8 +48,11 @@ const visitLifetime = time.Hour
 
 // A valid verifier may use up to 128 MiB. Public request concurrency must not
 // become memory concurrency; rate limiting remains the fronting HTTP server's
-// responsibility.
-var passwordCheckSlot = make(chan struct{}, 1)
+// responsibility. Four process-wide slots cap active Argon2 working memory at
+// 512 MiB, not total process RSS. Saturated requests do not queue.
+const passwordCheckConcurrency = 4
+
+var passwordCheckSlot = make(chan struct{}, passwordCheckConcurrency)
 
 type Backend interface {
 	Enter(context.Context, string, string) (authority.Entry, error)
@@ -219,7 +222,9 @@ func (h Handler) freshEntry(w http.ResponseWriter, request *http.Request, alias,
 		case passwordCheckSlot <- struct{}{}:
 			defer func() { <-passwordCheckSlot }()
 		default:
-			h.notFound(w)
+			// This channel already exposes a password form on GET. A busy
+			// verifier is neither a missing channel nor a wrong password.
+			h.passwordBusy(w)
 			return
 		}
 	}
@@ -1267,6 +1272,12 @@ func (h Handler) downloadFailure(w http.ResponseWriter, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Retry-After", "60")
 	http.Error(w, "Pobieranie chwilowo niedostępne. Spróbuj ponownie później.", http.StatusServiceUnavailable)
+}
+
+func (h Handler) passwordBusy(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+	http.Error(w, "Serwer sprawdza teraz inne hasła. Spróbuj ponownie za kilka sekund.", http.StatusServiceUnavailable)
 }
 
 func (h Handler) notFound(w http.ResponseWriter) {

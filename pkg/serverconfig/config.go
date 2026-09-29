@@ -137,6 +137,10 @@ type PublicSharesFile struct {
 	MaxLeafSize            int64  `json:"max_size,omitempty"`
 	MaxChannelsPerRealm    int    `json:"max_channels_per_realm,omitempty"`
 	PasswordRequired       bool   `json:"password_required,omitempty"`
+	// Recipient OTP queue attempts per invitation and per channel in any 24 hours.
+	// Zero keeps the defaults (5 and 50).
+	RecipientOTPSendsPerInvitation int `json:"recipient_otp_sends_per_invitation,omitempty"`
+	RecipientOTPSendsPerChannel    int `json:"recipient_otp_sends_per_channel,omitempty"`
 }
 
 // InvitationFile contains the public, pinned bootstrap profile that is
@@ -696,6 +700,9 @@ func validatePublicShares(p PublicSharesFile, resultsRoot string) error {
 	}
 	if p.EffectiveMaxChannelsPerRealm() < 1 || p.EffectiveMaxChannelsPerRealm() > 100000 {
 		return errors.New("public_shares max_channels_per_realm must be 1 to 100000")
+	}
+	if p.RecipientOTPSendsPerInvitation < 0 || p.RecipientOTPSendsPerInvitation > 1000 || p.RecipientOTPSendsPerChannel < 0 || p.RecipientOTPSendsPerChannel > 100000 {
+		return errors.New("public_shares recipient_otp_sends_per_invitation must be 0 to 1000 and recipient_otp_sends_per_channel 0 to 100000")
 	}
 	if p.BackchannelNetwork != "unix" && p.BackchannelNetwork != "tcp" {
 		return errors.New("public_shares backchannel_network must be unix or tcp")

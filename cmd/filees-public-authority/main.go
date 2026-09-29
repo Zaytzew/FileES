@@ -116,7 +116,9 @@ func run(ctx context.Context, configPath string) error {
 	channels := &channel.Store{Root: stateRoot, Authority: publisher}
 	otp := &recipientotp.Service{
 		Root: filepath.Join(stateRoot, "recipient-otp"), Key: config.PublicShareFrostKey, Channels: channels,
-		Outbox: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")},
+		Outbox:             repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")},
+		SendsPerInvitation: config.PublicShares.RecipientOTPSendsPerInvitation,
+		SendsPerChannel:    config.PublicShares.RecipientOTPSendsPerChannel,
 	}
 	staging := &storage.Staging{Root: stagingRoot}
 	interval, _ := storage.CleanupInterval(config.PublicShares.CleanupInterval)

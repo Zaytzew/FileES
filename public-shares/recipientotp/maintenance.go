@@ -66,6 +66,7 @@ func (s Service) Sweep(ctx context.Context, now time.Time) (storage.SweepResult,
 				continue
 			}
 			removed, e := s.sweepChannel(ctx, child, id, now)
+			failures = errors.Join(failures, s.sweepBudget(child, id, now))
 			child.Close()
 			result.Add(removed)
 			failures = errors.Join(failures, e)

@@ -103,3 +103,22 @@ func TestAuthorityStagingRootUsesOperatorPath(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicShareRecipientOTPSendBudgetBounds(t *testing.T) {
+	root := t.TempDir()
+	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}
+	for _, ok := range [][2]int{{0, 0}, {5, 50}, {1000, 100000}} {
+		candidate := valid
+		candidate.RecipientOTPSendsPerInvitation, candidate.RecipientOTPSendsPerChannel = ok[0], ok[1]
+		if err := validatePublicShares(candidate, root); err != nil {
+			t.Fatalf("budget %v refused: %v", ok, err)
+		}
+	}
+	for _, bad := range [][2]int{{-1, 0}, {0, -1}, {1001, 0}, {0, 100001}} {
+		candidate := valid
+		candidate.RecipientOTPSendsPerInvitation, candidate.RecipientOTPSendsPerChannel = bad[0], bad[1]
+		if err := validatePublicShares(candidate, root); err == nil {
+			t.Fatalf("budget %v accepted", bad)
+		}
+	}
+}

@@ -68,6 +68,13 @@ func TestSweepOTPRespectsExpiryAndChannelAuthority(t *testing.T) {
 				if got.Entries != 1 || got.Files != 1 {
 					t.Fatalf("not removed: %+v", got)
 				}
+				// Quotas survive epoch expiry AND removal of an invitation.
+				if _, err := os.Stat(filepath.Join(dir, budgetName)); err != nil {
+					t.Fatalf("send budget did not survive: %v", err)
+				}
+				if _, err := f.service.Sweep(context.Background(), f.now.Add(budgetWindow)); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("channel directory survived: %v", err)
 				}

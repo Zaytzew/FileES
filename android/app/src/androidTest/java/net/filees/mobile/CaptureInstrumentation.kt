@@ -27,6 +27,7 @@ class CaptureInstrumentation : Instrumentation() {
             // its startup cache sweep before producing test payloads.
             waitForIdleSync()
             if (args.containsKey("watch_bindings")) {
+                ReceiptAcknowledgementChecks.run()
                 WatchRegistryChecks.run()
                 WatchBindingAndroidChecks.run(targetContext)
             } else if (args.containsKey("ui_requests")) {

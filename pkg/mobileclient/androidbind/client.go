@@ -262,6 +262,17 @@ func (c *Client) DiscardUpload(repoID, id string) error {
 	return c.inner.Store.DiscardUpload(repoID, id)
 }
 
+// AcknowledgeUploadSources is called only after every source has a durable
+// seen marker. It does not acknowledge anything to the server.
+func (c *Client) AcknowledgeUploadSources(repoID, id string) error {
+	return c.inner.Store.AcknowledgeUploadSources(c.baseContext(), repoID, id)
+}
+
+// PruneDeliveredUploads retains at least seven days after local acknowledgement.
+func (c *Client) PruneDeliveredUploads(repoID string) error {
+	return c.inner.Store.PruneDeliveredUploads(c.baseContext(), repoID)
+}
+
 // RetryUploadAs requeues a conflict/parked candidate under filename
 // (empty keeps the original name) with a new request_id.
 func (c *Client) RetryUploadAs(repoID, id, filename string) error {

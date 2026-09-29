@@ -48,7 +48,7 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,before.values.toList())
             if (pendingCount > 0) onWork(context.getString(R.string.watch_queue_count,pendingCount))
             val ownedSources = before.values.flatMap { it.sources }.toSet()
-            before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it, repoId) } }
+            before.values.filter { it.delivered }.forEach { CaptureTransfers.acknowledge(client, repoId, it, watched) }
             for (tree in trees) {
                 cancel.check()
                 try {
@@ -91,7 +91,7 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,drained,finish = true)
             for (item in drained) {
                 if (item.delivered) {
-                    item.sources.forEach { watched.markSeen(it, repoId) }
+                    CaptureTransfers.acknowledge(client, repoId, item, watched)
                     if (before[item.id]?.delivered != true) result.sent += item.fileCount
                 } else {
                     result.waiting += item.fileCount
@@ -99,6 +99,7 @@ object FileesWatchTick {
                 }
             }
 
+            client.pruneDeliveredUploads(repoId)
         } catch (e: Exception) {
             if (FileesWatchWorker.backgroundStartDenied(e)) {
                 trees.forEach { status.paused(scope,it,WatchStatusStore.START_NOT_ALLOWED) }

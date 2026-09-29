@@ -58,6 +58,13 @@ object CaptureTransfers {
     data class Result(var sent: Int = 0, var waiting: Int = 0, val errors: MutableList<String> = mutableListOf())
     fun source(file: WalkedFile) = file.uri.toString() + "/" + file.filename
 
+    fun acknowledge(client: Client, repoId: String, item: PendingUpload, watched: WatchedFolders) {
+        if (!item.delivered) return
+        ReceiptAcknowledgement.record(item.sources, { watched.markSeen(it, repoId) }) {
+            client.acknowledgeUploadSources(repoId, item.id)
+        }
+    }
+
     fun copy(input: InputStream, output: OutputStream, limit: Long, cancel: CaptureCancellation): Long {
         var total = 0L
         val buffer = ByteArray(64 * 1024)
@@ -82,13 +89,13 @@ object CaptureTransfers {
         // queued, including a conflict. Completed metadata closes a crash
         // between receipt persistence and the SharedPreferences seen marker.
         val owned = existing.filter { watched != null || !it.delivered }.flatMap { it.sources }.toSet()
-        existing.filter { it.delivered }.forEach { item -> item.sources.forEach { watched?.markSeen(it, repoId) } }
+        if (watched != null) existing.filter { it.delivered }.forEach { acknowledge(client, repoId, it, watched) }
         val fresh = files.filterNot { source(it) in owned }
 
         fun account(item: PendingUpload, count: Int) {
             if (item.delivered) {
+                if (watched != null) acknowledge(client, repoId, item, watched)
                 result.sent += count
-                item.sources.forEach { watched?.markSeen(it, repoId) }
             } else {
                 result.waiting += count
                 if (item.lastError.isNotBlank()) result.errors += item.lastError

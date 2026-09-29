@@ -93,6 +93,9 @@ func (s Store) enqueueReaderLocked(ctx context.Context, repoID, parent, name, co
 	if err != nil {
 		return PendingUpload{}, err
 	}
+	if err := s.pruneDeliveredUploads(repoID, queued, item.EnqueuedAt); err != nil {
+		return PendingUpload{}, err
+	}
 	for _, old := range queued {
 		if !old.State.terminal() && old.Operation == operation && old.ParentPath == parent && old.Filename == name && old.Sha256 == item.Sha256 && old.FileCount == count {
 			return old, nil

@@ -110,6 +110,7 @@
     <string name="error_send">Nie udało się wysłać</string>
     <string name="error_send_partial">Wysłano %1$d z %2$d — reszta nie doszła</string>
     <string name="error_download">Nie udało się pobrać</string>
+    <string name="error_download_permission">Nie udzielono dostępu do folderu Pobrane.</string>
     <string name="error_connect">Nie udało się połączyć</string>
     <string name="error_list">Nie udało się wczytać udziałów</string>
     <string name="error_refresh">Nie udało się odświeżyć</string>

@@ -100,6 +100,7 @@
     <string name="error_send">No se pudo enviar</string>
     <string name="error_send_partial">Enviados %1$d de %2$d; el resto no llegó</string>
     <string name="error_download">No se pudo descargar</string>
+    <string name="error_download_permission">No se concedió acceso a la carpeta Descargas.</string>
     <string name="error_connect">No se pudo conectar</string>
     <string name="error_list">No se pudieron cargar los recursos</string>
     <string name="error_refresh">No se pudo actualizar</string>

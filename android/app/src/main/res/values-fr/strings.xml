@@ -100,6 +100,7 @@
     <string name="error_send">Échec de l’envoi</string>
     <string name="error_send_partial">%1$d sur %2$d envoyés — le reste n’est pas arrivé</string>
     <string name="error_download">Échec du téléchargement</string>
+    <string name="error_download_permission">Accès au dossier Téléchargements refusé.</string>
     <string name="error_connect">Échec de la connexion</string>
     <string name="error_list">Impossible de charger les partages</string>
     <string name="error_refresh">Échec de l’actualisation</string>

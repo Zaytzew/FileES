@@ -26,7 +26,10 @@ class CaptureInstrumentation : Instrumentation() {
             // Instrumentation.start() races Application.onCreate(); wait for
             // its startup cache sweep before producing test payloads.
             waitForIdleSync()
-            if (args.containsKey("watch_bindings")) {
+            if (args.containsKey("download_publication")) {
+                val dir = File(targetContext.cacheDir, "publication-test-${System.nanoTime()}").apply { mkdirs() }
+                try { DownloadPublicationChecks.run(dir) } finally { dir.deleteRecursively() }
+            } else if (args.containsKey("watch_bindings")) {
                 ReceiptAcknowledgementChecks.run()
                 WatchRegistryChecks.run()
                 WatchBindingAndroidChecks.run(targetContext)

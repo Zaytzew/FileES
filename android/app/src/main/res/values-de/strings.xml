@@ -100,6 +100,7 @@
     <string name="error_send">Senden fehlgeschlagen</string>
     <string name="error_send_partial">%1$d von %2$d gesendet — der Rest ist nicht angekommen</string>
     <string name="error_download">Download fehlgeschlagen</string>
+    <string name="error_download_permission">Der Zugriff auf den Downloadordner wurde nicht erlaubt.</string>
     <string name="error_connect">Verbindung fehlgeschlagen</string>
     <string name="error_list">Freigaben konnten nicht geladen werden</string>
     <string name="error_refresh">Aktualisierung fehlgeschlagen</string>

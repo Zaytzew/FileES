@@ -104,6 +104,7 @@
     <string name="error_send">Could not send</string>
     <string name="error_send_partial">Sent %1$d of %2$d — the rest did not arrive</string>
     <string name="error_download">Could not download</string>
+    <string name="error_download_permission">Access to the Downloads folder was not granted.</string>
     <string name="error_connect">Could not connect</string>
     <string name="error_list">Could not load shares</string>
     <string name="error_refresh">Could not refresh</string>

@@ -47,6 +47,16 @@ class MainActivity : AppCompatActivity() {
     private val main = Handler(Looper.getMainLooper())
     private val uiRequests = UiRequests(::sessionKey)
     private var pickerTarget: CaptureDestination<Client>? = null
+    private var pendingDownloadPermission: Pair<UiRequests.Ticket, () -> Unit>? = null
+
+    private val downloadPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val pending = pendingDownloadPermission
+        pendingDownloadPermission = null
+        if (pending != null && uiRequests.current(pending.first) && !isDestroyed && !isFinishing) {
+            if (granted) pending.second()
+            else requestBusy(pending.first, false, getString(R.string.error_download_permission))
+        }
+    }
 
     private var client: Client? = null
     private var activeSession: Triple<String?, String?, String?>? = null
@@ -817,14 +827,14 @@ class MainActivity : AppCompatActivity() {
         }
         val active = client ?: return
         val repoId = selectedRepoId ?: return
-        setBusy(true, getString(R.string.status_downloading))
-        io.execute {
+        val ticket = beginUiRequest("download", getString(R.string.status_downloading))
+        executeDownload(ticket) {
             try {
                 val dest = cachedDownload(active, repoId, row)
                 publishDownload(dest, row.name)
-                main.post { setBusy(false, getString(R.string.status_downloaded, row.name)) }
+                postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, row.name)) }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_download), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
             }
         }
     }
@@ -895,28 +905,28 @@ class MainActivity : AppCompatActivity() {
     private fun pullFolderZip(row: BrowseRow, files: List<ManifestEntry>) {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
-        setBusy(true, getString(R.string.status_downloading_folder, 1, files.size))
-        io.execute {
+        val ticket = beginUiRequest("download", getString(R.string.status_downloading_folder, 1, files.size))
+        executeDownload(ticket) {
             val staged = ArrayList<Pair<String, File>>(files.size)
             var zip: File? = null
             try {
                 val dir = File(cacheDir, "dl").apply { mkdirs() }
                 val pfx = if (row.path.isEmpty()) "" else "${row.path}/"
                 for ((index, entry) in files.withIndex()) {
-                    main.post {
-                        setBusy(true, getString(R.string.status_downloading_folder, index + 1, files.size))
+                    postCurrent(ticket) {
+                        requestBusy(ticket, true, getString(R.string.status_downloading_folder, index + 1, files.size))
                     }
                     val relative = if (pfx.isEmpty()) entry.path else entry.path.removePrefix(pfx)
                     val dest = File(dir, "part-${index}-${relative.substringAfterLast('/')}")
                     active.downloadTo(repoId, entry.path, dest.absolutePath)
                     staged.add(relative to dest)
                 }
-                main.post { setBusy(true, getString(R.string.status_packing_download)) }
+                postCurrent(ticket) { requestBusy(ticket, true, getString(R.string.status_packing_download)) }
                 zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
                 publishDownload(zip, "${row.name}.zip")
-                main.post { setBusy(false, getString(R.string.status_downloaded, "${row.name}.zip")) }
+                postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, "${row.name}.zip")) }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_download), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
             } finally {
                 staged.forEach { it.second.delete() }
                 zip?.delete()
@@ -964,12 +974,31 @@ class MainActivity : AppCompatActivity() {
         try {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
-            publishDownload(file, name)
-            binding.toolbar.subtitle = getString(R.string.error_preview)
+            val ticket = beginUiRequest("download", getString(R.string.status_downloading))
+            executeDownload(ticket) {
+                try {
+                    publishDownload(file, name)
+                    postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.error_preview)) }
+                } catch (e: Exception) {
+                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
+                }
+            }
+        }
+    }
+
+    private fun executeDownload(ticket: UiRequests.Ticket, action: () -> Unit) {
+        val start = { io.execute { action() } }
+        if (Build.VERSION.SDK_INT >= 29 || ContextCompat.checkSelfPermission(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            start()
+        } else {
+            pendingDownloadPermission = ticket to start
+            downloadPermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
     }
 
     private fun publishDownload(file: File, name: String) {
+        DownloadPublication.requireName(name)
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         if (Build.VERSION.SDK_INT >= 29) {
             val values = ContentValues().apply {
@@ -977,16 +1006,22 @@ class MainActivity : AppCompatActivity() {
                 put(MediaStore.Downloads.MIME_TYPE, mime)
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
-            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
-            contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            contentResolver.update(uri, values, null, null)
+            DownloadPublication.pending(
+                input = { file.inputStream() },
+                create = { contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) },
+                open = { contentResolver.openOutputStream(it) },
+                commit = { uri ->
+                    val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    contentResolver.update(uri, ready, null, null)
+                },
+                remove = { uri ->
+                    if (contentResolver.delete(uri, null, null) != 1) throw java.io.IOException("Cannot remove incomplete Downloads entry")
+                },
+            )
             return
         }
         val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        publicDir.mkdirs()
-        file.copyTo(File(publicDir, name), overwrite = true)
+        DownloadPublication.legacy(file, publicDir, name)
     }
 
     private fun uploadRepoId(): String? =
@@ -1190,6 +1225,7 @@ class MainActivity : AppCompatActivity() {
     private fun invalidateUiRequests() {
         uiRequests.invalidate()
         pickerTarget = null
+        pendingDownloadPermission = null
         setBusy(false, "")
     }
 

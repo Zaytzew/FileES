@@ -330,3 +330,41 @@ func TestUploadOTPExchangesTypedAddressThenAcceptsFile(t *testing.T) {
 		t.Fatalf("quarantine entries=%v err=%v", entries, err)
 	}
 }
+
+// A full channel refuses with a readable, retryable answer, not with the
+// dead-link 404 that a wrong invitation gets.
+func TestUploadPostToFullChannelSaysTryLater(t *testing.T) {
+	token := "invite-token"
+	handler, store := uploadHandler(t, validUploadProjection(token))
+	store.MaxUploadsPerChannel = 1
+	post := func() *httptest.ResponseRecorder {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile("file", "plik.pdf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(part, "dane"); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/atmprojekt/oferta-a?invite="+token, &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		return recorder
+	}
+	if first := post(); first.Code != http.StatusAccepted {
+		t.Fatalf("first upload status=%d", first.Code)
+	}
+	second := post()
+	if second.Code != http.StatusServiceUnavailable || second.Header().Get("Retry-After") != "3600" || second.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("full channel status=%d retry-after=%q", second.Code, second.Header().Get("Retry-After"))
+	}
+	token = "wrong-invitation"
+	if denied := post(); denied.Code != http.StatusNotFound {
+		t.Fatalf("full channel disclosed to wrong invitation: status=%d", denied.Code)
+	}
+}

@@ -94,3 +94,29 @@ func TestLoadRejectsPublicBackchannelAndUnknownFields(t *testing.T) {
 		t.Fatal("repository field accepted by public config")
 	}
 }
+
+func TestLoadIntakeLimitsAreOptionalAndConsistent(t *testing.T) {
+	base := `{"schema":"filees.public-links/v1","fastcgi":{"network":"unix","address":"@ROOT@/fcgi.sock"},"backchannel":{"network":"unix","address":"@ROOT@/authority.sock"},"visit_key_file":"@KEY@","cache":{"enabled":false}`
+	unset := writeConfigFixture(t, base+`,"intake_root":"@ROOT@/intake","max_upload_size":4096}`)
+	if info, err := os.Stat(unset); err != nil || info.Mode().Perm()&0022 != 0 {
+		t.Skip("host file mode cannot satisfy public-links owner-only config")
+	}
+	runtime, err := Load(unset)
+	if err != nil || runtime.Intake.MaxUploadsPerChannel != 0 || runtime.Intake.MaxQuarantineBytes != 0 {
+		t.Fatalf("unset limits: %+v %v", runtime.Intake, err)
+	}
+	set := writeConfigFixture(t, base+`,"intake_root":"@ROOT@/intake","max_upload_size":4096,"max_uploads_per_channel":20,"max_quarantine_size":65536}`)
+	runtime, err = Load(set)
+	if err != nil || runtime.Intake.MaxUploadsPerChannel != 20 || runtime.Intake.MaxQuarantineBytes != 65536 {
+		t.Fatalf("set limits: %+v %v", runtime.Intake, err)
+	}
+	for name, bad := range map[string]string{
+		"quarantine below one file": base + `,"intake_root":"@ROOT@/intake","max_upload_size":4096,"max_quarantine_size":1024}`,
+		"negative channel limit":    base + `,"intake_root":"@ROOT@/intake","max_uploads_per_channel":-1}`,
+		"limit without intake":      base + `,"max_uploads_per_channel":5}`,
+	} {
+		if _, err := Load(writeConfigFixture(t, bad)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+}

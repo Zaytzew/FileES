@@ -1,6 +1,7 @@
 package clientupdate
 
 import (
+	"filees/pkg/localrepo"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,9 +41,14 @@ func completeBundle(version string) map[string]string {
 }
 
 func newInstaller(installDir, configPath string) DirectoryInstaller {
+	anchors, err := localrepo.Open(filepath.Join(installDir, "lifecycle.json"))
+	if err != nil {
+		panic(err)
+	}
 	return DirectoryInstaller{
-		Paths: DirectoryPaths{InstallDir: installDir, ConfigPath: configPath},
-		now:   func() time.Time { return time.Date(2026, 9, 4, 2, 0, 0, 0, time.UTC) },
+		Anchors: anchors,
+		Paths:   DirectoryPaths{InstallDir: installDir, ConfigPath: configPath},
+		now:     func() time.Time { return time.Date(2026, 9, 4, 2, 0, 0, 0, time.UTC) },
 	}
 }
 
@@ -50,25 +56,7 @@ func newInstaller(installDir, configPath string) DirectoryInstaller {
 // The installer's own work starts once a bundle is on disk.
 func applyBundle(t *testing.T, installer DirectoryInstaller, bundleRoot string) error {
 	t.Helper()
-	if err := validateDirectoryBundle(bundleRoot, installer.managedFiles()); err != nil {
-		return err
-	}
-	files := presentFiles(bundleRoot, installer.managedFiles())
-	if err := os.MkdirAll(installer.Paths.InstallDir, 0o755); err != nil {
-		return err
-	}
-	stamp := installer.clock()().UTC().Format("20060102-150405")
-	for _, file := range files {
-		data, err := os.ReadFile(filepath.Join(bundleRoot, filepath.FromSlash(file.source)))
-		if err != nil {
-			return err
-		}
-		if err := installer.replace(file.target, data, stamp); err != nil {
-			return err
-		}
-	}
-	installer.forgetSupersededFiles(installer.Paths.InstallDir)
-	return nil
+	return installer.applyStaged(bundleRoot)
 }
 
 // The swap itself: the new content lands at the target and the old content
@@ -231,6 +219,9 @@ func TestTheAnchorHelperIsOptional(t *testing.T) {
 	}
 	if err := applyBundle(t, installer, writeBundle(t, completeBundle("0.1.18.1693"))); err != nil {
 		t.Fatalf("a bundle without the helper was refused: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(installDir, "filees-cfapi.exe")); !os.IsNotExist(err) {
+		t.Fatalf("obsolete helper still discoverable: %v", err)
 	}
 	for _, name := range RequiredBundleFiles() {
 		if name == "bin/filees-cfapi.exe" {

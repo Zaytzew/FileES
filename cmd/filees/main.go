@@ -200,13 +200,13 @@ func runDaemon() {
 	}
 	lifecycle := &daemonLifecycle{cancel: cancel}
 	ipc.SetSystemLifecycleService(lifecycle)
-	if err := configureClientUpdate(ipc, clientView.Update, clientView.UpdateConfigured, version); err != nil {
-		lg.Errorf("client update: %v", err)
-		os.Exit(1)
-	}
 	lifecycleStore, err := localrepo.Open(defaultRepositoryLifecyclePath())
 	if err != nil {
 		lg.Errorf("repository lifecycle: %v", err)
+		os.Exit(1)
+	}
+	if err := configureClientUpdate(ipc, clientView.Update, clientView.UpdateConfigured, version, lifecycleStore); err != nil {
+		lg.Errorf("client update: %v", err)
 		os.Exit(1)
 	}
 	// The record of relationships that ended, beside the store of the ones

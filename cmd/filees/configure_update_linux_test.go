@@ -25,20 +25,20 @@ func TestLinuxClientTakesTheReleaseChannelItWasBuiltOn(t *testing.T) {
 	injectedClientReleaseChannel = "alpha"
 	injectedClientReleasePublicKeyB64 = "not base64!"
 
-	err := configureClientUpdate(nil, nil, false, "0.1.16.1364")
+	err := configureClientUpdate(nil, nil, false, "0.1.16.1364", nil)
 	if err == nil || !strings.Contains(err.Error(), "no production release key") {
 		t.Fatalf("the build's release channel was not taken up: %v", err)
 	}
 
 	// An explicit update section - here one that switches updates off - wins
 	// over the build default, as on Windows.
-	if err := configureClientUpdate(nil, nil, true, "0.1.16.1364"); err != nil {
+	if err := configureClientUpdate(nil, nil, true, "0.1.16.1364", nil); err != nil {
 		t.Fatalf("explicit opt-out failed: %v", err)
 	}
 
 	// A developer build carries no channel and stays without updates.
 	injectedClientReleaseRepoURL, injectedClientReleaseChannel = "", ""
-	if err := configureClientUpdate(nil, nil, false, "0.1.16.1364"); err != nil {
+	if err := configureClientUpdate(nil, nil, false, "0.1.16.1364", nil); err != nil {
 		t.Fatalf("a build without a channel must not configure updates: %v", err)
 	}
 }

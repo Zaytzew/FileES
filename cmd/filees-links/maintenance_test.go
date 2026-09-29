@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -40,6 +41,9 @@ func TestLinksRuntimeMaintenanceAndExclusiveStartup(t *testing.T) {
 		return
 	}
 	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	cacheRoot := filepath.Join(root, "cache")
 	if err := os.Mkdir(cacheRoot, 0700); err != nil {
 		t.Fatal(err)
@@ -49,6 +53,7 @@ func TestLinksRuntimeMaintenanceAndExclusiveStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := linkservice.Config{Schema: linkservice.ConfigSchema, VisitKeyFile: key,
+		Abuse:       linkservice.AbuseConfig{SignalSocket: filepath.Join(root, "abuse.sock")},
 		FastCGI:     linkservice.FastCGIEndpoint{Endpoint: linkservice.Endpoint{Network: "unix", Address: filepath.Join(root, "links.sock")}},
 		Backchannel: linkservice.Endpoint{Network: "unix", Address: filepath.Join(root, "authority.sock")},
 		Cache:       linkservice.CacheConfig{Enabled: true, Root: cacheRoot, TTL: "1s", MaxSize: 1024, CleanupInterval: "5m"}}
@@ -97,6 +102,17 @@ func TestLinksRuntimeMaintenanceAndExclusiveStartup(t *testing.T) {
 	if output, err := child(false).CombinedOutput(); err == nil || !strings.Contains(string(output), "already owned") {
 		t.Fatalf("second instance=%v %s", err, output)
 	}
+	connection, err := net.DialTimeout("unix", config.Abuse.SignalSocket, time.Second)
+	if err != nil {
+		t.Fatal("sandboxed abuse socket unavailable", err)
+	}
+	_ = connection.SetDeadline(time.Now().Add(time.Second))
+	var bans []any
+	err = json.NewDecoder(connection).Decode(&bans)
+	connection.Close()
+	if err != nil || len(bans) != 0 {
+		t.Fatalf("sandboxed snapshot: %v %v", bans, err)
+	}
 	if output, err := child(true).CombinedOutput(); err != nil || !strings.Contains(string(output), `"state":"checked"`) {
 		t.Fatalf("read-only check=%v %s", err, output)
 	}
@@ -105,6 +121,9 @@ func TestLinksRuntimeMaintenanceAndExclusiveStartup(t *testing.T) {
 	}
 	if err := command.Wait(); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(config.Abuse.SignalSocket); !os.IsNotExist(err) {
+		t.Fatal("abuse socket survived shutdown")
 	}
 	if _, err := storage.CheckMaintenance(cacheRoot, 5*time.Minute, time.Now()); err == nil {
 		t.Fatal("stopped service healthy")

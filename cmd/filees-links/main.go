@@ -58,12 +58,25 @@ func run(ctx context.Context, configPath string) error {
 		return fmt.Errorf("fastcgi listener: %w", err)
 	}
 	defer cleanup()
+	abuseListener, abuseCleanup, err := runtime.ListenAbuse()
+	if err != nil {
+		return err
+	}
+	defer abuseCleanup()
 	paths := []obsandbox.Path{}
 	for i, path := range runtime.SandboxPaths() {
 		paths = append(paths, obsandbox.Path{Label: fmt.Sprintf("runtime-%d", i), Name: path, Perms: "rwc"})
 	}
 	if err := obsandbox.Apply(obsandbox.Profile{Name: "filees-links", Promises: linksSandboxPromises, Paths: paths}); err != nil {
 		return fmt.Errorf("sandbox: %w", err)
+	}
+	abuseDone := make(chan struct{})
+	go func() { defer close(abuseDone); runtime.Abuse.Maintain(ctx) }()
+	defer func() { cancel(); <-abuseDone }()
+	if abuseListener != nil {
+		done := make(chan struct{})
+		go func() { defer close(done); runtime.ServeAbuse(ctx, abuseListener) }()
+		defer func() { _ = abuseListener.Close(); <-done }()
 	}
 	if runtime.Store != nil {
 		maintenance := &storage.Maintenance{Root: runtime.Config.Cache.Root, Interval: runtime.CleanupInterval, Sweep: runtime.Store.Sweep, Report: func(err error) { fmt.Fprintln(os.Stderr, "filees-links maintenance:", err) }}

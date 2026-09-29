@@ -217,6 +217,10 @@ func (s Store) RetryUploadAsContext(ctx context.Context, repoID, id, filename st
 	if err != nil {
 		return PendingUpload{}, err
 	}
+	// Windows cannot remove the old spool while this reader is still open.
+	if err := payload.Close(); err != nil {
+		return PendingUpload{}, err
+	}
 	if err := s.discardUpload(repoID, id); err != nil {
 		return PendingUpload{}, err
 	}

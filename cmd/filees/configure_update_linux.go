@@ -16,7 +16,7 @@ import (
 	"filees/pkg/ipcserver"
 )
 
-func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string) error {
+func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string, _ clientupdate.AnchorRetirementGuard) error {
 	// Same rule as Windows: no update section means the channel this build was
 	// released on. Only a config that names update explicitly - including one
 	// that switches it off - overrides that.

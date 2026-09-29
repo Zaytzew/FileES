@@ -29,7 +29,7 @@ import (
 // FILEES-BIN, resolved and verified exactly as the Linux client does it. Only
 // the installing differs, because the two platforms lay the product out
 // differently, and that difference is the whole of clientupdate.DirectoryInstaller.
-func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string) error {
+func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string, anchors clientupdate.AnchorRetirementGuard) error {
 	packaged, err := windowsPackageIdentityPresent()
 	if err != nil {
 		return fmt.Errorf("detect Windows package identity before configuring updates: %w", err)
@@ -80,7 +80,8 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 	}
 	resolver := &releaseenvelope.Resolver{Fetcher: fetcher, Verifier: verifier, TrustedKeys: trustedKeys}
 	installer := clientupdate.DirectoryInstaller{
-		Stager: clientupdate.BundleStager{Fetcher: fetcher, Root: update.StageRoot},
+		Anchors: anchors,
+		Stager:  clientupdate.BundleStager{Fetcher: fetcher, Root: update.StageRoot},
 		Paths: clientupdate.DirectoryPaths{
 			InstallDir: installDir,
 			ConfigPath: filepath.Join(installDir, "config.json"),

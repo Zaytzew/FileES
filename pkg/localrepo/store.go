@@ -137,10 +137,11 @@ type document struct {
 }
 
 type Store struct {
-	mu      sync.Mutex
-	path    string
-	records map[string]Record
-	now     func() time.Time
+	anchorsRetired bool // runtime fence after applying a build without anchor support
+	mu             sync.Mutex
+	path           string
+	records        map[string]Record
+	now            func() time.Time
 }
 
 func Open(path string) (*Store, error) {
@@ -342,6 +343,9 @@ func (s *Store) begin(record Record) (Record, error) {
 }
 
 func (s *Store) beginLocked(record Record) (Record, error) {
+	if record.Anchor && s.anchorsRetired {
+		return Record{}, errors.New("Explorer points are disabled until the client restarts after its update")
+	}
 	for _, existing := range s.records {
 		if existing.ServerID == record.ServerID && existing.RepoID == record.RepoID && existing.RemoteDeletionObserved {
 			return Record{}, errors.New("repository was withdrawn by server authority")
@@ -1013,6 +1017,41 @@ func (s *Store) List() []Record {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].OperationID < out[j].OperationID })
 	return out
+}
+
+// CheckAnchorRetirement refuses to retire anchor support while a point still
+// exists or its lifecycle outcome is uncertain. A missing folder is not proof
+// of a completed detach. The updater never detaches points on the user's behalf.
+func (s *Store) CheckAnchorRetirement() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkAnchorRetirementLocked()
+}
+
+func (s *Store) checkAnchorRetirementLocked() error {
+	for _, r := range s.records {
+		if !r.Anchor {
+			continue
+		}
+		if r.State == StateDeleted || (r.State == StateDetached && (!r.RemoteDeletionObserved || r.LocalCleanupCompleted)) {
+			continue
+		}
+		return errors.New("this release has no Explorer point support; detach existing points and finish pending point operations before updating")
+	}
+	return nil
+}
+
+// RetireAnchors checks and fences new point creation under the same lock as
+// BeginAnchorAttach. The fence lasts until restart, even if subsequent file
+// installation fails: an updater may already have replaced part of the build.
+func (s *Store) RetireAnchors() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.checkAnchorRetirementLocked(); err != nil {
+		return err
+	}
+	s.anchorsRetired = true
+	return nil
 }
 
 func (s *Store) Get(operationID string) (Record, bool) {

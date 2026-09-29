@@ -114,3 +114,20 @@ func processIsAlive(pid int) bool {
 	// this distinguishes running from finished rather than from unknown.
 	return code == 259
 }
+
+func TestBlockedHelperRetirementDoesNotReplaceDaemon(t *testing.T) {
+	installer := installedHelperFixture(t)
+	helper := filepath.Join(installer.Paths.InstallDir, "filees-cfapi.exe")
+	// An ordinary open handle deliberately denies FILE_SHARE_DELETE here.
+	// This is the failure path, not a claim about a running executable.
+	handle, err := os.Open(helper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	resolved := setTestRelease(t, &installer, false)
+	if err := installer.Apply(t.Context(), resolved); err == nil {
+		t.Fatal("retirement of a locked helper succeeded")
+	}
+	assertOldInstallation(t, installer)
+}

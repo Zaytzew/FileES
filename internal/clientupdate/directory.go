@@ -32,10 +32,18 @@ import (
 // exists everywhere, so this is tested on whatever platform the suite runs on
 // rather than only where it ships.
 type DirectoryInstaller struct {
-	Stager BundleStager
-	Paths  DirectoryPaths
+	Stager  BundleStager
+	Paths   DirectoryPaths
+	Anchors AnchorRetirementGuard
 	// now is injected by tests so a swap aside gets a predictable name.
 	now func() time.Time
+}
+
+// AnchorRetirementGuard is supplied by the daemon's live lifecycle store,
+// not inferred from whether the helper happens to be running at this instant.
+type AnchorRetirementGuard interface {
+	CheckAnchorRetirement() error
+	RetireAnchors() error
 }
 
 type DirectoryPaths struct {
@@ -77,7 +85,7 @@ func (installer DirectoryInstaller) managedFiles() []managedFile {
 		// The Explorer anchor helper; the daemon looks for it next to itself.
 		// Before 2026-09-28 no release carried it: the only copy was a manual
 		// one on the owner's station, so a clean install had no anchor.
-		{"bin/filees-cfapi.exe", filepath.Join(dir, "filees-cfapi.exe"), "kotwica w Eksploratorze", true},
+		{"bin/filees-cfapi.exe", filepath.Join(dir, "filees-cfapi.exe"), "punkt zaczepienia w Eksploratorze", true},
 	}
 }
 
@@ -109,6 +117,15 @@ func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releasee
 		return nil, false, err
 	}
 	files := presentFiles(staged.Root, installer.managedFiles())
+	retired, retiring, err := installer.retiredFiles(staged.Root)
+	if err != nil {
+		return nil, false, err
+	}
+	if retiring {
+		if err := installer.checkAnchorRetirement(); err != nil {
+			return nil, false, err
+		}
+	}
 	changes := make([]contract.UpdateChange, 0, len(files)+1)
 	for _, file := range files {
 		action, err := compareFile(filepath.Join(staged.Root, filepath.FromSlash(file.source)), file.target)
@@ -116,6 +133,9 @@ func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releasee
 			return nil, false, err
 		}
 		changes = append(changes, contract.UpdateChange{Action: action, Path: file.target, Detail: file.detail})
+	}
+	for _, file := range retired {
+		changes = append(changes, contract.UpdateChange{Action: "remove", Path: file.target, Detail: file.detail})
 	}
 	// Said out loud rather than left to inference. The owner has been burned by
 	// tools that rewrite configuration during an upgrade, and a plan that
@@ -139,14 +159,22 @@ func (installer DirectoryInstaller) Apply(ctx context.Context, resolved *release
 		return err
 	}
 	defer staged.Remove()
+	return installer.applyStaged(staged.Root)
+}
+
+func (installer DirectoryInstaller) applyStaged(root string) error {
 	paths, err := installer.normalizedPaths()
 	if err != nil {
 		return err
 	}
-	if err := validateDirectoryBundle(staged.Root, installer.managedFiles()); err != nil {
+	if err := validateDirectoryBundle(root, installer.managedFiles()); err != nil {
 		return err
 	}
-	files := presentFiles(staged.Root, installer.managedFiles())
+	files := presentFiles(root, installer.managedFiles())
+	retired, retiring, err := installer.retiredFiles(root)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(paths.InstallDir, 0o755); err != nil {
 		return err
 	}
@@ -154,13 +182,28 @@ func (installer DirectoryInstaller) Apply(ctx context.Context, resolved *release
 	// that turns out to be short does not leave half a client on disk.
 	payloads := make([][]byte, len(files))
 	for i, file := range files {
-		data, err := os.ReadFile(filepath.Join(staged.Root, filepath.FromSlash(file.source)))
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file.source)))
 		if err != nil {
 			return fmt.Errorf("read %s from bundle: %w", file.source, err)
 		}
 		payloads[i] = data
 	}
+	if retiring {
+		if err := installer.checkAnchorRetirement(); err != nil {
+			return err
+		}
+		if err := installer.Anchors.RetireAnchors(); err != nil {
+			return err
+		}
+	}
 	stamp := installer.clock()().UTC().Format("20060102-150405")
+	// Retire before replacing binaries. A helper that cannot be moved aside
+	// must not leave a new daemon installed alongside the old optional helper.
+	for _, file := range retired {
+		if err := os.Rename(file.target, file.target+supersededSuffix+stamp); err != nil {
+			return fmt.Errorf("retire %s: %w", file.target, err)
+		}
+	}
 	for i, file := range files {
 		if err := installer.replace(file.target, payloads[i], stamp); err != nil {
 			return fmt.Errorf("install %s: %w", file.target, err)
@@ -168,6 +211,44 @@ func (installer DirectoryInstaller) Apply(ctx context.Context, resolved *release
 	}
 	installer.forgetSupersededFiles(paths.InstallDir)
 	return nil
+}
+
+func (installer DirectoryInstaller) checkAnchorRetirement() error {
+	if installer.Anchors == nil {
+		return errors.New("cannot verify Explorer points before installing a release without their helper")
+	}
+	return installer.Anchors.CheckAnchorRetirement()
+}
+
+// Only the exact managed optional file is retired; no directory traversal or
+// glob deletion. Absence in the bundle is meaningful even if the installed
+// helper is already missing: existing points still need a supporting build.
+func (installer DirectoryInstaller) retiredFiles(root string) ([]managedFile, bool, error) {
+	var retired []managedFile
+	retiring := false
+	for _, file := range installer.managedFiles() {
+		if !file.optional {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(file.source))); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, false, err
+		}
+		retiring = true
+		info, err := os.Lstat(file.target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, false, fmt.Errorf("optional target %s is not a regular file", file.target)
+		}
+		retired = append(retired, file)
+	}
+	return retired, retiring, nil
 }
 
 // replace puts content at target, moving whatever is there aside first.
@@ -270,6 +351,13 @@ func (installer DirectoryInstaller) normalizedPaths() (DirectoryPaths, error) {
 // after the fact, and a release that cannot be identified afterwards is not a
 // release.
 func validateDirectoryBundle(root string, files []managedFile) error {
+	for _, file := range files {
+		if file.optional {
+			if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(file.source))); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
 	required := make([]string, 0, len(files)+2)
 	required = append(required, "VERSION", "SHA256SUMS")
 	for _, file := range presentFiles(root, files) {

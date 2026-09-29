@@ -67,7 +67,7 @@ func TestTheClientUpdatesTheDirectoryItRunsFrom(t *testing.T) {
 // refused loudly rather than updating this one from somebody else's bundle.
 func TestAMismatchedUpdatePlatformIsRefused(t *testing.T) {
 	update := config.UpdateConfig{Platform: "linux-amd64", Channel: "alpha", Component: "desktop-client"}
-	err := configureClientUpdate(nil, &update, true, "0.1.15")
+	err := configureClientUpdate(nil, &update, true, "0.1.15", nil)
 	if err == nil {
 		t.Fatal("a linux-amd64 update configuration was accepted by a windows client")
 	}
@@ -90,7 +90,7 @@ func TestDistributionUpdateDefaultsAndExplicitOptOut(t *testing.T) {
 	}
 	// A user-owned explicit enabled:false is represented by nil plus true and
 	// must win over the build default.
-	if err := configureClientUpdate(nil, nil, true, "0.1.15"); err != nil {
+	if err := configureClientUpdate(nil, nil, true, "0.1.15", nil); err != nil {
 		t.Fatalf("explicit opt-out failed: %v", err)
 	}
 	injectedClientReleaseChannel = ""
@@ -105,11 +105,11 @@ func TestStoreUpdateModeNeverConfiguresFileReplacement(t *testing.T) {
 	injectedClientUpdateMode = "store"
 	// Even an explicit legacy update configuration must not reach the
 	// DirectoryInstaller in a Store build.
-	if err := configureClientUpdate(nil, &config.UpdateConfig{Platform: "windows-amd64"}, true, "0.1.16"); err != nil {
+	if err := configureClientUpdate(nil, &config.UpdateConfig{Platform: "windows-amd64"}, true, "0.1.16", nil); err != nil {
 		t.Fatalf("Store mode must ignore legacy file replacement: %v", err)
 	}
 	injectedClientUpdateMode = "typo"
-	if err := configureClientUpdate(nil, nil, false, "0.1.16"); err == nil || !strings.Contains(err.Error(), "unknown Windows client update mode") {
+	if err := configureClientUpdate(nil, nil, false, "0.1.16", nil); err == nil || !strings.Contains(err.Error(), "unknown Windows client update mode") {
 		t.Fatalf("unknown distribution mode was accepted: %v", err)
 	}
 }

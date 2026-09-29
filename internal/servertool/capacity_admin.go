@@ -79,6 +79,7 @@ func capacityPaths(c serverconfig.Config) []storagewatch.Path {
 	add("mobile-temp", c.Mobile.TempRoot)
 	add("deleted", c.Repositories.DeletionArchiveRoot)
 	add("rotated", c.Repositories.RotationArchiveRoot)
+	add("load-spool", c.Repositories.LoadSpoolRoot)
 	if c.PublicShares.Enabled {
 		add("public-state", c.PublicShares.EffectiveStateRoot(c.Repositories.ResultsRoot))
 		add("public-staging", c.PublicShares.EffectiveAuthorityStagingRoot())

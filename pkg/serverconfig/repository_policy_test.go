@@ -43,6 +43,19 @@ func TestRepositoryWhaleRootDefaultsAndCanUseCapacityFilesystem(t *testing.T) {
 	}
 }
 
+func TestRepositoryLoadSpoolDefaultsToResultsRootAndCanMove(t *testing.T) {
+	results := filepath.Join(string(filepath.Separator), "var", "filees", "results")
+	repository := RepositoryFile{ResultsRoot: results}
+	if got, want := repository.EffectiveLoadSpoolRoot(), filepath.Join(results, "load-spool"); got != want {
+		t.Fatalf("default load spool=%q want=%q", got, want)
+	}
+	spool := filepath.Join(string(filepath.Separator), "storage", "filees-load")
+	repository.LoadSpoolRoot = spool + string(filepath.Separator)
+	if got := repository.EffectiveLoadSpoolRoot(); got != spool {
+		t.Fatalf("explicit load spool=%q want=%q", got, spool)
+	}
+}
+
 func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
 	root := t.TempDir()
 	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}

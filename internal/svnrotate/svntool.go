@@ -18,7 +18,7 @@ func runTool(stdin io.Reader, stdout io.Writer, name string, args ...string) err
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
-	var errb bytes.Buffer
+	var errb diagnosticTail
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, stderrTail(errb.Bytes()))
@@ -132,7 +132,7 @@ func dumpRevLoad(srcRepo, dstRepo string, rev int) error {
 	// rejected. The new generation keeps its own fresh UUID.
 	load := exec.Command("svnadmin", "load", "--quiet", "--ignore-uuid", dstRepo)
 
-	var dumpErrb, loadErrb bytes.Buffer
+	var dumpErrb, loadErrb diagnosticTail
 	dump.Stderr = &dumpErrb
 	load.Stderr = &loadErrb
 

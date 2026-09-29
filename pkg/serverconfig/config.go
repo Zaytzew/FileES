@@ -178,7 +178,17 @@ type RepositoryFile struct {
 	// It has to sit on the same filesystem as the repositories root, because
 	// the swap is a rename - internal/svnrotate refuses otherwise rather than
 	// copying tens of gigabytes silently.
-	RotationArchiveRoot   string `json:"rotation_archive_root,omitempty"`
+	RotationArchiveRoot string `json:"rotation_archive_root,omitempty"`
+	// LoadSpoolRoot holds LOAD_REPOSITORY_DUMP's intermediate streams (the
+	// extracted carrier, the filtered stream, the keep_last_revisions
+	// scratch). Empty means a load-spool directory in results_root. An
+	// explicit path may put intermediates on another filesystem; the final
+	// generation and its rotation archive must still share a filesystem.
+	// Prepare an explicit root with service-account permissions before use;
+	// OpenBSD must unveil the existing directory, not a future file name.
+	LoadSpoolRoot string `json:"load_spool_root,omitempty"`
+	// MaxDumpSize refuses a larger dump carrier in bytes; zero means no limit.
+	MaxDumpSize           int64  `json:"max_dump_size,omitempty"`
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
 	RecoveryAdminContact  string `json:"recovery_admin_contact"`
 	DataErasureMaxDays    *int   `json:"data_erasure_max_days,omitempty"`
@@ -192,6 +202,15 @@ func (repository RepositoryFile) EffectiveWhaleRoot() string {
 		return filepath.Clean(repository.WhaleRoot)
 	}
 	return filepath.Join(repository.ResultsRoot, "whale")
+}
+
+// EffectiveLoadSpoolRoot keeps installations without load_spool_root on the
+// results root they already unveil for the repository worker.
+func (repository RepositoryFile) EffectiveLoadSpoolRoot() string {
+	if repository.LoadSpoolRoot != "" {
+		return filepath.Clean(repository.LoadSpoolRoot)
+	}
+	return filepath.Join(repository.ResultsRoot, "load-spool")
 }
 
 // EffectiveSVNLookBinary returns the configured svnlook path, or — since
@@ -545,6 +564,12 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if config.Repositories.WhaleRoot != "" && !filepath.IsAbs(config.Repositories.WhaleRoot) {
 		return Config{}, errors.New("repositories whale_root must be absolute")
+	}
+	if spool := config.Repositories.LoadSpoolRoot; spool != "" && (!filepath.IsAbs(spool) || filepath.Dir(filepath.Clean(spool)) == filepath.Clean(spool) || strings.ContainsAny(spool, "\x00\r\n")) {
+		return Config{}, errors.New("repositories load_spool_root must be an absolute dedicated directory")
+	}
+	if config.Repositories.MaxDumpSize < 0 {
+		return Config{}, errors.New("repositories max_dump_size cannot be negative")
 	}
 	if err := validateUpload(file.Upload, file.Repositories.ResultsRoot); err != nil {
 		return Config{}, err

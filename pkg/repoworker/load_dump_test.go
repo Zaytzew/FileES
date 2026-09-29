@@ -116,6 +116,7 @@ func testDumpLoadService(root, serviceWC, reposRoot string) DumpLoadService {
 		ArchiveDir:    filepath.Join(root, "archive"),
 		DataAuthzFile: filepath.Join(root, "data-authz.conf"),
 		SVNAdmin:      svnadmin, SVNLook: svnlook, SVNDumpFilter: svndumpfilter,
+		SpoolRoot: filepath.Join(root, "load-spool"),
 	}
 }
 
@@ -481,7 +482,7 @@ func TestRevisionRangeScansDumpHeaders(t *testing.T) {
 	d.WriteString("Revision-number: 5\n\n")
 	d.WriteString("Revision-number: 7\n\n")
 	d.WriteString("Revision-number: 6\n\n")
-	low, high, err := revisionRange(d.Bytes())
+	low, high, err := revisionRange(bytes.NewReader(d.Bytes()))
 	if err != nil || low != 5 || high != 7 {
 		t.Fatalf("revisionRange = (%d,%d,%v), want (5,7,nil)", low, high, err)
 	}

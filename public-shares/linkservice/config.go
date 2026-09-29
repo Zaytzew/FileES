@@ -59,6 +59,10 @@ type Config struct {
 	Bundle        BundleConfig    `json:"bundle,omitempty"`
 	IntakeRoot    string          `json:"intake_root,omitempty"`
 	MaxUploadSize int64           `json:"max_upload_size,omitempty"`
+	// Optional public-intake limits, not the authority's AV rejection store.
+	// Uploads still arriving count at max_upload_size; zero disables a limit.
+	MaxUploadsPerChannel int   `json:"max_uploads_per_channel,omitempty"`
+	MaxQuarantineSize    int64 `json:"max_quarantine_size,omitempty"`
 	// Demo renders listings and forms but serves no file content either way.
 	Demo bool `json:"demo,omitempty"`
 }
@@ -193,9 +197,15 @@ func load(path string, prepare bool) (Runtime, error) {
 		if err := prepareDirectory(config.IntakeRoot, prepare); err != nil {
 			return Runtime{}, fmt.Errorf("intake root: %w", err)
 		}
-		quarantine = &intake.Store{Root: filepath.Clean(config.IntakeRoot), MaxBytes: maxUpload}
-	} else if config.MaxUploadSize != 0 {
-		return Runtime{}, errors.New("max_upload_size requires intake_root")
+		if config.MaxUploadsPerChannel < 0 || config.MaxUploadsPerChannel > 1000000 {
+			return Runtime{}, errors.New("max_uploads_per_channel is out of range")
+		}
+		if config.MaxQuarantineSize < 0 || (config.MaxQuarantineSize > 0 && config.MaxQuarantineSize < maxUpload) {
+			return Runtime{}, errors.New("max_quarantine_size must be at least max_upload_size")
+		}
+		quarantine = &intake.Store{Root: filepath.Clean(config.IntakeRoot), MaxBytes: maxUpload, MaxUploadsPerChannel: config.MaxUploadsPerChannel, MaxQuarantineBytes: config.MaxQuarantineSize}
+	} else if config.MaxUploadSize != 0 || config.MaxUploadsPerChannel != 0 || config.MaxQuarantineSize != 0 {
+		return Runtime{}, errors.New("max_upload_size, max_uploads_per_channel and max_quarantine_size require intake_root")
 	}
 	var store *cache.Store
 	if config.Cache.Enabled {

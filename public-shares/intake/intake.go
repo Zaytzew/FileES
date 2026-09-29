@@ -44,7 +44,10 @@ var (
 type Store struct {
 	Root     string
 	MaxBytes int64
-	Now      func() time.Time
+	// Zero means unlimited, as before (see budget.go).
+	MaxUploadsPerChannel int
+	MaxQuarantineBytes   int64
+	Now                  func() time.Time
 }
 
 type Record struct {
@@ -62,10 +65,10 @@ type Record struct {
 }
 
 func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, body io.Reader) (Record, error) {
-	if !filepath.IsAbs(s.Root) || s.MaxBytes < 1 || body == nil {
+	if !filepath.IsAbs(s.Root) || s.MaxBytes < 1 || s.MaxBytes > 1<<40 || s.MaxUploadsPerChannel < 0 || s.MaxUploadsPerChannel > 1000000 || s.MaxQuarantineBytes < 0 || body == nil {
 		return Record{}, ErrIncomplete
 	}
-	if _, err := uuid.Parse(channelID); err != nil || strings.TrimSpace(alias) == "" || strings.TrimSpace(slug) == "" || len(tokenSHA256) != sha256.Size*2 {
+	if !canonicalID(channelID) || strings.TrimSpace(alias) == "" || strings.TrimSpace(slug) == "" || len(tokenSHA256) != sha256.Size*2 {
 		return Record{}, ErrIncomplete
 	}
 	if _, err := hex.DecodeString(tokenSHA256); err != nil {
@@ -77,40 +80,58 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	}
 	uploadID := uuid.NewString()
 	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
+	if err := os.MkdirAll(s.Root, jobDirPerm); err != nil {
+		return Record{}, err
+	}
+	if s.limited() {
+		if err := s.reserve(channelID, uploadID); err != nil {
+			return Record{}, err
+		}
+	}
 	if err := os.MkdirAll(dir, jobDirPerm); err != nil {
 		return Record{}, err
 	}
 	if err := os.Chmod(dir, jobDirPerm); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	tmpPayload := filepath.Join(dir, "."+payloadName+".tmp")
 	file, err := os.OpenFile(tmpPayload, os.O_CREATE|os.O_EXCL|os.O_WRONLY, jobFilePerm)
 	if err != nil {
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(body, s.MaxBytes+1))
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(body, s.MaxBytes))
+	if copyErr == nil && written == s.MaxBytes {
+		var extra [1]byte
+		n, err := io.ReadFull(body, extra[:])
+		if n > 0 {
+			copyErr = ErrTooLarge
+		} else if err != nil && err != io.EOF {
+			copyErr = err
+		}
+	}
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if copyErr != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, copyErr
 	}
 	if syncErr != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, syncErr
 	}
 	if closeErr != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, closeErr
 	}
 	if written == 0 {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, ErrEmpty
 	}
 	if written > s.MaxBytes {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, ErrTooLarge
 	}
 	record := Record{
@@ -121,59 +142,76 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	tmpMeta := filepath.Join(dir, "."+metaName+".tmp")
 	raw, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	if err := os.WriteFile(tmpMeta, append(raw, '\n'), jobFilePerm); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	metaFile, err := os.OpenFile(tmpMeta, os.O_RDWR, jobFilePerm)
 	if err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	if err := metaFile.Sync(); err != nil {
 		metaFile.Close()
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	if err := metaFile.Close(); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	payloadPath := filepath.Join(dir, payloadName)
 	if err := os.Rename(tmpPayload, payloadPath); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	if err := os.Chmod(payloadPath, jobFilePerm); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	metaPath := filepath.Join(dir, metaName)
 	if err := os.Rename(tmpMeta, metaPath); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	if err := os.Chmod(metaPath, jobFilePerm); err != nil {
-		_ = os.RemoveAll(dir)
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
-	ready := filepath.Join(dir, readyName)
-	if err := os.WriteFile(ready, []byte(record.UploadID+"\n"), jobFilePerm); err != nil {
-		_ = os.RemoveAll(dir)
-		return Record{}, err
+	publish := func() error {
+		ready := filepath.Join(dir, readyName)
+		if err := os.WriteFile(ready, []byte(record.UploadID+"\n"), jobFilePerm); err != nil {
+			return err
+		}
+		if err := os.Chmod(ready, jobFilePerm); err != nil {
+			return err
+		}
+		// READY now carries the real size; the worst-case reservation goes.
+		if err := os.Remove(filepath.Join(dir, reservationName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := durable.SyncDirectory(dir); err != nil {
+			return err
+		}
+		return durable.SyncDirectory(filepath.Clean(s.Root))
 	}
-	if err := os.Chmod(ready, jobFilePerm); err != nil {
-		_ = os.RemoveAll(dir)
-		return Record{}, err
+	if s.limited() {
+		err = withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
+			if err := publish(); err != nil {
+				// Do not let the reaper claim READY from a failed publication.
+				_ = os.RemoveAll(dir)
+				return err
+			}
+			return nil
+		})
+	} else {
+		err = publish()
 	}
-	if err := durable.SyncDirectory(dir); err != nil {
-		_ = os.RemoveAll(dir)
-		return Record{}, err
-	}
-	if err := durable.SyncDirectory(filepath.Clean(s.Root)); err != nil {
+	if err != nil {
+		_ = s.Remove(uploadID)
 		return Record{}, err
 	}
 	return record, nil
@@ -234,7 +272,9 @@ func (s Store) Claim(uploadID string) error {
 		return ErrIncomplete
 	}
 	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
-	return os.Rename(filepath.Join(dir, readyName), filepath.Join(dir, "PROCESSING"))
+	return withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
+		return os.Rename(filepath.Join(dir, readyName), filepath.Join(dir, "PROCESSING"))
+	})
 }
 
 func (s Store) Release(uploadID string) error {
@@ -242,7 +282,9 @@ func (s Store) Release(uploadID string) error {
 		return ErrIncomplete
 	}
 	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
-	return os.Rename(filepath.Join(dir, "PROCESSING"), filepath.Join(dir, readyName))
+	return withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
+		return os.Rename(filepath.Join(dir, "PROCESSING"), filepath.Join(dir, readyName))
+	})
 }
 
 func (s Store) PayloadPath(uploadID string) string {
@@ -253,5 +295,12 @@ func (s Store) Remove(uploadID string) error {
 	if _, err := uuid.Parse(uploadID); err != nil || !filepath.IsAbs(s.Root) {
 		return ErrIncomplete
 	}
-	return os.RemoveAll(filepath.Join(filepath.Clean(s.Root), uploadID))
+	if _, err := os.Stat(s.Root); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
+		return os.RemoveAll(filepath.Join(filepath.Clean(s.Root), uploadID))
+	})
 }

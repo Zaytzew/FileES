@@ -21,6 +21,7 @@ import (
 	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"filees/public-shares/gate"
+	"filees/public-shares/intake"
 	"filees/public-shares/recipientotp"
 	"github.com/google/uuid"
 )
@@ -194,11 +195,19 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 				store.MaxBytes = max
 			}
 			_, err = store.Accept(projection.ChannelID, projection.Alias, projection.Slug, gate.TokenHash(invitation), original, part)
-			part.Close()
+			if errors.Is(err, intake.ErrChannelFull) || errors.Is(err, intake.ErrQuarantineFull) || errors.Is(err, intake.ErrBudgetState) {
+				// The contributor is authorized; capacity is full or unknown.
+				// Do not drain the rejected body or pretend the link is dead.
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Retry-After", "3600")
+				http.Error(w, "Kanał chwilowo nie przyjmuje kolejnych plików. Spróbuj ponownie później.", http.StatusServiceUnavailable)
+				return
+			}
 			if err != nil {
 				h.notFound(w)
 				return
 			}
+			part.Close()
 			accepted = true
 		default:
 			part.Close()

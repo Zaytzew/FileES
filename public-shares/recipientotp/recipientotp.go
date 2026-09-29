@@ -73,7 +73,11 @@ type Service struct {
 	TTL         time.Duration
 	Cooldown    time.Duration
 	MaxAttempts int
-	Now         func() time.Time
+	// Queue attempts per invitation and per channel in any 24 hours; zero is the
+	// default (5 and 50). Counted across epochs and restarts.
+	SendsPerInvitation int
+	SendsPerChannel    int
+	Now                func() time.Time
 }
 
 func (s Service) RequestCode(request Request) error {
@@ -86,6 +90,17 @@ func (s Service) RequestCode(request Request) error {
 			return ErrDenied
 		}
 		now := s.now()
+		budget, err := s.loadBudget(record.ChannelID)
+		if err != nil {
+			return err
+		}
+		budget.prune(now)
+		switch budget.decide(digest, now, s.sendsPerInvitation(), s.sendsPerChannel(), s.cooldown()) {
+		case budgetCooling:
+			return nil // neutral public response, no new queue attempt
+		case budgetExhausted:
+			return ErrSendBudget
+		}
 		current, err := s.load(record.ChannelID, digest)
 		if errors.Is(err, os.ErrNotExist) || (err == nil && !now.Before(current.ExpiresAt)) {
 			current = state{
@@ -98,8 +113,15 @@ func (s Service) RequestCode(request Request) error {
 		} else if err != nil {
 			return err
 		}
+		// Preserve the last-send cooldown from pre-budget installations too.
 		if !current.LastSentAt.IsZero() && now.Sub(current.LastSentAt) < s.cooldown() {
 			return nil
+		}
+		// Reserve durably BEFORE enqueue. Failure/crash after reservation costs
+		// an attempt; never refund an uncertain enqueue or send a free mail.
+		budget.Sends = append(budget.Sends, budgetEntry{InvitationHash: digest, At: now})
+		if err := s.storeBudget(budget); err != nil {
+			return err
 		}
 		code := s.code(current)
 		if err := s.Outbox.DeliverRecipientOTP(record, recipient.Email, request.Invitation, current.Epoch, code, current.ActivatedAt, current.ExpiresAt); err != nil {
@@ -247,6 +269,9 @@ func (s Service) path(channelID, digest string) string {
 }
 
 func (s Service) validate() error {
+	if s.SendsPerInvitation < 0 || s.SendsPerInvitation > 1000 || s.SendsPerChannel < 0 || s.SendsPerChannel > maxBudgetEntries {
+		return errors.New("recipient OTP send budgets are out of range")
+	}
 	if !filepath.IsAbs(s.Root) || len(s.Key) < 32 || s.Channels == nil || !filepath.IsAbs(s.Outbox.Root) || s.ttl() <= 0 || s.cooldown() < 0 || s.attempts() < 1 {
 		return errors.New("recipient OTP service is incomplete")
 	}

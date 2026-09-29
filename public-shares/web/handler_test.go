@@ -356,6 +356,29 @@ func TestRecipientOTPIsExchangedAndRevokeIsImmediate(t *testing.T) {
 	}
 }
 
+func TestRecipientOTPSendBudgetKeepsPublicResponseNeutral(t *testing.T) {
+	f := newWebFixture(t, func(share *manifest.Share) { share.Recipients = []string{"a@example.com"} })
+	service := f.handler.Backend.(authority.Resolver).RecipientOTP
+	service.SendsPerInvitation = 1
+	target := "https://example.test/atmprojekt/przetarg-2026?invite=" + url.QueryEscape(f.deliveries[0].Token)
+	first := perform(f.handler, http.MethodPost, target, "action=send", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	job, ok, err := service.Outbox.Claim(*f.now, time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("first OTP not queued: %v %v", ok, err)
+	}
+	if err := service.Outbox.MarkSent(job.MessageID, job.AttemptID); err != nil {
+		t.Fatal(err)
+	}
+	*f.now = f.now.Add(time.Minute)
+	blocked := perform(f.handler, http.MethodPost, target, "action=send", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	if first.Code != http.StatusOK || blocked.Code != first.Code || blocked.Body.String() != first.Body.String() {
+		t.Fatalf("budget disclosed publicly: first=%d blocked=%d", first.Code, blocked.Code)
+	}
+	if _, ok, err := service.Outbox.Claim(*f.now, time.Minute); err != nil || ok {
+		t.Fatalf("budget allowed another mail: %v %v", ok, err)
+	}
+}
+
 func TestPasswordNeverAppearsInVisitURL(t *testing.T) {
 	verifier, err := gate.HashPassword("sekretne haslo", nil)
 	if err != nil {

@@ -92,6 +92,9 @@ func (s Store) dirListingPath(repoID, path string, gen, rev int64) string {
 
 // LoadDirectory returns a cached one-level listing, or (nil, nil) on miss.
 func (s Store) LoadDirectory(repoID, path string, gen, rev int64) (*v1.Manifest, error) {
+	if !uploadComponent(repoID) {
+		return nil, errors.New("invalid listing repo_id")
+	}
 	if gen < 1 || rev < 1 {
 		return nil, nil
 	}
@@ -106,7 +109,7 @@ func (s Store) LoadDirectory(repoID, path string, gen, rev int64) (*v1.Manifest,
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return nil, fmt.Errorf("decode cached directory: %w", err)
 	}
-	if d.Schema != dirListingSchema || d.ViewGeneration != gen || d.RepoRevision != rev {
+	if d.Schema != dirListingSchema || d.RepoID != repoID || d.Path != path || d.ViewGeneration != gen || d.RepoRevision != rev {
 		return nil, nil
 	}
 	m := &v1.Manifest{
@@ -131,6 +134,18 @@ func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
+	if !uploadComponent(m.RepoID) {
+		return errors.New("invalid listing repo_id")
+	}
+	directoryCacheMu.Lock()
+	defer directoryCacheMu.Unlock()
+	pairs := s.listingPairs(m.RepoID)
+	for _, pair := range pairs {
+		if pair.gen >= m.ViewGeneration && pair.rev >= m.RepoRevision &&
+			(pair.gen != m.ViewGeneration || pair.rev != m.RepoRevision) {
+			return nil // A late old reply may be displayed, but must not evict newer cache.
+		}
+	}
 	d := directoryListing{
 		Schema:         dirListingSchema,
 		RepoID:         m.RepoID,
@@ -139,7 +154,11 @@ func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
 		RepoRevision:   m.RepoRevision,
 		Entries:        m.Entries,
 	}
-	return atomicWriteJSON(s.dirListingPath(m.RepoID, path, m.ViewGeneration, m.RepoRevision), d)
+	if err := atomicWriteJSON(s.dirListingPath(m.RepoID, path, m.ViewGeneration, m.RepoRevision), d); err != nil {
+		return err
+	}
+	s.pruneListingPairs(pairs, m.ViewGeneration, m.RepoRevision)
+	return nil
 }
 
 // atomicWriteJSON writes value as indented JSON to path atomically, mode 0600.

@@ -785,6 +785,15 @@ class MainActivity : AppCompatActivity() {
 
     private val captureCancellation = CaptureCancellation()
 
+    private data class DownloadTarget(val client: Client, val server: String, val repo: String,
+                                      val revision: Long, val generation: Long)
+
+    private fun downloadTarget(): DownloadTarget? {
+        if (activeSession != sessionKey()) return null
+        return DownloadTarget(client ?: return null, FileesSession.current(prefs)?.id ?: return null,
+            selectedRepoId ?: return null, browseRevision, browseGeneration)
+    }
+
     private fun sendCaptured(target: CaptureDestination<Client>, ticket: UiRequests.Ticket, files: List<WalkedFile>, packed: Boolean) {
         try {
             val result = CaptureTransfers.send(this, target.client, target.repoId, files, packed, captureCancellation)
@@ -804,18 +813,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun previewRow(row: BrowseRow) {
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
-        setBusy(true, getString(R.string.status_downloading))
+        val target = downloadTarget() ?: return
+        val ticket = beginUiRequest("download", getString(R.string.status_downloading))
         io.execute {
             try {
-                val dest = cachedDownload(active, repoId, row)
-                main.post {
-                    setBusy(false, "")
-                    openCached(dest, row.name)
+                val dest = cachedDownload(target, row)
+                postCurrent(ticket) {
+                    requestBusy(ticket, false, "")
+                    openCached(dest, row.name, target.server)
                 }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_download), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
             }
         }
     }
@@ -825,52 +833,56 @@ class MainActivity : AppCompatActivity() {
             downloadFolder(row)
             return
         }
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
+        val target = downloadTarget() ?: return
         val ticket = beginUiRequest("download", getString(R.string.status_downloading))
         executeDownload(ticket) {
+            var dest: File? = null
             try {
-                val dest = cachedDownload(active, repoId, row)
+                dest = cachedDownload(target, row)
+                DownloadCache.checkActive(cacheDir, target.server)
                 publishDownload(dest, row.name)
                 postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, row.name)) }
             } catch (e: Exception) {
                 postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
+            } finally {
+                dest?.parentFile?.let { DownloadCache.removeAttempt(cacheDir, it) }
             }
         }
     }
 
     private fun downloadFolder(row: BrowseRow) {
+        val target = downloadTarget() ?: return
+        val ticket = beginUiRequest("download", getString(R.string.status_scanning))
         if (legacyFullTree) {
-            confirmDownloadFolder(row, ManifestBrowse.filesUnder(manifestEntries, row.path))
+            confirmDownloadFolder(target, ticket, row, ManifestBrowse.filesUnder(manifestEntries, row.path))
             return
         }
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
-        setBusy(true, getString(R.string.status_scanning))
         io.execute {
             try {
-                val json = active.listFilesUnderJSON(repoId, row.path, browseRevision, browseGeneration)
+                val json = target.client.listFilesUnderJSON(target.repo, row.path, target.revision, target.generation)
                 val files = ManifestBrowse.entriesFrom(json)
-                main.post { confirmDownloadFolder(row, files) }
+                postCurrent(ticket) { confirmDownloadFolder(target, ticket, row, files) }
             } catch (e: Exception) {
                 if (!isUnsupported(e)) {
-                    main.post { failBusy(getString(R.string.error_download), e) }
+                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
                     return@execute
                 }
                 try {
                     val files = ManifestBrowse.filesUnder(
-                        ManifestBrowse.entriesFrom(active.refreshJSON(repoId)),
+                        ManifestBrowse.entriesFrom(target.client.refreshJSON(target.repo)),
                         row.path,
                     )
-                    main.post { confirmDownloadFolder(row, files) }
+                    postCurrent(ticket) { confirmDownloadFolder(target, ticket, row, files) }
                 } catch (e2: Exception) {
-                    main.post { failBusy(getString(R.string.error_download), e2) }
+                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e2) }
                 }
             }
         }
     }
 
-    private fun confirmDownloadFolder(row: BrowseRow, files: List<ManifestEntry>) {
+    private fun confirmDownloadFolder(target: DownloadTarget, ticket: UiRequests.Ticket, row: BrowseRow, files: List<ManifestEntry>) {
+        if (!uiRequests.current(ticket)) return
+        requestBusy(ticket, false, "")
         if (files.isEmpty()) {
             setBusy(false, getString(R.string.browse_empty))
             return
@@ -885,7 +897,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val start = {
-            pullFolderZip(row, files)
+            if (uiRequests.current(ticket)) pullFolderZip(target, row, files)
         }
         if (files.size >= 40 || bytes >= 40L * 1024 * 1024) {
             val summary = resources.getQuantityString(
@@ -902,34 +914,35 @@ class MainActivity : AppCompatActivity() {
         start()
     }
 
-    private fun pullFolderZip(row: BrowseRow, files: List<ManifestEntry>) {
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
+    private fun pullFolderZip(target: DownloadTarget, row: BrowseRow, files: List<ManifestEntry>) {
         val ticket = beginUiRequest("download", getString(R.string.status_downloading_folder, 1, files.size))
         executeDownload(ticket) {
             val staged = ArrayList<Pair<String, File>>(files.size)
-            var zip: File? = null
+            var attempt: File? = null
             try {
-                val dir = File(cacheDir, "dl").apply { mkdirs() }
+                val dir = DownloadCache.create(cacheDir, target.server)
+                attempt = dir
+                DownloadPublication.requireName("${row.name}.zip")
                 val pfx = if (row.path.isEmpty()) "" else "${row.path}/"
                 for ((index, entry) in files.withIndex()) {
                     postCurrent(ticket) {
                         requestBusy(ticket, true, getString(R.string.status_downloading_folder, index + 1, files.size))
                     }
                     val relative = if (pfx.isEmpty()) entry.path else entry.path.removePrefix(pfx)
-                    val dest = File(dir, "part-${index}-${relative.substringAfterLast('/')}")
-                    active.downloadTo(repoId, entry.path, dest.absolutePath)
+                    val dest = File(dir, "part-$index")
+                    DownloadCache.checkActive(cacheDir, target.server)
+                    target.client.downloadTo(target.repo, entry.path, dest.absolutePath)
                     staged.add(relative to dest)
                 }
                 postCurrent(ticket) { requestBusy(ticket, true, getString(R.string.status_packing_download)) }
-                zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
+                val zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
+                DownloadCache.checkActive(cacheDir, target.server)
                 publishDownload(zip, "${row.name}.zip")
                 postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, "${row.name}.zip")) }
             } catch (e: Exception) {
                 postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
             } finally {
-                staged.forEach { it.second.delete() }
-                zip?.delete()
+                attempt?.let { DownloadCache.removeAttempt(cacheDir, it) }
             }
         }
     }
@@ -957,14 +970,22 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun cachedDownload(active: Client, repoId: String, row: BrowseRow): File {
-        val dir = File(cacheDir, "dl").apply { mkdirs() }
-        val dest = File(dir, row.name)
-        active.downloadTo(repoId, row.path, dest.absolutePath)
-        return dest
+    private fun cachedDownload(target: DownloadTarget, row: BrowseRow): File {
+        DownloadPublication.requireName(row.name)
+        val dir = DownloadCache.create(cacheDir, target.server)
+        try {
+            val dest = File(dir, row.name)
+            target.client.downloadTo(target.repo, row.path, dest.absolutePath)
+            DownloadCache.checkActive(cacheDir, target.server)
+            dir.setLastModified(System.currentTimeMillis())
+            return dest
+        } catch (e: Exception) {
+            DownloadCache.removeAttempt(cacheDir, dir)
+            throw e
+        }
     }
 
-    private fun openCached(file: File, name: String) {
+    private fun openCached(file: File, name: String, server: String) {
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
             ?: "application/octet-stream"
         val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
@@ -977,10 +998,13 @@ class MainActivity : AppCompatActivity() {
             val ticket = beginUiRequest("download", getString(R.string.status_downloading))
             executeDownload(ticket) {
                 try {
+                    DownloadCache.checkActive(cacheDir, server)
                     publishDownload(file, name)
                     postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.error_preview)) }
                 } catch (e: Exception) {
                     postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
+                } finally {
+                    DownloadCache.removeAttempt(cacheDir, file.parentFile!!)
                 }
             }
         }
@@ -1179,6 +1203,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun unpairNow() {
         invalidateUiRequests()
+        FileesSession.current(prefs)?.let { DownloadCache.forget(cacheDir, it.id) }
         FileesSession.unpair(prefs)
         watched = WatchedFolders(this)
         client = null

@@ -542,6 +542,7 @@ class SettingsActivity : AppCompatActivity() {
             .setMessage(R.string.confirm_unpair)
             .setPositiveButton(R.string.action_unpair_short) { _, _ ->
                 val wasCurrent = server.id == FileesSession.current(prefs)?.id
+                DownloadCache.forget(cacheDir, server.id)
                 FileesSession.unpairId(prefs, server.id)
                 if (wasCurrent) {
                     finish()

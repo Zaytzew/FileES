@@ -28,7 +28,10 @@ class CaptureInstrumentation : Instrumentation() {
             waitForIdleSync()
             if (args.containsKey("download_publication")) {
                 val dir = File(targetContext.cacheDir, "publication-test-${System.nanoTime()}").apply { mkdirs() }
-                try { DownloadPublicationChecks.run(dir) } finally { dir.deleteRecursively() }
+                try {
+                    DownloadPublicationChecks.run(dir)
+                    DownloadCacheChecks.run(dir)
+                } finally { dir.deleteRecursively() }
             } else if (args.containsKey("watch_bindings")) {
                 ReceiptAcknowledgementChecks.run()
                 WatchRegistryChecks.run()

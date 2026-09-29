@@ -15,6 +15,9 @@ class FileesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         TreeZip.sweep(cacheDir)
+        runCatching {
+            DownloadCache.sweep(cacheDir, keepApkName = AutoUpdate.ready(this)?.sha256?.let { "filees-update-$it.apk" })
+        }
         FileesDeviceGate.install(this)
         createWatchNotificationChannel()
         FileesWatchScheduler.ensure(this)

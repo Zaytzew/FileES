@@ -16,6 +16,7 @@ import (
 type AppendReader interface {
 	Youngest(ctx context.Context, repoPath string) (int64, error)
 	Stat(ctx context.Context, repoPath, p string, rev int64) (v1.Kind, bool, error)
+	FileSize(ctx context.Context, repoPath, p string, rev int64) (int64, error)
 	Cat(ctx context.Context, repoPath, p string, rev int64, w io.Writer) (int64, string, error)
 }
 

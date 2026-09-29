@@ -171,6 +171,20 @@ func (r SVNReader) Stat(ctx context.Context, repoPath, path string, rev int64) (
 	return v1.KindFile, true, nil
 }
 
+// FileSize reads repository metadata without reading the file's contents.
+// The explicit revision must match Stat/Cat so comparison uses one snapshot.
+func (r SVNReader) FileSize(ctx context.Context, repoPath, path string, rev int64) (int64, error) {
+	out, err := output(ctx, r.svnlook(), "filesize", "-r", strconv.FormatInt(rev, 10), "--", repoPath, path)
+	if err != nil {
+		return 0, err
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil || size < 0 {
+		return 0, fmt.Errorf("svnlook filesize: unexpected output %q", strings.TrimSpace(string(out)))
+	}
+	return size, nil
+}
+
 // Cat streams the file at path (root-relative, no leading slash) at rev into w
 // while computing its size and SHA-256. It errors if path is a directory or is
 // absent — the worker relies on that to enforce "existing file, read-only".

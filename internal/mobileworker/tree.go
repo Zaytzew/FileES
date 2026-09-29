@@ -119,12 +119,24 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		if kind != v1.KindFile {
 			return v1.UploadTreeResult{}, fmt.Errorf("path %q is not a file", target)
 		}
-		_, existing, err := a.Reader.Cat(ctx, view.RepoPath, target, rev, io.Discard)
+		existingSize, err := a.Reader.FileSize(ctx, view.RepoPath, target, rev)
 		if err != nil {
 			return v1.UploadTreeResult{}, err
 		}
-		if existing == item.Sha {
-			continue
+		local, err := os.Stat(item.SpoolPath)
+		if err != nil {
+			return v1.UploadTreeResult{}, err
+		}
+		// Different sizes prove different contents without reading HEAD.
+		// Equal sizes do not prove equality: keep the SHA-256 comparison.
+		if existingSize == local.Size() {
+			_, existing, err := a.Reader.Cat(ctx, view.RepoPath, target, rev, io.Discard)
+			if err != nil {
+				return v1.UploadTreeResult{}, err
+			}
+			if existing == item.Sha {
+				continue
+			}
 		}
 		item.Replace = true
 		toCommit = append(toCommit, item)

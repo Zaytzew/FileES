@@ -377,6 +377,13 @@ func (c Client) sendOne(ctx, caller context.Context, item PendingUpload) (Pendin
 		return item, nil
 	}
 	if resp.Status != v1.StatusOK {
+		// Only a denial for this upload can park it. Transient or unrelated
+		// failures keep the same durable candidate eligible for retry.
+		if resp.RequestID == item.ID && resp.Operation == v1.OpUploadObject &&
+			resp.Error != nil && resp.Error.Code == "access.denied" {
+			item.State, item.LastError = UploadParked, respError(resp).Error()
+			return item, c.Store.recordUploadOutcome(item)
+		}
 		return c.pendingError(item, respError(resp))
 	}
 	var result v1.UploadObjectResult

@@ -73,14 +73,14 @@ func run(ctx context.Context, configPath string) error {
 	handler := runtime.Handler()
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- fcgi.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveDone <- fcgi.Serve(listener, recoverPanics(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !active.Enter() {
 				http.Error(w, "service stopping", http.StatusServiceUnavailable)
 				return
 			}
 			defer active.Leave()
 			handler.ServeHTTP(w, r.WithContext(ctx))
-		}))
+		}), func(message string) { fmt.Fprintln(os.Stderr, message) }))
 	}()
 	select {
 	case <-ctx.Done():

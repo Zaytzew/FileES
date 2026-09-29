@@ -23,6 +23,8 @@ const Anonymous = "anonymous"
 var (
 	ErrDenied          = errors.New("public share access denied")
 	ErrInvalidPassword = errors.New("public share password verifier is invalid")
+	// Internal classification only; HTTP still returns the same neutral refusal.
+	ErrPasswordMismatch = fmt.Errorf("%w: password mismatch", ErrDenied)
 )
 
 type Principal struct {
@@ -48,8 +50,11 @@ func Authorize(projection channel.Projection, token, password string) (Principal
 	}
 	if projection.PasswordHash != "" {
 		ok, err := VerifyPassword(projection.PasswordHash, password)
-		if err != nil || !ok {
+		if err != nil {
 			return Principal{}, ErrDenied
+		}
+		if !ok {
+			return Principal{}, ErrPasswordMismatch
 		}
 	}
 	return Principal{Recipient: Anonymous}, nil

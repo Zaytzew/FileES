@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/public-shares/abuse"
 	"filees/public-shares/backchannel"
 	"filees/public-shares/cache"
 	"filees/public-shares/intake"
@@ -51,6 +52,7 @@ type BundleConfig struct {
 }
 
 type Config struct {
+	Abuse         AbuseConfig     `json:"abuse,omitempty"`
 	Schema        string          `json:"schema"`
 	FastCGI       FastCGIEndpoint `json:"fastcgi"`
 	Backchannel   Endpoint        `json:"backchannel"`
@@ -68,6 +70,7 @@ type Config struct {
 }
 
 type Runtime struct {
+	Abuse           *abuse.Guard
 	Store           *cache.Store
 	CleanupInterval time.Duration
 	Config          Config
@@ -125,6 +128,14 @@ func load(path string, prepare bool) (Runtime, error) {
 	}
 	if config.Schema != ConfigSchema {
 		return Runtime{}, errors.New("public links config schema is invalid")
+	}
+	guard, err := abuse.New(config.Abuse.TrustedProxies)
+	if err != nil {
+		return Runtime{}, err
+	}
+	if config.Abuse.SignalSocket != "" && (!filepath.IsAbs(config.Abuse.SignalSocket) ||
+		config.Abuse.SignalSocket == config.FastCGI.Address || config.Abuse.SignalSocket == config.Backchannel.Address) {
+		return Runtime{}, errors.New("abuse signal_socket must be a separate absolute Unix socket path")
 	}
 	if err := validateEndpoint(config.FastCGI.Endpoint, true); err != nil {
 		return Runtime{}, fmt.Errorf("fastcgi: %w", err)
@@ -211,7 +222,7 @@ func load(path string, prepare bool) (Runtime, error) {
 	if config.Cache.Enabled {
 		store = &cache.Store{Config: cache.Config{Root: config.Cache.Root, TTL: ttl, MaxSize: config.Cache.MaxSize}}
 	}
-	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine, Store: store, CleanupInterval: cleanupInterval}, nil
+	return Runtime{Abuse: guard, Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine, Store: store, CleanupInterval: cleanupInterval}, nil
 }
 
 func prepareDirectory(path string, prepare bool) error {
@@ -238,7 +249,7 @@ func (r Runtime) Handler() http.Handler {
 	if r.Intake != nil {
 		maxUpload = r.Intake.MaxBytes
 	}
-	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1), Intake: r.Intake, MaxUploadBytes: maxUpload, Demo: r.Config.Demo}
+	return web.Handler{Abuse: r.Abuse, Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1), Intake: r.Intake, MaxUploadBytes: maxUpload, Demo: r.Config.Demo}
 }
 
 func (r Runtime) ListenFastCGI() (net.Listener, func(), error) {
@@ -295,6 +306,9 @@ func (r Runtime) ListenFastCGI() (net.Listener, func(), error) {
 
 func (r Runtime) SandboxPaths() []string {
 	paths := []string{}
+	if r.Config.Abuse.SignalSocket != "" {
+		paths = append(paths, r.Config.Abuse.SignalSocket)
+	}
 	if r.Config.Cache.Enabled {
 		paths = append(paths, filepath.Clean(r.Config.Cache.Root))
 	}

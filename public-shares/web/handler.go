@@ -1,4 +1,4 @@
-// Package web implements the stateless Public Shares HTTP surface. TLS and
+// Package web implements the Public Shares HTTP surface. TLS and
 // HTTP parsing belong to the fronting server; this handler is suitable for
 // net/http/fcgi and never starts a listener itself.
 package web
@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"filees/pkg/realmbranding"
+	"filees/public-shares/abuse"
 	"filees/public-shares/authority"
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
@@ -47,8 +48,8 @@ import (
 const visitLifetime = time.Hour
 
 // A valid verifier may use up to 128 MiB. Public request concurrency must not
-// become memory concurrency; rate limiting remains the fronting HTTP server's
-// responsibility. Four process-wide slots cap active Argon2 working memory at
+// become memory concurrency. Source abuse is tracked separately; network rate
+// limiting remains the fronting server's responsibility. Four slots cap memory at
 // 512 MiB, not total process RSS. Saturated requests do not queue.
 const passwordCheckConcurrency = 4
 
@@ -65,6 +66,7 @@ type Backend interface {
 }
 
 type Handler struct {
+	Abuse          *abuse.Guard
 	Backend        Backend
 	Cache          *cache.Store
 	Fetches        *FetchCoordinator
@@ -92,6 +94,17 @@ type visit struct {
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	securityHeaders(w)
+	if h.Abuse != nil {
+		ip, ok := h.Abuse.Source(request)
+		if !ok {
+			h.passwordBusy(w)
+			return
+		}
+		if wait := h.Abuse.Blocked(ip); wait > 0 {
+			sourceBlocked(w, wait)
+			return
+		}
+	}
 	if h.Backend == nil || len(h.VisitKey) < 32 {
 		h.notFound(w)
 		return
@@ -217,7 +230,25 @@ func (h Handler) freshEntry(w http.ResponseWriter, request *http.Request, alias,
 		h.renderPassword(w, entry.Projection)
 		return
 	}
+	var finishAttempt func(bool)
 	if entry.Projection.PasswordHash != "" {
+		if h.Abuse != nil {
+			ip, ok := h.Abuse.Source(request)
+			if !ok {
+				h.passwordBusy(w)
+				return
+			}
+			finishAttempt, ok = h.Abuse.Begin(ip)
+			if !ok {
+				if wait := h.Abuse.Blocked(ip); wait > 0 {
+					sourceBlocked(w, wait)
+				} else {
+					h.passwordBusy(w)
+				}
+				return
+			}
+			defer finishAttempt(false)
+		}
 		select {
 		case passwordCheckSlot <- struct{}{}:
 			defer func() { <-passwordCheckSlot }()
@@ -229,6 +260,9 @@ func (h Handler) freshEntry(w http.ResponseWriter, request *http.Request, alias,
 		}
 	}
 	principal, err := gate.Authorize(entry.Projection, "", password)
+	if finishAttempt != nil {
+		finishAttempt(errors.Is(err, gate.ErrPasswordMismatch))
+	}
 	if err != nil {
 		h.notFound(w)
 		return

@@ -21,7 +21,7 @@ Każdy wypisuje **jeden obiekt JSON** na standardowe wyjście
 
 | Czasownik | Co robi |
 |---|---|
-| `version` | schemat, lista czasowników i flagi funkcji |
+| `version` | wersja produktu z pliku VERSION, schemat, lista czasowników i flagi funkcji |
 | `register --root <folder> --identity <tekst>` | rejestruje folder jako kotwicę; tożsamość wraca w callbackach |
 | `shell-register --root <folder> --identity <tekst> --icon <plik.ico>` | rejestruje istniejący punkt FileES w powłoce użytkownika; tryb testowy |
 | `unregister --root <folder>` | zdejmuje rejestrację CFAPI i powłoki, również przy ponowieniu |
@@ -40,6 +40,26 @@ kind <TAB> rozmiar <TAB> tożsamość <TAB> nazwa
 `kind` to `f` albo `d`, rozmiar jest dziesiętny, nazwa idzie na końcu, bo
 jako jedyna może zawierać spacje. Nazwa ze znakiem ścieżki, `..` albo
 tabulatorem jest odrzucana, nie naprawiana.
+
+## Zgodność przy uruchomieniu — 2026-09-29
+
+Demon odpytuje `version` przed podłączeniem menedżera punktów zaczepienia.
+Wymaga zgodnego schematu, wszystkich używanych funkcji oraz tej samej bazowej
+wersji produktu (np. `0.1.18`). Rewizja SVN `r` nie jest porównywana; to nie
+kontrola podpisu ani dowód zgodności dowolnych zmian implementacji. Zmiana
+protokołu musi mieć odzwierciedlenie w schemacie lub flagach funkcji.
+
+`FILEES_CFAPI` zmienia ścieżkę, ale nie omija kontroli. Demon z wersją `dev`
+pomija tylko równość wersji produktu. Brak wersji w starym pomocniku jest
+odmową także dla `dev`. Limit odpowiedzi to 64 KiB, zapytania 10 sekund
+(z dodatkowym ograniczeniem oczekiwania na zamknięcie potoków).
+
+Po odmowie nie powstaje menedżer ani możliwość tworzenia nowych punktów.
+Istniejące rejestracje i foldery pozostają nietknięte; odłączenie wymagające
+pomocnika jest blokowane przed sprzątaniem metadanych. Pobieranie na żądanie
+pozostaje niedostępne do dostarczenia zgodnej pary. Dlatego nowy demon alfy
+musi być wydany razem z nowym pomocnikiem, nie samodzielnie. Nie zmienia to
+trybu częściowego podłączenia: Windows CFAPI nie przechodzi awaryjnie na sparse.
 
 ## Most do demona
 

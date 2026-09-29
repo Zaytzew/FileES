@@ -13,6 +13,14 @@ set_target_properties(filees-cfapi PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUI
 # cfapi.h needs Windows 10 1709 (0x0A00 plus NTDDI); older targets compile the
 # declarations away and fail at link with no useful message.
 target_compile_definitions(filees-cfapi PRIVATE _WIN32_WINNT=0x0A00 NTDDI_VERSION=0x0A000004 UNICODE _UNICODE)
+# Version metadata comes from the same source release as the daemon.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" FILEES_VERSION LIMIT_COUNT 1)
+string(STRIP "${FILEES_VERSION}" FILEES_VERSION)
+if(NOT FILEES_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  message(FATAL_ERROR "VERSION must be MAJOR.MINOR.PATCH, got '${FILEES_VERSION}'")
+endif()
+target_compile_definitions(filees-cfapi PRIVATE FILEES_CFAPI_VERSION="${FILEES_VERSION}")
 target_link_libraries(filees-cfapi PRIVATE CldApi RuntimeObject Advapi32 Shell32 Ole32 OleAut32 User32)
 if(MSVC)
   target_compile_options(filees-cfapi PRIVATE /W4 /utf-8)

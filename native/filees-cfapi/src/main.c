@@ -20,7 +20,7 @@ static const char *const k_verbs[] = {"version", "register", "shell-register", "
 static void print_version(void)
 {
     int i;
-    printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"verbs\":[");
+    printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"version\":\"" FILEES_CFAPI_VERSION "\",\"verbs\":[");
     for (i = 0; k_verbs[i]; ++i) {
         if (i) putchar(',');
         filees_cfapi_json_string(k_verbs[i]);

@@ -236,6 +236,13 @@ po usunięciu przyczyny ponawia sprzątanie. Lokalne zmiany blokują retencję.
 
 ## Alfa Windows: pomocnik kotwicy w paczce (od 2026-09-28)
 
+Od kontroli zgodności z 2026-09-29 nowy demon wymaga w odpowiedzi helpera
+`version` także bazowej wersji produktu zgodnej z własną, schematu i funkcji.
+Nie wydawać samego demona z dawną binarką CFAPI bez pola wersji: punkty
+pozostaną na dysku, ale ich obsługa będzie niedostępna. Budowa helpera czyta
+`VERSION`, a skrypt sprawdza zgodność odpowiedzi z tym plikiem. Numer rewizji
+SVN nie zastępuje schematu ani flag funkcji przy ocenie zgodności.
+
 Alfa Windows wymaga `FILEES_CFAPI_HELPER` — `filees-cfapi.exe` zbudowanego
 przez `packaging/windows/build-cfapi-helper.ps1` (statyczny runtime C, tylko
 biblioteki systemowe, sprawdzane `dumpbin`):

@@ -45,9 +45,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var watched: WatchedFolders
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private val uiRequests = UiRequests(::sessionKey)
+    private var pickerTarget: CaptureDestination<Client>? = null
 
     private var client: Client? = null
-    private var activeAddress: String? = null
+    private var activeSession: Triple<String?, String?, String?>? = null
     private var selectedRepoId: String? = null
     private var selectedShareName: String = ""
     private var selectableShares: List<RealmShare> = emptyList()
@@ -68,10 +70,12 @@ class MainActivity : AppCompatActivity() {
     private var pulseAnimator: ObjectAnimator? = null
 
     private val pickFilesLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        enqueueWalked(uris.map { DocumentWalk.single(contentResolver, it) })
+        val target = takePickerTarget()
+        if (target != null) enqueueWalked(target, uris.map { DocumentWalk.single(contentResolver, it) })
     }
     private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) enqueueFolder(uri)
+        val target = takePickerTarget()
+        if (uri != null && target != null) enqueueFolder(target, uri)
     }
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         if (result.contents == null) {
@@ -136,7 +140,8 @@ class MainActivity : AppCompatActivity() {
         bindServerLabel()
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
-        if (address != activeAddress) {
+        if (sessionKey() != activeSession) {
+            invalidateUiRequests()
             client = null
         }
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
@@ -201,6 +206,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        uiRequests.invalidate()
         captureCancellation.cancel()
         super.onDestroy()
         pulseAnimator?.cancel()
@@ -256,26 +262,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun activate(address: String, hostKey: String) {
-        setBusy(true, getString(R.string.status_activating))
+        val session = sessionKey()
+        val ticket = beginUiRequest("activation", getString(R.string.status_activating))
         io.execute {
             try {
                 val dial = DialAddress.resolve(address)
                 val newClient = Androidbind.newClient(filesDir.absolutePath, dial, FileesSession.MOBILE_USER, hostKey)
-                main.post {
+                postCurrent(ticket) {
+                    if (prefs.getString(FileesSession.PREF_ADDRESS, null) != address ||
+                        prefs.getString(FileesSession.PREF_HOST_KEY, null) != hostKey) return@postCurrent
                     client = newClient
-                    activeAddress = address
+                    activeSession = session
                     showPaired(true)
-                    setBusy(false, "")
+                    requestBusy(ticket, false, "")
                     loadRealmProjection()
                     scanWatchedFolders()
                     refreshDecisions()
                 }
             } catch (e: Exception) {
-                main.post {
+                postCurrent(ticket) {
+                    if (prefs.getString(FileesSession.PREF_ADDRESS, null) != address ||
+                        prefs.getString(FileesSession.PREF_HOST_KEY, null) != hostKey) return@postCurrent
                     client = null
-                    activeAddress = null
+                    activeSession = null
                     showPaired(false)
-                    failBusy(getString(R.string.error_connect), e)
+                    failRequest(ticket, getString(R.string.error_connect), e)
                 }
             }
         }
@@ -283,6 +294,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadRealmProjection() {
         val active = client ?: return
+        val serverId = FileesSession.current(prefs)?.id
+        val ticket = beginUiRequest("projection", getString(R.string.status_refreshing))
         io.execute {
             try {
                 val projection = RealmProjection.fromJson(active.listRepositoriesJSON())
@@ -291,7 +304,8 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Exception) {
                     DrawerFrame.empty()
                 }
-                main.post {
+                postCurrent(ticket) {
+                    if (client !== active || FileesSession.current(prefs)?.id != serverId) return@postCurrent
                     drawerFrame = drawers
                     FileesSession.rememberProjection(prefs, projection)
                     bindServerLabel()
@@ -300,10 +314,12 @@ class MainActivity : AppCompatActivity() {
                         selectedRepoId = null
                     }
                     renderList()
+                    requestBusy(ticket, false, "")
                     refreshDecisions()
                 }
             } catch (e: Exception) {
-                main.post {
+                postCurrent(ticket) {
+                    if (client !== active || FileesSession.current(prefs)?.id != serverId || !uiRequests.ownsBusy(ticket)) return@postCurrent
                     if (looksRevoked(e)) showRevoked(e) else failBusy(getString(R.string.error_list), e)
                 }
             }
@@ -564,6 +580,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (row.share) {
+            invalidateUiRequests()
             selectedRepoId = row.repoId
             selectedShareName = row.name
             FileesSession.setSelectedRepo(prefs, row.repoId)
@@ -573,6 +590,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (row.directory) {
+            invalidateUiRequests()
             browsePrefix = row.path
             listCurrentDir()
             return
@@ -582,6 +600,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun goUp(): Boolean {
         if (selectedRepoId == null) return false
+        invalidateUiRequests()
         if (browsePrefix.isNotEmpty()) {
             browsePrefix = browsePrefix.substringBeforeLast('/', "")
             listCurrentDir()
@@ -596,10 +615,11 @@ class MainActivity : AppCompatActivity() {
     private fun refreshAndList() {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
-        setBusy(true, getString(R.string.status_refreshing))
+        val prefix = browsePrefix
+        val ticket = beginUiRequest("browse", getString(R.string.status_refreshing))
         io.execute {
             try {
-                val listing = active.listDirectoryJSON(repoId, browsePrefix, 0, 0)
+                val listing = active.listDirectoryJSON(repoId, prefix, 0, 0)
                 val listed = JSONObject(listing)
                 val listedRev = listed.optLong("repo_revision")
                 val listedGen = listed.optLong("view_generation")
@@ -611,39 +631,40 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (_: Exception) {
                 }
-                main.post {
+                postCurrent(ticket) {
                     legacyFullTree = false
                     browseRevision = listedRev
                     browseGeneration = listedGen
                     manifestEntries = ManifestBrowse.entriesFrom(listing)
                     renderList()
                     showNewShouts(repoId, shouts)
-                    setBusy(false, "")
+                    requestBusy(ticket, false, "")
                 }
             } catch (e: Exception) {
                 if (!isUnsupported(e)) {
-                    main.post { failBusy(getString(R.string.error_refresh), e) }
+                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e) }
                     return@execute
                 }
                 try {
                     val json = active.refreshJSON(repoId)
-                    main.post {
+                    postCurrent(ticket) {
                         legacyFullTree = true
                         browseRevision = if (json.isBlank()) 0L else JSONObject(json).optLong("repo_revision")
                         browseGeneration = if (json.isBlank()) 0L else JSONObject(json).optLong("view_generation")
                         manifestEntries = ManifestBrowse.entriesFrom(json)
                         renderList()
                         showNewShouts(repoId, ManifestBrowse.shoutsFrom(json))
-                        setBusy(false, "")
+                        requestBusy(ticket, false, "")
                     }
                 } catch (e2: Exception) {
-                    main.post { failBusy(getString(R.string.error_refresh), e2) }
+                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e2) }
                 }
             }
         }
     }
 
     private fun listCurrentDir() {
+        val ticket = uiRequests.begin("browse")
         if (legacyFullTree) {
             renderList()
             return
@@ -654,17 +675,21 @@ class MainActivity : AppCompatActivity() {
             refreshAndList()
             return
         }
+        val prefix = browsePrefix
+        val revision = browseRevision
+        val generation = browseGeneration
         setBusy(true, getString(R.string.status_refreshing))
+        uiRequests.ownBusy(ticket)
         io.execute {
             try {
-                val listing = active.listDirectoryJSON(repoId, browsePrefix, browseRevision, browseGeneration)
-                main.post {
+                val listing = active.listDirectoryJSON(repoId, prefix, revision, generation)
+                postCurrent(ticket) {
                     manifestEntries = ManifestBrowse.entriesFrom(listing)
                     renderList()
-                    setBusy(false, "")
+                    requestBusy(ticket, false, "")
                 }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_refresh), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e) }
             }
         }
     }
@@ -689,37 +714,46 @@ class MainActivity : AppCompatActivity() {
     // a reject waiting room: still listed and browsable, never a dump target.
     private fun canCaptureSelected(): Boolean = selectedShare()?.canCapture == true
 
+    private fun captureTarget(): CaptureDestination<Client>? {
+        val active = client ?: return null
+        val repoId = selectedRepoId?.takeIf { it.isNotBlank() && canCaptureSelected() } ?: return null
+        return CaptureDestination(active, repoId)
+    }
+
+    private fun takePickerTarget(): CaptureDestination<Client>? {
+        val target = pickerTarget
+        pickerTarget = null
+        // A recreated Activity or changed pairing cannot reassign a picker result.
+        return target?.takeIf { it.client === client && it.repoId == selectedRepoId }
+    }
+
     private fun showAddChooser() {
-        if (!canCaptureSelected()) return
+        val target = captureTarget() ?: return
         AlertDialog.Builder(this)
             .setItems(arrayOf(getString(R.string.action_add_files), getString(R.string.action_add_folder))) { _, which ->
+                pickerTarget = target
                 if (which == 0) pickFilesLauncher.launch(arrayOf("*/*"))
                 else pickFolderLauncher.launch(null)
             }
             .show()
     }
 
-    private fun enqueueFolder(treeUri: Uri) {
-        if (client == null || selectedRepoId.isNullOrBlank() || !canCaptureSelected()) return
-        setBusy(true, getString(R.string.status_scanning))
+    private fun enqueueFolder(target: CaptureDestination<Client>, treeUri: Uri) {
+        val ticket = beginUiRequest("capture", getString(R.string.status_scanning))
         io.execute {
             val files = try {
                 DocumentWalk.tree(contentResolver, treeUri)
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_send), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_send), e) }
                 return@execute
             }
             if (files.isEmpty()) {
-                main.post { setBusy(false, getString(R.string.browse_empty)) }
+                postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.browse_empty)) }
                 return@execute
             }
             val summary = FolderPreflight.of(files)
-            main.post { setBusy(true, preflightLabel(summary)) }
-            if (summary.pack) {
-                sendPacked(files)
-            } else {
-                sendOneByOne(files)
-            }
+            postCurrent(ticket) { requestBusy(ticket, true, preflightLabel(summary)) }
+            sendCaptured(target, ticket, files, summary.pack)
         }
     }
 
@@ -728,30 +762,22 @@ class MainActivity : AppCompatActivity() {
         return resources.getQuantityString(R.plurals.status_preflight, summary.files, summary.files, weight)
     }
 
-    private fun enqueueWalked(files: List<WalkedFile>) {
-        if (client == null || selectedRepoId.isNullOrBlank() || files.isEmpty() || !canCaptureSelected()) return
+    private fun enqueueWalked(target: CaptureDestination<Client>, files: List<WalkedFile>) {
+        if (files.isEmpty()) return
         val summary = FolderPreflight.of(files)
-        setBusy(true, preflightLabel(summary))
+        val ticket = beginUiRequest("capture", preflightLabel(summary))
         io.execute {
-            try {
-                if (summary.pack) sendPacked(files) else sendOneByOne(files)
-            } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_send), e) }
-            }
+            sendCaptured(target, ticket, files, summary.pack)
         }
     }
 
     private val captureCancellation = CaptureCancellation()
 
-    private fun sendPacked(files: List<WalkedFile>) = sendCaptured(files, true)
-    private fun sendOneByOne(files: List<WalkedFile>) = sendCaptured(files, false)
-
-    private fun sendCaptured(files: List<WalkedFile>, packed: Boolean) {
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
+    private fun sendCaptured(target: CaptureDestination<Client>, ticket: UiRequests.Ticket, files: List<WalkedFile>, packed: Boolean) {
         try {
-            val result = CaptureTransfers.send(this, active, repoId, files, packed, captureCancellation)
-            main.post {
+            val result = CaptureTransfers.send(this, target.client, target.repoId, files, packed, captureCancellation)
+            postCurrent(ticket) {
+                if (!uiRequests.ownsBusy(ticket)) return@postCurrent
                 if (result.errors.isNotEmpty()) {
                     failBusy(getString(R.string.error_send_partial, result.sent, files.size), java.io.IOException(result.errors.distinct().take(5).joinToString("\n")))
                 } else {
@@ -761,7 +787,7 @@ class MainActivity : AppCompatActivity() {
                 refreshDecisions()
             }
         } catch (e: Exception) {
-            main.post { failBusy(getString(R.string.error_send), e) }
+            postCurrent(ticket) { failRequest(ticket, getString(R.string.error_send), e) }
         }
     }
 
@@ -966,6 +992,7 @@ class MainActivity : AppCompatActivity() {
             ?: prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null)
 
     private fun refreshDecisions() {
+        val ticket = uiRequests.begin("decisions")
         val active = client ?: run {
             bindDecisions(emptyList())
             return
@@ -978,12 +1005,17 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             try {
                 val all = PendingUpload.listFromJson(active.listUploadsJSON(repoId))
-                if (captureScope == WatchStatusStore.scope(this) && repoId == prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID,null)) {
-                    watchStatus.updateSummary(captureScope,all)
+                postCurrent(ticket) {
+                    if (client !== active || repoId != uploadRepoId() || captureScope != WatchStatusStore.scope(this)) return@postCurrent
+                    if (repoId == prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null)) {
+                        watchStatus.updateSummary(captureScope, all)
+                    }
+                    bindDecisions(all.filter { it.needsDecision })
                 }
-                main.post { if(captureScope == WatchStatusStore.scope(this)) bindDecisions(all.filter { it.needsDecision }) }
             } catch (_: Exception) {
-                main.post { bindDecisions(emptyList()) }
+                postCurrent(ticket) {
+                    if (client === active && repoId == uploadRepoId() && captureScope == WatchStatusStore.scope(this)) bindDecisions(emptyList())
+                }
             }
         }
     }
@@ -1090,6 +1122,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchTo(server: PairedServer) {
         if (FileesSession.current(prefs)?.id == server.id && client != null) return
+        invalidateUiRequests()
         FileesSession.select(prefs, server.id)
         client = null
         selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
@@ -1107,9 +1140,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun unpairNow() {
+        invalidateUiRequests()
         FileesSession.unpair(prefs)
         client = null
-        activeAddress = null
+        activeSession = null
         selectedRepoId = null
         selectableShares = emptyList()
         drawerFrame = DrawerFrame.empty()
@@ -1141,7 +1175,43 @@ class MainActivity : AppCompatActivity() {
         showTransportError(headline, err, prefs.getString(FileesSession.PREF_ADDRESS, null))
     }
 
+    // Capture identity only: display names / projection metadata can change
+    // without retiring a request. Read on the UI thread, including callbacks.
+    private fun sessionKey() = Triple(
+        FileesSession.current(prefs)?.id,
+        prefs.getString(FileesSession.PREF_ADDRESS, null),
+        prefs.getString(FileesSession.PREF_HOST_KEY, null),
+    )
+
+    private fun invalidateUiRequests() {
+        uiRequests.invalidate()
+        pickerTarget = null
+        setBusy(false, "")
+    }
+
+    private fun beginUiRequest(lane: String, message: String): UiRequests.Ticket {
+        val ticket = uiRequests.begin(lane)
+        setBusy(true, message)
+        uiRequests.ownBusy(ticket)
+        return ticket
+    }
+
+    private fun postCurrent(ticket: UiRequests.Ticket, action: () -> Unit) {
+        main.post { if (!isDestroyed && !isFinishing && uiRequests.current(ticket)) action() }
+    }
+
+    private fun requestBusy(ticket: UiRequests.Ticket, busy: Boolean, message: String) {
+        if (!uiRequests.ownsBusy(ticket)) return
+        setBusy(busy, message)
+        if (busy) uiRequests.ownBusy(ticket)
+    }
+
+    private fun failRequest(ticket: UiRequests.Ticket, headline: String, err: Exception) {
+        if (uiRequests.ownsBusy(ticket)) failBusy(headline, err)
+    }
+
     private fun setBusy(busy: Boolean, message: String) {
+        uiRequests.clearBusy()
         binding.overlayBusy.visibility = if (busy) View.VISIBLE else View.GONE
         if (message.isNotBlank()) binding.textBusy.text = message
         // toolbar.subtitle occupies the same Toolbar-managed slot as

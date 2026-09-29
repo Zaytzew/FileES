@@ -88,7 +88,7 @@ func buildTestRepo(t *testing.T, root string, contents ...string) string {
 		contents = []string{"payload-bytes\n"}
 	}
 	repo := filepath.Join(root, "repo")
-	if err := svnadminCreate(repo); err != nil {
+	if err := svnadminCreate("svnadmin", repo); err != nil {
 		t.Fatal(err)
 	}
 	if err := runTool(bytes.NewReader(testDump(contents...)), io.Discard,
@@ -320,7 +320,7 @@ func TestRotateBoundedDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	restored := filepath.Join(root, "restored")
-	if err := svnadminCreate(restored); err != nil {
+	if err := svnadminCreate("svnadmin", restored); err != nil {
 		t.Fatal(err)
 	}
 	if err := runTool(gz, io.Discard, "svnadmin", "load", "--quiet", "--ignore-uuid", restored); err != nil {
@@ -371,7 +371,7 @@ func TestRotateEmptyRepoIsNoop(t *testing.T) {
 	requireSVNTools(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
-	if err := svnadminCreate(repo); err != nil {
+	if err := svnadminCreate("svnadmin", repo); err != nil {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(root, "archive")

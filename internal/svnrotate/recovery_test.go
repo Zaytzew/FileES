@@ -69,10 +69,10 @@ func TestGenerationSwapProcessDeath(t *testing.T) {
 				if got := svnlookOut(t, "cat", repo, "docs/a.bin"); got != want {
 					t.Fatalf("content=%q", got)
 				}
-				if err := verify(repo); err != nil {
+				if err := verify("svnadmin", repo); err != nil {
 					t.Fatal(err)
 				}
-				if err := verify(meta.ArchiveDir); err != nil {
+				if err := verify("svnadmin", meta.ArchiveDir); err != nil {
 					t.Fatal(err)
 				}
 				if raw, err := os.ReadFile(filepath.Join(meta.ArchiveDir, "hooks", "pre-commit")); err != nil || string(raw) != blockHookBody {

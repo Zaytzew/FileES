@@ -15,13 +15,17 @@ import (
 type LoadConfig struct {
 	RepoPath   string
 	ArchiveDir string
-	BreakLocks bool // proceed despite active locks (edit passports die)
+	SVNAdmin   string // absolute executable selected and versioned by the caller
+	BreakLocks bool   // proceed despite active locks (edit passports die)
 	// Prepare writes caller-owned configuration and a durable operation receipt
 	// in the verified staging repository, before it becomes the hot generation.
 	Prepare func(staging string, meta Meta) error
 }
 
 func (c *LoadConfig) Validate() error {
+	if !filepath.IsAbs(c.SVNAdmin) {
+		return fmt.Errorf("svnadmin must be an absolute path, got %q", c.SVNAdmin)
+	}
 	if !filepath.IsAbs(c.RepoPath) {
 		return fmt.Errorf("repo path must be absolute, got %q", c.RepoPath)
 	}
@@ -109,7 +113,7 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 	// 2. Active locks are live edit passports; a carrier repo should never
 	// have any, but the check stays for the same reason it stays in Rotate:
 	// defensive, not a formality.
-	locks, err := activeLocks(cfg.RepoPath)
+	locks, err := activeLocks(cfg.SVNAdmin, cfg.RepoPath)
 	if err != nil {
 		return Meta{}, err
 	}
@@ -141,10 +145,10 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 	// one real difference from Rotate, which instead dumps its own HEAD.
 	newRepo := filepath.Join(workDir, "new.svn")
 	logf("building new generation from supplied dump")
-	if err := svnadminCreate(newRepo); err != nil {
+	if err := svnadminCreate(cfg.SVNAdmin, newRepo); err != nil {
 		return Meta{}, err
 	}
-	if err := runTool(dump, io.Discard, "svnadmin", "load", "--quiet", "--ignore-uuid", newRepo); err != nil {
+	if err := runTool(dump, io.Discard, cfg.SVNAdmin, "load", "--quiet", "--ignore-uuid", newRepo); err != nil {
 		return Meta{}, fmt.Errorf("svnadmin load: %w", err)
 	}
 
@@ -157,7 +161,7 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 
 	// 5. Prove the new generation before touching the hot path.
 	logf("verifying new generation")
-	if err := verify(newRepo); err != nil {
+	if err := verify(cfg.SVNAdmin, newRepo); err != nil {
 		return Meta{}, fmt.Errorf("verify new generation: %w", err)
 	}
 

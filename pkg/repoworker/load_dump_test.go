@@ -134,6 +134,10 @@ func TestDumpLoadServiceFullCycle(t *testing.T) {
 	reposRoot := buildCarrierRepo(t, root, serviceWC, repoID, realm, dump, "carrier.dump")
 
 	svc := testDumpLoadService(root, serviceWC, reposRoot)
+	// Record the selected executable's commands and put a failing alternative
+	// first in PATH. Recording a configured version alone is not sufficient:
+	// generation creation, loading and verification must use that executable.
+	commands := trackConfiguredSVNAdmin(t, &svc)
 	loaded, err := svc.Load(context.Background(), realm, repoID, uuid.NewString(), false, nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -147,8 +151,22 @@ func TestDumpLoadServiceFullCycle(t *testing.T) {
 	if loaded.ToolVersions["svnadmin"] == "" {
 		t.Fatalf("loaded.ToolVersions missing svnadmin: %+v", loaded)
 	}
+	if got := commands(); got != "--version\nlslocks\ncreate\nload\nverify\n" {
+		t.Fatalf("configured svnadmin commands = %q", got)
+	}
 
 	repoPath := filepath.Join(reposRoot, repoID)
+	receiptRaw, err := os.ReadFile(filepath.Join(repoPath, "conf", "filees-load-receipt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt dumpLoadReceipt
+	if err := json.Unmarshal(receiptRaw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Result.ToolVersions["svnadmin"] != loaded.ToolVersions["svnadmin"] {
+		t.Fatalf("receipt tool version differs from result: %+v", receipt.Result)
+	}
 	tree, err := exec.Command("svnlook", "tree", "--full-paths", "-r", "1", repoPath).CombinedOutput()
 	if err != nil {
 		t.Fatal(err)

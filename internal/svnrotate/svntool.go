@@ -91,17 +91,17 @@ func pack(repoPath string) error {
 	return runTool(nil, io.Discard, "svnadmin", "pack", repoPath)
 }
 
-func verify(repoPath string) error {
-	return runTool(nil, io.Discard, "svnadmin", "verify", "--quiet", repoPath)
+func verify(svnadmin, repoPath string) error {
+	return runTool(nil, io.Discard, svnadmin, "verify", "--quiet", repoPath)
 }
 
-func svnadminCreate(repoPath string) error {
-	return runTool(nil, io.Discard, "svnadmin", "create", repoPath)
+func svnadminCreate(svnadmin, repoPath string) error {
+	return runTool(nil, io.Discard, svnadmin, "create", repoPath)
 }
 
 // activeLocks returns the raw svnadmin lslocks output; empty means no locks.
-func activeLocks(repoPath string) (string, error) {
-	out, err := outputTool("svnadmin", "lslocks", repoPath)
+func activeLocks(svnadmin, repoPath string) (string, error) {
+	out, err := outputTool(svnadmin, "lslocks", repoPath)
 	if err != nil {
 		return "", err
 	}

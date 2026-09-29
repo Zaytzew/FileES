@@ -33,6 +33,13 @@ func RunClientEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 	return runClientEntry("/etc/filees/server.json", args, stdin, stdout, stderr, getenv, runSVNSessionSupervisor, runWhaleSessionSupervisor)
 }
 
+func repositoryLoadSpoolPaths(r serverconfig.RepositoryFile) []obsandbox.Path {
+	if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, r.LoadSpoolRoot) {
+		return []obsandbox.Path{{Label: "repository-load-spool", Name: r.LoadSpoolRoot, Perms: "rwc"}}
+	}
+	return nil
+}
+
 // clientSVNSupervisor returns the svnserve exit status separately from an
 // infrastructure error in the one-shot supervisor.
 type clientSessionSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) (int, error)
@@ -125,6 +132,9 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, r.DeletionArchiveRoot) {
 			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-deletion-archive", Name: r.DeletionArchiveRoot, Perms: "rwc"})
 		}
+		// The default load spool sits in results_root; a separate volume
+		// has to exist and be unveiled before the worker is exec'd.
+		profile.Paths = append(profile.Paths, repositoryLoadSpoolPaths(r)...)
 		if config.PublicShares.Enabled {
 			stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
 			if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, stateRoot) {

@@ -117,6 +117,8 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		SVNAdmin:         r.SVNAdminBinary,
 		SVNLook:          r.EffectiveSVNLookBinary(),
 		SVNDumpFilter:    r.EffectiveSVNDumpFilterBinary(),
+		SpoolRoot:        r.EffectiveLoadSpoolRoot(),
+		MaxDumpBytes:     r.MaxDumpSize,
 	}
 	var uploadChannels repoworker.UploadChannelService
 	if publicShareChannels != nil {

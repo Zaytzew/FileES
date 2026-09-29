@@ -170,6 +170,44 @@ first publication rewrites the file in the current shape.
   `_`), teach `installerNamePatterns` in `publish.go` what its installer is
   called, then stage and install again.
 
+"Stage and install" and the manual upload of the landing page are one step
+from the working copy since 2026-09-29 — see the next section.
+
+## Deploy in one step from the working copy
+
+`tools/deploy-site.sh` does everything by hand above in order: it builds and
+checks the landing page (`landing/build.mjs`, `check.mjs`, the landing tests),
+stages the publisher (`stage.mjs`), uploads the landing page and the publisher
+into `~/filees-site-deploy` of the admin account, and runs
+`deploy-landing.sh` there as root. That script installs the publisher first
+(`install.sh`, which stops on a release that does not verify), then backs up
+and replaces only `index.html`, `release-badge.js`, `android-badge.js`,
+`demo/` and `privacy/` in the web root. The download symlinks and any other
+file there are left alone. Finally the local script compares what the site
+serves with what it built.
+
+Settings stay out of the repository, in `~/.config/filees/site-deploy.env`
+(or the environment):
+
+```sh
+SITE_HOST=ADMIN@WEB-SERVER
+SITE_BECOME=sudo    # or su
+```
+
+Commit the site sources first (the script refuses local changes in them),
+then:
+
+```sh
+bash tools/deploy-site.sh            # asks before uploading
+bash tools/deploy-site.sh --dry-run  # build, check and stage only
+```
+
+SSH asks for the key passphrase twice (upload, install) unless an agent holds
+it, and sudo or su asks for its password on the terminal. Backups of each
+replaced landing page stay in `/var/lib/filees-site/landing-backups/`, and
+`/var/lib/filees-site/landing-deployed.log` records which SVN revision went
+live when.
+
 ## Remove
 
 ```sh

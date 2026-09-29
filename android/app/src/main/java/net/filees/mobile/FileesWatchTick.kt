@@ -24,15 +24,18 @@ object FileesWatchTick {
     fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation(), onWork: (String) -> Unit = {}): Int = CaptureCoordinator.run(cancel) {
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
         FileesSession.migrate(prefs)
-        val address = prefs.getString(FileesSession.PREF_ADDRESS, null) ?: return@run 0
-        val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null) ?: return@run 0
-        val repoId = prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null) ?: return@run 0
-        val repoName = prefs.getString(FileesSession.PREF_UPLOAD_REPO_NAME, null) ?: repoId
+        // One persisted server record: never mix the endpoint of A with B's target
+        // if the UI switches servers while this worker is starting.
+        val server = FileesSession.current(prefs) ?: return@run 0
+        val address = server.address
+        val hostKey = server.hostKey
+        val repoId = server.uploadRepoId
+        val repoName = server.uploadRepoName.ifBlank { repoId }
         if (address.isBlank() || hostKey.isBlank() || repoId.isBlank()) return@run 0
-        val watched = WatchedFolders(context)
+        val watched = WatchedFolders(context, server.id)
         val result = CaptureTransfers.Result()
         val status = WatchStatusStore(context)
-        val scope = WatchStatusStore.scope(context)
+        val scope = "${server.id}:$repoId"
         val trees = watched.uris()
         val token = status.begin(scope, trees)
         try {
@@ -45,12 +48,12 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,before.values.toList())
             if (pendingCount > 0) onWork(context.getString(R.string.watch_queue_count,pendingCount))
             val ownedSources = before.values.flatMap { it.sources }.toSet()
-            before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it) } }
+            before.values.filter { it.delivered }.forEach { item -> item.sources.forEach { watched.markSeen(it, repoId) } }
             for (tree in trees) {
                 cancel.check()
                 try {
                     val unseen = DocumentWalk.tree(context.contentResolver, tree, cancel).filterNot {
-                        watched.alreadySeen(CaptureTransfers.source(it))
+                        watched.alreadySeen(CaptureTransfers.source(it), repoId)
                     }
                     status.scanned(scope,tree)
                     if (unseen.isEmpty()) continue
@@ -88,7 +91,7 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,drained,finish = true)
             for (item in drained) {
                 if (item.delivered) {
-                    item.sources.forEach { watched.markSeen(it) }
+                    item.sources.forEach { watched.markSeen(it, repoId) }
                     if (before[item.id]?.delivered != true) result.sent += item.fileCount
                 } else {
                     result.waiting += item.fileCount

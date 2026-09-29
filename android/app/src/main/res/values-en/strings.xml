@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="watch_server_scope">Watched folders for server: %1$s. Other servers have separate lists.</string>
+    <string name="watch_unassigned">Unassigned folders from an earlier version — watching paused. “Watch folder…” will assign a folder to this server after you confirm which files to send.</string>
     <string name="app_name">FileES</string>
 
     <string name="section_repositories">Repositories</string>

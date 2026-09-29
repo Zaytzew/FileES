@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="watch_server_scope">Śledzone foldery serwera: %1$s. Inne serwery mają osobne listy.</string>
+    <string name="watch_unassigned">Nieprzypisane foldery z wcześniejszej wersji — śledzenie wstrzymane. „Śledź folder…” przypisze folder do tego serwera po potwierdzeniu zakresu wysyłki.</string>
     <string name="app_name">FileES</string>
 
     <string name="section_repositories">Repozytoria</string>

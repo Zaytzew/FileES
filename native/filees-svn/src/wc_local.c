@@ -393,6 +393,7 @@ struct info_row {
     const char *kind;
     svn_revnum_t rev;
     svn_revnum_t last_changed_rev;
+    const apr_array_header_t *conflicts;
 };
 
 struct info_baton {
@@ -418,6 +419,7 @@ static svn_error_t *collect_info(void *baton, const char *abspath_or_url,
     row->kind = filees_node_kind(info->kind);
     row->rev = info->rev;
     row->last_changed_rev = info->last_changed_rev;
+    row->conflicts = info->wc_info ? svn_wc_info_dup(info->wc_info, b->pool)->conflicts : NULL;
     return SVN_NO_ERROR;
 }
 
@@ -496,6 +498,27 @@ svn_error_t *filees_info(const char *url_arg, const char *wc_arg, svn_boolean_t 
         info_json_field("kind", row->kind);
         info_json_revision("revision", row->rev);
         info_json_revision("last_changed_rev", row->last_changed_rev);
+        /* Exact WC metadata, not guesses based on .mine/.rN filenames. Copy
+         * descriptions out of the receiver's scratch pool before emitting. */
+        printf(",\"conflicts\":[");
+        if (row->conflicts) {
+            int j;
+            for (j = 0; j < row->conflicts->nelts; ++j) {
+                const svn_wc_conflict_description2_t *d = APR_ARRAY_IDX(
+                    row->conflicts, j, const svn_wc_conflict_description2_t *);
+                if (j) putchar(',');
+                printf("{\"type\":");
+                filees_json_string(d->kind == svn_wc_conflict_kind_text ? "text" :
+                                   d->kind == svn_wc_conflict_kind_property ? "property" : "tree");
+                if (d->kind == svn_wc_conflict_kind_text) {
+                    info_json_field("base", d->base_abspath);
+                    info_json_field("mine", d->my_abspath);
+                    info_json_field("theirs", d->their_abspath);
+                }
+                putchar('}');
+            }
+        }
+        putchar(']');
         putchar('}');
     }
     puts("]}");

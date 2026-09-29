@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
+
+	"filees/pkg/client"
 )
 
 type recoveryConflictFile struct {
@@ -54,24 +54,24 @@ func (s *Service) inspectRecoveryConflicts(ctx context.Context, head int64) ([]r
 			return nil, fmt.Errorf("conflict is not at inspected HEAD: %s", rel)
 		}
 		paths := []string{rel}
-		// Keep the live working file AND .mine: the user may have edited again
-		// since SVN saved .mine. Also preserve SVN's two base artifacts.
-		siblings, err := os.ReadDir(filepath.Dir(abs))
+		// Keep the live file AND every artifact named by SVN. A filename is
+		// not evidence: SVN uniquifies sidecars when ordinary files collide.
+		reader, ok := s.Cli.(client.ConflictReader)
+		if !ok {
+			return nil, errors.New("conflict metadata reader unavailable")
+		}
+		details, err := reader.ConflictDetails(ctx, s.wc, rel)
 		if err != nil {
 			return nil, err
 		}
-		for _, sibling := range siblings {
-			if !strings.HasPrefix(sibling.Name(), filepath.Base(abs)) {
-				continue
-			}
-			suffix := strings.TrimPrefix(sibling.Name(), filepath.Base(abs))
-			artifact := suffix == ".mine"
-			if strings.HasPrefix(suffix, ".r") {
-				_, parseErr := strconv.ParseUint(strings.TrimPrefix(suffix, ".r"), 10, 64)
-				artifact = parseErr == nil
-			}
-			if artifact {
-				paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), sibling.Name())))
+		if len(details) != 1 || details[0].Type != "text" || details[0].Base == "" || details[0].Theirs == "" {
+			return nil, errors.New("unsupported or incomplete conflict metadata")
+		}
+		seen := map[string]bool{rel: true}
+		for _, path := range []string{details[0].Base, details[0].Mine, details[0].Theirs} {
+			if path != "" && !seen[path] {
+				paths = append(paths, path)
+				seen[path] = true
 			}
 		}
 		sort.Strings(paths)

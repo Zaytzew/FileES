@@ -79,6 +79,20 @@ func (t *Transport) Do(ctx context.Context, req v1.Request, reqPayload []byte) (
 
 // DoStream reads the durable spool with bounded memory.
 func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.Reader) (v1.Response, []byte, error) {
+	return t.exchange(ctx, req, reqPayload, nil)
+}
+
+// DoStreamTo streams READ_OBJECT only. The sink is provisional until this
+// method AND the caller's hash verification succeed.
+func (t *Transport) DoStreamTo(ctx context.Context, req v1.Request, sink io.Writer) (v1.Response, error) {
+	if req.Operation != v1.OpReadObject || sink == nil {
+		return v1.Response{}, errors.New("sshtransport: invalid streamed read")
+	}
+	resp, _, err := t.exchange(ctx, req, bytes.NewReader(nil), sink)
+	return resp, err
+}
+
+func (t *Transport) exchange(ctx context.Context, req v1.Request, reqPayload io.Reader, sink io.Writer) (v1.Response, []byte, error) {
 	header, err := json.Marshal(req)
 	if err != nil {
 		return v1.Response{}, nil, fmt.Errorf("sshtransport: encode request: %w", err)
@@ -159,7 +173,12 @@ func (t *Transport) DoStream(ctx context.Context, req v1.Request, reqPayload io.
 	// Read the full response before Wait, matching pkg/deploy/session.go's
 	// callHelper: an over-long or hung remote must not be able to block Wait
 	// while we are still trying to drain its output.
-	respHeader, respPayload, readErr := v1.ReadFrame(stdout, v1.ResponseMagic, v1.MaxHeaderBytes)
+	respHeader, respPayload, readErr := readResponse(stdout, req, sink)
+	if readErr != nil {
+		// A failed disk write / rejected header must not leave Wait blocked
+		// behind a peer still sending a large body into an unread SSH window.
+		_ = connection.Close()
+	}
 
 	if waitErr := session.Wait(); waitErr != nil {
 		// A server can reject a full upload before consuming its body. SSH then

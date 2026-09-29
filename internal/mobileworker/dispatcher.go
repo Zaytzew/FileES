@@ -2,11 +2,11 @@ package mobileworker
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 
 	v1 "filees/pkg/mobile/v1"
 )
@@ -81,12 +81,26 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 	case v1.OpReadObject:
 		var p v1.ReadObjectPayload
 		_ = json.Unmarshal(req.Payload, &p)
-		var buf bytes.Buffer
-		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, &buf)
+		// The header contains size/hash, so finish reading into a private
+		// disk spool before sending it. Never hold repository content in RAM.
+		spool, err := os.CreateTemp(d.Appender.SpoolDir, "filees-mobile-read-*")
 		if err != nil {
 			return d.writeError(out, req, err)
 		}
-		return d.writeOK(out, req, res, buf.Bytes())
+		defer os.Remove(spool.Name())
+		defer spool.Close()
+		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, spool)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		if _, err := spool.Seek(0, io.SeekStart); err != nil {
+			return d.writeError(out, req, err)
+		}
+		if err := d.writeOK(out, req, res, nil); err != nil {
+			return err
+		}
+		_, err = io.CopyN(out, spool, res.Size)
+		return err
 
 	case v1.OpUploadObject:
 		var p v1.UploadObjectPayload

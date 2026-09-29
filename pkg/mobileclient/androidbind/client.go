@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -182,13 +183,29 @@ func (c *Client) DownloadTo(repoID, path, destPath string) error {
 	if strings.TrimSpace(destPath) == "" {
 		return errors.New("androidbind: dest_path is required")
 	}
-	ctx, cancel := context.WithTimeout(c.baseContext(), downloadTimeout)
+	ctx, cancel := context.WithTimeout(c.baseContext(), 3*time.Hour)
 	defer cancel()
-	data, err := c.inner.Read(ctx, repoID, path)
+	// Private, unique sibling: neither another download's part file nor the
+	// existing destination may be truncated before verification completes.
+	f, err := os.CreateTemp(filepath.Dir(destPath), ".filees-download-*")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(destPath, data, 0o600)
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if _, err = c.inner.ReadTo(ctx, repoID, path, f); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), destPath)
 }
 
 // UploadTreeFile sends a zip produced by the Android packer as one UPLOAD_TREE

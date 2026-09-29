@@ -157,18 +157,11 @@ func (c Client) ListFilesUnder(ctx context.Context, repoID, path string, generat
 // Read fetches one existing object. Append-only does not mean the phone
 // cannot download; it only forbids modifying or deleting the path.
 func (c Client) Read(ctx context.Context, repoID, path string) ([]byte, error) {
-	req, err := v1.NewRequest(uuid.NewString(), v1.OpReadObject, v1.ReadObjectPayload{RepoID: repoID, Path: path})
-	if err != nil {
+	var buf bytes.Buffer
+	if _, err := c.ReadTo(ctx, repoID, path, &smallReadWriter{w: &buf}); err != nil {
 		return nil, err
 	}
-	resp, payload, err := c.Transport.Do(ctx, req, nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Status != v1.StatusOK {
-		return nil, respError(resp)
-	}
-	return payload, nil
+	return buf.Bytes(), nil
 }
 
 // ListRepositories returns the authenticated installation's realm

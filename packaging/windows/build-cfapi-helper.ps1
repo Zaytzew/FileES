@@ -36,8 +36,12 @@ try {
     Copy-Item -LiteralPath $exe -Destination (Join-Path $OutputDir 'filees-cfapi.exe') -Force
     $version = & (Join-Path $OutputDir 'filees-cfapi.exe') version
     if ($LASTEXITCODE -ne 0 -or -not ($version -match '"schema":"filees.cfapi/v1"')) { throw "filees-cfapi.exe version check failed: $version" }
+    $release = (Get-Content -LiteralPath (Join-Path $source 'VERSION') -TotalCount 1).Trim()
+    $answer = $version | ConvertFrom-Json
+    if ($answer.ok -ne $true -or $answer.version -cne $release) { throw "filees-cfapi.exe version differs from VERSION ($release)" }
     Write-Output (Join-Path $OutputDir 'filees-cfapi.exe')
     Write-Output ("imports: " + ($dependents -join ', '))
 } finally {
+    if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($build)).TrimEnd('\') -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')) { throw 'Unsafe CFAPI temporary build cleanup path' }
     Remove-Item -LiteralPath $build -Recurse -Force -ErrorAction SilentlyContinue
 }

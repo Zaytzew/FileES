@@ -15,6 +15,9 @@ extern "C" {
 #endif
 
 #define FILEES_CFAPI_SCHEMA "filees.cfapi/v1"
+#ifndef FILEES_CFAPI_VERSION
+#error "FILEES_CFAPI_VERSION must be supplied by the build"
+#endif
 #define FILEES_CFAPI_PROVIDER L"FileES"
 /* One identity blob per anchor: "<server id>\0<repo id>", as the daemon sends
  * it. The filter hands it back on every callback, so the helper never has to

@@ -41,6 +41,11 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	if cfapi == "" {
 		return nil
 	}
+	// FILEES_CFAPI selects a development path, never bypasses the protocol check.
+	if err := anchorHelperCompatible(context.Background(), cfapi, version); err != nil {
+		talk.With("anchor").Warnf("Explorer anchor helper unavailable: %v", err)
+		return nil
+	}
 	anchors := &anchorManager{
 		helper: cfapi, nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
 		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),

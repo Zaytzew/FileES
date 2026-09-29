@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="watch_server_scope">Beobachtete Ordner für Server: %1$s. Andere Server haben eigene Listen.</string>
+    <string name="watch_unassigned">Nicht zugeordnete Ordner aus einer früheren Version — Überwachung pausiert. „Ordner beobachten…“ ordnet einen Ordner diesem Server zu, nachdem Sie den Umfang des Uploads bestätigt haben.</string>
     <string name="app_name">FileES</string>
     <string name="section_repositories">Repositorys</string>
     <string name="section_upload_shelves">Annahme-Fächer</string>

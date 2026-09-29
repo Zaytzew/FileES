@@ -81,7 +81,7 @@ object FileesSession {
     private const val PREF_SERVERS = "servers_json"
     private const val PREF_CURRENT_ID = "current_server_id"
 
-    fun migrate(prefs: SharedPreferences) {
+    @Synchronized fun migrate(prefs: SharedPreferences) {
         if (prefs.contains(PREF_SERVERS)) return
         val address = prefs.getString(PREF_ADDRESS, null) ?: return
         val hostKey = prefs.getString(PREF_HOST_KEY, null) ?: return
@@ -100,7 +100,7 @@ object FileesSession {
         write(prefs, listOf(server), server.id)
     }
 
-    fun servers(prefs: SharedPreferences): List<PairedServer> {
+    @Synchronized fun servers(prefs: SharedPreferences): List<PairedServer> {
         migrate(prefs)
         val raw = prefs.getString(PREF_SERVERS, "[]") ?: "[]"
         val array = JSONArray(raw)
@@ -111,7 +111,7 @@ object FileesSession {
         return out
     }
 
-    fun current(prefs: SharedPreferences): PairedServer? {
+    @Synchronized fun current(prefs: SharedPreferences): PairedServer? {
         val all = servers(prefs)
         if (all.isEmpty()) return null
         val id = prefs.getString(PREF_CURRENT_ID, null)
@@ -129,7 +129,7 @@ object FileesSession {
         return if (servers(prefs).size > 1) "$label ▾" else label
     }
 
-    fun putAndSelect(prefs: SharedPreferences, address: String, hostKey: String): PairedServer {
+    @Synchronized fun putAndSelect(prefs: SharedPreferences, address: String, hostKey: String): PairedServer {
         val list = servers(prefs).toMutableList()
         val index = list.indexOfFirst { it.address == address }
         val server = if (index >= 0) {
@@ -142,14 +142,15 @@ object FileesSession {
         return server
     }
 
-    fun select(prefs: SharedPreferences, id: String) {
+    @Synchronized fun select(prefs: SharedPreferences, id: String) {
         val all = servers(prefs)
         if (all.none { it.id == id }) return
         write(prefs, all, id)
     }
 
-    fun rememberProjection(prefs: SharedPreferences, projection: RealmProjection) {
+    @Synchronized fun rememberProjection(prefs: SharedPreferences, projection: RealmProjection, expectedServerId: String? = null) {
         val cur = current(prefs) ?: return
+        if (expectedServerId != null && cur.id != expectedServerId) return
         val uploadOk = cur.uploadRepoId.isBlank() ||
             projection.shares.any { it.repoId == cur.uploadRepoId && it.canCapture }
         replace(
@@ -165,18 +166,20 @@ object FileesSession {
         )
     }
 
-    fun setSelectedRepo(prefs: SharedPreferences, repoId: String?) {
+    @Synchronized fun setSelectedRepo(prefs: SharedPreferences, repoId: String?) {
         val cur = current(prefs) ?: return
         replace(prefs, cur.copy(selectedRepoId = repoId.orEmpty()))
     }
 
-    fun setUploadTarget(prefs: SharedPreferences, repoId: String, repoName: String) {
-        val cur = current(prefs) ?: return
+    @Synchronized fun setUploadTarget(prefs: SharedPreferences, repoId: String, repoName: String, expectedServerId: String? = null): Boolean {
+        val cur = current(prefs) ?: return false
+        if (expectedServerId != null && cur.id != expectedServerId) return false
         replace(prefs, cur.copy(uploadRepoId = repoId, uploadRepoName = repoName))
+        return true
     }
 
     // Forget the active server only. Device identity stays; other pairings stay.
-    fun unpair(prefs: SharedPreferences) {
+    @Synchronized fun unpair(prefs: SharedPreferences) {
         val cur = current(prefs) ?: run {
             prefs.edit().clear().apply()
             return
@@ -185,7 +188,7 @@ object FileesSession {
         write(prefs, rest, rest.firstOrNull()?.id)
     }
 
-    fun unpairId(prefs: SharedPreferences, id: String) {
+    @Synchronized fun unpairId(prefs: SharedPreferences, id: String) {
         val rest = servers(prefs).filterNot { it.id == id }
         val next = if (prefs.getString(PREF_CURRENT_ID, null) == id) rest.firstOrNull()?.id else prefs.getString(PREF_CURRENT_ID, null)
         write(prefs, rest, next)

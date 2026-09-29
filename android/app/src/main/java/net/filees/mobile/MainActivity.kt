@@ -137,6 +137,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         pulseAnimator?.resume()
+        watched = WatchedFolders(this)
         bindServerLabel()
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
@@ -273,6 +274,7 @@ class MainActivity : AppCompatActivity() {
                         prefs.getString(FileesSession.PREF_HOST_KEY, null) != hostKey) return@postCurrent
                     client = newClient
                     activeSession = session
+                    watched = WatchedFolders(this)
                     showPaired(true)
                     requestBusy(ticket, false, "")
                     loadRealmProjection()
@@ -307,7 +309,7 @@ class MainActivity : AppCompatActivity() {
                 postCurrent(ticket) {
                     if (client !== active || FileesSession.current(prefs)?.id != serverId) return@postCurrent
                     drawerFrame = drawers
-                    FileesSession.rememberProjection(prefs, projection)
+                    FileesSession.rememberProjection(prefs, projection, serverId)
                     bindServerLabel()
                     selectableShares = projection.shares.filter { it.selectable }
                     if (selectedRepoId != null && selectableShares.none { it.repoId == selectedRepoId }) {
@@ -1035,11 +1037,11 @@ class MainActivity : AppCompatActivity() {
     private fun discardPending(item: PendingUpload) {
         val active = client ?: return
         val repoId = uploadRepoId() ?: return
+        val targetWatched = watched
         io.execute {
             try {
                 CaptureCoordinator.run(captureCancellation) {
-                    val watched = WatchedFolders(this)
-                    item.sources.forEach { watched.markSeen(it) } // explicit discard must survive a watch rescan
+                    item.sources.forEach { targetWatched.markSeen(it, repoId) } // only this server/repository
                     active.discardUpload(repoId, item.id)
                 }
                 main.post { refreshDecisions() }
@@ -1124,6 +1126,7 @@ class MainActivity : AppCompatActivity() {
         if (FileesSession.current(prefs)?.id == server.id && client != null) return
         invalidateUiRequests()
         FileesSession.select(prefs, server.id)
+        watched = WatchedFolders(this, server.id)
         client = null
         selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
         selectedShareName = ""
@@ -1142,6 +1145,7 @@ class MainActivity : AppCompatActivity() {
     private fun unpairNow() {
         invalidateUiRequests()
         FileesSession.unpair(prefs)
+        watched = WatchedFolders(this)
         client = null
         activeSession = null
         selectedRepoId = null

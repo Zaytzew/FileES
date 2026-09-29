@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="watch_server_scope">Dossiers surveillés du serveur : %1$s. Les autres serveurs ont des listes distinctes.</string>
+    <string name="watch_unassigned">Dossiers non attribués d’une version antérieure — surveillance suspendue. « Surveiller un dossier… » attribuera un dossier à ce serveur après confirmation des fichiers à envoyer.</string>
     <string name="app_name">FileES</string>
     <string name="section_repositories">Dépôts</string>
     <string name="section_upload_shelves">Étagères d’admission</string>

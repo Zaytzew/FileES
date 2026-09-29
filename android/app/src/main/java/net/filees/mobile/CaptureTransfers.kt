@@ -82,13 +82,13 @@ object CaptureTransfers {
         // queued, including a conflict. Completed metadata closes a crash
         // between receipt persistence and the SharedPreferences seen marker.
         val owned = existing.filter { watched != null || !it.delivered }.flatMap { it.sources }.toSet()
-        existing.filter { it.delivered }.forEach { item -> item.sources.forEach { watched?.markSeen(it) } }
+        existing.filter { it.delivered }.forEach { item -> item.sources.forEach { watched?.markSeen(it, repoId) } }
         val fresh = files.filterNot { source(it) in owned }
 
         fun account(item: PendingUpload, count: Int) {
             if (item.delivered) {
                 result.sent += count
-                item.sources.forEach { watched?.markSeen(it) }
+                item.sources.forEach { watched?.markSeen(it, repoId) }
             } else {
                 result.waiting += count
                 if (item.lastError.isNotBlank()) result.errors += item.lastError

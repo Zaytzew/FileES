@@ -34,6 +34,7 @@ class SettingsActivity : AppCompatActivity() {
     private var uploadReposReady = false
     private var uploadReposError: String? = null
     private var drawerFrame: DrawerFrame = DrawerFrame.empty()
+    private var watchChange = 0
     // A call to pickUploadTarget that arrived before loadUploadRepos finished
     // used to just dead-end on "still checking" - the caller (in particular
     // finishAddWatch's addThisWatch) never ran, so adding a watch silently
@@ -117,6 +118,11 @@ class SettingsActivity : AppCompatActivity() {
     private fun uiSafe(action: () -> Unit) {
         runOnUiThread { if (!isFinishing && !isDestroyed) action() }
     }
+
+    private fun watchCurrent(): Boolean = watched.serverId == FileesSession.current(
+        getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))?.id
+
+    private fun watchUi(action: () -> Unit) = uiSafe { if (watchCurrent()) action() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -584,8 +590,8 @@ class SettingsActivity : AppCompatActivity() {
                     }
                     val capturable = projection.shares.filter { it.canCapture }
                     val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
-                    FileesSession.rememberProjection(prefs, projection)
-                    uiSafe {
+                    watchUi {
+                        FileesSession.rememberProjection(prefs, projection, watched.serverId)
                         uploadRepos = capturable
                         drawerFrame = drawers
                         uploadReposReady = true
@@ -600,7 +606,7 @@ class SettingsActivity : AppCompatActivity() {
                     lastError = e
                 }
             }
-            uiSafe {
+            watchUi {
                 uploadRepos = emptyList()
                 uploadReposReady = true
                 uploadReposError = lastError?.message?.ifBlank { null } ?: getString(R.string.error_generic)
@@ -622,6 +628,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun pickUploadTarget(onPicked: (() -> Unit)? = null) {
+        if (!watchCurrent()) return
         if (!uploadReposReady) {
             // Queued, not dropped: loadUploadRepos's background thread calls
             // resumePendingUploadTargetPicks once it resolves (success or
@@ -667,14 +674,24 @@ class SettingsActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.upload_target_pick_title)
             .setItems(names) { _, index ->
+                if (!watchCurrent()) return@setItems
                 val chosen = uploadRepos[index]
-                FileesSession.setUploadTarget(
-                    getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE),
-                    chosen.repoId,
-                    chosen.displayName,
-                )
-                renderUploadTarget()
-                confirmExistingBacklogThen(onPicked)
+                val request = ++watchChange
+                confirmExistingBacklogThen(chosen.repoId, request) {
+                    if (request == watchChange && watchCurrent()) {
+                        // Do not expose the new destination to a worker until
+                        // the operator has accepted its existing-file policy.
+                        val applied = FileesSession.setUploadTarget(
+                            getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE),
+                            chosen.repoId, chosen.displayName, watched.serverId,
+                        )
+                        if (applied) {
+                            renderUploadTarget()
+                            onPicked?.invoke()
+                            FileesWatchScheduler.runSoon(this)
+                        }
+                    }
+                }
             }
             .show()
     }
@@ -688,37 +705,53 @@ class SettingsActivity : AppCompatActivity() {
     // isn't added to `watched` until after this resolves - see
     // finishAddWatch's ordering) and asks the same three-way question
     // again, aggregated, before anything is allowed to send.
-    private fun confirmExistingBacklogThen(onPicked: (() -> Unit)?) {
+    private fun confirmExistingBacklogThen(repoId: String, request: Int, onPicked: (() -> Unit)?) {
         val trees = watched.uris()
         if (trees.isEmpty()) {
             onPicked?.invoke()
             return
         }
         Thread {
-            val pending = trees
-                .flatMap { DocumentWalk.tree(contentResolver, it) }
-                .filterNot { watched.alreadySeen(it.uri.toString() + "/" + it.filename) }
-            uiSafe {
+            val pending = try {
+                trees.flatMap { DocumentWalk.tree(contentResolver, it) }
+                    .filterNot { watched.alreadySeen(CaptureTransfers.source(it), repoId) }
+            } catch (e: Exception) {
+                watchUi { if (request == watchChange) showTransportError(getString(R.string.error_list), e, null) }
+                return@Thread
+            }
+            watchUi {
+                if (request != watchChange) return@watchUi
                 if (pending.isEmpty()) {
                     onPicked?.invoke()
-                    return@uiSafe
+                    return@watchUi
                 }
                 showWatchDepthDialog(
                     getString(R.string.watch_confirm_title),
                     getString(R.string.watch_backlog_message, depthCount(pending)),
                     pending,
                 ) { depth ->
-                    markOutsideDepth(pending, depth)
-                    onPicked?.invoke()
+                    if (watchCurrent() && request == watchChange) {
+                        try {
+                            markOutsideDepth(pending, depth, repoId)
+                            onPicked?.invoke()
+                        } catch (e: Exception) {
+                            showTransportError(getString(R.string.error_send), e, null)
+                        }
+                    }
                 }
             }
         }.start()
     }
 
     private fun confirmAndAddWatch(uri: Uri) {
+        if (!watchCurrent()) return
         Thread {
-            val files = DocumentWalk.tree(contentResolver, uri)
-            uiSafe { showWatchConfirmDialog(uri, files) }
+            try {
+                val files = DocumentWalk.tree(contentResolver, uri)
+                watchUi { showWatchConfirmDialog(uri, files) }
+            } catch (e: Exception) {
+                watchUi { showTransportError(getString(R.string.error_list), e, null) }
+            }
         }.start()
     }
 
@@ -801,10 +834,10 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    private fun markOutsideDepth(files: List<WalkedFile>, depth: WatchDepth) {
+    private fun markOutsideDepth(files: List<WalkedFile>, depth: WatchDepth, repoId: String) {
         val now = System.currentTimeMillis()
         files.filterNot { depth.includes(it, now) }
-            .forEach { watched.markSeen(it.uri.toString() + "/" + it.filename) }
+            .forEach { watched.markSeen(CaptureTransfers.source(it), repoId) }
     }
 
     // Files outside the chosen depth are marked seen, so the next tick
@@ -816,16 +849,31 @@ class SettingsActivity : AppCompatActivity() {
     // (and never re-asks about) the very folder this dialog just finished
     // confirming on its own.
     private fun finishAddWatch(uri: Uri, files: List<WalkedFile>, depth: WatchDepth) {
-        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (!watchCurrent()) return
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: Exception) {
+            showTransportError(getString(R.string.error_list), e, null)
+            return
+        }
         val addThisWatch = {
-            watched.add(uri)
-            markOutsideDepth(files, depth)
-            renderWatched()
-            FileesWatchScheduler.runSoon(this)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            val server = FileesSession.current(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))
+            val repoId = server?.uploadRepoId.orEmpty()
+            if (server?.id == watched.serverId && watchCurrent() && repoId.isNotBlank()) {
+                // Persist exclusions BEFORE making the tree visible to workers.
+                try {
+                    markOutsideDepth(files, depth, repoId)
+                    watched.add(uri)
+                    renderWatched()
+                    FileesWatchScheduler.runSoon(this)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                } catch (e: Exception) {
+                    showTransportError(getString(R.string.error_send), e, null)
+                }
             }
         }
         if (getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE).getString(FileesSession.PREF_UPLOAD_REPO_ID, null).isNullOrBlank()) {
@@ -838,7 +886,32 @@ class SettingsActivity : AppCompatActivity() {
     private fun renderWatched() {
         binding.listWatched.removeAllViews()
         watchLabels.clear()
+        binding.listWatched.addView(fileesMetaText(getString(R.string.watch_server_scope,
+            FileesSession.serverLabel(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)))))
         val uris = watched.uris()
+        val unassigned = watched.unassigned()
+        if (unassigned.isNotEmpty()) {
+            binding.listWatched.addView(fileesMetaText(getString(R.string.watch_unassigned)))
+            for (uri in unassigned) {
+                val row = fileesSettingsRow().apply { orientation = LinearLayout.VERTICAL }
+                val label = fileesMetaText(uri.lastPathSegment ?: uri.toString()).apply {
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
+                val bind = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+                bind.text = getString(R.string.action_add_watched)
+                styleFileesOutline(bind, R.color.filees_accent_text)
+                bind.isEnabled = !watched.serverId.isNullOrBlank()
+                bind.setOnClickListener { confirmAndAddWatch(uri) }
+                val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+                remove.text = getString(R.string.action_remove_watched)
+                styleFileesOutline(remove, R.color.filees_destructive)
+                remove.setOnClickListener { watched.removeUnassigned(uri); renderWatched() }
+                val actions = fileesSettingsRow()
+                actions.addView(bind); actions.addView(remove)
+                row.addView(label); row.addView(actions)
+                binding.listWatched.addView(row)
+            }
+        }
         if (uris.isEmpty()) {
             binding.listWatched.addView(fileesMetaText(getString(R.string.watched_empty)))
             return

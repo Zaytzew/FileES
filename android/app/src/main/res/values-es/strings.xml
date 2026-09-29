@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="watch_server_scope">Carpetas vigiladas del servidor: %1$s. Los demás servidores tienen listas separadas.</string>
+    <string name="watch_unassigned">Carpetas sin asignar de una versión anterior: vigilancia en pausa. «Vigilar carpeta…» asignará una carpeta a este servidor después de confirmar qué archivos enviar.</string>
     <string name="app_name">FileES</string>
     <string name="section_repositories">Repositorios</string>
     <string name="section_upload_shelves">Estantes de admisión</string>

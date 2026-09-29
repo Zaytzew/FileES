@@ -123,7 +123,7 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 	}
 
 	loaded := LoadedDump{SourceRevisionRange: fmt.Sprintf("r%d:r%d", low, high), ToolVersions: toolVersions}
-	cfg := svnrotate.LoadConfig{RepoPath: repoPath, ArchiveDir: s.ArchiveDir}
+	cfg := svnrotate.LoadConfig{RepoPath: repoPath, ArchiveDir: s.ArchiveDir, SVNAdmin: s.SVNAdmin}
 	cfg.Prepare = func(staging string, meta svnrotate.Meta) error {
 		loaded.OldUUID, loaded.NewUUID = meta.OldUUID, meta.NewUUID
 		// Configuration must be installed before the generation is visible.

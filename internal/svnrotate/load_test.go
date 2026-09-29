@@ -6,13 +6,24 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func testLoadConfig(repo, archive string) LoadConfig {
-	return LoadConfig{RepoPath: repo, ArchiveDir: archive}
+	svnadmin, _ := exec.LookPath("svnadmin")
+	return LoadConfig{RepoPath: repo, ArchiveDir: archive, SVNAdmin: svnadmin}
+}
+
+func TestLoadConfigRejectsImplicitSVNAdmin(t *testing.T) {
+	for _, tool := range []string{"", "svnadmin", filepath.Join("relative", "svnadmin")} {
+		cfg := LoadConfig{RepoPath: t.TempDir(), ArchiveDir: t.TempDir(), SVNAdmin: tool}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "svnadmin must be an absolute path") {
+			t.Fatalf("SVNAdmin %q: %v", tool, err)
+		}
+	}
 }
 
 // TestLoadGenerationFullCycle mirrors TestRotateFullCycle's shape but for the

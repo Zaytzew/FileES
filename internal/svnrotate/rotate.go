@@ -104,7 +104,7 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 
 	// 2. Active locks are live edit passports; rotation must not silently
 	// destroy them.
-	locks, err := activeLocks(cfg.RepoPath)
+	locks, err := activeLocks("svnadmin", cfg.RepoPath)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 	// 4. New generation: r1 = complete dump of old HEAD, properties intact.
 	newRepo := filepath.Join(workDir, "new.svn")
 	logf("building new generation from HEAD snapshot")
-	if err := svnadminCreate(newRepo); err != nil {
+	if err := svnadminCreate("svnadmin", newRepo); err != nil {
 		return err
 	}
 	if err := dumpRevLoad(cfg.RepoPath, newRepo, head); err != nil {
@@ -157,7 +157,7 @@ func Rotate(cfg Config, reason string, logw io.Writer) (err error) {
 
 	// 6. Prove the new generation before touching the hot path.
 	logf("verifying new generation")
-	if err := verify(newRepo); err != nil {
+	if err := verify("svnadmin", newRepo); err != nil {
 		return fmt.Errorf("verify new generation: %w", err)
 	}
 	oldTree, err := treeListing(cfg.RepoPath, head)

@@ -72,6 +72,8 @@ type PendingUpload struct {
 	State         UploadState  `json:"state"`
 	LastAttemptAt time.Time    `json:"last_attempt_at,omitempty"`
 	EnqueuedAt    time.Time    `json:"enqueued_at"`
+	// Set only after the caller durably recorded every source as seen.
+	SourcesAcknowledgedAt time.Time `json:"sources_acknowledged_at,omitempty"`
 
 	// Populated once a worker outcome is known.
 	Outcome        v1.Outcome `json:"outcome,omitempty"`

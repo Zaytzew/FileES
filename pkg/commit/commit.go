@@ -77,6 +77,9 @@ func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
 type Service struct {
+	// CheckPublication admits only a new batch, after recovery and before WC
+	// mutations. It never interrupts an already started durable transaction.
+	CheckPublication func(context.Context) error
 	// Pause fences ordinary sync cycles across every local working copy.
 	// Configure before Run. Nil retains standalone/test operation.
 	Pause *runtime.SyncPause
@@ -1207,6 +1210,11 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 
 	// Stable, two-dimensional batch plan. Directories cost no payload and no
 	// file slot; svn add uses --depth empty, so they cannot expand behind us.
+	if s.CheckPublication != nil {
+		if err := s.CheckPublication(ctx); err != nil {
+			return err
+		}
+	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].item.Rel < pending[j].item.Rel })
 	pending = selectBatch(pending, s.Rules.MaxBatchFiles, s.Rules.MaxBatchBytes)
 

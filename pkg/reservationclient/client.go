@@ -7,8 +7,9 @@
 // a read with no durable, retryable mutation semantics. See
 // implementation notes (not distributed) §"Granica procesu".
 //
-// This package performs exactly one call; it has no scheduling, coalescing
-// or retry policy of its own — that is internal/gui/projectionrefresh's
+// Ordinary fetches perform exactly one call. Capacity negotiation permits
+// one compatibility retry on an explicit old-parser rejection, without a
+// schema downgrade. Scheduling and coalescing are projectionrefresh's
 // job (or whatever ultimately supplies its RefreshFunc), not this one.
 package reservationclient
 
@@ -110,13 +111,27 @@ func (c *Client) FetchAutolock(ctx context.Context, repoID string) (reservationv
 	return c.fetch(ctx, repoID, reservationv1.AutolockSchema)
 }
 
+// FetchAutolockStorage opts into capacity without downgrading ownership.
+// Only an explicit old-parser rejection permits retrying the old request.
+func (c *Client) FetchAutolockStorage(ctx context.Context, repoID string) (reservationv1.Result, error) {
+	r, err := c.fetch(ctx, repoID, reservationv1.AutolockSchema, true)
+	var exit *ssh.ExitError
+	if errors.As(err, &exit) && strings.Contains(err.Error(), `json: unknown field "include_storage_write"`) {
+		return c.FetchAutolock(ctx, repoID)
+	}
+	return r, err
+}
+
 // FetchServerState reads metadata using the same pinned, one-shot broker.
 func (c *Client) FetchServerState(ctx context.Context) (reservationv1.Result, error) {
 	return c.fetch(ctx, "", reservationv1.StateSchema)
 }
 
-func (c *Client) fetch(ctx context.Context, repoID, schema string) (reservationv1.Result, error) {
+func (c *Client) fetch(ctx context.Context, repoID, schema string, storage ...bool) (reservationv1.Result, error) {
 	req := reservationv1.Request{Schema: schema, RepoID: repoID}
+	if len(storage) > 0 {
+		req.IncludeStorageWrite = storage[0]
+	}
 	if err := req.Validate(); err != nil {
 		return reservationv1.Result{}, err
 	}

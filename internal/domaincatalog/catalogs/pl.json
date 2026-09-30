@@ -4,6 +4,7 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "commit.server_storage_held": "Publikacja czeka na potwierdzenie dostępnego miejsca na serwerze. Lokalne zmiany są zachowane.",
     "system.quiescing": "FileES przygotowuje bezpieczny restart. To działanie nie zostało rozpoczęte; spróbuj ponownie za chwilę.",
     "activation.begin_failed": "Nie udało się rozpocząć aktywacji",
     "activation.finish_failed": "Nie udało się dokończyć aktywacji",

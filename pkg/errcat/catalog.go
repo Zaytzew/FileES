@@ -25,6 +25,7 @@ const (
 	KeyLockInvalidPath           Key = "lock.invalid_path"
 	KeyLockNotPublished          Key = "lock.not_published"
 	KeyCommitFailed              Key = "commit.failed"
+	KeyServerStorageHeld         Key = "commit.server_storage_held"
 	KeyCommitRecoveryHeld        Key = "commit.recovery_held"
 	KeyCommitRecoveryRefused     Key = "commit.recovery_refused"
 	KeyCommitRecoveryUnavailable Key = "commit.recovery_unavailable"
@@ -131,6 +132,7 @@ var specs = []Spec{
 	{CodeCommitStale, KeyCommitOutdated, SevWarn, HintRetryLocal, nil, "Working copy out of date — update required before next commit"},
 	{CodeCommitNoVCS, KeyCommitNoVCS, SevWarn, HintRetryLocal, nil, "Path not under version control"},
 	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, detailOnly(), "Commit failed"},
+	{"STORAGE-3001", KeyServerStorageHeld, SevWarn, HintNone, nil, "Publication is waiting for confirmation that server storage is available. Local changes are retained."},
 	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, detailOnly(), "Publication recovery paused — inspect diagnostics; do not remove pending state"},
 	{CodeCommitFail, KeyCommitRecoveryRefused, SevError, HintRequireAction, detailOnly(), "Publication remains paused. The previous write could not be safely reconciled; check the diagnostics."},
 	{CodeCommitFail, KeyCommitRecoveryUnavailable, SevError, HintRequireAction, nil, "Publication recovery is unavailable for this folder."},

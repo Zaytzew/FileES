@@ -242,7 +242,15 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if server != nil {
 		template = server.render(template)
 	}
-	page, err := renderPage(template, envelope, downloads, p.Config.releaseNotes(envelope.ReleaseID, downloads[0].Version), cards)
+	// The hand-written sentence from the configuration is for releases
+	// without signed notes. With notes it would stand as a second, older
+	// "what's new" box above the list (live on alpha r1733), and a
+	// version-wide sentence describes every 0.1.18 release alike.
+	manual := p.Config.releaseNotes(envelope.ReleaseID, downloads[0].Version)
+	if notes != nil {
+		manual = ReleaseNotes{}
+	}
+	page, err := renderPage(template, envelope, downloads, manual, cards)
 	if err != nil {
 		return Result{}, err
 	}

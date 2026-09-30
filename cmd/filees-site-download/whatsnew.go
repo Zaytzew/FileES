@@ -119,11 +119,14 @@ func whatsNewHTML(sel releasenotes.Selection, lang string) string {
 		writeList(rest)
 		out.WriteString(`</details>`)
 	}
+	// Incomplete covers two cases: the carried history was trimmed, or the
+	// releases before the first one with notes never had any (live r1733:
+	// "do not fit" was then untrue). The sentence is true for both.
 	if sel.Incomplete {
 		if pl {
-			out.WriteString(`<p class="whats-new-older">Wcześniejsze zmiany nie mieszczą się już na tej liście.</p>`)
+			out.WriteString(`<p class="whats-new-older">Wcześniejsze zmiany nie są tu opisane.</p>`)
 		} else {
-			out.WriteString(`<p class="whats-new-older">Earlier changes no longer fit this list.</p>`)
+			out.WriteString(`<p class="whats-new-older">Earlier changes are not described here.</p>`)
 		}
 	}
 	out.WriteString(`</div>`)

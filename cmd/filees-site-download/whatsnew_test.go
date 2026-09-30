@@ -94,6 +94,30 @@ func TestCardsListWhatIsNewSinceThePreviousPublication(t *testing.T) {
 	}
 }
 
+func TestSignedNotesReplaceTheHandWrittenSentence(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "site"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	key := newSigner(t)
+	r := newRepo()
+	r.release(t, key, "r1310", 1310, []byte("third"), "")
+	p := publisher(t, r, key, root)
+	p.Template = []byte(whatsNewTemplate)
+	p.Config.VersionNotes = map[string]ReleaseNotes{"1.0": {PL: "Ręczne zdanie", EN: "Hand-written sentence"}}
+	p.Config.Notes = map[string]ReleaseNotes{"r1310": {PL: "Ręczne zdanie", EN: "Hand-written sentence"}}
+	putNotes(t, r, key, releasenotes.Notes{ReleaseID: "r1310", Sequence: 1310, Component: "desktop", HistoryFrom: 1310, Items: []releasenotes.Item{
+		{Sequence: 1310, Scope: "desktop", PL: "Podpisana pozycja", EN: "Signed item"},
+	}})
+	if _, err := p.Publish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	page := mustRead(t, filepath.Join(p.OutDir, "index.html"))
+	if !strings.Contains(page, "Podpisana pozycja") || strings.Contains(page, "Ręczne zdanie") || strings.Contains(page, "Hand-written") {
+		t.Fatalf("signed notes and the hand-written sentence both or neither shown:\n%s", page)
+	}
+}
+
 func TestBadlySignedNotesKeepThePreviousPage(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "site"), 0o755); err != nil {
@@ -162,7 +186,7 @@ func TestPromotedServerShowsEverythingSinceTheLastServerOnThePage(t *testing.T) 
 		t.Fatal(err)
 	}
 	page := mustRead(t, filepath.Join(p.OutDir, "index.html"))
-	for _, want := range []string{"<li class=\"admin\"><strong>Dla administratora:</strong> Uruchom migrację</li>", "<summary>Jeszcze 3 zmiany</summary>", "Zmiana 0", "Wcześniejsze zmiany nie mieszczą się"} {
+	for _, want := range []string{"<li class=\"admin\"><strong>Dla administratora:</strong> Uruchom migrację</li>", "<summary>Jeszcze 3 zmiany</summary>", "Zmiana 0", "Wcześniejsze zmiany nie są tu opisane"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q:\n%s", want, page)
 		}

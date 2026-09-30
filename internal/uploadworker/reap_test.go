@@ -69,6 +69,9 @@ func fixture(t *testing.T, verdict avscan.Verdict) (Reaper, intake.Record, *[]st
 		}},
 		Now: func() time.Time { return time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC) },
 	}
+	if err := os.Chmod(reaper.TrashRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
 	return reaper, job, &calls
 }
 

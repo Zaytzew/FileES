@@ -41,12 +41,13 @@ func RunUploadReap(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	r := config.Repositories
 	stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
 	reaper := uploadworker.Reaper{
-		Intake:    intake.Store{Root: config.Upload.IntakeRoot},
-		Channels:  &channel.Store{Root: stateRoot, TokenKey: config.Onboarding.OTPPepper},
-		ReposRoot: r.Root,
-		TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot),
-		Scanner:   avscan.Command{Path: config.Upload.AVCommand[0], Args: config.Upload.AVCommand[1:]},
-		Publisher: uploadworker.Publisher{SVNMucc: r.EffectiveSVNMuccBinary(), SVNLook: r.EffectiveSVNLookBinary()},
+		Intake:        intake.Store{Root: config.Upload.IntakeRoot},
+		Channels:      &channel.Store{Root: stateRoot, TokenKey: config.Onboarding.OTPPepper},
+		ReposRoot:     r.Root,
+		TrashRoot:     config.Upload.EffectiveTrashRoot(r.ResultsRoot),
+		MaxTrashBytes: config.Upload.MaxTrashSize,
+		Scanner:       avscan.Command{Path: config.Upload.AVCommand[0], Args: config.Upload.AVCommand[1:]},
+		Publisher:     uploadworker.Publisher{SVNMucc: r.EffectiveSVNMuccBinary(), SVNLook: r.EffectiveSVNLookBinary()},
 	}
 	if err := os.MkdirAll(reaper.TrashRoot, 0700); err != nil {
 		report(stderr, "upload-reap trash", err)
@@ -125,7 +126,7 @@ func RunUploadSeedReject(args []string, _ io.Reader, stdout, stderr io.Writer) i
 		report(stderr, "upload-seed-reject alias", err)
 		return ExitData
 	}
-	reaper := uploadworker.Reaper{TrashRoot: config.Upload.EffectiveTrashRoot(config.Repositories.ResultsRoot)}
+	reaper := uploadworker.Reaper{TrashRoot: config.Upload.EffectiveTrashRoot(config.Repositories.ResultsRoot), MaxTrashBytes: config.Upload.MaxTrashSize}
 	if err := os.MkdirAll(reaper.TrashRoot, 0700); err != nil {
 		report(stderr, "upload-seed-reject trash", err)
 		return ExitConfig

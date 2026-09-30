@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:68142bf4dae05767f0dd02732fe23526eec796dd29f18879eff723175b5dadca">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:04f45c41ea9a89cba31733dd0c5ce5aa9b607f5c82149eeaddf46dfdc35378b7">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees.conf(5) — FileES manual pages</title>
@@ -146,10 +146,19 @@
       must be absolute and shared with
       <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
       section 5">filees-public-links(5)</a>. The <span class="Ux">OpenBSD</span>
-      layout is <span class="Pa">/var/tmp/filees-upload-intake</span>, owned
+      layout is <span class="Pa">/var/filees-downloads/intake</span>, owned
       <a class="permalink" href="#_filees-links"><b class="Sy" id="_filees-links">_filees-links</b></a>:
       <a class="permalink" href="#_filees-public"><b class="Sy" id="_filees-public">_filees-public</b></a>
-      mode 0770. <code class="Ic">trash_root</code> holds AV rejects.
+      mode 0770. <code class="Ic">trash_root</code> holds AV rejects in a
+      private directory (0700), owned by _filees-state.
+      <code class="Ic">max_trash_size</code> limits their total logical payload
+      bytes, including hidden entries and incomplete copies; zero or omission
+      disables this limit. The example uses 10737418240 bytes (10 GiB). Metadata
+      and filesystem allocation overhead are not included. When full, the worker
+      retains the incoming job and reports an error; it does not shorten the
+      48-hour retention to make room. Configure the separate intake budget in
+      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+      section 5">filees-public-links(5)</a> as well.
       <code class="Ic">av_command</code> is required once intake is configured
       and runs as <b class="Sy">_filees-state</b> from
       <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker,
@@ -207,7 +216,7 @@
 </main>
 <div class="foot" role="doc-pagefooter" aria-label="Manual footer
   line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-date">September 30, 2026</span>
   <span class="foot-right">FILEES.CONF(5)</span></div>
 </div>
 </div>

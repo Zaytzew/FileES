@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd September 30, 2026
 .Dt FILEES.CONF 5
 .Os
 .Sh NAME
@@ -132,12 +132,22 @@ must be absolute and shared with
 The
 .Ox
 layout is
-.Pa /var/tmp/filees-upload-intake ,
+.Pa /var/filees-downloads/intake ,
 owned
 .Sy _filees-links : _filees-public
 mode 0770.
 .Ic trash_root
-holds AV rejects.
+holds AV rejects in a private directory (0700), owned by _filees-state.
+.Ic max_trash_size
+limits their total logical payload bytes, including hidden entries and
+incomplete copies; zero or omission disables this limit.
+The example uses 10737418240 bytes (10 GiB).
+Metadata and filesystem allocation overhead are not included.
+When full, the worker retains the incoming job and reports an error;
+it does not shorten the 48-hour retention to make room.
+Configure the separate intake budget in
+.Xr filees-public-links 5
+as well.
 .Ic av_command
 is required once intake is configured and runs as
 .Sy _filees-state

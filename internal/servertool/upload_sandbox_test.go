@@ -4,6 +4,7 @@ package servertool
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -11,8 +12,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"filees/internal/obsandbox"
+	"filees/internal/uploadworker"
 	"filees/pkg/serverconfig"
 )
 
@@ -91,6 +94,9 @@ func TestUploadMaintenanceNativeConfinement(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(config.Upload.TrashRoot, "probe"), nil, 0600); err != nil {
 		t.Fatal(err)
+	}
+	if err := (uploadworker.Reaper{TrashRoot: config.Upload.TrashRoot}).PurgeExpired(context.Background(), time.Now()); err != nil {
+		t.Fatalf("trash lock/sweep under sandbox: %v", err)
 	}
 	for _, tool := range []string{config.Repositories.EffectiveSVNMuccBinary(), config.Repositories.EffectiveSVNLookBinary(), config.Upload.AVCommand[0]} {
 		if out, err := exec.Command(tool, "--version").CombinedOutput(); err != nil {

@@ -10,7 +10,8 @@
 #
 # Configuration stays outside the repository (an admin login once leaked into
 # the public mirror through an example). It comes from the environment or from
-# ~/.config/filees/site-deploy.env:
+# site-deploy.env in ~/.config/filees/ or in .config/filees/ at the root of the
+# working copy's drive (plain KEY=VALUE; UTF-16 and CRLF from Windows are fine):
 #
 #   SITE_HOST=admin@web-server   ssh destination (required)
 #   SITE_PORT=22                 optional
@@ -39,17 +40,57 @@ die() {
 	exit 1
 }
 
-config="${SITE_DEPLOY_ENV:-$HOME/.config/filees/site-deploy.env}"
-if [ -f "$config" ]; then
-	# shellcheck disable=SC1090
-	. "$config"
+# PowerShell's bash is WSL, which has none of this computer's node, go or svn.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+	die "run it with Git Bash, not WSL: & 'C:\Program Files\Git\bin\bash.exe' tools/deploy-site.sh"
+fi
+
+# KEY=VALUE lines, read rather than sourced. Accepts what Windows tools write:
+# UTF-16 (PowerShell 5.1's > and Out-File), a UTF-8 BOM and CRLF.
+load_config() {
+	local file=$1 text line key value
+	if [ "$(head -c 2 "$file" | od -An -tx1 | tr -d ' ')" = fffe ]; then
+		text=$(iconv -f UTF-16 -t UTF-8 "$file") || die "cannot read $file"
+	else
+		text=$(cat "$file")
+	fi
+	text=${text#$'\xef\xbb\xbf'}
+	while IFS= read -r line; do
+		line=${line%$'\r'}
+		line=${line#export }
+		case "$line" in '' | '#'*) continue ;; esac
+		key=${line%%=*}
+		value=${line#*=}
+		case "$value" in
+		\"*\" | \'*\') value=${value:1:${#value}-2} ;;
+		esac
+		case "$key" in
+		SITE_HOST | SITE_PORT | SITE_BECOME | SITE_URL) ;;
+		*) die "$file: unknown setting '$key'" ;;
+		esac
+		# The environment wins over the file.
+		[ -n "${!key:-}" ] || printf -v "$key" '%s' "$value"
+	done <<<"$text"
+}
+
+# First found: SITE_DEPLOY_ENV, the home directory, the working copy's drive
+# root (the owner keeps it in E:\.config).
+config=""
+for candidate in ${SITE_DEPLOY_ENV:+"$SITE_DEPLOY_ENV"} "$HOME/.config/filees/site-deploy.env" "$(cd "$root/../.." && pwd)/.config/filees/site-deploy.env"; do
+	if [ -f "$candidate" ]; then
+		config=$candidate
+		break
+	fi
+done
+if [ -n "$config" ]; then
+	load_config "$config"
 fi
 SITE_PORT="${SITE_PORT:-22}"
 SITE_BECOME="${SITE_BECOME:-sudo}"
 SITE_URL="${SITE_URL:-https://filees.space}"
 case "$SITE_BECOME" in sudo | su) ;; *) die "SITE_BECOME must be sudo or su" ;; esac
 if [ "$dry_run" -eq 0 ] && [ -z "${SITE_HOST:-}" ]; then
-	die "set SITE_HOST (e.g. in $config)"
+	die "set SITE_HOST in $HOME/.config/filees/site-deploy.env or E:\.config\filees\site-deploy.env"
 fi
 for tool in node go svn tar ssh curl sha256sum; do
 	command -v "$tool" >/dev/null 2>&1 || die "$tool is required"

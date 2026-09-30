@@ -21,6 +21,9 @@ type generatedReader struct {
 }
 
 func (generatedReader) Youngest(context.Context, string) (int64, error) { return 1, nil }
+func (generatedReader) FileSize(context.Context, string, string, int64) (int64, error) {
+	return 64 << 20, nil
+}
 func (r generatedReader) Cat(_ context.Context, _, _ string, _ int64, dst io.Writer) (int64, string, error) {
 	h := sha256.New()
 	block := bytes.Repeat([]byte("a"), 32<<10)

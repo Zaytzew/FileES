@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:04f45c41ea9a89cba31733dd0c5ce5aa9b607f5c82149eeaddf46dfdc35378b7">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:df01eb7ae0dcee39396431c865989a5586dbe8cbd7e1e8b3e52adf993007f230">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees.conf(5) — FileES manual pages</title>
@@ -141,6 +141,18 @@
       <code class="Ic">logo_file</code> an absolute path to the operator logo.
       Both are cosmetic: nothing in authorisation, addressing or transport reads
       them.</dd>
+  <dt id="mobile.temp_root"><a class="permalink" href="#mobile.temp_root"><code class="Ic">mobile.temp_root</code></a></dt>
+  <dd>Optional absolute private directory (0700) for mobile temporary files.
+      Omitted preserves the process TMPDIR.</dd>
+  <dt id="mobile.max_download_size"><a class="permalink" href="#mobile.max_download_size"><code class="Ic">mobile.max_download_size</code></a></dt>
+  <dd>Maximum bytes of one mobile download prepared on the server. Zero or
+      omission disables this size limit; negative values are rejected. The
+      example uses 1073741824 bytes (1 GiB). The worker checks the size at a
+      fixed repository revision before copying, checks available space on the
+      spool filesystem with a 16 MiB reserve, and refuses writes beyond the
+      measured size. Capacity checking is advisory, not a reservation shared
+      between processes. A killed process can still leave temporary files; this
+      is not an aggregate spool quota or a cleanup policy.</dd>
   <dt id="upload"><a class="permalink" href="#upload"><code class="Ic">upload</code></a></dt>
   <dd>Optional closed upload-shelf intake. <code class="Ic">intake_root</code>
       must be absolute and shared with

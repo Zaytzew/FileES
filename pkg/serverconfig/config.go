@@ -120,7 +120,8 @@ type UploadFile struct {
 // MobileFile controls only the hosting-side workspace of mobile capture.
 // Empty TempRoot preserves the legacy process TMPDIR for existing installs.
 type MobileFile struct {
-	TempRoot string `json:"temp_root,omitempty"`
+	TempRoot        string `json:"temp_root,omitempty"`
+	MaxDownloadSize int64  `json:"max_download_size,omitempty"`
 }
 
 type PublicSharesFile struct {
@@ -572,6 +573,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if err := validateUpload(file.Upload, file.Repositories.ResultsRoot); err != nil {
 		return Config{}, err
+	}
+	if file.Mobile.MaxDownloadSize < 0 {
+		return Config{}, errors.New("mobile.max_download_size must not be negative")
 	}
 	if file.Mobile.TempRoot != "" && (!filepath.IsAbs(file.Mobile.TempRoot) || filepath.Clean(file.Mobile.TempRoot) == string(filepath.Separator) || strings.ContainsAny(file.Mobile.TempRoot, "\x00\r\n")) {
 		return Config{}, errors.New("mobile.temp_root must be an absolute dedicated directory")

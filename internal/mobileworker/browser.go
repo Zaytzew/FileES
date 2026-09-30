@@ -73,13 +73,15 @@ type Reader interface {
 	List(ctx context.Context, repoPath string, rev int64) ([]v1.ManifestEntry, error)
 	ListImmediate(ctx context.Context, repoPath string, rev int64, dir string) ([]v1.ManifestEntry, error)
 	Stat(ctx context.Context, repoPath, path string, rev int64) (v1.Kind, bool, error)
+	FileSize(ctx context.Context, repoPath, path string, rev int64) (int64, error)
 	Cat(ctx context.Context, repoPath, path string, rev int64, w io.Writer) (int64, string, error)
 }
 
 // Browser serves the read-only mobile operations. It holds no working copy.
 type Browser struct {
-	Authority Authority
-	Reader    Reader
+	MaxReadBytes int64 // zero disables the per-object download limit
+	Authority    Authority
+	Reader       Reader
 	// Drawers is optional. Nil means this server has no drawer storage
 	// wired in and LIST_DRAWERS answers ErrDrawersUnavailable; it is never
 	// nil just because a realm has no drawers of its own.
@@ -221,9 +223,28 @@ func (b Browser) ReadObject(ctx context.Context, clientID string, p v1.ReadObjec
 	if err != nil {
 		return v1.ReadObjectResult{}, err
 	}
-	size, sha, err := b.Reader.Cat(ctx, view.RepoPath, p.Path, rev, w)
+	size, err := b.Reader.FileSize(ctx, view.RepoPath, p.Path, rev)
 	if err != nil {
 		return v1.ReadObjectResult{}, err
+	}
+	if size < 0 || b.MaxReadBytes < 0 || (b.MaxReadBytes > 0 && size > b.MaxReadBytes) {
+		return v1.ReadObjectResult{}, ErrReadLimit
+	}
+	if spool, ok := w.(interface{ reserve(int64) error }); ok {
+		if err := spool.reserve(size); err != nil {
+			return v1.ReadObjectResult{}, err
+		}
+	}
+	bounded := &readBoundWriter{dst: w, remaining: size}
+	actual, sha, err := b.Reader.Cat(ctx, view.RepoPath, p.Path, rev, bounded)
+	if bounded.err != nil {
+		return v1.ReadObjectResult{}, bounded.err
+	}
+	if err != nil {
+		return v1.ReadObjectResult{}, err
+	}
+	if actual != size || bounded.remaining != 0 {
+		return v1.ReadObjectResult{}, errors.New("mobile read size differs from repository metadata")
 	}
 	return v1.ReadObjectResult{Path: p.Path, Size: size, Sha256: sha}, nil
 }

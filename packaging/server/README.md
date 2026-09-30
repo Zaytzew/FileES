@@ -537,6 +537,18 @@ space equal to the source file size is insufficient. This setting supplies
 neither a reservation nor an exact peak-space guarantee. Normal completion
 and errors clean their temporary files; a killed process can leave remnants.
 
+`mobile.max_download_size` optionally limits one mobile download in bytes.
+Zero or omission disables the size limit; the example sets 1 GiB
+(`1073741824`). The worker checks the file size at the same revision it
+reads, then checks the actual spool filesystem for that size plus a 16 MiB
+reserve. It never writes beyond the measured size. Refusal is framed as
+`download.limit` or `storage.unavailable`, without a success header or
+partial payload. Ordinary failures remove the attempt's temporary file.
+This check does not reserve space against other workers and does not
+reclaim files from killed processes. It is not an aggregate spool quota.
+Upgrade the server before adding the field; no client or repository migration
+is needed. The new error code/message travels through the existing error frame.
+
 ### Recovering an old mobile operation after an upgrade
 
 `operation.uncertain` means the server cannot prove the outcome of an older

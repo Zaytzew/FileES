@@ -137,6 +137,7 @@ data class BrowseRow(
     val journalScope: String = "",
     val journalTime: String = "",
     val journalEntry: String = "",
+    val journalToggle: Boolean = false,
     val heroCopy: String = "",
     val serverMeta: String = "",
     val switchServerId: String = "",

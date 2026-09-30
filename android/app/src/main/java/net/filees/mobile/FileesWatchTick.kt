@@ -145,6 +145,7 @@ object FileesWatchTick {
                 prefs,
                 repoName,
                 context.resources.getQuantityString(R.plurals.journal_watch_sent, sent, sent),
+                archive = FileesSession.journalArchive(context),
             )
         }
         if (waiting > 0) {
@@ -152,10 +153,11 @@ object FileesWatchTick {
                 prefs,
                 repoName,
                 context.resources.getQuantityString(R.plurals.journal_watch_waiting, waiting, waiting),
+                archive = FileesSession.journalArchive(context),
             )
         }
         if (failure != null) {
-            FileesSession.pushJournal(prefs, repoName, failureSentence(context, failure))
+            FileesSession.pushJournal(prefs, repoName, failureSentence(context, failure), archive = FileesSession.journalArchive(context))
         }
     }
 

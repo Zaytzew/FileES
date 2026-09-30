@@ -66,7 +66,7 @@ class BrowseAdapter(
             is ServerHolder -> holder.bind(row, onOpen)
             is FactsHolder -> holder.bind(row)
             is JournalPanelHolder -> holder.bind(row)
-            is JournalEntryHolder -> holder.bind(row)
+            is JournalEntryHolder -> holder.bind(row, onOpen)
             is HeaderHolder -> holder.bind(row, onOpen)
             is AddServerHolder -> holder.bind(row, onOpen)
             is Holder -> holder.bind(row, onOpen, onDownload)
@@ -146,9 +146,15 @@ class BrowseAdapter(
         private val scope: TextView = itemView.findViewById(R.id.textJournalScope)
         private val time: TextView = itemView.findViewById(R.id.textJournalTime)
         private val divider: View = itemView.findViewById(R.id.dividerJournal)
-        fun bind(row: BrowseRow) {
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit) {
             itemView.setBackgroundResource(panelBackground(row.panel))
             entry.text = row.journalEntry
+            // The show-all/show-less row is a control, not an entry: no scope or time.
+            itemView.setOnClickListener(if (row.journalToggle) View.OnClickListener { onOpen(row) } else null)
+            itemView.isClickable = row.journalToggle
+            scope.visibility = if (row.journalToggle) View.GONE else View.VISIBLE
+            time.visibility = if (row.journalToggle) View.GONE else View.VISIBLE
+            if (row.journalToggle) { divider.visibility = View.GONE; return }
             scope.text = row.journalScope
             time.text = if (row.size > 0) {
                 DateUtils.getRelativeTimeSpanString(

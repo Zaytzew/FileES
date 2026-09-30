@@ -38,6 +38,9 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 
+// Newest journal entries shown before "show all"; the cap itself is FileesSession.JOURNAL_CAP.
+private const val JOURNAL_COLLAPSED = 3
+
 class MainActivity : AppCompatActivity() {
     private val prefsCollapsed = "collapsed_drawers"
 
@@ -78,6 +81,7 @@ class MainActivity : AppCompatActivity() {
 
     private val prefs by lazy { getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE) }
     private var pulseAnimator: ObjectAnimator? = null
+    private var journalExpanded = false
 
     private val pickFilesLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         val target = takePickerTarget()
@@ -459,13 +463,28 @@ class MainActivity : AppCompatActivity() {
                 ),
             )
         }
-        for (entry in FileesSession.journal(prefs)) {
+        FileesSession.sweepJournal(prefs, FileesSession.journalArchive(this))
+        val history = FileesSession.journal(prefs)
+        // Collapsed to the newest few; the rest (up to the retention cap) opens on tap.
+        val shown = if (journalExpanded) history else history.take(JOURNAL_COLLAPSED)
+        for (entry in shown) {
             rows.add(
                 BrowseRow(
                     "", "", directory = false, size = entry.at,
                     kind = BrowseRow.Kind.JOURNAL,
                     journalEntry = entry.entry,
                     journalScope = entry.scope,
+                ),
+            )
+        }
+        if (history.size > JOURNAL_COLLAPSED) {
+            rows.add(
+                BrowseRow(
+                    "", "", directory = false, size = 0,
+                    kind = BrowseRow.Kind.JOURNAL,
+                    journalEntry = if (journalExpanded) getString(R.string.home_journal_show_less)
+                    else getString(R.string.home_journal_show_all, history.size),
+                    journalToggle = true,
                 ),
             )
         }
@@ -575,6 +594,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: BrowseRow) {
+        if (row.journalToggle) {
+            journalExpanded = !journalExpanded
+            browseAdapter.submit(homeRows())
+            return
+        }
         if (row.kind == BrowseRow.Kind.METRICS) {
             startActivity(Intent(this,SettingsActivity::class.java))
             return
@@ -960,6 +984,7 @@ class MainActivity : AppCompatActivity() {
                 scope,
                 getString(R.string.home_journal_shout, item.first.toString()) + "\n" + item.second,
                 FileesSession.shoutId(repoId, item.first),
+                FileesSession.journalArchive(this),
             )
         }
         FileesSession.ackShouts(prefs, ids)

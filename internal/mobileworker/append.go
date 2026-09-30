@@ -33,10 +33,11 @@ type Committer interface {
 
 // TreeFile is one extracted zip entry ready to land under parentPath.
 type TreeFile struct {
-	RelPath   string
-	SpoolPath string
-	Replace   bool
-	Sha       string
+	BaseRevision int64 // revision measured before recording the commit intent
+	RelPath      string
+	SpoolPath    string
+	Replace      bool
+	Sha          string
 }
 
 // Appender serves UPLOAD_OBJECT: read-only for existing paths, append-only-unique
@@ -192,19 +193,21 @@ func (a Appender) spool(content io.Reader, limit int64) (spoolPath, sha string, 
 	if err != nil {
 		return "", "", 0, err
 	}
-	defer f.Close()
+	defer func() {
+		f.Close()
+		if err != nil {
+			os.Remove(f.Name())
+		}
+	}()
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(content, limit+1))
+	n, err := copyUploadBytes(io.MultiWriter(f, h), content, limit)
 	if err != nil {
-		os.Remove(f.Name())
 		return "", "", 0, err
 	}
-	if n > limit {
-		os.Remove(f.Name())
-		return "", "", 0, errUploadLimit
-	}
 	if err := f.Sync(); err != nil {
-		os.Remove(f.Name())
+		return "", "", 0, err
+	}
+	if err := f.Close(); err != nil {
 		return "", "", 0, err
 	}
 	return f.Name(), hex.EncodeToString(h.Sum(nil)), n, nil

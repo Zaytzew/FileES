@@ -106,7 +106,9 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 	}
 
 	var toCommit []TreeFile
+	var baseBytes int64
 	for _, item := range extracted {
+		item.BaseRevision = rev
 		target := path.Join(parent, item.RelPath)
 		kind, exists, err := a.Reader.Stat(ctx, view.RepoPath, target, rev)
 		if err != nil {
@@ -139,6 +141,10 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 			}
 		}
 		item.Replace = true
+		if existingSize < 0 || existingSize > maxTreeUncompressed-baseBytes {
+			return v1.UploadTreeResult{}, errUploadLimit
+		}
+		baseBytes += existingSize
 		toCommit = append(toCommit, item)
 	}
 
@@ -175,7 +181,7 @@ func unpackTreePack(zipPath string) ([]TreeFile, string, error) {
 		return nil, "", errNotTreePack
 	}
 
-	dest, err := os.MkdirTemp("", "filees-mobile-unzip-")
+	dest, err := os.MkdirTemp(filepath.Dir(zipPath), "filees-mobile-unzip-")
 	if err != nil {
 		return nil, "", err
 	}
@@ -244,7 +250,10 @@ func skipZipName(rel string) bool {
 	return strings.HasPrefix(rel, "__MACOSX/") || rel == "__MACOSX"
 }
 
-func extractZipFile(entry *zip.File, dest string) (string, error) {
+func extractZipFile(entry *zip.File, dest string) (sum string, retErr error) {
+	if entry.UncompressedSize64 > uint64(maxTreeUncompressed) {
+		return "", errUploadLimit
+	}
 	in, err := entry.Open()
 	if err != nil {
 		return "", err
@@ -254,12 +263,24 @@ func extractZipFile(entry *zip.File, dest string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer out.Close()
+	defer func() {
+		out.Close()
+		if retErr != nil {
+			os.Remove(dest)
+		}
+	}()
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, int64(entry.UncompressedSize64)+1)); err != nil {
+	n, err := copyUploadBytes(io.MultiWriter(out, h), in, int64(entry.UncompressedSize64))
+	if err != nil {
 		return "", err
 	}
+	if n != int64(entry.UncompressedSize64) {
+		return "", errTreePayloadCorrupt
+	}
 	if err := out.Sync(); err != nil {
+		return "", err
+	}
+	if err := out.Close(); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

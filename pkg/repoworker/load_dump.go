@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -50,8 +49,8 @@ type DumpLoadService struct {
 	// instead of holding the dump in memory (LOAD_REPOSITORY_DUMP_CONCEPT.md
 	// §5.3).
 	SpoolRoot string
-	// MaxDumpBytes refuses a larger carrier before anything is extracted;
-	// zero means no limit (LOAD_REPOSITORY_DUMP_CONCEPT.md §10.3).
+	// MaxDumpBytes caps the carrier and each filtered/re-dumped stream.
+	// Zero disables this cap; it is not an FSFS or aggregate spool quota.
 	MaxDumpBytes int64
 
 	// available reports free bytes on the filesystem holding root. Nil
@@ -131,7 +130,7 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 	}
 
 	dumpPath := filepath.Join(spool, "carrier.dump")
-	if err := s.extractCarrier(ctx, repoPath, carrierName, dumpPath); err != nil {
+	if err := s.extractCarrier(ctx, repoPath, carrierName, dumpPath, carrierBytes); err != nil {
 		return LoadedDump{}, err
 	}
 	info, err := os.Stat(dumpPath)
@@ -370,8 +369,8 @@ func (s DumpLoadService) carrierSize(ctx context.Context, repoPath, name string)
 }
 
 // extractCarrier streams the carrier file to dst without holding it in memory.
-func (s DumpLoadService) extractCarrier(ctx context.Context, repoPath, name, dst string) error {
-	return runToFile(ctx, dst, nil, s.SVNLook, "cat", "-r", "1", "--", repoPath, name)
+func (s DumpLoadService) extractCarrier(ctx context.Context, repoPath, name, dst string, size int64) error {
+	return runToFile(ctx, dst, nil, size, s.SVNLook, "cat", "-r", "1", "--", repoPath, name)
 }
 
 func checkDumpHeader(path string) error {
@@ -388,34 +387,6 @@ func checkDumpHeader(path string) error {
 	return nil
 }
 
-// runToFile runs a tool with stdin read from the file at src (when not nil)
-// and stdout written to a new file at dst.
-func runToFile(ctx context.Context, dst string, src *string, bin string, args ...string) error {
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
-	if src != nil {
-		in, err := os.Open(*src)
-		if err != nil {
-			out.Close()
-			return err
-		}
-		defer in.Close()
-		cmd.Stdin = in
-	}
-	var errb dumpOutput
-	cmd.Stdout = out
-	cmd.Stderr = &errb
-	runErr := cmd.Run()
-	closeErr := out.Close()
-	if runErr != nil {
-		return fmt.Errorf("%s %s: %w: %s", filepath.Base(bin), strings.Join(args, " "), runErr, strings.TrimSpace(errb.String()))
-	}
-	return closeErr
-}
-
 func (s DumpLoadService) svnlook(ctx context.Context, args ...string) ([]byte, error) {
 	return dumpSmallOutput(ctx, s.SVNLook, args...)
 }
@@ -430,7 +401,7 @@ func (s DumpLoadService) filterIgnored(ctx context.Context, src, dst string) err
 		return err
 	}
 	args := append([]string{"exclude", "--pattern", "--drop-empty-revs"}, patterns...)
-	return runToFile(ctx, dst, &src, s.SVNDumpFilter, args...)
+	return s.writeDumpStream(ctx, dst, &src, s.SVNDumpFilter, args...)
 }
 
 // ignorePatternArgs fails loudly rather than silently under-filtering if a
@@ -483,7 +454,7 @@ func (s DumpLoadService) boundToLastRevisions(ctx context.Context, src string, n
 		low = 1
 	}
 	bounded = filepath.Join(workDir, "bounded.dump")
-	if err := runToFile(ctx, bounded, nil, s.SVNAdmin, "dump", "--quiet", "-r", fmt.Sprintf("%d:%d", low, head), "--", scratch); err != nil {
+	if err := s.writeDumpStream(ctx, bounded, nil, s.SVNAdmin, "dump", "--quiet", "-r", fmt.Sprintf("%d:%d", low, head), "--", scratch); err != nil {
 		return "", 0, 0, fmt.Errorf("svnadmin dump scratch range: %w", err)
 	}
 	if err := os.RemoveAll(scratch); err != nil {

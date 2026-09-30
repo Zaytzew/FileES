@@ -109,6 +109,10 @@ func Draft(previous *Notes, entries []LogEntry, component, releaseID string, seq
 				if item.PL == "" || item.EN == "" {
 					warnings = append(warnings, fmt.Sprintf("r%d: [%s] has no counterpart in the other language; fill it in before review", entry.Revision, k.scope))
 				}
+				if repeated(fresh, item) {
+					warnings = append(warnings, fmt.Sprintf("r%d: [%s] repeats an announcement of an earlier commit; listed once", entry.Revision, k.scope))
+					continue
+				}
 				fresh = append(fresh, item)
 			}
 		}
@@ -141,6 +145,19 @@ func Draft(previous *Notes, entries []LogEntry, component, releaseID string, seq
 		warnings = append(warnings, "no announcements in the commits since the previous release; the card will show no new items")
 	}
 	return notes, warnings, nil
+}
+
+// repeated reports whether an identical announcement is already in this
+// release: several commits may carry the same general line, e.g. "Poprawki
+// bezpieczeństwa" (live r1757-beta: the draft stopped on it instead).
+func repeated(items []Item, item Item) bool {
+	for _, have := range items {
+		if have.Scope == item.Scope && have.Kind == item.Kind &&
+			strings.EqualFold(have.PL, item.PL) && strings.EqualFold(have.EN, item.EN) {
+			return true
+		}
+	}
+	return false
 }
 
 func knownScope(scope string) bool {

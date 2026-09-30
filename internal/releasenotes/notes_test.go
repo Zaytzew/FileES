@@ -214,3 +214,46 @@ func TestRaisedSecurityEpochNeedsOwnSecurityItem(t *testing.T) {
 		t.Fatal("placeholder added without a raised epoch")
 	}
 }
+
+// Live r1757-beta: several commits carried the same general security line and
+// the draft stopped instead of listing it once.
+func TestDraftListsRepeatedAnnouncementsOnce(t *testing.T) {
+	line := "Co nowego [desktop/security]: Poprawki bezpieczeństwa\nWhat's new [desktop/security]: Security fixes"
+	entries := []LogEntry{{Revision: 1740, Message: line}, {Revision: 1750, Message: "fix: other\n\n" + line}}
+	notes, warnings, err := Draft(nil, entries, "desktop", "r1757", 1757, "1757")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes.Items) != 1 || notes.Items[0].Kind != KindSecurity {
+		t.Fatalf("items %+v", notes.Items)
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), "listed once") {
+		t.Fatalf("warnings %q", warnings)
+	}
+	if _, err := Parse(encode(t, notes)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The same sentence in two releases is valid: each release carries the
+// previous ones' items. A page that skipped the older release shows it once.
+func TestSameSentenceInTwoReleases(t *testing.T) {
+	previous := valid() // carries 1720 desktop security "Poprawki bezpieczeństwa"
+	entries := []LogEntry{{Revision: 1725, Message: "Co nowego [desktop/security]: Poprawki bezpieczeństwa\nWhat's new [desktop/security]: Security fixes"}}
+	notes, _, err := Draft(previous, entries, "desktop", "r1730", 1730, "1730")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(encode(t, notes)); err != nil {
+		t.Fatal(err)
+	}
+	var security []Item
+	for _, item := range notes.Since(1698, "desktop").Items {
+		if item.Kind == KindSecurity {
+			security = append(security, item)
+		}
+	}
+	if len(security) != 1 || security[0].Sequence != 1730 {
+		t.Fatalf("security items on the card %+v", security)
+	}
+}

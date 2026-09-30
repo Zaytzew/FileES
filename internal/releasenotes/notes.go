@@ -192,9 +192,12 @@ func (n *Notes) validate(complete bool) error {
 				return fmt.Errorf("%s: %s %w", where, text.lang, err)
 			}
 		}
-		key := item.Scope + "\x00" + strings.ToLower(item.PL) + "\x00" + strings.ToLower(item.EN)
+		// One release may not say the same thing twice; two releases may
+		// (a general "Security fixes" line recurs, and each release carries
+		// the previous ones' items).
+		key := fmt.Sprint(item.Sequence) + "\x00" + item.Scope + "\x00" + strings.ToLower(item.PL) + "\x00" + strings.ToLower(item.EN)
 		if seen[key] {
-			return fmt.Errorf("%s repeats an earlier item", where)
+			return fmt.Errorf("%s repeats an earlier item of the same release", where)
 		}
 		seen[key] = true
 	}
@@ -301,6 +304,19 @@ func (n *Notes) Since(after uint64, scopes ...string) Selection {
 		}
 		return a.Sequence > b.Sequence
 	})
+	// A page that skipped releases would otherwise list a recurring
+	// sentence once per release; the newest one stays.
+	seen := map[string]bool{}
+	unique := selection.Items[:0]
+	for _, item := range selection.Items {
+		key := item.Scope + "\x00" + item.Kind + "\x00" + strings.ToLower(item.PL) + "\x00" + strings.ToLower(item.EN)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, item)
+	}
+	selection.Items = unique
 	return selection
 }
 

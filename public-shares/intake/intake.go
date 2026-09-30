@@ -84,14 +84,11 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	if err := os.MkdirAll(s.Root, jobDirPerm); err != nil {
 		return Record{}, err
 	}
-	if s.limited() {
-		if err := s.reserve(channelID, uploadID); err != nil {
-			return Record{}, err
-		}
-	}
-	if err := os.MkdirAll(dir, jobDirPerm); err != nil {
+	receiving, err := s.beginReceive(channelID, uploadID)
+	if err != nil {
 		return Record{}, err
 	}
+	defer receiving.Close()
 	if err := os.Chmod(dir, jobDirPerm); err != nil {
 		_ = s.Remove(uploadID)
 		return Record{}, err
@@ -199,18 +196,14 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 		}
 		return durable.SyncDirectory(filepath.Clean(s.Root))
 	}
-	if s.limited() {
-		err = withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
-			if err := publish(); err != nil {
-				// Do not let the reaper claim READY from a failed publication.
-				_ = os.RemoveAll(dir)
-				return err
-			}
-			return nil
-		})
-	} else {
-		err = publish()
-	}
+	err = withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
+		if err := publish(); err != nil {
+			// Do not let the reaper claim READY from a failed publication.
+			_ = os.RemoveAll(dir)
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		_ = s.Remove(uploadID)
 		return Record{}, err

@@ -37,45 +37,43 @@ func (s Store) limited() bool { return s.MaxUploadsPerChannel > 0 || s.MaxQuaran
 // Admission and reservation are atomic across processes, before reading any
 // payload. Reservations NEVER expire by age: abandoned bytes still occupy disk.
 // Only removal of the job or publication of its measured size releases budget.
-func (s Store) reserve(channelID, uploadID string) error {
-	return withBudgetLock(filepath.Join(s.Root, budgetLockName), func() error {
-		pending, total, err := s.usage(channelID)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrBudgetState, err)
-		}
-		if s.MaxUploadsPerChannel > 0 && pending >= s.MaxUploadsPerChannel {
-			return ErrChannelFull
-		}
-		if s.MaxQuarantineBytes > 0 && (total > s.MaxQuarantineBytes || s.MaxBytes > s.MaxQuarantineBytes-total) {
-			return ErrQuarantineFull
-		}
-		dir := filepath.Join(s.Root, uploadID)
-		if err := os.Mkdir(dir, jobDirPerm); err != nil {
-			return err
-		}
-		raw, err := json.Marshal(reservation{ChannelID: channelID, Bytes: s.MaxBytes, At: s.now()})
-		if err == nil {
-			err = os.WriteFile(filepath.Join(dir, reservationName), raw, jobFilePerm)
-		}
-		if err == nil {
-			file, openErr := os.OpenFile(filepath.Join(dir, reservationName), os.O_RDWR, jobFilePerm)
-			if openErr != nil {
-				err = openErr
-			} else {
-				err = errors.Join(file.Sync(), file.Close())
-			}
-		}
-		if err == nil {
-			err = durable.SyncDirectory(dir)
-		}
-		if err == nil {
-			err = durable.SyncDirectory(s.Root)
-		}
-		if err != nil {
-			_ = os.RemoveAll(dir)
-		}
+func (s Store) reserveLocked(channelID, uploadID string) error {
+	pending, total, err := s.usage(channelID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrBudgetState, err)
+	}
+	if s.MaxUploadsPerChannel > 0 && pending >= s.MaxUploadsPerChannel {
+		return ErrChannelFull
+	}
+	if s.MaxQuarantineBytes > 0 && (total > s.MaxQuarantineBytes || s.MaxBytes > s.MaxQuarantineBytes-total) {
+		return ErrQuarantineFull
+	}
+	dir := filepath.Join(s.Root, uploadID)
+	if err := os.Mkdir(dir, jobDirPerm); err != nil {
 		return err
-	})
+	}
+	raw, err := json.Marshal(reservation{ChannelID: channelID, Bytes: s.MaxBytes, At: s.now()})
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dir, reservationName), raw, jobFilePerm)
+	}
+	if err == nil {
+		file, openErr := os.OpenFile(filepath.Join(dir, reservationName), os.O_RDWR, jobFilePerm)
+		if openErr != nil {
+			err = openErr
+		} else {
+			err = errors.Join(file.Sync(), file.Close())
+		}
+	}
+	if err == nil {
+		err = durable.SyncDirectory(dir)
+	}
+	if err == nil {
+		err = durable.SyncDirectory(s.Root)
+	}
+	if err != nil {
+		_ = os.RemoveAll(dir)
+	}
+	return err
 }
 
 // Called under the same lock as admission, publication, Claim/Release and Remove.

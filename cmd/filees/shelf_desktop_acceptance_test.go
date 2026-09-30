@@ -19,6 +19,7 @@ import (
 	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
+	"filees/pkg/privatefile"
 	"filees/pkg/provisioning"
 )
 
@@ -37,7 +38,7 @@ func TestShelfDesktopAcceptance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(os.MkdirAll(root, 0700))
+	must(privatefile.EnsureDir(root))
 	url := svnurl.File(filepath.Join(root, "repository"))
 	run := func(args ...string) {
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()

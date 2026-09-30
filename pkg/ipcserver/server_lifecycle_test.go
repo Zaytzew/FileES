@@ -2,7 +2,6 @@ package ipcserver_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 )
 
 func TestServerShutdownClosesEventStreams(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "daemon.sock")
+	socket := shortSocketPath(t)
 	server := ipcserver.New(socket)
 	serverCtx, stopServer := context.WithCancel(context.Background())
 	if err := server.Start(serverCtx); err != nil {

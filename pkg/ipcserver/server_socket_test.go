@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"filees/pkg/ipcserver"
+	"filees/pkg/privatefile"
 )
 
 func TestServerStartDoesNotReplaceLiveSocket(t *testing.T) {
@@ -65,6 +66,9 @@ func shortSocketPath(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := privatefile.Harden(dir); err != nil {
+		t.Fatal(err)
+	}
 	return filepath.Join(dir, "filees.sock")
 }
 

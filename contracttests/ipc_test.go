@@ -17,6 +17,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
+	"filees/pkg/privatefile"
 )
 
 type fakeDaemon func(contract.Request) contract.Response
@@ -25,20 +26,15 @@ type fakeDaemon func(contract.Request) contract.Response
 // test name overflows that on Windows and bind() returns EINVAL.
 func testSocketPath(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(os.TempDir(), "feipc")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.CreateTemp(dir, "s")
+	dir, err := os.MkdirTemp("", "feipc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := f.Name()
-	f.Close()
-	_ = os.Remove(base)
-	sock := base + ".s"
-	t.Cleanup(func() { _ = os.Remove(sock) })
-	return sock
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := privatefile.Harden(dir); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(dir, "ipc.sock")
 }
 
 func startFakeDaemon(t *testing.T, handle fakeDaemon) string {

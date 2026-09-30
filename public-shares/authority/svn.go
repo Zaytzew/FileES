@@ -29,7 +29,7 @@ func (s SVNLookSource) Head(ctx context.Context, repoID string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	command := s.command(ctx, "youngest", repository)
+	command := s.command(ctx, "youngest", "--", repository)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {
@@ -60,7 +60,7 @@ func (s SVNLookSource) RevisionDate(ctx context.Context, repoID string, revision
 	if revision < 1 {
 		return time.Time{}, errors.New("svnlook date requires a positive revision")
 	}
-	command := s.command(ctx, "date", "-r", strconv.FormatInt(revision, 10), repository)
+	command := s.command(ctx, "date", "-r", strconv.FormatInt(revision, 10), "--", repository)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {
@@ -85,7 +85,7 @@ func (s SVNLookSource) Cat(ctx context.Context, repoID, repoPath string, revisio
 	if revision < 1 || !canonicalRepoPath(repoPath) {
 		return errors.New("svnlook cat request is invalid")
 	}
-	command := s.command(ctx, "cat", "-r", strconv.FormatInt(revision, 10), repository, repoPath)
+	command := s.command(ctx, "cat", "-r", strconv.FormatInt(revision, 10), "--", repository, repoPath)
 	var stderr bytes.Buffer
 	command.Stdout, command.Stderr = dst, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {
@@ -105,7 +105,7 @@ func (s SVNLookSource) Tree(ctx context.Context, repoID, sourceRoot string, revi
 	if revision < 1 || (sourceRoot != "." && !canonicalRepoPath(sourceRoot)) {
 		return nil, errors.New("svnlook tree request is invalid")
 	}
-	args := []string{"tree", "--full-paths", "-r", strconv.FormatInt(revision, 10), repository}
+	args := []string{"tree", "--full-paths", "-r", strconv.FormatInt(revision, 10), "--", repository}
 	if sourceRoot != "." {
 		args = append(args, sourceRoot)
 	}
@@ -205,7 +205,7 @@ func (s SVNLookSource) populateSizes(ctx context.Context, repository string, rev
 }
 
 func (s SVNLookSource) fileSize(ctx context.Context, repository, repoPath string, revision int64) (int64, error) {
-	command := s.command(ctx, "filesize", "-r", strconv.FormatInt(revision, 10), repository, repoPath)
+	command := s.command(ctx, "filesize", "-r", strconv.FormatInt(revision, 10), "--", repository, repoPath)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &limitedWriter{Writer: &stdout, Remaining: 128}, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {

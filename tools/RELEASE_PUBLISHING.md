@@ -9,6 +9,12 @@
 Publikacja rozdziela maszynę budującą od maszyny podpisującej. Prywatny klucz
 release nie może znajdować się na build hoście, VM testowej ani w repozytorium.
 
+Od poprawki po r1756 kompilacja wymaga co najmniej Go 1.26.6, zgodnie
+z go.mod. Nie obniżać tego wymagania: obejmuje poprawki bezpieczeństwa
+biblioteki standardowej. Przed podpisem sprawdzić wersję narzędzia przez
+`go version` i przeskanować gotowego demona oraz GUI za pomocą
+`govulncheck -mode=binary`. Ten skan nie obejmuje bibliotek runtime'u C.
+
 ## 1. Deterministyczny manifest
 
 Produkcyjny build klienta przyjmuje wyłącznie publiczny trust root:

@@ -23,6 +23,7 @@ import (
 
 type actionRunner interface {
 	Run(context.Context)
+	PauseIfIdle(context.Context) bool
 }
 
 // configureActions deliberately wires only the actions exposed by the first

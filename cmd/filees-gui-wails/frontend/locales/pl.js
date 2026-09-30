@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "display.recovering": "FileES odtwarza okno aplikacji. Demon pracuje dalej.",
+  "display.recoveryStopped": "FileES nie może automatycznie odtworzyć okna. Uruchom ponownie tylko panel; demon nadal pracuje.",
+  "display.recoveryDeferred": "Okno FileES jest niedostępne. Automatyczne odtworzenie czeka na zakończenie działania lub zamknięcie okna opcji. Demon pracuje dalej.",
   "details.conflictRecovery.title": "Rozstrzygnij konflikt i uzgodnij publikację",
   "details.conflictRecovery.confirm": "Zachowaj kopię i przyjmij serwerową",
   "details.conflictRecovery.cancel": "Anuluj",

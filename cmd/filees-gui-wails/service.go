@@ -33,6 +33,8 @@ type snapshotEmitter interface {
 // internal/gui/app reconstructs the authoritative presentation from IPC and
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
+	actionAdmission      sync.RWMutex
+	recoveringDisplay    bool
 	guiBlobs             guiBlobClient
 	presentationLanguage atomic.Pointer[nativeLanguage]
 	domainCatalogue      atomic.Pointer[domainCatalogues]
@@ -501,6 +503,11 @@ func (service *GUIService) Snapshot() Snapshot {
 // consumed by the Fyne composition root. Acceptance means queued, never that
 // the operation succeeded; the controller and daemon still decide the result.
 func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
+	service.actionAdmission.RLock()
+	defer service.actionAdmission.RUnlock()
+	if service.recoveringDisplay {
+		return ActionAcceptance{Code: "actions_unavailable"}
+	}
 	request.Kind = strings.TrimSpace(request.Kind)
 	request.RepoID = strings.TrimSpace(request.RepoID)
 	request.ServerID = strings.TrimSpace(request.ServerID)

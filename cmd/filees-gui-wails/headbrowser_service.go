@@ -38,10 +38,11 @@ type headBrowserDaemon interface {
 // this service decides only which repository the window may be focused on
 // and where the first local copy goes.
 type HeadBrowserService struct {
-	daemon     headBrowserDaemon
-	projection func() Snapshot
-	render     func(code, key string, details map[string]string) string
-	text       func(key, fallback string) string
+	beginDisplayCall func() (func(), error)
+	daemon           headBrowserDaemon
+	projection       func() Snapshot
+	render           func(code, key string, details map[string]string) string
+	text             func(key, fallback string) string
 
 	mu      sync.RWMutex
 	emitter snapshotEmitter
@@ -256,6 +257,11 @@ func (service *HeadBrowserService) openPath(path string) error {
 // repository without a copy asks where the copy goes - the folder picker is
 // shown here and only here; every later path joins that same copy.
 func (service *HeadBrowserService) Materialize(path string) (contract.RepoHeadWriteResult, error) {
+	finish, err := beginDirectDisplayCall(service.beginDisplayCall)
+	if err != nil {
+		return contract.RepoHeadWriteResult{}, err
+	}
+	defer finish()
 	repo, err := service.focused()
 	if err != nil {
 		return contract.RepoHeadWriteResult{}, err
@@ -335,6 +341,11 @@ func safeFolderName(name, fallback string) string {
 // Fill brings the rest of the tree into the same copy, with no picker (§1a).
 // A repository without a copy has nothing to fill; its row offers Connect.
 func (service *HeadBrowserService) Fill() (contract.RepoHeadWriteResult, error) {
+	finish, err := beginDirectDisplayCall(service.beginDisplayCall)
+	if err != nil {
+		return contract.RepoHeadWriteResult{}, err
+	}
+	defer finish()
 	repo, err := service.focused()
 	if err != nil {
 		return contract.RepoHeadWriteResult{}, err

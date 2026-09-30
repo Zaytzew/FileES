@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "display.recovering": "FileES está restaurando su ventana. El servicio en segundo plano sigue funcionando.",
+  "display.recoveryStopped": "FileES no puede restaurar su ventana automáticamente. Reinicie solo el panel; el servicio en segundo plano sigue funcionando.",
+  "display.recoveryDeferred": "La ventana de FileES no está disponible. La recuperación automática espera a que termine una operación o se cierre un diálogo. El servicio en segundo plano sigue funcionando.",
   "details.conflictRecovery.title": "Resolver conflicto y recuperar publicación",
   "details.conflictRecovery.confirm": "Guardar copia y usar versión del servidor",
   "details.conflictRecovery.cancel": "Cancelar",

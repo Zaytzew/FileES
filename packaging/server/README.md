@@ -38,7 +38,7 @@ disabled-by-default Public Shares services:
   authority process; authority handles service-stop signals and terminates the
   child before exiting, so rc.d restarts do not leave orphan pollers;
 - `filees-public-authority` exposes the credential-free Public Shares
-  backchannel on a Unix socket or a loopback TCP endpoint;
+  backchannel on a protected Unix socket (raw TCP is rejected);
 - `filees-links` serves the public surface through FastCGI and owns only its
   temporary cache and, when configured, the upload-shelf intake quarantine;
 - `filees-worker upload-reap` is the hostadmin cron that moves a ready intake
@@ -268,9 +268,11 @@ Enable and start the authority before links, validate the complete httpd
 configuration, and only then reload httpd. Neither FileES binary terminates
 TLS. A listener behind relayd can remain on loopback; a standalone installation
 adds its normal TLS certificate and redirect blocks to the same system httpd
-server. In a split topology keep the same backchannel protocol and point both
-ends at loopback TCP provided by a server-established reverse SSH forward;
-never expose the authority port on a public interface. An external short-link
+server. In a split topology keep the same backchannel protocol and use protected
+Unix sockets at both ends of a server-established reverse SSH forward;
+raw backchannel TCP is no longer accepted, including loopback. Before upgrading
+a TCP deployment, follow [the Unix backchannel migration](BACKCHANNEL_UNIX.md).
+An external short-link
 service may redirect to the canonical URL, but is never required by FileES.
 
 The shipped bootstrap private key is deliberately compiled into the client and

@@ -13,6 +13,9 @@ import (
 func writeConfigFixture(t *testing.T, body string) string {
 	t.Helper()
 	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	key := filepath.Join(root, "visit.key")
 	if err := os.WriteFile(key, []byte(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))+"\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -53,11 +56,11 @@ func TestLoadContainsNoRepositoryOrCredentialSurface(t *testing.T) {
 }
 
 func TestLoadRejectsBundleWithoutCacheOrBeyondCache(t *testing.T) {
-	withoutCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":false},"bundle":{"max_files":10,"max_size":1024}}`)
+	withoutCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"unix","address":"@ROOT@/authority.sock"},"visit_key_file":"@KEY@","cache":{"enabled":false},"bundle":{"max_files":10,"max_size":1024}}`)
 	if _, err := Load(withoutCache); err == nil {
 		t.Fatal("bundle without private cache accepted")
 	}
-	beyondCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"bundle":{"max_files":10,"max_size":2048}}`)
+	beyondCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"unix","address":"@ROOT@/authority.sock"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"bundle":{"max_files":10,"max_size":2048}}`)
 	if _, err := Load(beyondCache); err == nil {
 		t.Fatal("bundle larger than cache accepted")
 	}
@@ -78,13 +81,19 @@ func TestLoadPreparesOptionalIntakeRoot(t *testing.T) {
 	if _, err := os.Stat(runtime.Config.IntakeRoot); err != nil {
 		t.Fatal(err)
 	}
-	sameCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"intake_root":"@ROOT@/cache"}`)
+	sameCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"unix","address":"@ROOT@/authority.sock"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"intake_root":"@ROOT@/cache"}`)
 	if _, err := Load(sameCache); err == nil {
 		t.Fatal("intake on cache root accepted")
 	}
 }
 
 func TestLoadRejectsPublicBackchannelAndUnknownFields(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:9001", "[::1]:9001"} {
+		path := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"`+address+`"},"visit_key_file":"@KEY@","cache":{"enabled":false}}`)
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "requires unix") {
+			t.Fatalf("TCP %s: %v", address, err)
+		}
+	}
 	publicTCP := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"0.0.0.0:9001"},"visit_key_file":"@KEY@","cache":{"enabled":false}}`)
 	if _, err := Load(publicTCP); err == nil {
 		t.Fatal("public backchannel accepted")

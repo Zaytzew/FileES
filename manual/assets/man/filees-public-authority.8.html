@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man8/filees-public-authority.8 sha256:a280cfcc33bd9683b2e550d9e63f57c38a9ae400acc7f98268e1cf0b35d79021">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-public-authority.8 sha256:47b770a764d099fe537b8929d3bcbb670d830a83fd0066bcf22a51b7fe9ce7aa">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-public-authority(8) — FileES manual pages</title>
@@ -54,11 +54,19 @@
 <section class="Sh">
 <h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
 <p class="Pp"><code class="Nm">filees-public-authority</code> is the
-    authoritative side of Public Shares. It listens on a Unix socket or loopback
-    TCP. It never terminates TLS. It fetches leaves with
-    <code class="Nm">svnlook</code> and pushes them to
+    authoritative side of Public Shares. It listens only on a protected Unix
+    socket. Raw TCP, including loopback, is rejected. For a split deployment use
+    reverse SSH with Unix sockets at both ends. It never terminates TLS. It
+    fetches leaves with <code class="Nm">svnlook</code> and pushes them to
     <a class="Xr" href="filees-links.8.html" aria-label="filees-links, section
     8">filees-links(8)</a>.</p>
+<p class="Pp">Provision the socket directory before starting the service: 0700
+    for a private socket, or 0750 with the configured socket group. The
+    directory and its ancestry must not be writable by untrusted accounts. The
+    listener uses mode 0600, or 0660 with an explicit socket group. It refuses
+    to replace a live socket, a non-socket or an ambiguous endpoint. A stale
+    socket owned by the service is removed only after a refused connection
+    proves that no listener is present.</p>
 <p class="Pp">It supervises
     <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
     8">filees-mail(8)</a> <code class="Cm">public-loop</code> as a required
@@ -105,7 +113,7 @@
 </main>
 <div class="foot" role="doc-pagefooter" aria-label="Manual footer
   line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-date">September 30, 2026</span>
   <span class="foot-right">FILEES-PUBLIC-AUTHORITY(8)</span></div>
 </div>
 </div>

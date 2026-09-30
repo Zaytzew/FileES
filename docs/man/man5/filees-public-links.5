@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd September 30, 2026
 .Dt FILEES-PUBLIC-LINKS 5
 .Os
 .Sh NAME
@@ -29,9 +29,15 @@ How links asks
 for a leaf.
 On a shared host this is the Unix socket
 .Pa /var/run/filees/public-authority.sock .
-A split topology uses loopback TCP provided by a server-established
-reverse SSH forward.
-Never expose the authority port on a public interface.
+A split topology uses a server-established reverse SSH forward with Unix
+sockets at both ends.
+Raw TCP, including loopback, is rejected; migrate before upgrading.
+The socket directory must already exist, owned by its service account or root,
+with no access for others and no group write permission.
+Use mode 0700 for one account, or 0750 with the dedicated socket group.
+The directory ancestry is checked before the sandbox is applied;
+the socket type, owner and permissions are checked on each new connection.
+The socket may be absent at startup while the authority or tunnel starts.
 .It Ic visit_key_file
 HMAC key for signed visit URLs, mode 0600.
 .It Ic cache.root , cache.ttl , cache.max_size

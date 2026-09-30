@@ -11,9 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -200,57 +198,8 @@ func startPublicMailer(configPath string) (*exec.Cmd, <-chan error, error) {
 }
 
 func listen(config serverconfig.PublicSharesFile) (net.Listener, func(), error) {
-	if config.BackchannelNetwork == "tcp" {
-		listener, err := net.Listen("tcp", config.BackchannelAddress)
-		return listener, func() {
-			if listener != nil {
-				_ = listener.Close()
-			}
-		}, err
+	if config.BackchannelNetwork != "unix" {
+		return nil, nil, errors.New("backchannel requires unix; migrate TCP to OpenSSH Unix socket forwarding")
 	}
-	path := config.BackchannelAddress
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-		return nil, nil, err
-	}
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSocket == 0 {
-			return nil, nil, errors.New("backchannel address exists and is not a socket")
-		}
-		if err := os.Remove(path); err != nil {
-			return nil, nil, err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, err
-	}
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := os.Chmod(path, 0660); err != nil {
-		listener.Close()
-		os.Remove(path)
-		return nil, nil, err
-	}
-	if config.BackchannelSocketGroup != "" {
-		group, err := user.LookupGroup(config.BackchannelSocketGroup)
-		if err != nil {
-			listener.Close()
-			os.Remove(path)
-			return nil, nil, err
-		}
-		gid, err := strconv.Atoi(group.Gid)
-		if err != nil || os.Chown(path, -1, gid) != nil {
-			listener.Close()
-			os.Remove(path)
-			return nil, nil, errors.New("cannot assign backchannel socket group")
-		}
-	}
-	created, _ := os.Lstat(path)
-	cleanup := func() {
-		_ = listener.Close()
-		if current, err := os.Lstat(path); err == nil && created != nil && os.SameFile(created, current) {
-			_ = os.Remove(path)
-		}
-	}
-	return listener, cleanup, nil
+	return backchannel.ListenUnix(config.BackchannelAddress, config.BackchannelSocketGroup)
 }

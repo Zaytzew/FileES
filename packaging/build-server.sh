@@ -110,6 +110,7 @@ cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/o
 cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"
+cp "$root/packaging/server/BACKCHANNEL_UNIX.md" "$tmp/"
 if [ -d "$root/docs/man" ]; then
 	cp "$root/docs/man/man5/"* "$tmp/share/man/man5/"
 	cp "$root/docs/man/man7/"* "$tmp/share/man/man7/"

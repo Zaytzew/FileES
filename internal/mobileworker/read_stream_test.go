@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"os"
 	"runtime"
 	"testing"
 
@@ -70,10 +69,7 @@ func TestDispatchReadDiskSpoolBoundedAndCleaned(t *testing.T) {
 			if after.TotalAlloc-before.TotalAlloc > 8<<20 {
 				t.Fatalf("buffered read: allocated %d", after.TotalAlloc-before.TotalAlloc)
 			}
-			entries, err := os.ReadDir(d.Appender.SpoolDir)
-			if err != nil || len(entries) != 0 {
-				t.Fatalf("spool leak: %v %v", entries, err)
-			}
+			assertReadSpoolIdle(t, d.Appender.SpoolDir)
 		})
 	}
 }

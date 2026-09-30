@@ -101,6 +101,8 @@
     "public_share.list_all_unavailable": "Zbiorcza lista udostępnień jest teraz niedostępna",
     "public_share.list_failed": "Nie udało się pobrać udostępnień",
     "public_share.rejected": "Serwer odrzucił zmianę udostępnienia",
+    "public_share.request_too_large": "Lista plików ze ścieżkami przekracza limit opisu udostępnienia. Wybierz mniejszy folder. Jeśli serwer ma starszą wersję, najpierw go zaktualizuj.",
+    "public_share.result_too_large": "Lista udostępnień przekracza limit odpowiedzi. Skontaktuj się z administratorem; istniejące udostępnienia nie zostały zmienione.",
     "public_share.unavailable": "Udostępnienia publiczne są teraz niedostępne",
     "realm.alias_rejected": "Serwer odrzucił alias strefy",
     "realm.alias_required": "Przed blokowaniem plików ustaw stały alias strefy",

@@ -101,6 +101,8 @@
     "public_share.list_all_unavailable": "La lista conjunta de recursos compartidos públicos no está disponible ahora",
     "public_share.list_failed": "No se pudieron leer los recursos compartidos públicos",
     "public_share.rejected": "El servidor rechazó el cambio de este recurso compartido público",
+    "public_share.request_too_large": "La lista de archivos y sus rutas supera el límite de la descripción del recurso compartido. Seleccione una carpeta más pequeña. Si el servidor usa una versión antigua, actualícelo primero.",
+    "public_share.result_too_large": "La lista de recursos compartidos supera el límite de respuesta. Contacte con el administrador; los recursos compartidos existentes no se han modificado.",
     "public_share.unavailable": "Los recursos compartidos públicos no están disponibles ahora",
     "realm.alias_rejected": "El servidor rechazó el alias del espacio",
     "realm.alias_required": "Defina un alias permanente para el espacio antes de reservar archivos",

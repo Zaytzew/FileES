@@ -101,6 +101,8 @@
     "public_share.list_all_unavailable": "La liste regroupée des partages publics est indisponible pour le moment",
     "public_share.list_failed": "Impossible de lire les partages publics",
     "public_share.rejected": "Le serveur a rejeté la modification de ce partage public",
+    "public_share.request_too_large": "La liste des fichiers et de leurs chemins dépasse la limite de description du partage. Choisissez un dossier plus petit. Si le serveur utilise une ancienne version, mettez-le d’abord à jour.",
+    "public_share.result_too_large": "La liste des partages dépasse la limite de réponse. Contactez l’administrateur ; les partages existants n’ont pas été modifiés.",
     "public_share.unavailable": "Les partages publics sont indisponibles pour le moment",
     "realm.alias_rejected": "Le serveur a rejeté l’alias de l’espace",
     "realm.alias_required": "Définissez un alias permanent pour l’espace avant de réserver des fichiers",

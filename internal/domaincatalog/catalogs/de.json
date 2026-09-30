@@ -101,6 +101,8 @@
     "public_share.list_all_unavailable": "Die Gesamtliste öffentlicher Freigaben ist derzeit nicht verfügbar",
     "public_share.list_failed": "Öffentliche Freigaben konnten nicht gelesen werden",
     "public_share.rejected": "Der Server hat die Änderung dieser öffentlichen Freigabe abgewiesen",
+    "public_share.request_too_large": "Die Dateiliste mit Pfaden überschreitet das Größenlimit der Freigabebeschreibung. Wählen Sie einen kleineren Ordner. Falls der Server eine ältere Version verwendet, aktualisieren Sie ihn zuerst.",
+    "public_share.result_too_large": "Die Freigabeliste überschreitet das Antwortlimit. Wenden Sie sich an den Administrator; bestehende Freigaben wurden nicht geändert.",
     "public_share.unavailable": "Öffentliche Freigaben sind derzeit nicht verfügbar",
     "realm.alias_rejected": "Der Server hat den Bereichsalias abgewiesen",
     "realm.alias_required": "Legen Sie vor dem Reservieren von Dateien einen dauerhaften Bereichsalias fest",

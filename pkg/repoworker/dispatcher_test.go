@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
@@ -37,8 +38,8 @@ func TestDispatcherResolvesAuthorityFromView(t *testing.T) {
 	}
 }
 func TestDispatcherRejectsOversizedTicket(t *testing.T) {
-	d := Dispatcher{}
-	if e := d.Serve(context.Background(), "client", bytes.NewReader(make([]byte, MaxTicketBytes+1)), io.Discard); e == nil {
-		t.Fatal("oversized ticket accepted")
+	d := Dispatcher{Worker: &Worker{}, Resolver: guiBlobResolver{}}
+	if e := d.Serve(context.Background(), "client", bytes.NewReader(make([]byte, MaxTicketBytes+1)), io.Discard); !errors.Is(e, control.ErrTicketTooLarge) {
+		t.Fatalf("expected size rejection, got %v", e)
 	}
 }

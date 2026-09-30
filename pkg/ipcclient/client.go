@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	contract "filees/pkg/contract/v1"
+	control "filees/pkg/control/v1"
 	"filees/pkg/realmbranding"
 	"filees/pkg/runtime"
 )
@@ -85,6 +86,11 @@ func DefaultSocketPath() string {
 // A response with Status=="error" is returned without a Go error —
 // call resp.Error for details. Use the typed helpers below where possible.
 func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Response, error) {
+	// Refuse obviously oversized declarations before the IPC frame reader
+	// closes the connection. The daemon checks the exact control envelope.
+	if (req.Command == contract.CmdRepoPublicShareCreate || req.Command == contract.CmdRepoPublicShareUpdate) && len(req.Payload) > control.MaxShareTicketBytes {
+		return contract.ErrResponse(req.RequestID, "SHARE-1003", "ERROR", "REQUIRE_ACTION", "public_share.request_too_large", nil), nil
+	}
 	dialer := net.Dialer{Timeout: c.timeout}
 	conn, err := dialer.DialContext(ctx, "unix", c.sockPath)
 	if err != nil {

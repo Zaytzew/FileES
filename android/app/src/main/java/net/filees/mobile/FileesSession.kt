@@ -1,8 +1,10 @@
 package net.filees.mobile
 
+import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
 data class PairedServer(
@@ -76,6 +78,11 @@ object FileesSession {
     const val PREF_ACKED_SHOUTS = "acked_shouts"
     private const val PREF_JOURNAL = "phone_journal_json"
     private const val JOURNAL_CAP = 12
+    private const val JOURNAL_KEEP_MIN = 3
+    private const val JOURNAL_MAX_AGE_MS = 48L * 60 * 60 * 1000
+    private const val JOURNAL_ARCHIVE = "journal-archive.jsonl"
+    private const val JOURNAL_ARCHIVE_MAX_BYTES = 512L * 1024
+    private val JOURNAL_LOCK = Any()
     const val MOBILE_USER = "_filees-mobile"
 
     private const val PREF_SERVERS = "servers_json"
@@ -223,31 +230,83 @@ object FileesSession {
         val entry: String,
     )
 
-    fun pushJournal(prefs: SharedPreferences, scope: String, entry: String, shoutId: String = "") {
-        val prev = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
-        if (shoutId.isNotEmpty()) {
+    /** Adds an entry, then retires old ones (see [retireJournal]). */
+    fun pushJournal(prefs: SharedPreferences, scope: String, entry: String, shoutId: String = "", archive: File? = null) {
+        synchronized(JOURNAL_LOCK) {
+            val prev = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
+            if (shoutId.isNotEmpty()) {
+                for (i in 0 until prev.length()) {
+                    if (prev.getJSONObject(i).optString("shout_id") == shoutId) return
+                }
+            }
+            val all = ArrayList<JSONObject>()
+            val row = JSONObject()
+                .put("at", System.currentTimeMillis())
+                .put("scope", scope)
+                .put("entry", entry)
+            if (shoutId.isNotEmpty()) row.put("shout_id", shoutId)
+            all.add(row)
+            val seen = HashSet<String>()
+            if (shoutId.isNotEmpty()) seen.add(shoutId)
             for (i in 0 until prev.length()) {
-                if (prev.getJSONObject(i).optString("shout_id") == shoutId) return
+                val o = prev.getJSONObject(i)
+                val id = o.optString("shout_id")
+                if (id.isNotEmpty() && !seen.add(id)) continue
+                all.add(o)
+            }
+            retire(prefs, all, archive)
+        }
+    }
+
+    /** Applies the retention rule without adding an entry; entries also age out while the app is idle. */
+    fun sweepJournal(prefs: SharedPreferences, archive: File?) {
+        synchronized(JOURNAL_LOCK) {
+            val array = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")
+            retire(prefs, (0 until array.length()).map { array.getJSONObject(it) }, archive)
+        }
+    }
+
+    fun journalArchive(context: Context): File = File(context.filesDir, JOURNAL_ARCHIVE)
+
+    // Newest first. Always keep the JOURNAL_KEEP_MIN newest; beyond them an entry
+    // stays only while younger than JOURNAL_MAX_AGE_MS, and never past JOURNAL_CAP.
+    // Retired entries are appended to the local archive first; if that write fails
+    // the aged ones stay (still bounded by the cap) rather than being lost.
+    private fun retire(prefs: SharedPreferences, all: List<JSONObject>, archive: File?) {
+        val now = System.currentTimeMillis()
+        val keep = ArrayList<JSONObject>()
+        val retired = ArrayList<JSONObject>()
+        val aged = ArrayList<JSONObject>()
+        all.forEachIndexed { i, o ->
+            when {
+                i >= JOURNAL_CAP -> retired.add(o)
+                i >= JOURNAL_KEEP_MIN && now - o.optLong("at") > JOURNAL_MAX_AGE_MS -> aged.add(o)
+                else -> keep.add(o)
+            }
+        }
+        if (aged.isNotEmpty() || retired.isNotEmpty()) {
+            if (archive != null && appendArchive(archive, aged + retired, now)) {
+                // archived: drop them from the live journal
+            } else {
+                keep.addAll(aged)
+                keep.sortByDescending { it.optLong("at") }
             }
         }
         val next = JSONArray()
-        val row = JSONObject()
-            .put("at", System.currentTimeMillis())
-            .put("scope", scope)
-            .put("entry", entry)
-        if (shoutId.isNotEmpty()) row.put("shout_id", shoutId)
-        next.put(row)
-        val seen = HashSet<String>()
-        if (shoutId.isNotEmpty()) seen.add(shoutId)
-        for (i in 0 until prev.length()) {
-            if (next.length() >= JOURNAL_CAP) break
-            val o = prev.getJSONObject(i)
-            val id = o.optString("shout_id")
-            if (id.isNotEmpty() && !seen.add(id)) continue
-            next.put(o)
-        }
+        keep.forEach { next.put(it) }
         prefs.edit().putString(PREF_JOURNAL, next.toString()).apply()
     }
+
+    private fun appendArchive(file: File, entries: List<JSONObject>, now: Long): Boolean = try {
+        // One line per entry. One rotated generation keeps the archive itself bounded.
+        if (file.length() > JOURNAL_ARCHIVE_MAX_BYTES) {
+            val old = File(file.path + ".1")
+            old.delete()
+            file.renameTo(old)
+        }
+        file.appendText(entries.joinToString("") { JSONObject(it.toString()).put("archived_at", now).toString() + "\n" })
+        true
+    } catch (_: Exception) { false }
 
     fun journal(prefs: SharedPreferences): List<PhoneJournalEntry> {
         val array = JSONArray(prefs.getString(PREF_JOURNAL, "[]") ?: "[]")

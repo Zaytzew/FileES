@@ -199,6 +199,8 @@
     <string name="home_journal_empty">Brak wpisów.</string>
     <string name="home_journal_pending">Do decyzji: %1$s</string>
     <string name="home_journal_shout">Ogłoszenie r%1$s</string>
+    <string name="home_journal_show_all">Pokaż wszystkie (%1$d)</string>
+    <string name="home_journal_show_less">Pokaż mniej</string>
     <string name="home_fact_server">Serwer</string>
     <string name="home_fact_revision">Rewizja</string>
     <string name="home_fact_access">Dostęp</string>

@@ -63,11 +63,15 @@ type Reservation struct {
 // control-plane request in this codebase — RepoID is a selector into that
 // already-authorized set, not a capability grant by itself.
 type Request struct {
-	Schema string `json:"schema"`
-	RepoID string `json:"repo_id"`
+	IncludeStorageWrite bool   `json:"include_storage_write,omitempty"`
+	Schema              string `json:"schema"`
+	RepoID              string `json:"repo_id"`
 }
 
 func (r Request) Validate() error {
+	if r.IncludeStorageWrite && (r.RepoID == "" || (r.Schema != StateSchema && r.Schema != AutolockSchema)) {
+		return errors.New("storage write selector requires a v2/v3 repository")
+	}
 	if r.Schema != Schema && r.Schema != StateSchema && r.Schema != AutolockSchema {
 		return errors.New("reservation request schema mismatch")
 	}
@@ -91,6 +95,7 @@ func (r Request) Validate() error {
 //     artifact exists yet; Reservations is always empty and must never be
 //     read as "confirmed zero".
 type Result struct {
+	StorageWrite    *StorageWrite           `json:"storage_write,omitempty"`
 	PathOwnership   *pathownership.Snapshot `json:"path_ownership,omitempty"`
 	OwnershipDetail string                  `json:"ownership_detail,omitempty"`
 	// Only the v2 server selector (empty RepoID) carries these current
@@ -167,6 +172,9 @@ func ParseRequest(raw []byte) (Request, error) {
 func ParseResult(raw []byte) (Result, error) {
 	var res Result
 	if err := decodeExactlyOne(raw, &res); err != nil {
+		return Result{}, err
+	}
+	if err := validateStorageWrite(res); err != nil {
 		return Result{}, err
 	}
 	if res.Schema != Schema && res.Schema != StateSchema && res.Schema != AutolockSchema {

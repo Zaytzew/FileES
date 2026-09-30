@@ -151,6 +151,8 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	}
 	if originalCommand == ClientReservationCommand {
 		r := config.Repositories
+		profile.Paths = append(profile.Paths, storageWriteReadPaths(configPath)...)
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-results-volume", Name: r.ResultsRoot, Perms: "r"})
 		// filees-serving-state calls its own sandboxApplyForExec after this
 		// exec; OpenBSD carries this process's locked unveil table across
 		// exec and only lets the child narrow it further, never widen it

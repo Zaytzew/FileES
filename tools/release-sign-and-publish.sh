@@ -91,6 +91,32 @@ for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifes
 done
 [ "$manifests" -gt 0 ] || die "release has no component manifests: $release_root"
 
+# The "what's new" list (releases/<id>/notes.json) is optional and signed with
+# the same key as the manifests, in the same commit, so a page never shows
+# notes nobody signed. A draft left next to it was never reviewed.
+[ ! -e "$release_root/notes.draft.json" ] || die "unreviewed $release_root/notes.draft.json; review it into notes.json or delete it"
+notes_path="$release_root/notes.json"
+if [ -f "$notes_path" ] && { [ ! -f "${notes_path}.sig" ] || ! "$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$notes_path" -x "${notes_path}.sig"; }; then
+	all_manifests_signed=false
+fi
+
+# A release that raises security_epoch blocks every way back to the version
+# before it, so its card must say the update matters: its notes carry a
+# security item (owner, 2026-09-29). filees-release-notes lint checks that the
+# item is this release's own; this machine may have no Go, so here the check
+# is only that one exists.
+epoch_of() {
+	sed -n 's/.*"security_epoch"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+}
+new_epoch=$(epoch_of "$candidate")
+old_epoch=""
+[ ! -f "$channel_path" ] || old_epoch=$(epoch_of "$channel_path")
+if [ -n "$new_epoch" ] && [ -n "$old_epoch" ] && [ "$new_epoch" -gt "$old_epoch" ]; then
+	[ -f "$notes_path" ] || die "release $RELEASE_ID raises security_epoch from $old_epoch to $new_epoch on $CHANNEL but has no notes.json; add one with a security item"
+	grep -q '"kind"[[:space:]]*:[[:space:]]*"security"' "$notes_path" \
+		|| die "release $RELEASE_ID raises security_epoch from $old_epoch to $new_epoch on $CHANNEL but notes.json has no security item"
+fi
+
 # A release built for one channel is published on that channel only: alpha
 # carries every feature, beta and stable are separate nocfapi builds of the
 # same revision (owner's decision, 2026-09-24). Releases prepared before
@@ -164,6 +190,9 @@ for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifes
 	[ -f "$manifest_path" ] || continue
 	sign_manifest "$manifest_path"
 done
+if [ -f "$notes_path" ]; then
+	sign_manifest "$notes_path"
+fi
 tmp_channel_sig="$tmp_dir/channel.sig"
 sign_to "$candidate" "$tmp_channel_sig"
 

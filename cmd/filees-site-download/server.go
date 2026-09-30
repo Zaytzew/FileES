@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"filees/internal/releaseenvelope"
+	"filees/internal/releasenotes"
 	"filees/internal/serverinstall/manifest"
 )
 
@@ -33,12 +34,14 @@ type ServerState struct {
 	SecurityEpoch  uint64                   `json:"security_epoch"`
 	ManifestSHA256 string                   `json:"manifest_sha256"`
 	Artifact       releaseenvelope.Artifact `json:"artifact"`
+	NotesSince     uint64                   `json:"notes_since,omitempty"`
 }
 
 type serverBundle struct {
 	state    ServerState
 	download platformDownload
 	data     []byte
+	whatsNew releasenotes.Selection
 }
 
 func digest(data []byte) string {
@@ -104,6 +107,16 @@ func (p Publisher) serverDownload(ctx context.Context, previous *State) (*server
 	}
 	name := "FileES-" + m.ReleaseID + "-" + m.Platform + ".tar.gz"
 	bundle := &serverBundle{state: ServerState{ReleaseID: m.ReleaseID, Sequence: m.Sequence, SecurityEpoch: m.SecurityEpoch, ManifestSHA256: digest(raw)}, download: platformDownload{Platform: m.Platform, Manifest: manifestPath, SignedAt: signedAt}}
+	// A server promoted from alpha to beta is the same release directory;
+	// its notes carry every item since the release this page showed before.
+	notes, err := signedNotes(ctx, p.Fetcher, p.Resolver.Verifier, p.Config.KeyID, m.ReleaseID, m.Sequence, "server")
+	if err != nil {
+		return nil, err
+	}
+	if previous != nil && previous.Server != nil {
+		bundle.state.NotesSince = notesSince(previous.Server.ReleaseID, previous.Server.Sequence, previous.Server.NotesSince, m.ReleaseID)
+	}
+	bundle.whatsNew = selection(notes, bundle.state.NotesSince, "server")
 	// The cache belongs to the publisher, outside the release repository. Recheck
 	// its bytes against the digest recorded after verification, on every run.
 	if previous != nil && previous.Server != nil {

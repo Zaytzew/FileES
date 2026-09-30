@@ -139,6 +139,9 @@ fi
 trap - EXIT HUP INT TERM
 printf '%s\n' "$CHANNEL" >"$built_for"
 
+COMPONENT=desktop RELEASE_ID="$RELEASE_ID" SEQUENCE="$SEQUENCE" SECURITY_EPOCH="$SECURITY_EPOCH" SOURCE_REVISION="$source_revision" \
+	PREVIOUS_CHANNEL="$FILEES_BIN_WC/channels/$CHANNEL.v2.json" FILEES_BIN_WC="$FILEES_BIN_WC" SOURCE_WC="$root" \
+	sh "$root/tools/release-notes-draft.sh"
 echo
 echo "prepared client release $RELEASE_ID ($client_version) from source SVN r$source_revision"
 echo "review, then svn add/commit only releases/$RELEASE_ID"

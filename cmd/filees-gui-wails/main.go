@@ -175,6 +175,8 @@ func main() {
 	// "Browse on the server" (implementation notes (not distributed)) is
 	// built the same way: its own window, talking to the daemon itself.
 	headBrowser := newHeadBrowserService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
+	headBrowser.beginDisplayCall = gui.beginDisplayCall
+	timeMachine.beginDisplayCall = gui.beginDisplayCall
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -381,6 +383,13 @@ func main() {
 		gui.rememberCurrentRealmBranding(serverID, value.LeadingColor)
 	}}
 	actionPlatform := newActionPlatform()
+	restartGUI := func() {
+		select {
+		case restartRequested <- struct{}{}:
+		default:
+		}
+		host.Quit()
+	}
 	headBrowser.attachPlatform(wailsHistoryPicker(nativePicker), actionPlatform.OpenFolder)
 	actionController := configureActions(
 		gui, daemon, reservationAdapter{client: daemon}, lockReleaseAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot).WithFailureReporter(func(step string, err error) {
@@ -391,13 +400,7 @@ func main() {
 		}), pinStore, mobilePairingAdapter{text: gui.localizeText, client: daemon, pinStore: pinStore, prompter: prompts, presenter: pairing, servers: func() []PromptOption { return pairingServerOptions(gui.Snapshot()) }}, shouts, intentResolverAdapter{client: daemon}, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, prompter: prompts}, branding,
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
 		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryUploadChannelBrowserAdapter{service: repository}, uploadChannelAdapter{client: daemon}, repositoryQuarantineBrowserAdapter{service: repository}, quarantineAdapter{client: daemon}, timeMachineBrowserAdapter{service: timeMachine}, repositoryShelfBrowserAdapter{service: repository}, shelfAdapter{client: daemon}, repositoryCreateAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryLocateAdapter{client: daemon}, repositoryRelocateAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, repositoryLifecycleRepairAdapter{client: daemon}, repositoryDumpLoadAdapter{client: daemon}, serverDetachAdapter{client: daemon}, realmRemovalAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, recoveryDismissAdapter{client: daemon}, unportableRenameAdapter{client: daemon}, consentPromptAdapter{prompter: prompts}, actionPlatform, nativePicker, nativePicker, prompts,
-		func() {
-			select {
-			case restartRequested <- struct{}{}:
-			default:
-			}
-			host.Quit()
-		},
+		restartGUI,
 		host.Quit,
 	)
 
@@ -405,6 +408,29 @@ func main() {
 		go gui.run(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())
+			go watchDisplayHealth(host.Context(), *activationRoot, gui, actionPlatform, func() bool {
+				// A visible secondary window may contain unsent form data or a
+				// direct service call. Never erase it during automatic recovery.
+				for _, window := range []*application.WebviewWindow{settingsWindow, repositoryWindow, promptWindow, pairingWindow, timeMachineWindow, headBrowserWindow} {
+					if window.IsVisible() {
+						return false
+					}
+				}
+				if !gui.actionAdmission.TryLock() {
+					return false
+				}
+				defer gui.actionAdmission.Unlock()
+				if len(progress.Snapshot().Items) != 0 {
+					return false
+				}
+				ctx, cancel := context.WithTimeout(host.Context(), time.Second)
+				defer cancel()
+				if !actionController.PauseIfIdle(ctx) {
+					return false
+				}
+				gui.recoveringDisplay = true
+				return true
+			}, restartGUI)
 		}
 	})
 	host.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
@@ -444,11 +470,17 @@ func main() {
 	})
 
 	if err := host.Run(); err != nil {
+		if dir, dirErr := opjournal.Dir(); dirErr == nil {
+			recordDisplayHealth(dir, "host_run_failed", err.Error())
+		}
 		log.Fatal(err)
 	}
 	select {
 	case <-restartRequested:
 		if err := restartCurrentProcess(os.Args); err != nil {
+			if dir, dirErr := opjournal.Dir(); dirErr == nil {
+				recordDisplayHealth(dir, "restart_failed", err.Error())
+			}
 			log.Printf("filees-gui-wails: restart: %v", err)
 		}
 	default:

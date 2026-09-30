@@ -481,12 +481,13 @@ type Config struct {
 type Controller struct {
 	cfg Config
 
-	operationsMu sync.Mutex
-	operations   map[string]struct{}
-	pendingMu    sync.Mutex
-	pending      map[string]pendingAttachment
-	actionSeq    atomic.Uint64
-	tasks        sync.WaitGroup
+	operationsMu  sync.Mutex
+	operations    map[string]struct{}
+	pendingMu     sync.Mutex
+	pending       map[string]pendingAttachment
+	actionSeq     atomic.Uint64
+	tasks         countedTasks
+	pauseRequests chan chan bool
 }
 
 type pendingAttachment struct {
@@ -496,21 +497,32 @@ type pendingAttachment struct {
 
 // New creates a Controller with the given configuration.
 func New(cfg Config) *Controller {
-	return &Controller{cfg: cfg, operations: make(map[string]struct{}), pending: make(map[string]pendingAttachment)}
+	return &Controller{cfg: cfg, operations: make(map[string]struct{}), pending: make(map[string]pendingAttachment), pauseRequests: make(chan chan bool)}
 }
 
 // Run processes intents until ctx is cancelled or the intents channel closes.
 func (c *Controller) Run(ctx context.Context) {
 	defer c.tasks.Wait()
+	paused := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case reply := <-c.pauseRequests:
+			// Dispatch and admission are serialized here. A parent task remains
+			// counted while it starts a nested operation; operation keys alone
+			// cannot prove that an IPC call or a dialog has finished.
+			if !paused && len(c.cfg.Intents) == 0 && c.tasks.count.Load() == 0 {
+				paused = true
+			}
+			reply <- paused
 		case intent, ok := <-c.cfg.Intents:
 			if !ok {
 				return
 			}
-			c.dispatch(ctx, intent)
+			if !paused {
+				c.dispatch(ctx, intent)
+			}
 		}
 	}
 }

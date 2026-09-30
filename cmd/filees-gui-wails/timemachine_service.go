@@ -41,10 +41,11 @@ type timeMachineDaemon interface {
 // trusted with - which repositories are offered, and a destination that is at
 // least an absolute path before it travels.
 type TimeMachineService struct {
-	daemon     timeMachineDaemon
-	projection func() Snapshot
-	render     func(code, key string, details map[string]string) string
-	text       func(key, fallback string) string
+	beginDisplayCall func() (func(), error)
+	daemon           timeMachineDaemon
+	projection       func() Snapshot
+	render           func(code, key string, details map[string]string) string
+	text             func(key, fallback string) string
 
 	mu      sync.RWMutex
 	emitter snapshotEmitter
@@ -209,6 +210,11 @@ func (service *TimeMachineService) failure(err error) error {
 
 func timeMachineCall[T any](service *TimeMachineService, call func(context.Context) (*T, error)) (T, error) {
 	var zero T
+	finish, err := beginDirectDisplayCall(service.beginDisplayCall)
+	if err != nil {
+		return zero, err
+	}
+	defer finish()
 	ctx, cancel := context.WithTimeout(context.Background(), timeMachineCallTimeout)
 	defer cancel()
 	result, err := call(ctx)
@@ -257,6 +263,11 @@ func (service *TimeMachineService) Density(snapshotID string, bucketHours, utcOf
 // ChooseDestination asks for the parent folder of a copy. An empty answer is
 // a cancelled dialog. The daemon still refuses a folder inside a working copy.
 func (service *TimeMachineService) ChooseDestination() (string, error) {
+	finish, err := beginDirectDisplayCall(service.beginDisplayCall)
+	if err != nil {
+		return "", err
+	}
+	defer finish()
 	service.mu.RLock()
 	pick := service.pick
 	service.mu.RUnlock()

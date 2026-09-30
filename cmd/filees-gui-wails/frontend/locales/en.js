@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "display.recovering": "FileES is restoring its window. The daemon continues working.",
+  "display.recoveryStopped": "FileES cannot restore its window automatically. Restart only the panel; the daemon is still running.",
+  "display.recoveryDeferred": "The FileES window is unavailable. Automatic recovery is waiting for an operation or an open dialog. The daemon continues working.",
   "details.conflictRecovery.title": "Resolve conflict and recover publication",
   "details.conflictRecovery.confirm": "Keep a copy and use server version",
   "details.conflictRecovery.cancel": "Cancel",

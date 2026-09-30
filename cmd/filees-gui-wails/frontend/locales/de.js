@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "display.recovering": "FileES stellt sein Fenster wieder her. Der Hintergrunddienst arbeitet weiter.",
+  "display.recoveryStopped": "FileES kann sein Fenster nicht automatisch wiederherstellen. Starten Sie nur das Bedienfeld neu; der Hintergrunddienst läuft weiter.",
+  "display.recoveryDeferred": "Das FileES-Fenster ist nicht verfügbar. Die automatische Wiederherstellung wartet auf den Abschluss eines Vorgangs oder das Schließen eines Dialogs. Der Hintergrunddienst arbeitet weiter.",
   "details.conflictRecovery.title": "Konflikt lösen und Veröffentlichung fortsetzen",
   "details.conflictRecovery.confirm": "Kopie sichern und Serverversion übernehmen",
   "details.conflictRecovery.cancel": "Abbrechen",

@@ -70,6 +70,44 @@ signed manifest. Until the first android release is signed, this step does
 nothing and does not fail the desktop page. Rollback state is
 `/var/lib/filees-site/state-android.json`.
 
+## What's new on each card
+
+A release may carry a signed `releases/<id>/notes.json` (see
+`tools/RELEASE_PUBLISHING.md`). The publisher verifies it with the release
+key, checks it names the same release, and lists on each card what is new
+since the release that page published before. A beta page that skipped
+several alphas, and a server promoted from alpha to beta, therefore show
+everything since the previous beta. A release without notes shows no list.
+Notes that are unsigned, badly signed or about another release stop the
+publication and leave the previous page in place.
+
+Template slots (each is empty without items). `landing/download/index.html`
+puts the server and platform lists inside their cards, after the version line,
+and the desktop list under "Aplikacje desktopowe"; `tools/deploy-site.sh`
+installs the publisher and the template together:
+
+| Slot | Items |
+| --- | --- |
+| `{{DESKTOP_WHATS_NEW_PL}}` / `_EN` | scope `desktop`: shared by Windows and Linux, under "Aplikacje desktopowe" |
+| `{{WINDOWS_AMD64_WHATS_NEW_PL}}` / `_EN` | scope `windows` only |
+| `{{LINUX_AMD64_WHATS_NEW_PL}}` / `_EN` | scope `linux` only |
+| `{{SERVER_WHATS_NEW_PL}}` / `_EN` | scope `server` (only with a server lane) |
+
+The publisher builds this HTML itself from escaped text:
+`<div class="whats-new"><h3>…</h3><ul><li>…</li></ul>`. Security, admin and fix
+items get `class="security|admin|fix"` and a bold label. After five items the
+rest folds into `<details>`. When the page is older than the history the file
+still carries, a `<p class="whats-new-older">` line says so. It needs a few
+CSS rules and no script. `release.json` gains `whats_new`: up to five plain-text
+items for the home page. It is left out when there are none, so pages of
+releases without notes stay byte-identical.
+
+The Android track writes `android/whats-new.json` next to the mirrored
+channel: `release_id`, `version`, `items` (`scope`, `kind`, `pl`, `en`) and
+`incomplete`. The Android card script must insert `pl`/`en` with
+`textContent`, never `innerHTML`: the files are verified, but the card is
+HTML the script assembles.
+
 ## How it works
 
 `cmd/filees-site-download` runs from cron on the web server as the system user

@@ -73,5 +73,8 @@ cat >"$candidate" <<EOF
 }
 EOF
 
+COMPONENT=server RELEASE_ID="$RELEASE_ID" SEQUENCE="$SEQUENCE" SECURITY_EPOCH="$SECURITY_EPOCH" SOURCE_REVISION="$source_revision" \
+	PREVIOUS_CHANNEL="$FILEES_BIN_WC/channels/alpha.json" FILEES_BIN_WC="$FILEES_BIN_WC" SOURCE_WC="$root" \
+	sh "$root/tools/release-notes-draft.sh"
 echo "prepared immutable release $RELEASE_ID from source SVN r$source_revision"
 echo "review, then svn add/commit only releases/$RELEASE_ID; do not change channels/ on this host"

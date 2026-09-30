@@ -14,6 +14,7 @@ import (
 
 	"filees/internal/androidrelease"
 	"filees/internal/releaseenvelope"
+	"filees/internal/releasenotes"
 	"filees/internal/serverinstall/svnfetch"
 )
 
@@ -26,7 +27,12 @@ type androidState struct {
 	Sequence       uint64 `json:"sequence"`
 	SecurityEpoch  uint64 `json:"security_epoch"`
 	ManifestSHA256 string `json:"manifest_sha256"`
+	NotesSince     uint64 `json:"notes_since,omitempty"`
 }
+
+// androidWhatsNewFile is the verified list for the Android card, next to the
+// mirrored channel. The page inserts each item as text, never as HTML.
+const androidWhatsNewFile = "whats-new.json"
 
 // publishAndroid mirrors channels/android.json and its APK into their own
 // directory. It does not read the desktop envelope or the server channel.
@@ -86,11 +92,31 @@ func publishAndroid(ctx context.Context, fetcher svnfetch.Fetcher, verifier rele
 	if hex.EncodeToString(sum[:]) != manifest.APK.SHA256 {
 		return false, errors.New("android apk does not match the signed manifest")
 	}
+	notes, err := signedNotes(ctx, fetcher, verifier, keyID, channel.ReleaseID, channel.Sequence, "android")
+	if err != nil {
+		return false, err
+	}
 	manifestSHA := sha256.Sum256(manifestBody)
 	next := androidState{ReleaseID: channel.ReleaseID, Sequence: channel.Sequence, SecurityEpoch: channel.SecurityEpoch, ManifestSHA256: hex.EncodeToString(manifestSHA[:])}
+	if previous != nil {
+		next.NotesSince = notesSince(previous.ReleaseID, previous.Sequence, previous.NotesSince, channel.ReleaseID)
+	}
+	sel := selection(notes, next.NotesSince, "android")
+	whatsNew, err := json.MarshalIndent(struct {
+		ReleaseID  string         `json:"release_id"`
+		Version    string         `json:"version"`
+		Items      []metadataItem `json:"items"`
+		Incomplete bool           `json:"incomplete,omitempty"`
+	}{channel.ReleaseID, manifest.Version, listItems(releasenotes.MaxItems, sel), sel.Incomplete}, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	whatsNew = append(whatsNew, '\n')
 	if previous != nil && previous.ManifestSHA256 == next.ManifestSHA256 {
 		onDisk, err := os.ReadFile(filepath.Join(outDir, filepath.FromSlash(apkPath)))
-		if err == nil && int64(len(onDisk)) == manifest.APK.Size && sha256Equal(onDisk, manifest.APK.SHA256) {
+		listed, listErr := os.ReadFile(filepath.Join(outDir, androidWhatsNewFile))
+		if err == nil && int64(len(onDisk)) == manifest.APK.Size && sha256Equal(onDisk, manifest.APK.SHA256) &&
+			listErr == nil && string(listed) == string(whatsNew) {
 			return false, nil
 		}
 	}
@@ -100,6 +126,7 @@ func publishAndroid(ctx context.Context, fetcher svnfetch.Fetcher, verifier rele
 		channel.Manifest:                    manifestBody,
 		channel.Manifest + ".sig":           manifestSig,
 		apkPath:                             apk,
+		androidWhatsNewFile:                 whatsNew,
 	}
 	if err := replaceDirectory(outDir, files); err != nil {
 		return false, err

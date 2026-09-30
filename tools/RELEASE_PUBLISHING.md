@@ -260,3 +260,47 @@ potem `FILEES_CFAPI_HELPER=dist/cfapi-helper/filees-cfapi.exe` obok
 Paczka niesie `bin/filees-cfapi.exe`, samoaktualizacja instaluje go jako plik
 opcjonalny, MSI ma komponent tylko wtedy, gdy paczka go zawiera. Beta i
 stable (`nocfapi`) odmawiają paczki z pomocnikiem.
+
+## „Co nowego” na kartach pobrań (od 2026-09-29)
+
+Każde wydanie może mieć `releases/<id>/notes.json`: krótkie zdania dla ludzi,
+którzy decydują, czy pobrać. Trafiają tam nowości i poprawki, które użytkownik
+zauważy, bez wewnętrznych zmian (decyzja właściciela z 2026-09-29). Każda
+pozycja ma tekst po polsku i po angielsku.
+
+- **Zapowiedź w commicie.** W komunikacie commitu jedna linia na język:
+  `Co nowego [desktop]: …` i `What's new [desktop]: …`. Zakresy to `server`,
+  `desktop`, `windows`, `linux` i `android`. Rodzaj można dopisać po ukośniku:
+  `[server/admin]`, `[windows/fix]`, `[desktop/security]`. Zmiany wewnętrzne
+  nie dostają takiej linii.
+- **Szkic.** Skrypty `prepare-*-release.sh` wywołują
+  `tools/release-notes-draft.sh`. Ten zbiera zapowiedzi z `svn log` od wydania,
+  na które wskazuje kanał tego komponentu, i zapisuje
+  `releases/<id>/notes.draft.json`. Pozycje poprzednich wydań przechodzą do
+  nowego pliku razem z sekwencją wydania, które je wprowadziło. Dzięki temu
+  strona beta pokazuje wszystko od poprzedniej bety, także po wyczyszczeniu
+  starych katalogów przez `prune-release-history.sh`.
+- **Przegląd.** Człowiek poprawia szkic, uzupełnia brakujący język, usuwa to,
+  czego użytkownik nie zauważy, zapisuje wynik jako `notes.json` i sprawdza go:
+  `go run ./cmd/filees-release-notes lint -release-id <id> -sequence <n> releases/<id>/notes.json`.
+  `notes.draft.json` usuwa się przed commitem.
+- **Podpis.** `release-sign-and-publish.sh` podpisuje `notes.json` razem
+  z manifestami, w tym samym commicie. Odmawia podpisu, gdy w katalogu leży
+  szkic. Awans do bety wymaga ważnego podpisu notatek, tak jak manifestów.
+  To osobny podpis, więc wydanie z notatkami prosi o hasło o jeden raz więcej.
+  Kanał ani manifest nie mogą nieść sumy notatek: klienci parsują je ściśle
+  i odrzuciliby nieznane pole (decyzja właściciela z 2026-09-30).
+- **Wydanie bez `notes.json` jest poprawne.** Jego karta nie ma listy.
+- **Wyjątek: podniesiony `security_epoch`.** Takie wydanie blokuje powrót do
+  wersji sprzed siebie, więc jego karta musi mówić, że aktualizacja jest ważna.
+  Jego notatki muszą mieć własną pozycję `kind: security` w obu językach.
+  Wystarczy ogólne zdanie („Poprawki bezpieczeństwa” / „Security fixes”), bez
+  szczegółów podatności (decyzja właściciela z 2026-09-29).
+  - Szkic dostaje pustą pozycję do uzupełnienia.
+  - `lint` z `-security-epoch N -previous-security-epoch M` sprawdza, że pozycja
+    należy do tego wydania, a nie przeszła z poprzedniego.
+  - Skrypt podpisu porównuje `security_epoch` kandydata z bieżącym kanałem i przy
+    wzroście odmawia wydaniu bez `notes.json` z pozycją `security`.
+
+Limity: 20 nowych pozycji na wydanie, 60 w pliku, 160 znaków na zdanie. Tekst
+nie może zawierać znaków sterujących ani znaków formatujących, w tym bidi.

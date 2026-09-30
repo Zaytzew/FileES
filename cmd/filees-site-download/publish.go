@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"filees/internal/releaseenvelope"
+	"filees/internal/releasenotes"
 )
 
 // maxInstallerSize bounds what one run will hold in memory. The installer is
@@ -84,6 +85,9 @@ type State struct {
 	SecurityEpoch uint64                    `json:"security_epoch"`
 	Installers    map[string]StateInstaller `json:"installers,omitempty"`
 	Server        *ServerState              `json:"server,omitempty"`
+	// NotesSince is the sequence of the release published before this one;
+	// the "what's new" list counts from there.
+	NotesSince uint64 `json:"notes_since,omitempty"`
 }
 
 // StateInstaller is what one platform published last.
@@ -203,13 +207,42 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	notes, err := signedNotes(ctx, p.Fetcher, p.Resolver.Verifier, p.Config.KeyID, envelope.ReleaseID, envelope.Sequence, p.Config.Component)
+	if err != nil {
+		return Result{}, err
+	}
+	var since uint64
+	if previous != nil {
+		since = notesSince(previous.ReleaseID, previous.Sequence, previous.NotesSince, envelope.ReleaseID)
+	}
+	// One list for what both desktop platforms share, one per platform for
+	// what only it gets, one for the server card. Each is empty without notes.
+	desktopNew := selection(notes, since, "desktop")
+	cards := map[string]string{
+		"DESKTOP_WHATS_NEW_PL": whatsNewHTML(desktopNew, "pl"),
+		"DESKTOP_WHATS_NEW_EN": whatsNewHTML(desktopNew, "en"),
+	}
+	lists := []releasenotes.Selection{desktopNew}
+	for _, download := range downloads {
+		scope, _, _ := strings.Cut(download.Platform, "-")
+		platformNew := selection(notes, since, scope)
+		prefix := placeholderPrefix(download.Platform) + "_"
+		cards[prefix+"WHATS_NEW_PL"] = whatsNewHTML(platformNew, "pl")
+		cards[prefix+"WHATS_NEW_EN"] = whatsNewHTML(platformNew, "en")
+		lists = append(lists, platformNew)
+	}
+	if server != nil {
+		cards["SERVER_WHATS_NEW_PL"] = whatsNewHTML(server.whatsNew, "pl")
+		cards["SERVER_WHATS_NEW_EN"] = whatsNewHTML(server.whatsNew, "en")
+		lists = append(lists, server.whatsNew)
+	}
 	// Each invocation publishes one independently verified channel. The label
 	// follows that configuration, never the revision or another channel's state.
 	template := []byte(strings.ReplaceAll(string(p.Template), "{{CHANNEL}}", html.EscapeString(p.Config.Channel)))
 	if server != nil {
 		template = server.render(template)
 	}
-	page, err := renderPage(template, envelope, downloads, p.Config.releaseNotes(envelope.ReleaseID, downloads[0].Version))
+	page, err := renderPage(template, envelope, downloads, p.Config.releaseNotes(envelope.ReleaseID, downloads[0].Version), cards)
 	if err != nil {
 		return Result{}, err
 	}
@@ -222,10 +255,11 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	// Public header metadata travels with the verified publication, not the
 	// private rollback state or the source revision of the landing page.
 	metadata, err := json.Marshal(struct {
-		Channel   string `json:"channel"`
-		ReleaseID string `json:"release_id"`
-		Version   string `json:"version"`
-	}{p.Config.Channel, result.ReleaseID, result.Version})
+		Channel   string         `json:"channel"`
+		ReleaseID string         `json:"release_id"`
+		Version   string         `json:"version"`
+		WhatsNew  []metadataItem `json:"whats_new,omitempty"`
+	}{p.Config.Channel, result.ReleaseID, result.Version, metadataItems(lists...)})
 	if err != nil {
 		return Result{}, err
 	}
@@ -234,7 +268,7 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	}
 
 	if upToDate(p.OutDir, allDownloads, page, sums, metadata) {
-		return result, p.saveState(envelope, downloads, server)
+		return result, p.saveState(envelope, downloads, server, since)
 	}
 
 	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page, "release.json": metadata}
@@ -259,7 +293,7 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	result.Changed = true
-	return result, p.saveState(envelope, downloads, server)
+	return result, p.saveState(envelope, downloads, server, since)
 }
 
 // checksumFile lists every offered installer, in the order the page shows them.
@@ -310,7 +344,9 @@ func placeholderPrefix(platform string) string {
 	}, platform)
 }
 
-func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads []platformDownload, notes ReleaseNotes) ([]byte, error) {
+// cards are the "what's new" lists, already HTML built by whatsNewHTML from
+// escaped text; every other value is text and is escaped here.
+func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads []platformDownload, notes ReleaseNotes, cards map[string]string) ([]byte, error) {
 	signedAt := downloads[0].SignedAt
 	values := map[string]string{
 		"VERSION":    downloads[0].Version,
@@ -339,6 +375,9 @@ func renderPage(template []byte, envelope *releaseenvelope.Envelope, downloads [
 	page := string(template)
 	for key, value := range values {
 		page = strings.ReplaceAll(page, "{{"+key+"}}", html.EscapeString(value))
+	}
+	for key, value := range cards {
+		page = strings.ReplaceAll(page, "{{"+key+"}}", value)
 	}
 	// A release without notes leaves no empty highlighted box behind.
 	page = regexp.MustCompile(`\s*<p class="note"></p>`).ReplaceAllString(page, "")
@@ -454,8 +493,8 @@ func loadState(statePath string) (*State, error) {
 	return &state, nil
 }
 
-func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server *serverBundle) error {
-	state := State{ReleaseID: envelope.ReleaseID, Sequence: envelope.Sequence, SecurityEpoch: envelope.SecurityEpoch, Installers: map[string]StateInstaller{}}
+func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server *serverBundle, since uint64) error {
+	state := State{ReleaseID: envelope.ReleaseID, Sequence: envelope.Sequence, SecurityEpoch: envelope.SecurityEpoch, Installers: map[string]StateInstaller{}, NotesSince: since}
 	for _, download := range downloads {
 		state.Installers[download.Platform] = StateInstaller{Source: download.Installer.Source, SHA256: download.Installer.SHA256}
 	}

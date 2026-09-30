@@ -90,6 +90,9 @@ cat >"$release_root/channel-android.json" <<EOF
 EOF
 printf '%s\n' android >"$release_root/built-for-channel"
 
+COMPONENT=android RELEASE_ID="$RELEASE_ID" SEQUENCE="$SEQUENCE" SECURITY_EPOCH="$SECURITY_EPOCH" SOURCE_REVISION="$source_revision" \
+	PREVIOUS_CHANNEL="$FILEES_BIN_WC/channels/android.json" FILEES_BIN_WC="$FILEES_BIN_WC" SOURCE_WC="$root" \
+	sh "$root/tools/release-notes-draft.sh"
 echo
 echo "prepared android release $RELEASE_ID ($version) from source SVN r$source_revision"
 echo "apk $apk_name  sha256 $hash  size $size"

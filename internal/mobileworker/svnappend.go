@@ -47,16 +47,21 @@ var revLine = regexp.MustCompile(`([0-9]+)`)
 // revprop. A commit against an existing target fails, which the worker
 // resolves as a name collision.
 func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string) (int64, error) {
+	reader := SVNReader{SvnPath: s.SvnPath, SvnlookPath: s.SvnlookPath}
+	rev, err := reader.Youngest(ctx, repoPath)
+	if err != nil {
+		return 0, err
+	}
 	wc, err := os.MkdirTemp("", "filees-mobile-wc-")
 	if err != nil {
 		return 0, err
 	}
 	defer os.RemoveAll(wc)
 
-	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", fileURL(repoPath), wc); err != nil {
+	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", "-r", strconv.FormatInt(rev, 10), fileURL(repoPath), wc); err != nil {
 		return 0, err
 	}
-	if err := s.ensureParent(ctx, wc, repoPath, parentPath); err != nil {
+	if err := s.ensureParent(ctx, wc, repoPath, parentPath, rev); err != nil {
 		return 0, err
 	}
 	destDir := wc
@@ -101,12 +106,16 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 		}
 		return rev, nil
 	}
+	rev, err := s.checkTreeBudget(ctx, repoPath, parentPath, files)
+	if err != nil {
+		return 0, err
+	}
 	wc, err := os.MkdirTemp("", "filees-mobile-tree-")
 	if err != nil {
 		return 0, err
 	}
 	defer os.RemoveAll(wc)
-	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", fileURL(repoPath), wc); err != nil {
+	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", "-r", strconv.FormatInt(rev, 10), fileURL(repoPath), wc); err != nil {
 		return 0, err
 	}
 	for _, file := range files {
@@ -119,12 +128,12 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 		if i := strings.LastIndex(fullRel, "/"); i >= 0 {
 			parent = fullRel[:i]
 		}
-		if err := s.ensureParent(ctx, wc, repoPath, parent); err != nil {
+		if err := s.ensureParent(ctx, wc, repoPath, parent, rev); err != nil {
 			return 0, err
 		}
 		fileInWC := filepath.Join(append([]string{wc}, strings.Split(fullRel, "/")...)...)
 		if file.Replace {
-			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", fileInWC); err != nil {
+			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", "-r", strconv.FormatInt(rev, 10), fileInWC); err != nil {
 				return 0, err
 			}
 		}
@@ -149,15 +158,11 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 // ensureParent brings each parent segment into the sparse WC: update if it
 // already exists in the repository, otherwise svn mkdir. The new directories
 // are committed together with the uploaded file.
-func (s SVNAppender) ensureParent(ctx context.Context, wc, repoPath, parentPath string) error {
+func (s SVNAppender) ensureParent(ctx context.Context, wc, repoPath, parentPath string, rev int64) error {
 	if parentPath == "" {
 		return nil
 	}
 	reader := SVNReader{SvnPath: s.SvnPath, SvnlookPath: s.SvnlookPath}
-	rev, err := reader.Youngest(ctx, repoPath)
-	if err != nil {
-		return err
-	}
 	var rel string
 	for _, seg := range strings.Split(parentPath, "/") {
 		if seg == "" || seg == "." || seg == ".." {
@@ -183,7 +188,7 @@ func (s SVNAppender) ensureParent(ctx context.Context, wc, repoPath, parentPath 
 			if kind != v1.KindDirectory {
 				return fmt.Errorf("parent path %q is not a directory", rel)
 			}
-			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", abs); err != nil {
+			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", "-r", strconv.FormatInt(rev, 10), abs); err != nil {
 				return err
 			}
 			continue
@@ -201,6 +206,13 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > v1.MaxUploadBytes {
+		return errUploadLimit
+	}
 	out, err := os.Create(dst)
 	if err != nil && os.IsPermission(err) {
 		// svn:needs-lock leaves the working-copy file read-only whenever no
@@ -219,7 +231,11 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
+	n, err := copyUploadBytes(out, in, info.Size())
+	if err == nil && n != info.Size() {
+		err = errTreePayloadCorrupt
+	}
+	if err != nil {
 		out.Close()
 		return err
 	}

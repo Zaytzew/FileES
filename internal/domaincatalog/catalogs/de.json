@@ -4,6 +4,7 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "commit.server_storage_held": "Die Veröffentlichung wartet auf die Bestätigung, dass auf dem Server Speicherplatz verfügbar ist. Lokale Änderungen bleiben erhalten.",
     "system.quiescing": "FileES bereitet einen sicheren Neustart vor. Diese Aktion wurde nicht gestartet; versuchen Sie es in Kürze erneut.",
     "activation.begin_failed": "Aktivierung konnte nicht gestartet werden",
     "activation.finish_failed": "Aktivierung konnte nicht abgeschlossen werden",

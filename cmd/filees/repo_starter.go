@@ -408,6 +408,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
+	if deps.reservations != nil {
+		service.CheckPublication = func(ctx context.Context) error { return deps.reservations.CheckStorage(ctx, desired.Key) }
+	}
 	// Wired for every attached working copy, read-only ones included: the
 	// object being renamed is unversioned, so nothing is published and the
 	// server is not asked for anything. The translation lives here because

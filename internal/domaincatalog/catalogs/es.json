@@ -4,6 +4,7 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "commit.server_storage_held": "La publicación espera la confirmación de que hay espacio disponible en el servidor. Los cambios locales se conservan.",
     "system.quiescing": "FileES está preparando un reinicio seguro. Esta acción no se ha iniciado; inténtalo de nuevo en unos instantes.",
     "activation.begin_failed": "No se pudo iniciar la activación",
     "activation.finish_failed": "No se pudo completar la activación",

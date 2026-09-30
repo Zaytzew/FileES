@@ -357,6 +357,13 @@ func (s *Service) intentPending(wc string) bool {
 func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, resultErr error) {
 	in, err := s.readIntent(wc)
 	defer func() {
+		// An interrupted read is deferred work, not an operator-action HOLD.
+		// Keep the error and all durable state; only a later live inspection
+		// may settle the transaction. An unrelated failure still gets reported.
+		if ctx.Err() != nil && errors.Is(resultErr, ctx.Err()) {
+			resultErr = &recoveryFailure{cause: resultErr, detail: resultErr.Error()}
+			return
+		}
 		resultErr = s.reportRecovery(in, resultErr, time.Now())
 	}()
 	if err != nil {

@@ -2,8 +2,11 @@ package commit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,63 @@ import (
 	"filees/pkg/errcat"
 	"filees/pkg/errmap"
 )
+
+func TestCanceledCompletedInspectionDoesNotRequestUserAction(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, errors.New("independent disk error")} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			s, base, wc := conflictRecoveryFixture(t)
+			in, err := s.readIntent(wc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.Phase = "done"
+			if err := s.writeIntent(wc, in); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(transactionPath(wc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &writerRecoveryClient{conflictRecoveryClient: base, inspectErr: fmt.Errorf("inspect: %w", cause)}
+			s.Cli = c
+			var journal bytes.Buffer
+			s.ErrSink = errmap.NewSink(&journal, "commit:fixture")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if cause == context.DeadlineExceeded {
+				var stop context.CancelFunc
+				ctx, stop = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				defer stop()
+			} else {
+				cancel()
+			}
+			found, err := s.recoverCommit(ctx, wc)
+			if !found || !errors.Is(err, cause) {
+				t.Fatalf("lost deferred work: %v %v", found, err)
+			}
+			s.recordCommitFailure("caller", err)
+			if cause == context.Canceled || cause == context.DeadlineExceeded {
+				if journal.Len() != 0 {
+					t.Fatal("cancellation presented as HOLD", journal.String())
+				}
+			} else if !strings.Contains(journal.String(), "commit.recovery_held") {
+				t.Fatal("real failure hidden", journal.String())
+			}
+			after, err := os.ReadFile(transactionPath(wc))
+			if err != nil || !bytes.Equal(before, after) || c.mutations != 0 {
+				t.Fatal("inspection changed durable state", err)
+			}
+			// A fresh request can inspect again; cancellation never marked it done.
+			c.inspectErr = nil
+			if _, err := s.recoverCommit(t.Context(), wc); err != nil {
+				t.Fatal(err)
+			}
+			if c.mutations != 0 {
+				t.Fatal("recovery retried publication")
+			}
+		})
+	}
+}
 
 func TestRecoveryDiagnosticRetainsCauseAndLimitsRepeats(t *testing.T) {
 	var log bytes.Buffer

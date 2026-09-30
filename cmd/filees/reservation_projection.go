@@ -68,6 +68,7 @@ type reservationFetcher interface {
 }
 
 type cachedReservationResult struct {
+	storageErr   error
 	profileEpoch uint64
 	receivedAt   time.Time
 	result       reservationv1.Result
@@ -387,9 +388,14 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	var firstErr error
 	var firstErrRepo string
 	for _, repoID := range repoIDs {
+		requestStarted := time.Now()
 		var result reservationv1.Result
 		var fetchErr error
 		if broker, ok := fetcher.(interface {
+			FetchAutolockStorage(context.Context, string) (reservationv1.Result, error)
+		}); ok {
+			result, fetchErr = broker.FetchAutolockStorage(ctx, repoID)
+		} else if broker, ok := fetcher.(interface {
 			FetchAutolock(context.Context, string) (reservationv1.Result, error)
 		}); ok {
 			result, fetchErr = broker.FetchAutolock(ctx, repoID)
@@ -415,7 +421,14 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 			// Keep the terminal presentation coherent throughout a validation
 			// pass. One successful repo is not enough to reattach a server whose
 			// remaining repos may still reject the same replacement proof.
-			coordinator.results[key] = cachedReservationResult{result: result, profileEpoch: profileEpoch, receivedAt: time.Now(), present: true, detached: coordinator.detached[serverID]}
+			storageErr := coordinator.results[key].storageErr
+			storage := result.StorageWrite
+			elapsed := time.Since(requestStarted)
+			if storage != nil && (storage.State == "blocked" || (storage.State == "available" && storage.MeasuredAt != nil && !storage.MeasuredAt.IsZero() && storage.ValidForSeconds > 0 && storage.ValidForSeconds <= 180 && elapsed >= 0 && elapsed < time.Duration(storage.ValidForSeconds)*time.Second)) {
+				// A failed persistence must keep writes blocked in memory too.
+				storageErr = reservationclient.ObserveStorage(profile.CachePath, serverID, repoID, result, elapsed)
+			}
+			coordinator.results[key] = cachedReservationResult{storageErr: storageErr, result: result, profileEpoch: profileEpoch, receivedAt: time.Now(), present: true, detached: coordinator.detached[serverID]}
 		}
 		coordinator.mu.Unlock()
 		// Every repository on one server shares that server's client view, so

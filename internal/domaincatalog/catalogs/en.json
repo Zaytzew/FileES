@@ -4,6 +4,7 @@
   "name": "English",
   "dictionary_version": "1",
   "messages": {
+    "commit.server_storage_held": "Publication is waiting for confirmation that server storage is available. Local changes are retained.",
     "system.quiescing": "FileES is preparing a safe restart. This action was not started; try again shortly.",
     "activation.begin_failed": "Activation could not be started",
     "activation.finish_failed": "Activation could not be completed",

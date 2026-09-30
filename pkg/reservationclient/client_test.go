@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,26 @@ import (
 )
 
 const testRepoID = "f5d5bfee-62f4-5b9c-b26f-8d4c424fb8f0"
+
+func TestFetchAutolockStorageUsesSamePinnedRequest(t *testing.T) {
+	hostSigner, _ := generateKey(t)
+	clientSigner, private := generateKey(t)
+	address := startReservationSSH(t, hostSigner, clientSigner.PublicKey(), func(in *bufio.Reader, out *bytes.Buffer) {
+		line, _ := in.ReadString('\n')
+		req, err := reservationv1.ParseRequest([]byte(line))
+		if err != nil || !req.IncludeStorageWrite || req.Schema != reservationv1.AutolockSchema {
+			return
+		}
+		r := reservationv1.Result{Schema: req.Schema, RepoID: req.RepoID, RepositoryState: "active", Unknown: true, OwnershipDetail: "unavailable", StorageWrite: &reservationv1.StorageWrite{State: "unknown"}}
+		raw, _ := json.Marshal(r)
+		out.Write(raw)
+	})
+	c := configuredClient(t, address, hostSigner.PublicKey(), private)
+	r, err := c.FetchAutolockStorage(t.Context(), testRepoID)
+	if err != nil || r.StorageWrite == nil || r.StorageWrite.State != "unknown" {
+		t.Fatal(r, err)
+	}
+}
 
 func TestFetchAutolockUsesPinnedLaneAndRefusesDowngrade(t *testing.T) {
 	for _, schema := range []string{reservationv1.AutolockSchema, reservationv1.StateSchema} {
@@ -172,6 +193,13 @@ func startReservationSSH(t *testing.T, hostSigner ssh.Signer, clientKey ssh.Publ
 }
 
 func startReservationSSHWithExit(t *testing.T, hostSigner ssh.Signer, clientKey ssh.PublicKey, handle func(*bufio.Reader, *bytes.Buffer), exitCode uint32) string {
+	return startReservationSSHResponse(t, hostSigner, clientKey, func(in *bufio.Reader, out, stderr *bytes.Buffer) uint32 {
+		handle(in, out)
+		return exitCode
+	})
+}
+
+func startReservationSSHResponse(t *testing.T, hostSigner ssh.Signer, clientKey ssh.PublicKey, handle func(*bufio.Reader, *bytes.Buffer, *bytes.Buffer) uint32) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -186,43 +214,87 @@ func startReservationSSHWithExit(t *testing.T, hostSigner ssh.Signer, clientKey 
 	}}
 	serverConfig.AddHostKey(hostSigner)
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		_, channels, requests, err := ssh.NewServerConn(conn, serverConfig)
-		if err != nil {
-			return
-		}
-		go ssh.DiscardRequests(requests)
-		for next := range channels {
-			if next.ChannelType() != "session" {
-				next.Reject(ssh.UnknownChannelType, "session required")
-				continue
-			}
-			channel, requests, err := next.Accept()
+		for {
+			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
 			go func() {
-				defer channel.Close()
-				var stdout bytes.Buffer
-				for request := range requests {
-					if request.Type != "exec" {
-						request.Reply(false, nil)
+				defer conn.Close()
+				_, channels, requests, err := ssh.NewServerConn(conn, serverConfig)
+				if err != nil {
+					return
+				}
+				go ssh.DiscardRequests(requests)
+				for next := range channels {
+					if next.ChannelType() != "session" {
+						next.Reject(ssh.UnknownChannelType, "session required")
 						continue
 					}
-					request.Reply(true, nil)
-					handle(bufio.NewReader(channel), &stdout)
-					channel.Write(stdout.Bytes())
-					channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{exitCode}))
-					return
+					channel, requests, err := next.Accept()
+					if err != nil {
+						return
+					}
+					go func() {
+						defer channel.Close()
+						var stdout, stderr bytes.Buffer
+						for request := range requests {
+							if request.Type != "exec" {
+								request.Reply(false, nil)
+								continue
+							}
+							request.Reply(true, nil)
+							exitCode := handle(bufio.NewReader(channel), &stdout, &stderr)
+							channel.Stderr().Write(stderr.Bytes())
+							channel.Write(stdout.Bytes())
+							channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{exitCode}))
+							return
+						}
+					}()
 				}
 			}()
 		}
 	}()
 	return listener.Addr().String()
+}
+
+func TestStorageNegotiationOnlyRetriesExplicitOldParser(t *testing.T) {
+	for _, tc := range []struct {
+		name, stderr string
+		exit         uint32
+		calls        int32
+	}{
+		{"old parser", `json: unknown field "include_storage_write"`, 1, 2},
+		{"other failure", "worker failed", 1, 1},
+		{"invalid result is not negotiation", `json: unknown field "include_storage_write"`, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host, _ := generateKey(t)
+			client, private := generateKey(t)
+			var calls atomic.Int32
+			address := startReservationSSHResponse(t, host, client.PublicKey(), func(in *bufio.Reader, out, stderr *bytes.Buffer) uint32 {
+				line, _ := in.ReadString('\n')
+				var req reservationv1.Request
+				_ = json.Unmarshal([]byte(line), &req)
+				n := calls.Add(1)
+				if req.Schema != reservationv1.AutolockSchema || req.RepoID != testRepoID || req.IncludeStorageWrite != (n == 1) {
+					stderr.WriteString("incorrect request")
+					return 1
+				}
+				if n == 1 {
+					stderr.WriteString(tc.stderr)
+					return tc.exit
+				}
+				_ = json.NewEncoder(out).Encode(reservationv1.Result{Schema: req.Schema, RepoID: req.RepoID, RepositoryState: "active", Unknown: true, OwnershipDetail: "unavailable"})
+				return 0
+			})
+			c := configuredClient(t, address, host.PublicKey(), private)
+			_, err := c.FetchAutolockStorage(t.Context(), testRepoID)
+			if calls.Load() != tc.calls || (err == nil) != (tc.calls == 2) {
+				t.Fatalf("calls=%d err=%v", calls.Load(), err)
+			}
+		})
+	}
 }
 
 func generateKey(t *testing.T) (ssh.Signer, ed25519.PrivateKey) {

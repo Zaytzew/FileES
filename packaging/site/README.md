@@ -182,7 +182,7 @@ into `~/filees-site-deploy` of the admin account, and runs
 `deploy-landing.sh` there as root. That script installs the publisher first
 (`install.sh`, which stops on a release that does not verify), then backs up
 and replaces only `index.html`, `release-badge.js`, `android-badge.js`,
-`demo/` and `privacy/` in the web root. The download symlinks and any other
+`demo/`, `privacy/` and `badges/` in the web root. The download symlinks and any other
 file there are left alone. Finally the local script compares what the site
 serves with what it built.
 

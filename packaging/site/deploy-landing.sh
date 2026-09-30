@@ -6,7 +6,8 @@
 #
 # Order matters: the download-page publisher goes first (install.sh publishes
 # once and stops on a release that does not verify), and only then the landing
-# page replaces its files. Every replaced file is backed up first; nothing
+# page replaces its files (index.html, the two badge scripts, demo/, privacy/
+# and badges/). Every replaced file is backed up first; nothing
 # else in the web root is touched, and the publisher-owned download,
 # download-alpha and android symlinks are never replaced here.
 set -eu
@@ -22,7 +23,7 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 docroot="${DOCROOT:-/var/www/filees.space}"
 backups=/var/lib/filees-site/landing-backups
 files="index.html release-badge.js android-badge.js"
-dirs="demo privacy"
+dirs="demo privacy badges"
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo sh deploy-landing.sh)"
 [ -d "$docroot" ] || die "web root not found: $docroot (set DOCROOT)"

@@ -121,7 +121,7 @@ out="$root/dist/site-deploy"
 rm -rf "$out"
 mkdir -p "$out/landing"
 cp -R dist/site-publisher "$out/site-publisher"
-for item in index.html release-badge.js android-badge.js demo privacy; do
+for item in index.html release-badge.js android-badge.js demo privacy badges; do
 	cp -R "dist/landing-site/$item" "$out/landing/$item"
 done
 # Runs on Linux: strip CRLF a Windows checkout may have added.

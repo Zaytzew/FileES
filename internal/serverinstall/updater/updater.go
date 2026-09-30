@@ -243,6 +243,9 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 	seenTargets := make(map[string]struct{}, len(m.Files)+len(m.Orphans))
 	for _, mf := range m.Files {
 		target := manifest.ResolveTarget(dirs, mf.Target)
+		if !filepath.IsAbs(target) {
+			return nil, fmt.Errorf("%s resolves to %q, not an absolute path; check install.conf", mf.Target, target)
+		}
 		if _, exists := seenTargets[target]; exists {
 			return nil, fmt.Errorf("manifest resolves more than one entry to target %s", target)
 		}

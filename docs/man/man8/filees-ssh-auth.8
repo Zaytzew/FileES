@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 29, 2026
 .Dt FILEES-SSH-AUTH 8
 .Os
 .Sh NAME
@@ -33,7 +33,9 @@ The
 password field must not be
 .Ql * ;
 BSD Auth rejects such accounts before a local style can run.
-The OpenBSD installer writes an unknowable random hash.
+The
+.Ox
+installer writes an unknowable random hash.
 .Sh SEE ALSO
-.Xr filees-entry 8 ,
-.Xr login.conf 5
+.Xr login.conf 5 ,
+.Xr filees-entry 8

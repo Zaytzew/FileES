@@ -1,4 +1,4 @@
-.Dd September 7, 2026
+.Dd September 29, 2026
 .Dt FILEES-WORKER 8
 .Os
 .Sh NAME
@@ -32,7 +32,8 @@
 .Sh DESCRIPTION
 .Nm
 is exec'd once per authenticated deploy or control-plane ticket, dispatching
-on its first argument to a subcommand; maintenance modes are also invoked by cron.
+on its first argument to a subcommand;
+maintenance modes are also invoked by cron.
 .Bl -tag -width "repository-control"
 .It Cm deploy
 default path, also reached with no subcommand at all; reads a tunnel
@@ -50,7 +51,8 @@ the operator cron exception described below.
 .It Cm passport-reap
 performs one bounded, server-clock cleanup pass over registered passports,
 without a connected client or service-WC update.
-Run as _filees-state, not root. Busy locks are not queued; errors are reported
+Run as _filees-state, not root.
+Busy locks are not queued; errors are reported
 and the next scheduled invocation resumes durable state without force.
 The optional --check reads the last maintenance status and fails for
 missing, running, failed, corrupt or stale (over five minutes) state.
@@ -160,8 +162,8 @@ the owner list reads the waiting-room filesystem.
 .Ic upload-reap
 also treats the EICAR test file as infected even when the helper exits 0.
 .Sh SEE ALSO
+.Xr filees.conf 5 ,
 .Xr filees-client-entry 8 ,
 .Xr filees-entry 8 ,
 .Xr filees-mobile-v1 8 ,
-.Xr filees-service-wc-corrector 8 ,
-.Xr filees.conf 5
+.Xr filees-service-wc-corrector 8

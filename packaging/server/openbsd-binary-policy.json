@@ -172,6 +172,166 @@
       "mode": "0644",
       "owner": "root",
       "group": "wheel"
+    },
+    {
+      "source": "share/man/man5/filees-public-links.5",
+      "target": "/usr/local/man/man5/filees-public-links.5",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man5/filees.conf.5",
+      "target": "/usr/local/man/man5/filees.conf.5",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man7/filees.7",
+      "target": "/usr/local/man/man7/filees.7",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-admin.8",
+      "target": "/usr/local/man/man8/filees-admin.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-bootstrap-entry.8",
+      "target": "/usr/local/man/man8/filees-bootstrap-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-client-entry.8",
+      "target": "/usr/local/man/man8/filees-client-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-entry.8",
+      "target": "/usr/local/man/man8/filees-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-install.8",
+      "target": "/usr/local/man/man8/filees-install.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-links.8",
+      "target": "/usr/local/man/man8/filees-links.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-mail.8",
+      "target": "/usr/local/man/man8/filees-mail.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-mobile-v1.8",
+      "target": "/usr/local/man/man8/filees-mobile-v1.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-onboard.8",
+      "target": "/usr/local/man/man8/filees-onboard.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-operation.8",
+      "target": "/usr/local/man/man8/filees-operation.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-public-authority.8",
+      "target": "/usr/local/man/man8/filees-public-authority.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-recovery-entry.8",
+      "target": "/usr/local/man/man8/filees-recovery-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-rotate.8",
+      "target": "/usr/local/man/man8/filees-rotate.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-service-wc-corrector.8",
+      "target": "/usr/local/man/man8/filees-service-wc-corrector.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-serving-state.8",
+      "target": "/usr/local/man/man8/filees-serving-state.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-ssh-auth.8",
+      "target": "/usr/local/man/man8/filees-ssh-auth.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/man/man8/filees-worker.8",
+      "target": "/usr/local/man/man8/filees-worker.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "wheel"
     }
   ]
 }

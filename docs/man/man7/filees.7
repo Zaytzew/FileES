@@ -1,4 +1,4 @@
-.Dd August 16, 2026
+.Dd September 29, 2026
 .Dt FILEES 7
 .Os
 .Sh NAME
@@ -8,7 +8,8 @@
 .Nm
 is a file-centric synchronisation system.
 The desktop client keeps local folders in sync with Subversion repositories.
-The server target is OpenBSD.
+The server target is
+.Ox .
 There is no resident FileES daemon and no FileES listener.
 The system
 .Xr sshd 8
@@ -93,14 +94,31 @@ and
 .Pp
 Forced commands and short-lived workers live in
 .Pa /usr/local/libexec/filees .
-The OpenBSD integration script assigns set-id owners and modes.
+The
+.Ox
+integration script assigns set-id owners and modes.
 The generic
 .Pa install-server.sh
 writes ordinary modes and is not a complete upgrade on an already
 integrated host.
 .Sh SEE ALSO
-.Xr filees.conf 5 ,
 .Xr filees-public-links 5 ,
+.Xr filees.conf 5 ,
 .Xr filees-admin 8 ,
+.Xr filees-bootstrap-entry 8 ,
+.Xr filees-client-entry 8 ,
+.Xr filees-entry 8 ,
 .Xr filees-install 8 ,
+.Xr filees-links 8 ,
+.Xr filees-mail 8 ,
+.Xr filees-mobile-v1 8 ,
+.Xr filees-onboard 8 ,
+.Xr filees-operation 8 ,
+.Xr filees-public-authority 8 ,
+.Xr filees-recovery-entry 8 ,
+.Xr filees-rotate 8 ,
+.Xr filees-service-wc-corrector 8 ,
+.Xr filees-serving-state 8 ,
+.Xr filees-ssh-auth 8 ,
+.Xr filees-worker 8 ,
 .Xr sshd 8

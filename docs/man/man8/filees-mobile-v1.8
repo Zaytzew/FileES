@@ -1,4 +1,4 @@
-.Dd September 27, 2026
+.Dd September 29, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
@@ -98,7 +98,8 @@ The worker sets its process
 before applying the sandbox or executing SVN.
 Spool, ZIP extraction, transient working copies and SVN children use the
 same directory; the sandbox allows that root instead of the default temporary
-location. An invalid explicit setting fails without a fallback.
+location.
+An invalid explicit setting fails without a fallback.
 .Pp
 An omitted setting preserves the legacy process temporary directory.
 The bundle example uses

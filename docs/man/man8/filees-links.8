@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 29, 2026
 .Dt FILEES-LINKS 8
 .Os
 .Sh NAME
@@ -35,13 +35,16 @@ Configuration.
 .It Pa /var/www/run/filees/filees-links.sock
 Default FastCGI socket.
 .It Pa /var/filees-downloads/cache
-Example private cache; the actual path is configured by cache.root. Owner
+Example private cache; the actual path is configured by cache.root.
+Owner
 .Sy _filees-links ,
 outside backups.
 .It Pa /etc/rc.d/filees_links
-Disabled-by-default OpenBSD rc.d script.
+Disabled-by-default
+.Ox
+rc.d script.
 .El
 .Sh SEE ALSO
-.Xr filees-public-authority 8 ,
 .Xr filees-public-links 5 ,
+.Xr filees-public-authority 8 ,
 .Xr httpd 8

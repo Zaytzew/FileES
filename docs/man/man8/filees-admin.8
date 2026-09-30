@@ -1,4 +1,4 @@
-.Dd September 9, 2026
+.Dd September 29, 2026
 .Dt FILEES-ADMIN 8
 .Os
 .Sh NAME
@@ -316,9 +316,11 @@ Only after disabling new mobile sessions and stopping all prior workers and
 SVN children may the administrator add
 .Cm --allow-retry --confirm-workers-stopped --reason TEXT .
 This is an explicit operator attestation of maintenance quiescence, not a
-process scan. A free lock is not sufficient for pre-upgrade children.
+process scan.
+A free lock is not sufficient for pre-upgrade children.
 The command writes a private durable before-image/planned-decision audit
-before replacing the ledger record. It preserves the request ID.
+before replacing the ledger record.
+It preserves the request ID.
 The optional
 .Cm --ledger PATH
 selects a private ledger owned by the effective user.

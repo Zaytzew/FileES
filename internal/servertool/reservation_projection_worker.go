@@ -128,6 +128,7 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 			report(stderr, "serving-state autolock", err)
 			return ExitSoftware
 		}
+		attachStorageWrite(configPath, config, req, &result)
 		if err := json.NewEncoder(out).Encode(result); err != nil {
 			report(stderr, "serving-state result", err)
 			return ExitSoftware
@@ -165,6 +166,7 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		produced := view.GeneratedAt
 		result.ViewGeneratedAt = &produced
 	}
+	attachStorageWrite(configPath, config, req, &result)
 	payload, err := json.Marshal(result)
 	if err != nil {
 		report(stderr, "serving-state result encode", err)

@@ -157,6 +157,7 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 		}
 		defer lock.Close()
 	}
+	measuredAt := time.Now()
 	volumes, e := storagewatch.Collect(ctx, paths, storagewatch.Native{})
 	if e != nil {
 		report(stderr, "capacity measure", e)
@@ -174,7 +175,7 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 		report(stderr, "capacity state", e)
 		return ExitSoftware
 	}
-	if e = state.Observe(volumes, settings.Policy, time.Now()); e != nil {
+	if e = state.Observe(volumes, settings.Policy, measuredAt); e != nil {
 		report(stderr, "capacity observation", e)
 		return ExitSoftware
 	}

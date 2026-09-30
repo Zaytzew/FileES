@@ -19,11 +19,12 @@ type Mail struct {
 	Severity   string `json:"severity"`
 }
 type State struct {
-	Schema    string                `json:"schema"`
-	Realm     string                `json:"realm"`
-	Recipient string                `json:"recipient"`
-	Snapshot  alertchannel.Snapshot `json:"snapshot"`
-	Pending   []Mail                `json:"pending,omitempty"`
+	Observation *Observation          `json:"observation,omitempty"`
+	Schema      string                `json:"schema"`
+	Realm       string                `json:"realm"`
+	Recipient   string                `json:"recipient"`
+	Snapshot    alertchannel.Snapshot `json:"snapshot"`
+	Pending     []Mail                `json:"pending,omitempty"`
 }
 
 const stateSchema = "filees.capacity-state/v1"
@@ -58,10 +59,17 @@ func Load(path, realm, email string) (State, error) {
 	if len(s.Pending) > alertchannel.MaxRecords {
 		return initial, errors.New("too many pending capacity emails")
 	}
+	if err := s.Observation.validate(); err != nil {
+		return initial, err
+	}
 	return s, nil
 }
 func (s *State) Observe(v []Volume, p Policy, now time.Time) error {
 	next, _, err := Apply(s.Snapshot, s.Realm, v, p, now)
+	if err != nil {
+		return err
+	}
+	observation, err := newObservation(v, next, now)
 	if err != nil {
 		return err
 	}
@@ -97,10 +105,14 @@ func (s *State) Observe(v []Volume, p Policy, now time.Time) error {
 		pending = append(pending, Mail{ID: i.ID + "-" + i.Severity, IncidentID: i.ID, Text: i.Text, Severity: i.Severity})
 	}
 	s.Snapshot = next
+	s.Observation = observation
 	s.Pending = pending
 	return nil
 }
 func (s State) Save(path string) error {
+	if err := s.Observation.validate(); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(s)
 	if err != nil {
 		return err
@@ -108,7 +120,7 @@ func (s State) Save(path string) error {
 	if len(raw) > 1<<20 {
 		return errors.New("capacity state too large")
 	}
-	// No rewrite on an unchanged healthy/warning pass.
+	// A new successful measurement refreshes observation even without an alert.
 	if previous, e := os.ReadFile(path); e == nil && string(previous) == string(raw) {
 		return nil
 	}

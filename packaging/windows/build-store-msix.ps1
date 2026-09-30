@@ -84,7 +84,8 @@ try {
         -o (Join-Path $payload 'filees.exe') ./cmd/filees
     if ($LASTEXITCODE -ne 0) { throw 'Store daemon build failed' }
     $daemonText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $payload 'filees.exe')))
-    foreach ($marker in @('cldapi', 'CfGetPlaceholderState', 'filees-cfapi.exe')) {
+    # The updater names the retired helper; exclude API/manager code, not that filename.
+    foreach ($marker in @('cldapi', 'CfGetPlaceholderState', 'main.explorerAnchorManager')) {
         if ($daemonText.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Store daemon still carries Cloud Files code: $marker" }
     }
     & go build -tags production -trimpath -buildvcs=false `

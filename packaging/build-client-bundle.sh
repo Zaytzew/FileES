@@ -113,8 +113,9 @@ windows-amd64)
 	case "$daemon_tags" in
 	*nocfapi*)
 		# Same guard as the Store package: a beta daemon must not carry the
-		# Cloud Files API or the anchor helper's name.
-		if grep -a -i -q -e cldapi -e CfGetPlaceholderState -e filees-cfapi.exe "$out/bin/$daemon"; then
+		# Cloud Files API or its manager. The updater legitimately names the
+		# helper to retire it during alpha -> beta; that string is not CFAPI code.
+		if grep -a -i -q -e cldapi -e CfGetPlaceholderState -e main.explorerAnchorManager "$out/bin/$daemon"; then
 			die "a $FILEES_RELEASE_CHANNEL daemon still carries Cloud Files code"
 		fi
 		[ -z "${FILEES_CFAPI_HELPER:-}" ] || die "a $FILEES_RELEASE_CHANNEL bundle must not carry the Explorer anchor helper"

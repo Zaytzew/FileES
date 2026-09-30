@@ -22,7 +22,7 @@ func TestStorePackageIsBuiltWithoutCloudFiles(t *testing.T) {
 	if !strings.Contains(script, "-tags native_svn_bundle,nocfapi") {
 		t.Fatal("the Store daemon is not built with the nocfapi tag")
 	}
-	for _, marker := range []string{"'cldapi'", "'CfGetPlaceholderState'", "'filees-cfapi.exe'"} {
+	for _, marker := range []string{"'cldapi'", "'CfGetPlaceholderState'", "'main.explorerAnchorManager'"} {
 		if !strings.Contains(script, marker) {
 			t.Fatalf("the Store build no longer checks the daemon for %s", marker)
 		}
@@ -89,7 +89,7 @@ func TestBetaBundleIsBuiltWithoutCloudFiles(t *testing.T) {
 	for _, required := range []string{
 		`beta|stable) daemon_tags="$daemon_tags,nocfapi" ;;`,
 		`-tags "$daemon_tags"`,
-		`grep -a -i -q -e cldapi -e CfGetPlaceholderState -e filees-cfapi.exe`,
+		`grep -a -i -q -e cldapi -e CfGetPlaceholderState -e main.explorerAnchorManager`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("build-client-bundle.sh lacks %q", required)

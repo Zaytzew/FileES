@@ -31,7 +31,9 @@ demonie. Pakiet Microsoft Store śledzi betę i też jest `nocfapi`.
 - Wariant wynika z kanału wkompilowanego w klienta:
   `packaging/build-client-bundle.sh` dla `FILEES_RELEASE_CHANNEL=beta|stable`
   dodaje `nocfapi` i przerywa budowę, jeśli demon nadal zawiera `cldapi`,
-  `CfGetPlaceholderState` albo `filees-cfapi.exe`.
+  `CfGetPlaceholderState` albo `main.explorerAnchorManager`. Sama nazwa
+  `filees-cfapi.exe` w aktualizatorze jest dozwolona: służy wycofaniu helpera
+  po przejściu z alfy. Obecność helpera w paczce beta nadal jest odrzucana.
 - `tools/prepare-client-release-{windows,linux}.sh` zapisują
   `releases/<id>/built-for-channel`; oba systemy jednego wydania muszą mieć
   ten sam kanał.

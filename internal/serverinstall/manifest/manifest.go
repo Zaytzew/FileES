@@ -146,6 +146,9 @@ func Parse(data []byte) (*Manifest, error) {
 			return nil, fmt.Errorf("manifest file %d source must be a relative repository path", i)
 		}
 		target := strings.TrimSpace(f.Target)
+		if !validTarget(target) {
+			return nil, fmt.Errorf("manifest file %d target %q is neither absolute nor under a known directory variable", i, target)
+		}
 		if _, exists := seenTargets[target]; exists {
 			return nil, fmt.Errorf("manifest file %d duplicates target %q", i, target)
 		}
@@ -214,6 +217,28 @@ type Dirs struct {
 	SSHDConfDir  string
 	SSHKeysDir   string
 	LoginConfDir string
+}
+
+// targetVariables are the only directory variables a target may start with.
+// A release that uses any other name must not reach an installer that would
+// leave it unexpanded and write a path relative to its working directory.
+var targetVariables = []string{"{sbin_dir}", "{libexec_dir}", "{sysconf_dir}", "{sshd_conf_dir}", "{ssh_keys_dir}", "{login_conf_dir}"}
+
+func validTarget(target string) bool {
+	rest := target
+	if !strings.HasPrefix(target, "/") {
+		known := false
+		for _, variable := range targetVariables {
+			if strings.HasPrefix(target, variable+"/") {
+				rest, known = strings.TrimPrefix(target, variable), true
+				break
+			}
+		}
+		if !known {
+			return false
+		}
+	}
+	return !strings.ContainsAny(rest, "{}\\") && !strings.Contains("/"+rest+"/", "/../")
 }
 
 func ResolveTarget(dirs Dirs, target string) string {

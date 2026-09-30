@@ -156,6 +156,7 @@ func TestServerMandocPagesArePresent(t *testing.T) {
 		"man8/filees-links.8",
 		"man8/filees-mobile-v1.8",
 		"man8/filees-recovery-entry.8",
+		"man8/filees-serving-state.8",
 	}
 	for _, rel := range want {
 		data, err := os.ReadFile(filepath.Join(root, rel))

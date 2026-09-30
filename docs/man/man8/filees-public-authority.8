@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 29, 2026
 .Dt FILEES-PUBLIC-AUTHORITY 8
 .Os
 .Sh NAME
@@ -39,10 +39,10 @@ Revoke and delete cut access immediately and drop pending mail.
 They do not yet garbage-collect inactive epoch files; those files contain
 no mailbox and no plaintext code.
 .Sh FILES
-.Pp
 Staging follows
 .Ic public_shares.authority_staging_root
-in server.json. The directory must survive system temporary cleanup.
+in server.json.
+The directory must survive system temporary cleanup.
 Changing or recreating an unveiled root requires a service restart.
 Authorized fetches with unavailable local storage return generic HTTP 503;
 authorization denial remains HTTP 404.
@@ -54,9 +54,11 @@ See
 .It Pa /var/run/filees/public-authority.sock
 Default Unix backchannel.
 .It Pa /etc/rc.d/filees_public_authority
-Disabled-by-default OpenBSD rc.d script.
+Disabled-by-default
+.Ox
+rc.d script.
 .El
 .Sh SEE ALSO
+.Xr filees-public-links 5 ,
 .Xr filees-links 8 ,
-.Xr filees-mail 8 ,
-.Xr filees-public-links 5
+.Xr filees-mail 8

@@ -1,4 +1,4 @@
-.Dd September 9, 2026
+.Dd September 29, 2026
 .Dt FILEES.CONF 5
 .Os
 .Sh NAME
@@ -15,7 +15,7 @@ path value must be absolute.
 .Pp
 Loaders that need secrets take an explicit secret set.
 A tool that does not need SMTP does not open the SMTP password file.
-.Sh FIELDS
+.Sh KEYS
 .Bl -tag -width Ds
 .It Ic schema
 Must be
@@ -89,14 +89,19 @@ and
 .Xr filees-public-links 5 .
 .It Ic public_shares.authority_staging_root
 Absolute private staging directory, independently configurable from the
-frontend cache. Omitted defaults to
+frontend cache.
+Omitted defaults to
 .Pa /var/filees-downloads/authority .
 Use mode 0700, owned by _filees-state, on persistent storage with sufficient
-capacity. Exclude it from backups and external cleanup.
+capacity.
+Exclude it from backups and external cleanup.
 Changing the path requires restarting filees_public_authority to establish
-a new OpenBSD unveil profile.
+a new
+.Ox
+unveil profile.
 .It Ic public_shares.max_size
-Maximum leaf size in bytes, default 1 GiB. At most two authority fetches run
+Maximum leaf size in bytes, default 1 GiB.
+At most two authority fetches run
 concurrently; reserve staging capacity accordingly.
 .It Ic public_shares.max_channels_per_realm
 Upper bound on live channels one realm may hold.
@@ -124,7 +129,9 @@ Optional closed upload-shelf intake.
 .Ic intake_root
 must be absolute and shared with
 .Xr filees-public-links 5 .
-The OpenBSD layout is
+The
+.Ox
+layout is
 .Pa /var/tmp/filees-upload-intake ,
 owned
 .Sy _filees-links : _filees-public
@@ -182,6 +189,6 @@ Validate the non-secret path after editing:
 $ doas -u _filees-state filees-admin ticket list
 .Ed
 .Sh SEE ALSO
+.Xr filees-public-links 5 ,
 .Xr filees 7 ,
-.Xr filees-admin 8 ,
-.Xr filees-public-links 5
+.Xr filees-admin 8

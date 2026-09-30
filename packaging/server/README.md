@@ -330,6 +330,15 @@ tree out as `/var/www/htdocs/manual` and do not reload `httpd`.
 
 ## OpenBSD upgrade boundary
 
+Strony `mandoc` są częścią podpisanego wydania serwera (od 2026-09-29).
+`filees-install --apply` aktualizuje je razem z binariami, które opisują: pliki
+`/usr/local/man/man{5,7,8}/filees*`, root:wheel, tryb 0444, tak jak zostawia je
+`install-server.sh`. Cele są zapisane jako ścieżki bezwzględne, bo instalator
+sprzed nowej zmiennej katalogu zostawiłby ją nierozwiniętą. `man` znajduje nową
+stronę od razu. Indeks `apropos` odświeża cotygodniowy `makewhatis`; od ręki:
+`makewhatis /usr/local/man`. Instalacja z inną wartością `PREFIX` dostaje
+strony w `/usr/local/man`.
+
 Produkcyjny bundle instaluje teraz `filees-install` oraz zachowawcze
 `/etc/filees/install.conf`. Po opublikowaniu podpisanego release’u bazowego
 uruchom `filees-install --adopt <release-id>`: komenda niczego nie podmienia i

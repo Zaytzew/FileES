@@ -47,6 +47,14 @@ FILEES_SOURCE_REVISION="$source_revision" FILEES_RELEASE_PUBKEY="$FILEES_RELEASE
 bundle="${DIST:-$root/dist}/filees-server-openbsd-amd64"
 mkdir -p "$release_root/bin" "$release_root/examples" "$release_root/share/filees"
 cp "$bundle"/bin/* "$release_root/bin/"
+# Manual pages are part of the signed release, so filees-install upgrades them
+# with the binaries they describe. Their targets are absolute /usr/local/man
+# paths: an installer older than a new target variable would leave it
+# unexpanded and write a relative path.
+for section in 5 7 8; do
+	mkdir -p "$release_root/share/man/man$section"
+	cp "$bundle/share/man/man$section/"* "$release_root/share/man/man$section/"
+done
 cp "$bundle/share/filees/capacity-alerts.example.json" "$release_root/share/filees/"
 cp "$bundle/share/filees/install.example.conf" "$release_root/examples/"
 cp "$bundle/share/filees/public-storage-migration.md" "$release_root/examples/"

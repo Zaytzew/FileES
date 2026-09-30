@@ -1,0 +1,77 @@
+.Dd September 29, 2026
+.Dt FILEES-SERVING-STATE 8
+.Os
+.Sh NAME
+.Nm filees-serving-state
+.Nd answer one FileES reservation and server-state query
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Ar client-id
+.Sh DESCRIPTION
+.Nm
+is the one-shot worker behind the
+.Cm filees reservation-v1
+forced command.
+.Xr filees-client-entry 8
+authenticates the key, unveils what the worker needs and executes
+.Nm
+with the client ID of that key.
+An operator does not run it.
+.Pp
+It reads one JSON request of at most 4 KiB from standard input and writes
+one JSON result to standard output.
+The request schema selects the answer:
+.Bl -tag -width Ds
+.It Cm filees.reservation/v1
+The Subversion locks of one repository, as reported by
+.Xr svn 1 .
+.It Cm filees.reservation/v2
+The same for one repository, together with whether that repository is still
+active, or the server ID and display name when no repository is named.
+.It Cm filees.reservation/v3
+Per-object lock ownership of one repository for automatic locking,
+refreshed under the service working copy lock.
+.El
+.Pp
+A client may ask only about repositories that are active in its own
+server-issued view.
+Any other request fails without an answer.
+A
+.Cm filees.reservation/v2
+request about a repository withdrawn from the client's realm is answered as
+deleted and the repository is not queried.
+.Pp
+The last known lock state is kept under
+.Pa reservation-projection
+in the repository results root.
+When a live query fails, the result carries the last stored answer marked
+stale, or is marked unknown when there is none.
+.Pp
+The worker keeps its own
+.Xr pledge 2
+promises narrower than its parent's and does not call
+.Xr unveil 2
+itself; the table is inherited from
+.Xr filees-client-entry 8 .
+.Pp
+The installed image is
+.Sy root : wheel
+mode 0555 in
+.Pa /usr/local/libexec/filees .
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/server.json
+Default configuration;
+.Fl config
+names another absolute path.
+.El
+.Sh EXIT STATUS
+.Xr sysexits 3
+values as in
+.Xr filees-admin 8 .
+.Sh SEE ALSO
+.Xr svn 1 ,
+.Xr filees.conf 5 ,
+.Xr filees-client-entry 8 ,
+.Xr filees-worker 8

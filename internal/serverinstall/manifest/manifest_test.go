@@ -78,3 +78,22 @@ func TestManifestSourcePath(t *testing.T) {
 		t.Fatalf("source path = %q, want %q", got, want)
 	}
 }
+
+// An installer leaves an unknown variable unexpanded, and a relative target
+// would be written under whatever directory it was started in. Such a
+// release is refused before anything is planned.
+func TestParseRejectsTargetsAnInstallerCannotPlace(t *testing.T) {
+	manifestWith := func(target string) []byte {
+		return []byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"share/x","target":"` + target + `","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`)
+	}
+	for _, target := range []string{"{man_dir}/man8/filees-admin.8", "man8/filees-admin.8", "{sbin_dir}", "{sbin_dir}/../x", "/usr/local/{sbin_dir}/x", "/usr/local/man/../../etc/x", "{sbin_dir}x"} {
+		if _, err := Parse(manifestWith(target)); err == nil {
+			t.Errorf("target %q accepted", target)
+		}
+	}
+	for _, target := range []string{"/usr/local/man/man8/filees-admin.8", "{sbin_dir}/filees-admin", "{login_conf_dir}/filees"} {
+		if _, err := Parse(manifestWith(target)); err != nil {
+			t.Errorf("target %q refused: %v", target, err)
+		}
+	}
+}

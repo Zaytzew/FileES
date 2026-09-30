@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 29, 2026
 .Dt FILEES-PUBLIC-LINKS 5
 .Os
 .Sh NAME
@@ -13,7 +13,7 @@ It does not read
 and must not be given SVN credentials.
 The schema name is
 .Cm filees.public-links/v1 .
-.Sh FIELDS
+.Sh KEYS
 .Bl -tag -width Ds
 .It Ic fastcgi.network , fastcgi.address
 Listener for
@@ -36,7 +36,8 @@ Never expose the authority port on a public interface.
 HMAC key for signed visit URLs, mode 0600.
 .It Ic cache.root , cache.ttl , cache.max_size
 Independently configurable absolute private cache directory, mode 0700,
-owned by _filees-links. The example uses
+owned by _filees-links.
+The example uses
 .Pa /var/filees-downloads/cache .
 Keep the directory on persistent storage outside system temporary cleanup;
 exclude its contents from backups.

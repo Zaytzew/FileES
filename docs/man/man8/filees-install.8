@@ -1,4 +1,4 @@
-.Dd September 9, 2026
+.Dd September 29, 2026
 .Dt FILEES-INSTALL 8
 .Os
 .Sh NAME
@@ -27,7 +27,9 @@ It is not a package manager and does not create a local Subversion working
 copy.
 It fetches channel and manifest documents with
 .Cm svn cat ,
-verifies the OpenBSD signify signature against a public key embedded at
+verifies the
+.Ox
+signify signature against a public key embedded at
 build time, checks SHA-256 hashes, records a durable pre-image journal,
 and replaces targets atomically.
 .Pp
@@ -37,7 +39,9 @@ The apply lock is exclusive; a
 .Dv SIGSTOP
 then
 .Dv SIGKILL
-chaos test on an unlocked earlier build panicked the OpenBSD kernel.
+chaos test on an unlocked earlier build panicked the
+.Ox
+kernel.
 .Pp
 .Fl -adopt
 records an existing installation as the managed baseline.
@@ -49,7 +53,8 @@ A release older than the recorded high-water mark is refused unless
 is also given.
 That flag is a deliberate administrative act, never the ordinary update.
 .Pp
-Operator configurations are not replaced by examples. Explicit signed
+Operator configurations are not replaced by examples.
+Explicit signed
 configuration contracts may trigger journalled, selective migrations of
 .Pa /etc/filees/server.json
 and
@@ -64,12 +69,15 @@ section chooses the base for migrating legacy Public Shares temporary roots.
 Default:
 .Pa /var/filees-downloads .
 Authority staging and frontend cache remain independently configurable in
-their JSON files. Apply checks capacity and prepares private directories;
-check and dry-run do not provision them. Existing metadata is not silently
+their JSON files.
+Apply checks capacity and prepares private directories;
+check and dry-run do not provision them.
+Existing metadata is not silently
 corrected and old caches are not deleted.
 .Pp
 An older running installer must first update its binary with the existing
-config, then be invoked again after adding the new key. Review the migration
+config, then be invoked again after adding the new key.
+Review the migration
 plan and apply the same signed release before restarting Public Shares.
 The release includes examples/public-storage-migration.md with this bridge.
 .Sh OPTIONS
@@ -250,6 +258,6 @@ $ doas filees-install --dry-run
 $ doas filees-install --apply
 .Ed
 .Sh SEE ALSO
-.Xr filees 7 ,
 .Xr signify 1 ,
-.Xr svn 1
+.Xr svn 1 ,
+.Xr filees 7

@@ -134,9 +134,23 @@ The example uses 1073741824 bytes (1 GiB).
 The worker checks the size at a fixed repository revision before copying,
 checks available space on the spool filesystem with a 16 MiB reserve,
 and refuses writes beyond the measured size.
-Capacity checking is advisory, not a reservation shared between processes.
-A killed process can still leave temporary files; this is not an aggregate
-spool quota or a cleanup policy.
+The shared reservation policy is described below.
+.It Ic mobile.max_read_spool_size
+Maximum sum of reserved bytes of simultaneous mobile downloads using the
+same temporary root. Zero or omission disables this quota; the example
+uses 4294967296 bytes (4 GiB).
+All workers sharing the root must use the same limit and new version.
+Linux/OpenBSD workers keep a kernel lock for each download until sending
+finishes. Admission and cleanup share a second lock. A later admission or
+normal close removes abandoned buffers only after acquiring their locks,
+never based on their age. Unknown files and symlinks cause refusal.
+The private subdirectory is
+.Pa filees-mobile-reads-v1
+under the effective mobile temporary root. Older temporary files outside
+it are not removed. Cleanup is opportunistic, not a scheduled deadline.
+The quota covers reserved payload bytes, not metadata, uploads or imports.
+Free-space checks conservatively include all active reservations; other
+applications can still exhaust the filesystem after admission.
 .It Ic upload
 Optional closed upload-shelf intake.
 .Ic intake_root

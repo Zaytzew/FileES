@@ -254,6 +254,7 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 	}
 
 	dispatcher := mobileworker.Dispatcher{
+		MaxReadSpoolBytes: config.Mobile.MaxReadSpoolSize,
 		Browser: mobileworker.Browser{
 			MaxReadBytes: config.Mobile.MaxDownloadSize,
 			Authority:    authority,

@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:df01eb7ae0dcee39396431c865989a5586dbe8cbd7e1e8b3e52adf993007f230">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:6865642678251aec196e4417a40f0c0747bb2e1288ff6363e94006f22aee0af0">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees.conf(5) — FileES manual pages</title>
@@ -150,9 +150,22 @@
       example uses 1073741824 bytes (1 GiB). The worker checks the size at a
       fixed repository revision before copying, checks available space on the
       spool filesystem with a 16 MiB reserve, and refuses writes beyond the
-      measured size. Capacity checking is advisory, not a reservation shared
-      between processes. A killed process can still leave temporary files; this
-      is not an aggregate spool quota or a cleanup policy.</dd>
+      measured size. The shared reservation policy is described below.</dd>
+  <dt id="mobile.max_read_spool_size"><a class="permalink" href="#mobile.max_read_spool_size"><code class="Ic">mobile.max_read_spool_size</code></a></dt>
+  <dd>Maximum sum of reserved bytes of simultaneous mobile downloads using the
+      same temporary root. Zero or omission disables this quota; the example
+      uses 4294967296 bytes (4 GiB). All workers sharing the root must use the
+      same limit and new version. Linux/OpenBSD workers keep a kernel lock for
+      each download until sending finishes. Admission and cleanup share a second
+      lock. A later admission or normal close removes abandoned buffers only
+      after acquiring their locks, never based on their age. Unknown files and
+      symlinks cause refusal. The private subdirectory is
+      <span class="Pa">filees-mobile-reads-v1</span> under the effective mobile
+      temporary root. Older temporary files outside it are not removed. Cleanup
+      is opportunistic, not a scheduled deadline. The quota covers reserved
+      payload bytes, not metadata, uploads or imports. Free-space checks
+      conservatively include all active reservations; other applications can
+      still exhaust the filesystem after admission.</dd>
   <dt id="upload"><a class="permalink" href="#upload"><code class="Ic">upload</code></a></dt>
   <dd>Optional closed upload-shelf intake. <code class="Ic">intake_root</code>
       must be absolute and shared with

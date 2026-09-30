@@ -37,8 +37,16 @@ func mobileReadBudgetAcceptance(t *testing.T, limit int64) {
 	if err := json.Unmarshal(raw, &conf); err != nil {
 		t.Fatal(err)
 	}
+	conf["mobile"] = map[string]any{"temp_root": tempRoot, "max_read_spool_size": -1}
+	raw, _ = json.Marshal(conf)
+	if err := os.WriteFile(f.configPath, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := serverconfig.LoadFor(f.configPath, 0); err == nil || !strings.Contains(err.Error(), "max_read_spool_size") {
+		t.Fatalf("negative shared limit: %v", err)
+	}
 	for _, n := range []int64{-1, limit} {
-		conf["mobile"] = map[string]any{"temp_root": tempRoot, "max_download_size": n}
+		conf["mobile"] = map[string]any{"temp_root": tempRoot, "max_download_size": n, "max_read_spool_size": 5}
 		raw, _ = json.Marshal(conf)
 		if err := os.WriteFile(f.configPath, raw, 0600); err != nil {
 			t.Fatal(err)
@@ -50,7 +58,7 @@ func mobileReadBudgetAcceptance(t *testing.T, limit int64) {
 			}
 			continue
 		}
-		if err != nil || cfg.Mobile.MaxDownloadSize != limit {
+		if err != nil || cfg.Mobile.MaxDownloadSize != limit || cfg.Mobile.MaxReadSpoolSize != 5 {
 			t.Fatalf("config: %+v %v", cfg.Mobile, err)
 		}
 		if err := os.MkdirAll(filepath.Join(cfg.Repositories.ResultsRoot, "gui-blobs"), 0700); err != nil {
@@ -81,7 +89,18 @@ func mobileReadBudgetAcceptance(t *testing.T, limit int64) {
 	} else if resp.Status != v1.StatusOK || string(payload) != "hello" {
 		t.Fatalf("%+v %q %s", resp, payload, &stderr)
 	}
-	if entries, err := os.ReadDir(tempRoot); err != nil || len(entries) != 0 {
+	entries, err := os.ReadDir(tempRoot)
+	if limit == 1 {
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("unexpected spool: %v %v", entries, err)
+		}
+		return
+	}
+	if err != nil || len(entries) != 1 || entries[0].Name() != "filees-mobile-reads-v1" {
+		t.Fatalf("unexpected pool: %v %v", entries, err)
+	}
+	entries, err = os.ReadDir(filepath.Join(tempRoot, "filees-mobile-reads-v1"))
+	if err != nil || len(entries) != 1 || entries[0].Name() != ".maintenance.lock" {
 		t.Fatalf("spool leak: %v %v", entries, err)
 	}
 }

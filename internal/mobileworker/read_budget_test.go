@@ -70,7 +70,7 @@ func TestReadBudgetAdmissionAndCleanup(t *testing.T) {
 			probes := 0
 			d.readSpace = func(path string, size int64) error {
 				probes++
-				if filepath.Clean(path) != d.Appender.SpoolDir || size != tc.size {
+				if (filepath.Clean(path) != d.Appender.SpoolDir && filepath.Dir(path) != d.Appender.SpoolDir) || size != tc.size {
 					t.Fatal("wrong volume or size")
 				}
 				if tc.spaceErr {
@@ -89,10 +89,26 @@ func TestReadBudgetAdmissionAndCleanup(t *testing.T) {
 			if r.reads != tc.reads || probes != tc.probes {
 				t.Fatalf("reads=%d probes=%d", r.reads, probes)
 			}
-			if entries, err := os.ReadDir(d.Appender.SpoolDir); err != nil || len(entries) != 0 {
-				t.Fatalf("leaked spool: %v %v", entries, err)
-			}
+			assertReadSpoolIdle(t, d.Appender.SpoolDir)
 		})
+	}
+}
+
+func assertReadSpoolIdle(t *testing.T, base string) {
+	t.Helper()
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		return
+	}
+	if len(entries) != 1 || !entries[0].IsDir() || entries[0].Name() != "filees-mobile-reads-v1" {
+		t.Fatalf("unexpected spool entries: %v", entries)
+	}
+	entries, err = os.ReadDir(filepath.Join(base, entries[0].Name()))
+	if err != nil || len(entries) != 1 || entries[0].Name() != ".maintenance.lock" {
+		t.Fatalf("leaked spool: %v %v", entries, err)
 	}
 }
 

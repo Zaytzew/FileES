@@ -544,8 +544,24 @@ reads, then checks the actual spool filesystem for that size plus a 16 MiB
 reserve. It never writes beyond the measured size. Refusal is framed as
 `download.limit` or `storage.unavailable`, without a success header or
 partial payload. Ordinary failures remove the attempt's temporary file.
-This check does not reserve space against other workers and does not
-reclaim files from killed processes. It is not an aggregate spool quota.
+Linux/OpenBSD also reserve the measured size under a shared kernel lock.
+`mobile.max_read_spool_size` limits the sum of these reservations (zero or
+omission disables the quota; example: 4 GiB). All workers sharing the same
+root must use the same policy and upgraded code. Free-space admission
+conservatively counts active reservations in addition to the new one;
+materialized bytes may therefore be charged twice in this capacity check.
+It cannot reserve physical space against unrelated applications.
+
+Each attempt holds its own kernel lock through both file creation and the
+entire send. The next admission or normal close reclaims abandoned attempts
+only after acquiring their lock. No age/PID guesses, no recursive deletion;
+unknown files and symlinks block admission and require inspection.
+New buffers live in the private `filees-mobile-reads-v1` subdirectory of the
+effective temporary root; old files outside it are never reclaimed this way.
+The pool and its `.maintenance.lock` persist when empty. Stop all workers
+before changing/moving its root; never unlink a live lock file.
+This quota covers download payloads, not metadata, uploads or dump imports.
+Cleanup is opportunistic, not a deadline after a crash or reboot.
 Upgrade the server before adding the field; no client or repository migration
 is needed. The new error code/message travels through the existing error frame.
 

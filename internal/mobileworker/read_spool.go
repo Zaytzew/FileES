@@ -1,34 +1,46 @@
 package mobileworker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-
-	"filees/public-shares/storage"
 )
 
 var ErrReadLimit = errors.New("mobile: download exceeds size limit")
 var ErrReadStorage = errors.New("mobile: download storage unavailable")
 
-// Admission is advisory, not a reservation against concurrent processes.
-// The file is already open, so probe the filesystem actually used by the spool.
+// Allocation is deferred until authorization and the repository size check.
 type readSpool struct {
 	*os.File
+	root       string
+	maxBytes   int64
 	checkSpace func(string, int64) error
+	release    func() error
 }
 
-func (s readSpool) reserve(size int64) error {
-	check := s.checkSpace
-	if check == nil {
-		check = storage.RequireSpace
+func (s *readSpool) reserve(ctx context.Context, size int64) error {
+	if s.File != nil || size < 0 || s.maxBytes < 0 {
+		return ErrReadStorage
 	}
-	if err := check(filepath.Dir(s.Name()), size); err != nil {
+	if err := s.allocate(ctx, size); err != nil {
 		return fmt.Errorf("%w: %v", ErrReadStorage, err)
 	}
 	return nil
+}
+
+func (s *readSpool) Close() error {
+	if s.File == nil {
+		return nil
+	}
+	err := s.File.Close()
+	s.File = nil
+	if s.release != nil {
+		err = errors.Join(err, s.release())
+		s.release = nil
+	}
+	return err
 }
 
 // Refuse the whole overlong write before any bytes reach disk. Keep the error

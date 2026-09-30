@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 
 	v1 "filees/pkg/mobile/v1"
 )
@@ -17,11 +16,12 @@ import (
 // authenticated session (the forced command), never from the payload. It runs no
 // listener and holds no state between calls.
 type Dispatcher struct {
-	Browser   Browser
-	Appender  Appender
-	Joiner    JoinRequester
-	ClientID  string
-	readSpace func(string, int64) error // nil uses the actual spool filesystem
+	Browser           Browser
+	Appender          Appender
+	Joiner            JoinRequester
+	ClientID          string
+	readSpace         func(string, int64) error // nil uses the actual spool filesystem
+	MaxReadSpoolBytes int64                     // shared reservations; zero disables the quota
 }
 
 // JoinRequester accepts an authenticated demand for a desktop join ticket.
@@ -84,13 +84,13 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		_ = json.Unmarshal(req.Payload, &p)
 		// The header contains size/hash, so finish reading into a private
 		// disk spool before sending it. Never hold repository content in RAM.
-		spool, err := os.CreateTemp(d.Appender.SpoolDir, "filees-mobile-read-*")
-		if err != nil {
-			return d.writeError(out, req, err)
-		}
-		defer os.Remove(spool.Name())
-		defer spool.Close()
-		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, readSpool{File: spool, checkSpace: d.readSpace})
+		spool := &readSpool{root: d.Appender.SpoolDir, maxBytes: d.MaxReadSpoolBytes, checkSpace: d.readSpace}
+		defer func() {
+			if err := spool.Close(); err != nil {
+				d.Appender.Ledger.LogError(req.RequestID, d.ClientID, string(req.Operation), err.Error())
+			}
+		}()
+		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, spool)
 		if err != nil {
 			return d.writeError(out, req, err)
 		}

@@ -32,7 +32,8 @@
   },
   "mobile": {
     "temp_root": "/var/filees-mobile/tmp",
-    "max_download_size": 1073741824
+    "max_download_size": 1073741824,
+    "max_read_spool_size": 4294967296
   },
   "upload": {
     "intake_root": "/var/filees-downloads/intake",

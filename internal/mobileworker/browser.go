@@ -230,8 +230,10 @@ func (b Browser) ReadObject(ctx context.Context, clientID string, p v1.ReadObjec
 	if size < 0 || b.MaxReadBytes < 0 || (b.MaxReadBytes > 0 && size > b.MaxReadBytes) {
 		return v1.ReadObjectResult{}, ErrReadLimit
 	}
-	if spool, ok := w.(interface{ reserve(int64) error }); ok {
-		if err := spool.reserve(size); err != nil {
+	if spool, ok := w.(interface {
+		reserve(context.Context, int64) error
+	}); ok {
+		if err := spool.reserve(ctx, size); err != nil {
 			return v1.ReadObjectResult{}, err
 		}
 	}

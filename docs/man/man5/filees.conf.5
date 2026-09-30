@@ -124,6 +124,19 @@ is the accent colour and
 an absolute path to the operator logo.
 Both are cosmetic: nothing in authorisation, addressing or transport reads
 them.
+.It Ic mobile.temp_root
+Optional absolute private directory (0700) for mobile temporary files.
+Omitted preserves the process TMPDIR.
+.It Ic mobile.max_download_size
+Maximum bytes of one mobile download prepared on the server.
+Zero or omission disables this size limit; negative values are rejected.
+The example uses 1073741824 bytes (1 GiB).
+The worker checks the size at a fixed repository revision before copying,
+checks available space on the spool filesystem with a 16 MiB reserve,
+and refuses writes beyond the measured size.
+Capacity checking is advisory, not a reservation shared between processes.
+A killed process can still leave temporary files; this is not an aggregate
+spool quota or a cleanup policy.
 .It Ic upload
 Optional closed upload-shelf intake.
 .Ic intake_root

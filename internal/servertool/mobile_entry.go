@@ -255,9 +255,10 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 
 	dispatcher := mobileworker.Dispatcher{
 		Browser: mobileworker.Browser{
-			Authority: authority,
-			Reader:    mobileworker.SVNReader{SvnPath: svnPath, SvnlookPath: svnlookPath},
-			Drawers:   drawerBlobReader{store: repoworker.GUIBlobStore{Root: guiBlobRoot}},
+			MaxReadBytes: config.Mobile.MaxDownloadSize,
+			Authority:    authority,
+			Reader:       mobileworker.SVNReader{SvnPath: svnPath, SvnlookPath: svnlookPath},
+			Drawers:      drawerBlobReader{store: repoworker.GUIBlobStore{Root: guiBlobRoot}},
 		},
 		Appender: mobileworker.Appender{
 			Authority: authority,

@@ -31,7 +31,8 @@
     "data_erasure_max_days": 90
   },
   "mobile": {
-    "temp_root": "/var/filees-mobile/tmp"
+    "temp_root": "/var/filees-mobile/tmp",
+    "max_download_size": 1073741824
   },
   "upload": {
     "intake_root": "/var/filees-downloads/intake",

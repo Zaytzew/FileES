@@ -17,10 +17,11 @@ import (
 // authenticated session (the forced command), never from the payload. It runs no
 // listener and holds no state between calls.
 type Dispatcher struct {
-	Browser  Browser
-	Appender Appender
-	Joiner   JoinRequester
-	ClientID string
+	Browser   Browser
+	Appender  Appender
+	Joiner    JoinRequester
+	ClientID  string
+	readSpace func(string, int64) error // nil uses the actual spool filesystem
 }
 
 // JoinRequester accepts an authenticated demand for a desktop join ticket.
@@ -89,7 +90,7 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		}
 		defer os.Remove(spool.Name())
 		defer spool.Close()
-		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, spool)
+		res, err := d.Browser.ReadObject(ctx, d.ClientID, p, readSpool{File: spool, checkSpace: d.readSpace})
 		if err != nil {
 			return d.writeError(out, req, err)
 		}
@@ -196,6 +197,15 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	code, msg := "worker.failed", "operation failed"
 	if IsStorageFull(err) {
 		code, msg = "storage.full", "server storage is full; upload retained for retry"
+		if req.Operation == v1.OpReadObject {
+			msg = "server storage is full; download could not be prepared"
+		}
+	}
+	if errors.Is(err, ErrReadLimit) {
+		code, msg = "download.limit", "download exceeds the server size limit"
+	}
+	if errors.Is(err, ErrReadStorage) {
+		code, msg = "storage.unavailable", "server storage is unavailable; download could not be prepared"
 	}
 	if errors.Is(err, errUploadLimit) {
 		code, msg = "tree.limit", "upload exceeds file count or size limit"
@@ -224,7 +234,7 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	if errors.Is(err, ErrDrawersUnavailable) {
 		code, msg = "op.unsupported", "operation not supported"
 	}
-	if code == "worker.failed" || code == "storage.full" {
+	if code == "worker.failed" || code == "storage.full" || code == "storage.unavailable" {
 		d.Appender.Ledger.LogError(req.RequestID, d.ClientID, string(req.Operation), err.Error())
 	}
 	return d.writeErrorBody(out, req, v1.ErrorBody{Code: code, Message: msg})

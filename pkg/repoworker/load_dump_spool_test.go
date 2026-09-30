@@ -264,7 +264,7 @@ func TestExtractCarrierAcceptsDashPrefixedName(t *testing.T) {
 		t.Fatalf("size=%d %v", size, err)
 	}
 	dst := filepath.Join(root, "extracted.dump")
-	if err := svc.extractCarrier(context.Background(), repo, name, dst); err != nil {
+	if err := svc.extractCarrier(context.Background(), repo, name, dst, size); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(dst)

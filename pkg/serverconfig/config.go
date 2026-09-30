@@ -188,7 +188,8 @@ type RepositoryFile struct {
 	// Prepare an explicit root with service-account permissions before use;
 	// OpenBSD must unveil the existing directory, not a future file name.
 	LoadSpoolRoot string `json:"load_spool_root,omitempty"`
-	// MaxDumpSize refuses a larger dump carrier in bytes; zero means no limit.
+	// MaxDumpSize caps the carrier and each intermediate dump stream in bytes;
+	// zero disables the cap. This is not an FSFS or aggregate spool quota.
 	MaxDumpSize           int64  `json:"max_dump_size,omitempty"`
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
 	RecoveryAdminContact  string `json:"recovery_admin_contact"`

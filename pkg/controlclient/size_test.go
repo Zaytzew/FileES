@@ -75,6 +75,11 @@ func sizeTestPeer(t *testing.T, respond func(ssh.Channel, control.Ticket)) *Clie
 				return
 			}
 			respond(channel, ticket)
+			// Finish the SSH channel, but keep TCP alive until the client has
+			// drained the reply and closed its connection. Closing TCP here
+			// races the client's window-adjust packets on large responses.
+			_ = channel.Close()
+			_ = server.Wait()
 			return
 		}
 	}()

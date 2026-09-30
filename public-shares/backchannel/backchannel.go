@@ -1,7 +1,7 @@
 // Package backchannel carries the versioned Public Shares authority protocol
-// over ordinary HTTP. In the shared topology HTTP travels over a Unix socket;
-// in the split topology it travels through the server-established reverse SSH
-// forwarding. The public side owns no credential in either case.
+// over HTTP on protected Unix sockets. In the split topology OpenSSH forwards
+// Unix sockets at both ends, never unauthenticated loopback TCP. The public
+// side owns no credential in either case.
 package backchannel
 
 import (

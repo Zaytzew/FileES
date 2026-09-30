@@ -56,9 +56,16 @@ func TestRepositoryLoadSpoolDefaultsToResultsRootAndCanMove(t *testing.T) {
 	}
 }
 
-func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
+func TestPublicShareServerBoundaryRequiresHTTPSAndUnix(t *testing.T) {
 	root := t.TempDir()
-	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}
+	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "unix", BackchannelAddress: filepath.Join(root, "authority.sock")}
+	for _, address := range []string{"127.0.0.1:9010", "[::1]:9010", "0.0.0.0:9010"} {
+		candidate := valid
+		candidate.BackchannelNetwork, candidate.BackchannelAddress = "tcp", address
+		if err := validatePublicShares(candidate, root); err == nil {
+			t.Fatalf("TCP accepted: %s", address)
+		}
+	}
 	if err := validatePublicShares(valid, root); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +126,7 @@ func TestAuthorityStagingRootUsesOperatorPath(t *testing.T) {
 
 func TestPublicShareRecipientOTPSendBudgetBounds(t *testing.T) {
 	root := t.TempDir()
-	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}
+	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "unix", BackchannelAddress: filepath.Join(root, "authority.sock")}
 	for _, ok := range [][2]int{{0, 0}, {5, 50}, {1000, 100000}} {
 		candidate := valid
 		candidate.RecipientOTPSendsPerInvitation, candidate.RecipientOTPSendsPerChannel = ok[0], ok[1]

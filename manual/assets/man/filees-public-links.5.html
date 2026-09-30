@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees-public-links.5 sha256:fa94ce37e113c96b03a9bf920180d5df72a657cc3a31e135f2df63b411a60f67">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees-public-links.5 sha256:7937c5a2dac479dcb7558023ddd86a051c42f25297f2b0b31f79209d9362a857">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-public-links(5) — FileES manual pages</title>
@@ -67,8 +67,14 @@
       section 8">filees-public-authority(8)</a> for a leaf. On a shared host
       this is the Unix socket
       <span class="Pa">/var/run/filees/public-authority.sock</span>. A split
-      topology uses loopback TCP provided by a server-established reverse SSH
-      forward. Never expose the authority port on a public interface.</dd>
+      topology uses a server-established reverse SSH forward with Unix sockets
+      at both ends. Raw TCP, including loopback, is rejected; migrate before
+      upgrading. The socket directory must already exist, owned by its service
+      account or root, with no access for others and no group write permission.
+      Use mode 0700 for one account, or 0750 with the dedicated socket group.
+      The directory ancestry is checked before the sandbox is applied; the
+      socket type, owner and permissions are checked on each new connection. The
+      socket may be absent at startup while the authority or tunnel starts.</dd>
   <dt id="visit_key_file"><a class="permalink" href="#visit_key_file"><code class="Ic">visit_key_file</code></a></dt>
   <dd>HMAC key for signed visit URLs, mode 0600.</dd>
   <dt id="cache.root"><a class="permalink" href="#cache.root"><code class="Ic">cache.root</code></a>,
@@ -116,7 +122,7 @@
 </main>
 <div class="foot" role="doc-pagefooter" aria-label="Manual footer
   line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-date">September 30, 2026</span>
   <span class="foot-right">FILEES-PUBLIC-LINKS(5)</span></div>
 </div>
 </div>

@@ -70,6 +70,7 @@ type Config struct {
 }
 
 type Runtime struct {
+	backchannelDial func(context.Context) (net.Conn, error)
 	Abuse           *abuse.Guard
 	Store           *cache.Store
 	CleanupInterval time.Duration
@@ -142,6 +143,13 @@ func load(path string, prepare bool) (Runtime, error) {
 	}
 	if err := validateEndpoint(config.Backchannel, true); err != nil {
 		return Runtime{}, fmt.Errorf("backchannel: %w", err)
+	}
+	if config.Backchannel.Network != "unix" {
+		return Runtime{}, errors.New("backchannel requires unix; migrate TCP to OpenSSH Unix socket forwarding")
+	}
+	dial, err := backchannel.NewUnixDialer(config.Backchannel.Address)
+	if err != nil {
+		return Runtime{}, fmt.Errorf("backchannel directory: %w", err)
 	}
 	if config.FastCGI.Network == "tcp" && config.FastCGI.SocketGroup != "" {
 		return Runtime{}, errors.New("fastcgi socket_group is only valid for unix")
@@ -222,7 +230,7 @@ func load(path string, prepare bool) (Runtime, error) {
 	if config.Cache.Enabled {
 		store = &cache.Store{Config: cache.Config{Root: config.Cache.Root, TTL: ttl, MaxSize: config.Cache.MaxSize}}
 	}
-	return Runtime{Abuse: guard, Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine, Store: store, CleanupInterval: cleanupInterval}, nil
+	return Runtime{backchannelDial: dial, Abuse: guard, Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine, Store: store, CleanupInterval: cleanupInterval}, nil
 }
 
 func prepareDirectory(path string, prepare bool) error {
@@ -236,7 +244,10 @@ func (r Runtime) Handler() http.Handler {
 	transport := &http.Transport{DisableCompression: true, MaxIdleConns: 8, MaxIdleConnsPerHost: 8, IdleConnTimeout: 30 * time.Second}
 	endpoint := r.Config.Backchannel
 	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 15 * time.Second}).DialContext(ctx, endpoint.Network, endpoint.Address)
+		if endpoint.Network != "unix" || r.backchannelDial == nil {
+			return nil, errors.New("backchannel requires a validated Unix directory")
+		}
+		return r.backchannelDial(ctx)
 	}
 	client := backchannel.Client{BaseURL: "http://filees-authority", HTTP: &http.Client{Transport: transport, Timeout: 30 * time.Minute}}
 	store := r.Store

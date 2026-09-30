@@ -8,11 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -729,26 +727,11 @@ func validatePublicShares(p PublicSharesFile, resultsRoot string) error {
 	if p.RecipientOTPSendsPerInvitation < 0 || p.RecipientOTPSendsPerInvitation > 1000 || p.RecipientOTPSendsPerChannel < 0 || p.RecipientOTPSendsPerChannel > 100000 {
 		return errors.New("public_shares recipient_otp_sends_per_invitation must be 0 to 1000 and recipient_otp_sends_per_channel 0 to 100000")
 	}
-	if p.BackchannelNetwork != "unix" && p.BackchannelNetwork != "tcp" {
-		return errors.New("public_shares backchannel_network must be unix or tcp")
+	if p.BackchannelNetwork != "unix" {
+		return errors.New("public_shares backchannel requires unix; migrate TCP to OpenSSH Unix socket forwarding")
 	}
-	if p.BackchannelNetwork == "unix" {
-		if !filepath.IsAbs(p.BackchannelAddress) {
-			return errors.New("public_shares unix backchannel address must be absolute")
-		}
-		return nil
-	}
-	if p.BackchannelSocketGroup != "" {
-		return errors.New("public_shares backchannel_socket_group is only valid for unix")
-	}
-	host, port, err := net.SplitHostPort(p.BackchannelAddress)
-	if err != nil {
-		return errors.New("public_shares tcp backchannel address is invalid")
-	}
-	portNumber, err := strconv.Atoi(port)
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	if ip == nil || !ip.IsLoopback() || err != nil || portNumber < 1 || portNumber > 65535 {
-		return errors.New("public_shares tcp backchannel must bind loopback")
+	if !filepath.IsAbs(p.BackchannelAddress) {
+		return errors.New("public_shares unix backchannel address must be absolute")
 	}
 	return nil
 }

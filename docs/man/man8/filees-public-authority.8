@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd September 30, 2026
 .Dt FILEES-PUBLIC-AUTHORITY 8
 .Os
 .Sh NAME
@@ -10,12 +10,22 @@
 .Sh DESCRIPTION
 .Nm
 is the authoritative side of Public Shares.
-It listens on a Unix socket or loopback TCP.
+It listens only on a protected Unix socket.
+Raw TCP, including loopback, is rejected.
+For a split deployment use reverse SSH with Unix sockets at both ends.
 It never terminates TLS.
 It fetches leaves with
 .Nm svnlook
 and pushes them to
 .Xr filees-links 8 .
+.Pp
+Provision the socket directory before starting the service:
+0700 for a private socket, or 0750 with the configured socket group.
+The directory and its ancestry must not be writable by untrusted accounts.
+The listener uses mode 0600, or 0660 with an explicit socket group.
+It refuses to replace a live socket, a non-socket or an ambiguous endpoint.
+A stale socket owned by the service is removed only after a refused connection
+proves that no listener is present.
 .Pp
 It supervises
 .Xr filees-mail 8

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:68142bf4dae05767f0dd02732fe23526eec796dd29f18879eff723175b5dadca">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees.conf(5) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES.CONF(5)</span>
+  <span class="head-vol">File Formats Manual</span>
+  <span class="head-rtitle">FILEES.CONF(5)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees.conf</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">FileES server toolchain configuration
+    (<span class="Pa">/etc/filees/server.json</span>)</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp">The FileES server tools read a single JSON document, by default
+    <span class="Pa">/etc/filees/server.json</span>. The schema name is
+    <code class="Cm">filees.server-toolchain/v2</code>. The file must be a
+    regular file, not group- or other-writable, and every path value must be
+    absolute.</p>
+<p class="Pp">Loaders that need secrets take an explicit secret set. A tool that
+    does not need SMTP does not open the SMTP password file.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="KEYS"><a class="permalink" href="#KEYS">KEYS</a></h2>
+<dl class="Bl-tag">
+  <dt id="schema"><a class="permalink" href="#schema"><code class="Ic">schema</code></a></dt>
+  <dd>Must be <code class="Cm">filees.server-toolchain/v2</code>.</dd>
+  <dt id="display_name"><a class="permalink" href="#display_name"><code class="Ic">display_name</code></a></dt>
+  <dd>Required human-facing server name, at most 80 Unicode characters. Changing
+      it does not change immutable <code class="Ic">invitation.server_id</code>.
+      Run
+      <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
+      section 8">filees-operation(8)</a> <code class="Cm">recover</code> to
+      publish the new name to all active client projections.</dd>
+  <dt id="root"><a class="permalink" href="#root"><code class="Ic">root</code></a></dt>
+  <dd>Private onboarding directory. Default layout is
+      <span class="Pa">/var/filees/onboarding</span>.</dd>
+  <dt id="otp_pepper_file"><a class="permalink" href="#otp_pepper_file"><code class="Ic">otp_pepper_file</code></a></dt>
+  <dd>At least 32 bytes of base64 pepper. Regenerating it invalidates
+      outstanding OTPs.</dd>
+  <dt id="worker_private_key_file"><a class="permalink" href="#worker_private_key_file"><code class="Ic">worker_private_key_file</code></a>,
+    <code class="Ic">worker_public_key_file</code></dt>
+  <dd>Ed25519 key used by
+      <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker,
+      section 8">filees-worker(8)</a> when it pins the client helper.</dd>
+  <dt id="activation"><a class="permalink" href="#activation"><code class="Ic">activation</code></a></dt>
+  <dd>Absolute runtime paths: activation root, session root, authorized_keys,
+      service authz, service working copy, service repository, client and mobile
+      entry paths, and the <code class="Nm">svn</code> and
+      <code class="Nm">svnserve</code> binaries.</dd>
+  <dt id="repositories.root"><a class="permalink" href="#repositories.root"><code class="Ic">repositories.root</code></a></dt>
+  <dd>Absolute FSFS storage root.
+      <span class="Pa">/var/filees/repositories</span> is a default, not a
+      required mount point.</dd>
+  <dt id="repositories.results_root"><a class="permalink" href="#repositories.results_root"><code class="Ic">repositories.results_root</code></a></dt>
+  <dd>Durable worker results, separate from FSFS data.</dd>
+  <dt id="repositories.url_prefix"><a class="permalink" href="#repositories.url_prefix"><code class="Ic">repositories.url_prefix</code></a></dt>
+  <dd>Canonical public prefix. It must be
+      <code class="Cm">svn+ssh://_filees-data@host/</code> with no explicit
+      port. The SSH port belongs in the client transport profile and in
+      <code class="Ic">invitation.server_address</code>.</dd>
+  <dt id="repositories.deletion_retention_days"><a class="permalink" href="#repositories.deletion_retention_days"><code class="Ic">repositories.deletion_retention_days</code></a></dt>
+  <dd>Days to keep a verified dump after a permanent detach. Omitted defaults to
+      30. Explicit <code class="Cm">0</code> deletes FSFS immediately and writes
+      no dump.</dd>
+  <dt id="repositories.recovery_admin_contact"><a class="permalink" href="#repositories.recovery_admin_contact"><code class="Ic">repositories.recovery_admin_contact</code></a></dt>
+  <dd>Mailbox used for data-erasure notices.</dd>
+  <dt id="repositories.data_erasure_max_days"><a class="permalink" href="#repositories.data_erasure_max_days"><code class="Ic">repositories.data_erasure_max_days</code></a></dt>
+  <dd>Days an operator has to confirm backup-retention closure of a data-erasure
+      request before it is treated as overdue. Omitted defaults to 90. A value
+      outside 1-3650 is rejected.</dd>
+  <dt id="repositories.whale_root"><a class="permalink" href="#repositories.whale_root"><code class="Ic">repositories.whale_root</code></a></dt>
+  <dd>Absolute root for Whale transport operational payloads (spool, journal),
+      kept separate from the small repository-control journal under
+      <code class="Ic">repositories.results_root</code>. Optional; a
+      non-absolute value is rejected. Omitted defaults to
+      <span class="Pa">results_root</span><a class="permalink" href="#/whale"><b class="Sy" id="/whale">/whale</b></a>.</dd>
+  <dt id="public_shares"><a class="permalink" href="#public_shares"><code class="Ic">public_shares</code></a></dt>
+  <dd>Optional distribution channel. Disabled by default. See
+      <a class="Xr" href="filees-public-authority.8.html" aria-label="filees-public-authority,
+      section 8">filees-public-authority(8)</a> and
+      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+      section 5">filees-public-links(5)</a>.</dd>
+  <dt id="public_shares.authority_staging_root"><a class="permalink" href="#public_shares.authority_staging_root"><code class="Ic">public_shares.authority_staging_root</code></a></dt>
+  <dd>Absolute private staging directory, independently configurable from the
+      frontend cache. Omitted defaults to
+      <span class="Pa">/var/filees-downloads/authority</span>. Use mode 0700,
+      owned by _filees-state, on persistent storage with sufficient capacity.
+      Exclude it from backups and external cleanup. Changing the path requires
+      restarting filees_public_authority to establish a new
+      <span class="Ux">OpenBSD</span> unveil profile.</dd>
+  <dt id="public_shares.max_size"><a class="permalink" href="#public_shares.max_size"><code class="Ic">public_shares.max_size</code></a></dt>
+  <dd>Maximum leaf size in bytes, default 1 GiB. At most two authority fetches
+      run concurrently; reserve staging capacity accordingly.</dd>
+  <dt id="public_shares.max_channels_per_realm"><a class="permalink" href="#public_shares.max_channels_per_realm"><code class="Ic">public_shares.max_channels_per_realm</code></a></dt>
+  <dd>Upper bound on live channels one realm may hold. Omitted defaults to
+    128.</dd>
+  <dt id="public_shares.password_required"><a class="permalink" href="#public_shares.password_required"><code class="Ic">public_shares.password_required</code></a></dt>
+  <dd>Refuse to publish a channel that carries no recipient password. Off by
+      default.</dd>
+  <dt id="public_shares.frost_key_file"><a class="permalink" href="#public_shares.frost_key_file"><code class="Ic">public_shares.frost_key_file</code></a></dt>
+  <dd>Private key from which <code class="Ic">public_id</code> is derived. It is
+      read as a secret: absolute path, regular file, not group- or
+      other-writable. Replacing it changes every future public address; existing
+      ones keep working.</dd>
+  <dt id="operator_branding"><a class="permalink" href="#operator_branding"><code class="Ic">operator_branding</code></a></dt>
+  <dd>Optional presentation of this server in public HTML.
+      <code class="Ic">leading_color</code> is the accent colour and
+      <code class="Ic">logo_file</code> an absolute path to the operator logo.
+      Both are cosmetic: nothing in authorisation, addressing or transport reads
+      them.</dd>
+  <dt id="upload"><a class="permalink" href="#upload"><code class="Ic">upload</code></a></dt>
+  <dd>Optional closed upload-shelf intake. <code class="Ic">intake_root</code>
+      must be absolute and shared with
+      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+      section 5">filees-public-links(5)</a>. The <span class="Ux">OpenBSD</span>
+      layout is <span class="Pa">/var/tmp/filees-upload-intake</span>, owned
+      <a class="permalink" href="#_filees-links"><b class="Sy" id="_filees-links">_filees-links</b></a>:
+      <a class="permalink" href="#_filees-public"><b class="Sy" id="_filees-public">_filees-public</b></a>
+      mode 0770. <code class="Ic">trash_root</code> holds AV rejects.
+      <code class="Ic">av_command</code> is required once intake is configured
+      and runs as <b class="Sy">_filees-state</b> from
+      <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker,
+      section 8">filees-worker(8)</a> <code class="Cm">upload-reap</code>.</dd>
+  <dt id="invitation"><a class="permalink" href="#invitation"><code class="Ic">invitation</code></a></dt>
+  <dd>Stable <code class="Ic">server_id</code>, public SSH
+      <code class="Ic">server_address</code> and the verified Ed25519
+      <code class="Ic">known_host</code> line carried in every invitation.</dd>
+  <dt id="smtp"><a class="permalink" href="#smtp"><code class="Ic">smtp</code></a></dt>
+  <dd>Submission-style relay. <code class="Ic">tls</code> is
+      <code class="Cm">starttls</code>, <code class="Cm">implicit</code> or
+      <code class="Cm">none</code> (loopback only).
+      <code class="Ic">password_file</code> is required when
+      <code class="Ic">username</code> is set.</dd>
+  <dt id="operation_ttl"><a class="permalink" href="#operation_ttl"><code class="Ic">operation_ttl</code></a>,
+    <code class="Ic">otp_attempts</code></dt>
+  <dd>Onboarding operation lifetime and wrong-OTP limit.</dd>
+  <dt id="reverse_port_first"><a class="permalink" href="#reverse_port_first"><code class="Ic">reverse_port_first</code></a>,
+    <code class="Ic">reverse_port_last</code></dt>
+  <dd>Permitted reverse-tunnel ports. A single static port is the supported
+      deployment.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/server.json</span></dt>
+  <dd>Installed configuration.</dd>
+  <dt><span class="Pa">/etc/filees/server.example.json</span></dt>
+  <dd>Example shipped in the server bundle.</dd>
+  <dt><span class="Pa">/etc/filees/otp.pepper</span></dt>
+  <dd>OTP pepper, mode 0600.</dd>
+  <dt><span class="Pa">/etc/filees/smtp.password</span></dt>
+  <dd>Optional SMTP secret, mode 0600, owner
+    <b class="Sy">_filees-state</b>.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<p class="Pp">Validate the non-secret path after editing:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas -u _filees-state filees-admin ticket list</pre>
+</div>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+    section 5">filees-public-links(5)</a>,
+    <a class="Xr" href="filees.7.html" aria-label="filees, section
+    7">filees(7)</a>,
+    <a class="Xr" href="filees-admin.8.html" aria-label="filees-admin, section
+    8">filees-admin(8)</a></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES.CONF(5)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

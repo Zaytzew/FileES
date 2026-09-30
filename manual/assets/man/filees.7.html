@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man7/filees.7 sha256:6e8f3a8af34e3f7fdecffb7a2bd2f6e947b45a3474ce89c9650ac795dffb110f">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees(7) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES(7)</span>
+  <span class="head-vol">Miscellaneous Information Manual</span>
+  <span class="head-rtitle">FILEES(7)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">OpenBSD file-synchronisation server:
+    accounts, layout and tools</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees</code> is a file-centric synchronisation
+    system. The desktop client keeps local folders in sync with Subversion
+    repositories. The server target is <span class="Ux">OpenBSD</span>. There is
+    no resident FileES daemon and no FileES listener. The system
+    <span class="Xr">sshd(8)</span> is
+    the only privileged network endpoint. Public Shares, when enabled, are
+    served by the host <span class="Xr">httpd(8)</span> through FastCGI.</p>
+<p class="Pp">SVN is transport and storage. Revision-control semantics are
+    secondary. On-disk files, atomic rename and short-lived forced commands are
+    the operational contract.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="ACCOUNTS"><a class="permalink" href="#ACCOUNTS">ACCOUNTS</a></h2>
+<dl class="Bl-tag">
+  <dt id="_filees-state"><a class="permalink" href="#_filees-state"><b class="Sy">_filees-state</b></a></dt>
+  <dd>Owns <span class="Pa">/var/filees</span> and most of
+      <span class="Pa">/etc/filees</span>. Administrative commands run as this
+      user.</dd>
+  <dt id="_filees-onboard"><a class="permalink" href="#_filees-onboard"><b class="Sy">_filees-onboard</b></a></dt>
+  <dd>Public bootstrap account. Forced command
+      <a class="Xr" href="filees-bootstrap-entry.8.html" aria-label="filees-bootstrap-entry,
+      section 8">filees-bootstrap-entry(8)</a>.</dd>
+  <dt id="_filees-tunnel"><a class="permalink" href="#_filees-tunnel"><b class="Sy">_filees-tunnel</b></a></dt>
+  <dd>OTP account with one reverse tunnel. Forced command
+      <a class="Xr" href="filees-entry.8.html" aria-label="filees-entry, section
+      8">filees-entry(8)</a>.</dd>
+  <dt id="_filees-client"><a class="permalink" href="#_filees-client"><b class="Sy">_filees-client</b></a></dt>
+  <dd>Installation-key account for the service repository and control
+    plane.</dd>
+  <dt id="_filees-data"><a class="permalink" href="#_filees-data"><b class="Sy">_filees-data</b></a></dt>
+  <dd>Installation-key account for data-repository
+      <code class="Nm">svnserve</code> <code class="Fl">-t</code>. This is the
+      user in the canonical repository URL.</dd>
+  <dt id="_filees-mobile"><a class="permalink" href="#_filees-mobile"><b class="Sy">_filees-mobile</b></a></dt>
+  <dd>Mobile protocol: read a share, write under
+      <span class="Pa">mobile-uploads/</span>.</dd>
+  <dt id="_filees-recovery"><a class="permalink" href="#_filees-recovery"><b class="Sy">_filees-recovery</b></a></dt>
+  <dd>Capability-bound archive download after realm removal.</dd>
+  <dt id="_filees-links"><a class="permalink" href="#_filees-links"><b class="Sy">_filees-links</b></a></dt>
+  <dd>Public FastCGI process. Owns the public cache. Has no SVN
+    credentials.</dd>
+  <dt id="_filees-access"><a class="permalink" href="#_filees-access"><b class="Sy">_filees-access</b></a></dt>
+  <dd>Group for set-id client, mobile and ownership-corrector binaries.</dd>
+  <dt id="_filees-public"><a class="permalink" href="#_filees-public"><b class="Sy">_filees-public</b></a></dt>
+  <dd>Group for the authority socket shared with links.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="LAYOUT"><a class="permalink" href="#LAYOUT">LAYOUT</a></h2>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/server.json</span></dt>
+  <dd>Server toolchain configuration. See
+      <a class="Xr" href="filees.conf.5.html" aria-label="filees.conf, section
+      5">filees.conf(5)</a>.</dd>
+  <dt><span class="Pa">/etc/filees/public-links.json</span></dt>
+  <dd>Public FastCGI configuration. See
+      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+      section 5">filees-public-links(5)</a>.</dd>
+  <dt><span class="Pa">/etc/filees/install.conf</span></dt>
+  <dd>Signed updater configuration. See
+      <a class="Xr" href="filees-install.8.html" aria-label="filees-install,
+      section 8">filees-install(8)</a>.</dd>
+  <dt><span class="Pa">/var/filees/onboarding</span></dt>
+  <dd>Tickets, operation bundles and audit files.</dd>
+  <dt><span class="Pa">/var/filees/activation</span></dt>
+  <dd>Generated authorized_keys, authz, records and proofs.</dd>
+  <dt><span class="Pa">/var/filees/service-repo</span>,
+    <span class="Pa">/var/filees/service-wc</span></dt>
+  <dd>Canonical service repository and its working copy.</dd>
+  <dt><span class="Pa">/var/filees/repositories</span></dt>
+  <dd>FSFS data repositories, one directory per repository UUID.</dd>
+  <dt><span class="Pa">/var/filees/repository-operations</span></dt>
+  <dd>Durable worker results, deletion archives and Public Shares state.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="TOOLS"><a class="permalink" href="#TOOLS">TOOLS</a></h2>
+<p class="Pp">Operator commands live in <span class="Pa">/usr/local/sbin</span>:
+    <a class="Xr" href="filees-admin.8.html" aria-label="filees-admin, section
+    8">filees-admin(8)</a>,
+    <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
+    section 8">filees-operation(8)</a>,
+    <a class="Xr" href="filees-install.8.html" aria-label="filees-install,
+    section 8">filees-install(8)</a> and
+    <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate, section
+    8">filees-rotate(8)</a>.</p>
+<p class="Pp">Forced commands and short-lived workers live in
+    <span class="Pa">/usr/local/libexec/filees</span>. The
+    <span class="Ux">OpenBSD</span> integration script assigns set-id owners and
+    modes. The generic <span class="Pa">install-server.sh</span> writes ordinary
+    modes and is not a complete upgrade on an already integrated host.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+    section 5">filees-public-links(5)</a>,
+    <a class="Xr" href="filees.conf.5.html" aria-label="filees.conf, section
+    5">filees.conf(5)</a>,
+    <a class="Xr" href="filees-admin.8.html" aria-label="filees-admin, section
+    8">filees-admin(8)</a>,
+    <a class="Xr" href="filees-bootstrap-entry.8.html" aria-label="filees-bootstrap-entry,
+    section 8">filees-bootstrap-entry(8)</a>,
+    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
+    section 8">filees-client-entry(8)</a>,
+    <a class="Xr" href="filees-entry.8.html" aria-label="filees-entry, section
+    8">filees-entry(8)</a>,
+    <a class="Xr" href="filees-install.8.html" aria-label="filees-install,
+    section 8">filees-install(8)</a>,
+    <a class="Xr" href="filees-links.8.html" aria-label="filees-links, section
+    8">filees-links(8)</a>,
+    <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
+    8">filees-mail(8)</a>,
+    <a class="Xr" href="filees-mobile-v1.8.html" aria-label="filees-mobile-v1,
+    section 8">filees-mobile-v1(8)</a>,
+    <a class="Xr" href="filees-onboard.8.html" aria-label="filees-onboard,
+    section 8">filees-onboard(8)</a>,
+    <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
+    section 8">filees-operation(8)</a>,
+    <a class="Xr" href="filees-public-authority.8.html" aria-label="filees-public-authority,
+    section 8">filees-public-authority(8)</a>,
+    <a class="Xr" href="filees-recovery-entry.8.html" aria-label="filees-recovery-entry,
+    section 8">filees-recovery-entry(8)</a>,
+    <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate, section
+    8">filees-rotate(8)</a>,
+    <a class="Xr" href="filees-service-wc-corrector.8.html" aria-label="filees-service-wc-corrector,
+    section 8">filees-service-wc-corrector(8)</a>,
+    <a class="Xr" href="filees-serving-state.8.html" aria-label="filees-serving-state,
+    section 8">filees-serving-state(8)</a>,
+    <a class="Xr" href="filees-ssh-auth.8.html" aria-label="filees-ssh-auth,
+    section 8">filees-ssh-auth(8)</a>,
+    <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker, section
+    8">filees-worker(8)</a>, <span class="Xr">sshd(8)</span></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES(7)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

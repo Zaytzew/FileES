@@ -328,6 +328,13 @@ svn update /var/www/htdocs
 Chapters live under the existing `/assets/*` allowlist. Do not check the
 tree out as `/var/www/htdocs/manual` and do not reload `httpd`.
 
+The full manual pages under `manual/assets/man/` are generated from
+`docs/man` by `mandoc -T html`. After editing a page in `docs/man`, run
+`go run ./tools/manual-man-pages` and commit both. A new HTML file needs
+`svn propset svn:keywords Rev`, like every other page. If the HTML is not
+regenerated, `packaging/man_html_test.go` fails: each page records the
+SHA-256 of its source.
+
 ## OpenBSD upgrade boundary
 
 Strony `mandoc` są częścią podpisanego wydania serwera (od 2026-09-29).

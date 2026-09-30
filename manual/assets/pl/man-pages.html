@@ -59,6 +59,7 @@
 <li><a href="#filees-client-entry"><code>filees-client-entry</code></a> — dyspozytor wybierany dla klucza: svnserve albo jedno zlecenie warstwy sterującej</li>
 <li><a href="#filees-worker"><code>filees-worker</code></a> — jednorazowa uwierzytelniona operacja serwera</li>
 <li><a href="#filees-service-wc-corrector"><code>filees-service-wc-corrector</code></a> — naprawa właściciela kopii roboczej repozytorium serwisowego</li>
+<li><a href="#filees-serving-state"><code>filees-serving-state</code></a> — odpowiedź na jedno zapytanie o blokady i stan serwera FileES</li>
 <li><a href="#filees-install"><code>filees-install</code></a> — podpisana aktualizacja plików wykonywalnych serwera z repozytorium FILEES-BIN</li>
 <li><a href="#filees-rotate"><code>filees-rotate</code></a> — jawna zmiana generacji repozytorium FSFS</li>
 <li><a href="#filees-public-authority"><code>filees-public-authority</code></a> — część serwerowa autoryzująca udziały publiczne i kody odbiorców</li>
@@ -71,10 +72,12 @@
 <h1>Wyciąg poleceń z mandoc</h1>
 <p>Ta część zawiera skrócone opisy stron <code>mandoc</code> dla poleceń serwera. Nazwy poleceń, flagi i składnia pozostają dokładnie takie, jakich wymaga program; opis roli i znaczenia jest po polsku. Polecenia uruchamiane automatycznie przez <code>sshd</code> pokazano dla pełnego obrazu przepływu, a nie po to, aby administrator wpisywał je ręcznie.</p>
 <p>Wymuszone polecenia uruchamia <code>sshd</code>. Są tu wymienione, aby pokazać kolejność wywołań, a nie jako polecenia wpisywane przez operatora. Pliki konfiguracyjne <code>filees.conf(5)</code> i <code>filees-public-links(5)</code> są odsyłaczami do konfiguracji, nie poleceniami.</p>
+<p class="note"><strong>Pełne strony.</strong> Każda strona jest też dostępna w całości, tak jak pokazuje ją <code>man</code> na serwerze (po angielsku): <a href="../man/index.html">strony man FileES</a>.</p>
 <h2 id="man-extract">Polecenia</h2>
 <article class="cli-tool" id="filees-admin">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-admin(8)</h2>
+<p class="man-full"><a href="../man/filees-admin.8.html">Pełna strona: filees-admin(8)</a></p>
 <p class="cli-nd">zlecenia administracyjne FileES, cofanie uprawnień, naprawa repozytoriów i zakończenie usuwania danych</p>
 <h3>Rola</h3>
 <p><code>filees-admin</code> służy administratorowi do obsługi zaproszeń aktywacyjnych oraz niewielkiego zestawu operacji administracyjnych. Dane wynikowe zapisuje jako JSON na standardowe wyjście, a komunikaty diagnostyczne na standardowe wyjście błędów. Polecenie należy uruchamiać jako użytkownik <code>_filees-state</code>. Utworzenie zlecenia jako <code>root</code> pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z <code>set-id</code> celowo nie odczyta.</p>
@@ -127,6 +130,7 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h 
 <article class="cli-tool" id="filees-operation">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-operation(8)</h2>
+<p class="man-full"><a href="../man/filees-operation.8.html">Pełna strona: filees-operation(8)</a></p>
 <p class="cli-nd">odtwarzanie stanów aktywacji klienta po awarii i wygaszanie niedokończonych operacji</p>
 <h3>Rola</h3>
 <p><code>filees-operation</code> domyka stan aktywacji klienta widoczny po awarii. Musi działać jako użytkownik <code>_filees-state</code>.</p>
@@ -146,6 +150,7 @@ filees-operation [-config path] inspect --operation-id uuid</code></pre>
 <article class="cli-tool" id="filees-onboard">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-onboard(8)</h2>
+<p class="man-full"><a href="../man/filees-onboard.8.html">Pełna strona: filees-onboard(8)</a></p>
 <p class="cli-nd">wykorzystuje zaproszenie i tworzy kolejkę OTP; sam nie wysyła poczty</p>
 <h3>Rola</h3>
 <p><code>filees-onboard</code> odczytuje jedno żądanie zaproszenia w formacie JSON ze standardowego wejścia i atomowo tworzy albo wznawia operację aktywacji klienta. Nie wysyła poczty. <code>filees-bootstrap-entry(8)</code> wywołuje <code>filees-onboard take</code>, a następnie dokładnie jedno <code>filees-mail(8) send</code>.</p>
@@ -164,6 +169,7 @@ filees-onboard take &lt; invitation.json</code></pre>
 <article class="cli-tool" id="filees-mail">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-mail(8)</h2>
+<p class="man-full"><a href="../man/filees-mail.8.html">Pełna strona: filees-mail(8)</a></p>
 <p class="cli-nd">pojedyncze zadanie kolejki wychodzącej albo pętla poczty udziałów publicznych</p>
 <h3>Rola</h3>
 <p><code>send</code> przejmuje jedno oczekujące zadanie poczty warstwy sterującej i przekazuje je przez skonfigurowany przekaźnik SMTP. To jednorazowe opróżnienie kolejki, używane po operacjach zleconych przez <code>filees-admin(8)</code> oraz po <code>filees-bootstrap-entry(8)</code>. Zadania aktywacji klienta, usunięcia strefy i usunięcia danych korzystają z tej samej ścieżki.</p>
@@ -184,6 +190,7 @@ filees-mail [-config path] public-loop</code></pre>
 <article class="cli-tool" id="filees-bootstrap-entry">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-bootstrap-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-bootstrap-entry.8.html">Pełna strona: filees-bootstrap-entry(8)</a></p>
 <p class="cli-nd">wymuszone polecenie publicznego rozpoczęcia aktywacji</p>
 <h3>Rola</h3>
 <p><code>filees-bootstrap-entry</code> to wymuszone polecenie <code>sshd(8)</code> dla <code>_filees-onboard</code>. Nie przyjmuje argumentów. Wbudowany klucz publiczny inicjalizacji jest uprawnieniem ograniczonym do tego jednego polecenia; przekierowanie jest wyłączone.</p>
@@ -202,6 +209,7 @@ filees-bootstrap-entry</code></pre>
 <article class="cli-tool" id="filees-entry">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-entry.8.html">Pełna strona: filees-entry(8)</a></p>
 <p class="cli-nd">wymuszone polecenie tunelu po kodzie jednorazowym</p>
 <h3>Rola</h3>
 <p><code>filees-entry</code> to wymuszone polecenie <code>sshd(8)</code> dla <code>_filees-tunnel</code>. Przyjmuje wyłącznie dosłowne polecenie zdalne <code>filees tunnel-v1</code>.</p>
@@ -219,6 +227,7 @@ filees tunnel-v1</code></pre>
 <article class="cli-tool" id="filees-ssh-auth">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-ssh-auth(8)</h2>
+<p class="man-full"><a href="../man/filees-ssh-auth.8.html">Pełna strona: filees-ssh-auth(8)</a></p>
 <p class="cli-nd">moduł BSD Auth porównujący kod jednorazowy dla tunelu FileES</p>
 <h3>Rola</h3>
 <p><code>filees-ssh-auth</code> jest instalowany jako <code>/usr/libexec/auth/login_-filees</code>, z właścicielem <code>_filees-state</code>, grupą <code>auth</code> i trybem <code>4550</code>. <code>sshd(8)</code> wywołuje go podczas uwierzytelniania interaktywnego z klawiatury konta <code>_filees-tunnel</code>.</p>
@@ -236,6 +245,7 @@ filees tunnel-v1</code></pre>
 <article class="cli-tool" id="filees-client-entry">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-client-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-client-entry.8.html">Pełna strona: filees-client-entry(8)</a></p>
 <p class="cli-nd">dyspozytor wybierany dla klucza: svnserve albo jedno zlecenie warstwy sterującej</p>
 <h3>Rola</h3>
 <p><code>filees-client-entry</code> to dyspozytor z bitem set-ID, instalowany dla sesji korzystających z kluczy instalacyjnych. <code>sshd(8)</code> wybiera konto <code>_filees-client</code> albo <code>_filees-data</code> oraz przypisaną do klucza linię <code>command=</code>. Dyspozytor przyjmuje dokładnie dwa rodzaje poleceń: tunelowy tryb Subversion albo jedno uwierzytelnione zlecenie warstwy sterującej, po którym uruchamiany jest <code>filees-worker(8)</code>.</p>
@@ -255,6 +265,7 @@ filees control-v1</code></pre>
 <article class="cli-tool" id="filees-worker">
 <span class="cli-kind">Wymuszone polecenie oraz dwa czasowniki uruchamiane przez cron</span>
 <h2>filees-worker(8)</h2>
+<p class="man-full"><a href="../man/filees-worker.8.html">Pełna strona: filees-worker(8)</a></p>
 <p class="cli-nd">jednorazowa uwierzytelniona operacja serwera</p>
 <h3>Rola</h3>
 <p><code>filees-worker</code> jest uruchamiany przez <code>exec</code> dokładnie raz dla każdej uwierzytelnionej aktywacji albo zlecenia warstwy sterującej. Ma właściciela <code>root</code>, grupę <code>wheel</code> i tryb <code>0555</code>; nie jest usługą rezydentną. Każde kolejne zlecenie uruchamia aktualny obraz.</p>
@@ -288,6 +299,7 @@ filees-worker mobile-finish operation-id client-id</code></pre>
 <article class="cli-tool" id="filees-service-wc-corrector">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-service-wc-corrector(8)</h2>
+<p class="man-full"><a href="../man/filees-service-wc-corrector.8.html">Pełna strona: filees-service-wc-corrector(8)</a></p>
 <p class="cli-nd">naprawa właściciela kopii roboczej repozytorium serwisowego</p>
 <h3>Rola</h3>
 <p><code>filees-service-wc-corrector</code> to mały pomocniczy program z bitem set-ID, działający jako root. Nie przyjmuje argumentów. Przechodzi po skonfigurowanej kopii roboczej usługi i współdzielonej blokadzie <code>.service-wc.lock</code>, a następnie wykonuje <code>lchown</code> dla każdej ścieżki, której UID lub GID nie odpowiada kontu stanu. Nigdy nie zmienia trybów ani zawartości.</p>
@@ -303,9 +315,29 @@ filees-worker mobile-finish operation-id client-id</code></pre>
 <pre><code># no arguments; invoked by filees-client-entry before a ticket
 filees-service-wc-corrector</code></pre>
 </article>
+
+<article class="cli-tool" id="filees-serving-state">
+<span class="cli-kind">Wymuszone polecenie — uruchamia je filees-client-entry; operator nie wpisuje flag</span>
+<h2>filees-serving-state(8)</h2>
+<p class="man-full"><a href="../man/filees-serving-state.8.html">Pełna strona: filees-serving-state(8)</a></p>
+<p class="cli-nd">odpowiedź na jedno zapytanie o blokady i stan serwera FileES</p>
+<h3>Rola</h3>
+<p><code>filees-serving-state</code> to jednorazowy proces za wymuszonym poleceniem <code>filees reservation-v1</code>. <code>filees-client-entry(8)</code> uwierzytelnia klucz i uruchamia go z identyfikatorem klienta tego klucza. Czyta jedno żądanie JSON (najwyżej 4 KiB) i zwraca jeden wynik JSON: blokady Subversion repozytorium, informację, czy repozytorium jest nadal aktywne, albo właściciela blokady każdego obiektu dla automatycznego blokowania.</p>
+<p>Klient może pytać tylko o repozytoria aktywne w jego własnym widoku wydanym przez serwer; każde inne żądanie kończy się bez odpowiedzi. Gdy zapytanie na żywo się nie uda, wynik zawiera ostatnią zapisaną odpowiedź oznaczoną jako nieaktualna albo jest oznaczony jako nieznany.</p>
+<p>Instalowany obraz ma właściciela <code>root</code>, grupę <code>wheel</code> i tryb <code>0555</code>.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-serving-state [-config path] client-id</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p><code>-config path</code> wskazuje inny bezwzględny plik server.json; domyślnie /etc/filees/server.json.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej wywołanie ze składni.</p>
+<pre><code># executed by filees-client-entry for "filees reservation-v1"
+filees-serving-state &lt;client-id&gt; &lt; request.json</code></pre>
+</article>
 <article class="cli-tool" id="filees-install">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-install(8)</h2>
+<p class="man-full"><a href="../man/filees-install.8.html">Pełna strona: filees-install(8)</a></p>
 <p class="cli-nd">podpisana aktualizacja plików wykonywalnych serwera z repozytorium FILEES-BIN</p>
 <h3>Rola</h3>
 <p><code>filees-install</code> aktualizuje zainstalowane pliki wykonywalne serwera FileES z osobnego repozytorium wydań binarnych. Nie jest menedżerem pakietów i nie tworzy lokalnej kopii roboczej Subversion. Pobiera dokumenty kanału i manifestu przez <code>svn cat</code>, weryfikuje podpis OpenBSD <code>signify</code> wobec klucza publicznego wbudowanego podczas kompilacji, sprawdza skróty SHA-256, zapisuje trwały dziennik obrazu stanu sprzed zmiany i atomowo podmienia pliki docelowe.</p>
@@ -340,6 +372,7 @@ $ doas filees-install --apply</code></pre>
 <article class="cli-tool" id="filees-rotate">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-rotate(8)</h2>
+<p class="man-full"><a href="../man/filees-rotate.8.html">Pełna strona: filees-rotate(8)</a></p>
 <p class="cli-nd">jawna zmiana generacji repozytorium FSFS</p>
 <h3>Rola</h3>
 <p><code>filees-rotate</code> zastępuje aktywne repozytorium nową generacją. Nowa generacja otrzymuje nowy UUID i zaczyna się od rewizji 1 zawierającej pełny zrzut starego <code>HEAD</code>, włącznie z właściwościami wersjonowanymi, takimi jak <code>svn:needs-lock</code>. Dziedziczy <code>conf/</code> i <code>hooks/</code>, jest weryfikowana przez <code>svnadmin</code> i porównanie drzew, a następnie atomowo podmieniana. Stara generacja staje się zamrożonym archiwum FSFS, w którym zatwierdzenia są zablokowane. Istniejące kopie robocze nie przetrwają zmiany UUID.</p>
@@ -364,6 +397,7 @@ $ doas filees-install --apply</code></pre>
 <article class="cli-tool" id="filees-public-authority">
 <span class="cli-kind">Usługa — uruchamia ją rc.d, nie jest poleceniem wpisywanym ręcznie</span>
 <h2>filees-public-authority(8)</h2>
+<p class="man-full"><a href="../man/filees-public-authority.8.html">Pełna strona: filees-public-authority(8)</a></p>
 <p class="cli-nd">część serwerowa autoryzująca udziały publiczne i kody odbiorców</p>
 <h3>Rola</h3>
 <p><code>filees-public-authority</code> jest częścią serwerową autoryzującą udziały publiczne. Nasłuchuje na gnieździe uniksowym albo lokalnym adresie TCP. Nie kończy połączeń TLS. Pobiera wpisy za pomocą <code>svnlook</code> i przekazuje je do <code>filees-links(8)</code>.</p>
@@ -383,6 +417,7 @@ filees-public-authority --config /etc/filees/server.json</code></pre>
 <article class="cli-tool" id="filees-links">
 <span class="cli-kind">Usługa — uruchamia ją rc.d, nie jest poleceniem wpisywanym ręcznie</span>
 <h2>filees-links(8)</h2>
+<p class="man-full"><a href="../man/filees-links.8.html">Pełna strona: filees-links(8)</a></p>
 <p class="cli-nd">publiczna warstwa FastCGI dla udziałów FileES, bez poświadczeń</p>
 <h3>Rola</h3>
 <p><code>filees-links</code> udostępnia publiczne strony HTML bez poświadczeń oraz pobieranie plików i archiwów ZIP. Czyta <code>filees-public-links(5)</code>, a nie <code>filees.conf(5)</code>. Ma wyłącznie tymczasową pamięć podręczną i pyta <code>filees-public-authority(8)</code> o każdy wpis.</p>
@@ -402,6 +437,7 @@ filees-links --config /etc/filees/public-links.json</code></pre>
 <article class="cli-tool" id="filees-mobile-v1">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-mobile-v1(8)</h2>
+<p class="man-full"><a href="../man/filees-mobile-v1.8.html">Pełna strona: filees-mobile-v1(8)</a></p>
 <p class="cli-nd">wejście protokołu mobilnego (odczyt udziału, zapis w mobile-uploads/)</p>
 <h3>Rola</h3>
 <p><code>filees-mobile-v1</code> to wejście z bitem set-ID dla <code>_filees-mobile</code>. Instalowany obraz ma właściciela <code>_filees-state</code>, grupę <code>_filees-access</code> i tryb <code>4550</code> — taką samą klasę jak <code>filees-client-entry(8)</code>.</p>
@@ -419,6 +455,7 @@ filees-mobile-v1</code></pre>
 <article class="cli-tool" id="filees-recovery-entry">
 <span class="cli-kind">Wymuszone polecenie — uruchamia je sshd; operator nie wpisuje flag</span>
 <h2>filees-recovery-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-recovery-entry.8.html">Pełna strona: filees-recovery-entry(8)</a></p>
 <p class="cli-nd">udostępnianie archiwów po usunięciu strefy dla jednej operacji</p>
 <h3>Rola</h3>
 <p><code>filees-recovery-entry</code> to wejście sesji z bitem set-ID dla <code>_filees-recovery</code>. Drugi obraz tego samego programu jest instalowany jako <code>/usr/local/libexec/filees/filees-recovery-authorize</code>, z właścicielem <code>root</code>, grupą <code>wheel</code> i trybem <code>0555</code>, ponieważ <code>sshd(8)</code> wymaga, aby każdy składnik <code>AuthorizedKeysCommand</code> należał do użytkownika root. Wyszukiwanie klucza i obsługa sesji są więc odrębnymi plikami wykonywalnymi.</p>

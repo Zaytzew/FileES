@@ -202,6 +202,15 @@ bash tools/deploy-site.sh            # asks before uploading
 bash tools/deploy-site.sh --dry-run  # build, check and stage only
 ```
 
+On Windows, `tools\deploy-site.cmd` runs `svn update` and then the script
+through Git Bash (PowerShell's `bash` is WSL, which the script refuses). It
+works from any directory, in cmd or PowerShell, and passes `-y` and
+`--dry-run` through:
+
+```bat
+E:\!!!_COOPERATE\FILEES\tools\deploy-site.cmd
+```
+
 SSH asks for the key passphrase twice (upload, install) unless an agent holds
 it, and sudo or su asks for its password on the terminal. Backups of each
 replaced landing page stay in `/var/lib/filees-site/landing-backups/`, and

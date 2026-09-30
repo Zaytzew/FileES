@@ -62,6 +62,15 @@ in
 Job subdirectories are mode 0770 so
 .Sy _filees-state
 can reap them.
+On Unix, new HTTP receivers hold a per-job kernel lock until publication
+or failure. Before accepting another upload, the service removes incomplete
+jobs only if their receiver lock can be acquired and neither READY nor
+PROCESSING exists. Age alone never permits deletion. Cleanup is opportunistic,
+not a deadline; it also releases the removed job's reservation.
+Legacy jobs without the receiver lock and all published/processing jobs
+are retained. Unknown contents or symlinks in an abandoned new job cause
+refusal instead of deletion. All receivers sharing intake must be upgraded.
+This does not recover a reaper interrupted during publication to SVN.
 .El
 .Sh FILES
 .Bl -tag -width Ds

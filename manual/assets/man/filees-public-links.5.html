@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees-public-links.5 sha256:7937c5a2dac479dcb7558023ddd86a051c42f25297f2b0b31f79209d9362a857">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees-public-links.5 sha256:2cb60e7447535ab327c96e85d83f18d15de2d3b894f05c8feaeba7e873458112">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-public-links(5) — FileES manual pages</title>
@@ -98,7 +98,16 @@
       <a class="Xr" href="filees.conf.5.html" aria-label="filees.conf, section
       5">filees.conf(5)</a>. Job subdirectories are mode 0770 so
       <a class="permalink" href="#_filees-state"><b class="Sy" id="_filees-state">_filees-state</b></a>
-      can reap them.</dd>
+      can reap them. On Unix, new HTTP receivers hold a per-job kernel lock
+      until publication or failure. Before accepting another upload, the service
+      removes incomplete jobs only if their receiver lock can be acquired and
+      neither READY nor PROCESSING exists. Age alone never permits deletion.
+      Cleanup is opportunistic, not a deadline; it also releases the removed
+      job's reservation. Legacy jobs without the receiver lock and all
+      published/processing jobs are retained. Unknown contents or symlinks in an
+      abandoned new job cause refusal instead of deletion. All receivers sharing
+      intake must be upgraded. This does not recover a reaper interrupted during
+      publication to SVN.</dd>
 </dl>
 </section>
 <section class="Sh">

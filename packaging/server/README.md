@@ -224,6 +224,18 @@ job that recreates the directory. The example AV command uses `clamdscan
 --stream`: the state worker reads the payload and sends bytes to clamd, whose
 user does not need traversal permission on the private intake tree.
 
+On Unix, new HTTP uploads hold `.receiving-v1.lock` through body reception
+and publication. Before a new admission, intake reclaims incomplete jobs
+only after acquiring that lock and confirming the absence of both `READY`
+and `PROCESSING`. Only the Go receiver writes these files; no child process
+inherits a payload descriptor. A crash therefore releases the proof of use.
+Cleanup removes recognized regular files individually, then the empty job
+directory, under the budget lock. Unknown files/symlinks cause refusal.
+No age-based expiration: ready/processing jobs and legacy directories
+without this lock remain untouched. All receivers sharing the root must
+be upgraded. This is opportunistic cleanup, not a timer or secure erasure,
+and does not recover interrupted reaper commits or import scratch directories.
+
 The bootstrap scripts still preserve existing JSON files and do not rewrite
 examples for `PUBLIC_*` overrides. Set `server.json` `upload.intake_root` and
 `public-links.json` `intake_root` to the same selected directory. The default

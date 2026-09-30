@@ -196,6 +196,8 @@ var specs = []Spec{
 	{"SHARE-0002", "public_share.list_all_unavailable", SevError, HintRetry, nil, "Public share aggregate is not available"},
 	{"SHARE-1001", "public_share.list_failed", SevError, HintRetry, nil, "Public share list failed"},
 	{"SHARE-1002", "public_share.rejected", SevError, HintRequireAction, nil, "Public share mutation was rejected"},
+	{"SHARE-1003", "public_share.request_too_large", SevError, HintRequireAction, nil, "Public share control request exceeds the transport size limit"},
+	{"SHARE-1004", "public_share.result_too_large", SevError, HintRequireAction, nil, "Public share listing exceeds the transport size limit"},
 	{"SHARE-2001", "public_share.forbidden", SevError, HintNone, nil, "Public share action is forbidden"},
 
 	{"UPLOAD-0001", "upload_channel.unavailable", SevError, HintRetry, nil, "Upload channel service is not available"},

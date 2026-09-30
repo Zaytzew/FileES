@@ -101,6 +101,8 @@
     "public_share.list_all_unavailable": "The combined list of public shares is not available right now",
     "public_share.list_failed": "The public shares could not be read",
     "public_share.rejected": "The server rejected the change to this public share",
+    "public_share.request_too_large": "The file list and paths exceed the share description limit. Select a smaller folder. If the server runs an older version, update it first.",
+    "public_share.result_too_large": "The share listing exceeds the response limit. Contact the administrator; existing shares have not been changed.",
     "public_share.unavailable": "Public shares are not available right now",
     "realm.alias_rejected": "The server rejected the realm alias",
     "realm.alias_required": "Set a stable realm alias before reserving files",

@@ -25,7 +25,7 @@ import (
 const (
 	Command          = "filees control-v1"
 	ServiceUser      = "_filees-client"
-	MaxResponseBytes = 64 << 10
+	MaxResponseBytes = control.DefaultMessageBytes
 )
 
 // ErrIdentityRefused means the pinned SSH server rejected our sole public key.
@@ -88,6 +88,9 @@ func (c *Client) Exchange(ctx context.Context, ticket control.Ticket) (control.R
 	if err != nil {
 		return control.Result{}, err
 	}
+	if len(raw)+1 > control.TicketByteLimit(ticket.Type) {
+		return control.Result{}, control.ErrTicketTooLarge
+	}
 	connection, err := (&net.Dialer{Timeout: c.timeout}).DialContext(ctx, "tcp", c.address)
 	if err != nil {
 		return control.Result{}, fmt.Errorf("connect repository control: %w", err)
@@ -132,16 +135,24 @@ func (c *Client) Exchange(ctx context.Context, ticket control.Ticket) (control.R
 	if err := session.Start(Command); err != nil {
 		return control.Result{}, fmt.Errorf("start repository control: %w", err)
 	}
-	response, readErr := io.ReadAll(io.LimitReader(stdout, MaxResponseBytes+1))
-	waitErr := session.Wait()
-	if waitErr != nil && !interruptedControlTransport(waitErr) {
-		return control.Result{}, fmt.Errorf("repository control failed: %w: %s", waitErr, stderr.String())
+	limit := control.ResultByteLimit(ticket.Type)
+	response, readErr := io.ReadAll(io.LimitReader(stdout, int64(limit)+1))
+	// Do not wait for an exit status while the peer is blocked writing the
+	// unread remainder into SSH's flow-control window.
+	if len(response) > limit {
+		_ = session.Close()
+		return control.Result{}, control.ErrResultTooLarge
 	}
 	if readErr != nil {
+		_ = session.Close()
 		return control.Result{}, fmt.Errorf("read repository control result: %w", readErr)
 	}
-	if len(response) > MaxResponseBytes {
-		return control.Result{}, errors.New("repository control result exceeds limit")
+	waitErr := session.Wait()
+	if waitErr != nil && !interruptedControlTransport(waitErr) {
+		if strings.Contains(stderr.String(), control.ErrTicketTooLarge.Error()) {
+			return control.Result{}, fmt.Errorf("%w: server refused the request", control.ErrTicketTooLarge)
+		}
+		return control.Result{}, fmt.Errorf("repository control failed: %w: %s", waitErr, stderr.String())
 	}
 	result, err := control.ParseResult(bytes.TrimSpace(response))
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/activity"
 	contract "filees/pkg/contract/v1"
+	control "filees/pkg/control/v1"
 	"filees/pkg/errcat"
 	"filees/pkg/passport"
 	"filees/pkg/realmbranding"
@@ -814,6 +815,9 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 		shares, err := service.ListPublicShares(ctx, serverID, repoID)
 		if err != nil {
 			talk.With("public-shares:"+serverID).Warnf("channel listing failed: %v", err)
+			if errors.Is(err, control.ErrResultTooLarge) {
+				return contract.ErrResponse(req.RequestID, "SHARE-1004", "ERROR", "REQUIRE_ACTION", "public_share.result_too_large", nil)
+			}
 			return contract.ErrResponse(req.RequestID, "SHARE-1001", "ERROR", "RETRY", "public_share.list_failed", nil)
 		}
 		return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: shares})
@@ -834,6 +838,9 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 	}
 	if err != nil {
 		talk.With("public-shares:"+serverID).Warnf("channel %s failed: %v", action, err)
+		if errors.Is(err, control.ErrTicketTooLarge) {
+			return contract.ErrResponse(req.RequestID, "SHARE-1003", "ERROR", "REQUIRE_ACTION", "public_share.request_too_large", nil)
+		}
 		return contract.ErrResponse(req.RequestID, "SHARE-1002", "ERROR", "REQUIRE_ACTION", "public_share.rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)

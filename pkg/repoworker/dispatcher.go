@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 )
 
-const MaxTicketBytes = 64 << 10
+const MaxTicketBytes = control.MaxShareTicketBytes
 
 type SessionResolver interface {
 	Resolve(clientID string) (Session, error)
@@ -57,7 +57,18 @@ func (d Dispatcher) Serve(ctx context.Context, clientID string, in io.Reader, ou
 		return e
 	}
 	if len(raw) > MaxTicketBytes {
-		return errors.New("control ticket exceeds limit")
+		return control.ErrTicketTooLarge
+	}
+	// Read only the routing field before full validation. A larger buffer is
+	// not permission to send oversized ordinary operations to the worker.
+	var envelope struct {
+		Type control.TicketType `json:"type"`
+	}
+	if e := json.Unmarshal(raw, &envelope); e != nil {
+		return fmt.Errorf("parse control envelope: %w", e)
+	}
+	if len(raw) > control.TicketByteLimit(envelope.Type) {
+		return control.ErrTicketTooLarge
 	}
 	ticket, e := control.ParseTicket(bytes.TrimSpace(raw))
 	if e != nil {

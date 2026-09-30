@@ -111,9 +111,10 @@ type OperatorBrandingFile struct {
 }
 
 type UploadFile struct {
-	IntakeRoot string   `json:"intake_root,omitempty"`
-	TrashRoot  string   `json:"trash_root,omitempty"`
-	AVCommand  []string `json:"av_command,omitempty"`
+	MaxTrashSize int64    `json:"max_trash_size,omitempty"`
+	IntakeRoot   string   `json:"intake_root,omitempty"`
+	TrashRoot    string   `json:"trash_root,omitempty"`
+	AVCommand    []string `json:"av_command,omitempty"`
 }
 
 // MobileFile controls only the hosting-side workspace of mobile capture.
@@ -686,7 +687,10 @@ func (u UploadFile) EffectiveTrashRoot(resultsRoot string) string {
 }
 
 func validateUpload(u UploadFile, resultsRoot string) error {
-	if u.IntakeRoot == "" && u.TrashRoot == "" && len(u.AVCommand) == 0 {
+	if u.MaxTrashSize < 0 {
+		return errors.New("upload max_trash_size must not be negative")
+	}
+	if u.IntakeRoot == "" && u.TrashRoot == "" && len(u.AVCommand) == 0 && u.MaxTrashSize == 0 {
 		return nil
 	}
 	if u.IntakeRoot == "" || !filepath.IsAbs(u.IntakeRoot) {

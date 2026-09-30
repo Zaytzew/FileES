@@ -55,6 +55,9 @@ func TestSeedRejectAppearsOnOwnerList(t *testing.T) {
 	}
 	root := t.TempDir()
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	owner := uuid.NewString()
 	reaper := Reaper{TrashRoot: root}
 	idx, err := reaper.SeedReject(owner, "eicar.com", now)
@@ -87,6 +90,9 @@ func TestFetchWaitingReturnsPayloadAndRemainingHours(t *testing.T) {
 
 func writeWaiting(t *testing.T, root, rel string, idx Index, payload string) {
 	t.Helper()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	dir := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)

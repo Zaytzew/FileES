@@ -201,6 +201,20 @@ and `_filees-public`, installs disabled `filees_public_authority` and
   `_filees-state` (in `_filees-public`) can reap them;
 - FastCGI directory: `_filees-links:www`, mode `0750`, socket mode `0660`.
 
+The private AV rejection waiting room (`server.json` `upload.trash_root`,
+owned by `_filees-state`, mode `0700`) has a separate optional byte limit:
+`upload.max_trash_size`. The example sets **10 GiB** (`10737418240`);
+zero or omission disables it, so existing configurations need an explicit
+setting. All writers using this root must use the same limit and upgraded
+code. A kernel lock serializes copying, reading and TTL maintenance; a busy
+root refuses the concurrent operation, which may be retried.
+Hidden payloads and incomplete copies count. Metadata and filesystem
+allocation overhead do not: this is not a filesystem quota.
+On exhaustion, upload-reap reports failure and retains the intake job;
+the 48-hour retention is never shortened to make space. Configure the
+separate intake budget too, otherwise the retained queue can keep growing.
+Unknown files are preserved and counted, not removed based on age.
+
 Upload intake is a persistent delivery queue, **not** a cache: never put it
 under `/tmp` or `/var/tmp`, including through symlinks. On OpenBSD, daily
 cleanup can remove an empty directory and invalidate the running service's

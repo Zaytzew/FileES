@@ -3,6 +3,7 @@ package uploadworker
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,9 +47,24 @@ func (idx Index) Visible(now time.Time) bool {
 }
 
 func loadIndex(root, path string) (Index, error) {
-	raw, err := os.ReadFile(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return Index{}, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return Index{}, errors.New("unsafe or oversized quarantine index")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return Index{}, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return Index{}, err
+	}
+	if len(raw) > 1<<20 {
+		return Index{}, errors.New("oversized quarantine index")
 	}
 	var idx Index
 	if json.Unmarshal(raw, &idx) != nil || idx.UploadID == "" || idx.OriginalName == "" || idx.ReceivedAt.IsZero() {

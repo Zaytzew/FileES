@@ -41,13 +41,14 @@ type Publisher struct {
 }
 
 type Reaper struct {
-	Intake    intake.Store
-	Channels  *channel.Store
-	ReposRoot string
-	TrashRoot string
-	Scanner   avscan.Scanner
-	Publisher Publisher
-	Now       func() time.Time
+	Intake        intake.Store
+	Channels      *channel.Store
+	ReposRoot     string
+	TrashRoot     string
+	MaxTrashBytes int64
+	Scanner       avscan.Scanner
+	Publisher     Publisher
+	Now           func() time.Time
 }
 
 type Result struct {
@@ -86,6 +87,9 @@ func (r Reaper) Reap(ctx context.Context) (Result, error) {
 		case err == nil:
 			summary.Accepted++
 		case errors.Is(err, avscan.ErrUnavailable):
+			return summary, err
+		case errors.Is(err, ErrTrashFull), errors.Is(err, ErrTrashState):
+			summary.Failed++
 			return summary, err
 		case errors.Is(err, ErrRejected):
 			summary.Rejected++
@@ -167,14 +171,35 @@ func (r Reaper) fail(uploadID string, err error) error {
 }
 
 func (r Reaper) reject(ctx context.Context, job intake.Record, record channel.UploadRecord, payload, detail string) error {
+	owner, err := r.ownTrash()
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	if err := r.checkTrashBudget(ctx, 0); err != nil && !errors.Is(err, ErrTrashFull) {
+		return err
+	}
 	day := r.now().UTC().Format("2006-01-02")
 	rel := record.Slug + "-" + job.ChannelID + "/" + day + "/" + job.UploadID
 	waiting := filepath.Join(r.TrashRoot, filepath.FromSlash(rel))
-	if err := os.MkdirAll(waiting, 0700); err != nil {
+	destination := filepath.Join(waiting, payloadName)
+	if _, err := os.Lstat(destination); errors.Is(err, os.ErrNotExist) {
+		if err := r.checkTrashBudget(ctx, job.Size); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(waiting, 0700); err != nil {
+			return err
+		}
+		if err := copyFile(payload, destination, job.Size); err != nil {
+			return err
+		}
+		if err := verifyPayload(destination, job); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
-	}
-	if err := copyFile(payload, filepath.Join(waiting, "payload")); err != nil {
-		return err
+	} else if err := verifyPayload(destination, job); err != nil {
+		return err // never overwrite an uncertain previous copy
 	}
 	indexPath := filepath.Join(waiting, indexName)
 	if err := writeIndex(indexPath, Index{
@@ -291,17 +316,25 @@ func verifyPayload(path string, job intake.Record) error {
 	return nil
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string, size int64) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	tmp := filepath.Join(filepath.Dir(dst), ".payload.tmp")
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(out, in)
+	defer os.Remove(tmp) // own temp only; a pre-existing temp is not removed
+	_, copyErr := io.CopyN(out, in, size)
+	if copyErr == nil {
+		var extra [1]byte
+		if n, err := in.Read(extra[:]); n != 0 || err != io.EOF {
+			copyErr = errors.New("rejected payload size changed during copy")
+		}
+	}
 	syncErr := out.Sync()
 	closeErr := out.Close()
 	if copyErr != nil {
@@ -310,7 +343,10 @@ func copyFile(src, dst string) error {
 	if syncErr != nil {
 		return syncErr
 	}
-	return closeErr
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(tmp, dst)
 }
 
 func fileURL(path string) string {

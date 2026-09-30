@@ -36,6 +36,7 @@
   "upload": {
     "intake_root": "/var/filees-downloads/intake",
     "trash_root": "/var/filees/repository-operations/upload-reject",
+    "max_trash_size": 10737418240,
     "av_command": ["/usr/local/bin/clamdscan", "--stream", "--no-summary", "--stdout"]
   },
   "public_shares": {

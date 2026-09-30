@@ -31,10 +31,12 @@ type WaitingEntry struct {
 }
 
 func (r Reaper) ListWaiting(ownerRealm string, now time.Time) (WaitingList, error) {
-	if !filepath.IsAbs(r.TrashRoot) {
-		return WaitingList{}, ErrIncomplete
+	owner, err := r.ownTrash()
+	if err != nil {
+		return WaitingList{}, err
 	}
-	if err := r.PurgeExpired(context.Background(), now); err != nil {
+	defer owner.Close()
+	if err := r.purgeExpired(context.Background(), now); err != nil {
 		return WaitingList{}, err
 	}
 	live, err := walkLiveIndexes(r.TrashRoot, now)
@@ -70,6 +72,14 @@ func (r Reaper) SeedReject(ownerRealm, originalName string, now time.Time) (Inde
 		name = "eicar.com"
 	}
 	payload := []byte(avscan.EICAR)
+	owner, err := r.ownTrash()
+	if err != nil {
+		return Index{}, err
+	}
+	defer owner.Close()
+	if err := r.checkTrashBudget(context.Background(), int64(len(payload))); err != nil {
+		return Index{}, err
+	}
 	sum := sha256.Sum256(payload)
 	id := uuid.NewString()
 	rel := "seed/" + now.Format("2006-01-02") + "/" + id
@@ -92,6 +102,11 @@ func (r Reaper) SeedReject(ownerRealm, originalName string, now time.Time) (Inde
 }
 
 func (r Reaper) HideWaiting(uploadID string, now time.Time) error {
+	owner, err := r.ownTrash()
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
 	idx, path, err := r.findIndex(uploadID)
 	if err != nil {
 		return err
@@ -104,6 +119,11 @@ func (r Reaper) HideWaiting(uploadID string, now time.Time) error {
 }
 
 func (r Reaper) FetchWaiting(uploadID string, now time.Time) (Index, []byte, int, error) {
+	owner, err := r.ownTrash()
+	if err != nil {
+		return Index{}, nil, 0, err
+	}
+	defer owner.Close()
 	idx, _, err := r.findIndex(uploadID)
 	if err != nil {
 		return Index{}, nil, 0, err
@@ -119,10 +139,19 @@ func (r Reaper) FetchWaiting(uploadID string, now time.Time) (Index, []byte, int
 }
 
 func (r Reaper) PurgeExpired(ctx context.Context, now time.Time) error {
-	if !filepath.IsAbs(r.TrashRoot) {
-		return ErrIncomplete
+	owner, err := r.ownTrash()
+	if err != nil {
+		return err
 	}
+	defer owner.Close()
+	return r.purgeExpired(ctx, now)
+}
+
+func (r Reaper) purgeExpired(ctx context.Context, now time.Time) error {
 	return filepath.WalkDir(r.TrashRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			if errors.Is(walkErr, os.ErrNotExist) {
 				return nil
@@ -133,16 +162,31 @@ func (r Reaper) PurgeExpired(ctx context.Context, now time.Time) error {
 			return nil
 		}
 		idx, err := loadIndex(r.TrashRoot, path)
-		if err != nil || idx.PurgedAt != nil || idx.Remaining(now) > 0 {
+		if err != nil {
+			return err
+		}
+		if idx.Remaining(now) > 0 {
 			return nil
 		}
-		purged := now.UTC()
-		idx.PurgedAt = &purged
-		_ = writeIndex(path, idx)
-		_ = appendPurgedLog(r.TrashRoot, PurgedItem{UploadID: idx.UploadID, OriginalName: idx.OriginalName, PurgedAt: purged})
 		dir := filepath.Dir(path)
-		if err := os.RemoveAll(dir); err != nil {
+		if dir == filepath.Clean(r.TrashRoot) || filepath.Base(dir) != idx.UploadID {
+			return errors.New("invalid rejection entry directory")
+		}
+		if err := removeExpiredEntry(dir, func() error {
+			purged := now.UTC()
+			idx.PurgedAt = &purged
+			if err := writeIndex(path, idx); err != nil {
+				return err
+			}
+			return appendPurgedLog(r.TrashRoot, PurgedItem{UploadID: idx.UploadID, OriginalName: idx.OriginalName, PurgedAt: purged})
+		}); err != nil {
 			return err
+		}
+		for dir != filepath.Clean(r.TrashRoot) {
+			if err := os.Remove(dir); err != nil {
+				break // only empty ancestors; never recursive removal
+			}
+			dir = filepath.Dir(dir)
 		}
 		return nil
 	})

@@ -60,6 +60,7 @@
 <li><a href="#filees-client-entry"><code>filees-client-entry</code></a> — FileES per-key dispatcher for svnserve and control-plane tickets</li>
 <li><a href="#filees-worker"><code>filees-worker</code></a> — execute one authenticated FileES server action and exit</li>
 <li><a href="#filees-service-wc-corrector"><code>filees-service-wc-corrector</code></a> — repair ownership of the FileES service working copy</li>
+<li><a href="#filees-serving-state"><code>filees-serving-state</code></a> — answer one FileES reservation and server-state query</li>
 <li><a href="#filees-install"><code>filees-install</code></a> — update FileES server binaries from a signed FILEES-BIN repository</li>
 <li><a href="#filees-rotate"><code>filees-rotate</code></a> — perform an explicit SVN FSFS generation change</li>
 <li><a href="#filees-public-authority"><code>filees-public-authority</code></a> — FileES Public Shares backchannel and recipient OTP</li>
@@ -70,11 +71,13 @@
 <h1>CLI extract from mandoc</h1>
 <p>This is the Tech extract of the OpenBSD <code>mandoc</code> sources in <code>docs/man</code>. Each server command is here by <strong>role</strong>, <strong>invocation</strong>, <strong>flags</strong> and <strong>examples</strong>. English is canonical: that is what the binaries accept. The desktop <code>filees</code> client CLI has no mandoc page yet — see the User <a href="user-guide.html#ch2-cli">desktop howto</a>.</p>
 <p>Forced commands are started by <code>sshd</code>. They are listed so the hop is visible, not because an operator types them. Config files <code>filees.conf(5)</code> and <code>filees-public-links(5)</code> are pointers, not commands.</p>
+<p class="note"><strong>Full pages.</strong> Every page below is also rendered in full, exactly as <code>man</code> shows it on the server: <a href="../man/index.html">FileES manual pages</a>.</p>
 <h2 id="man-extract">Commands</h2>
 
 <article class="cli-tool" id="filees-admin">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-admin(8)</h2>
+<p class="man-full"><a href="../man/filees-admin.8.html">Full page: filees-admin(8)</a></p>
 <p class="cli-nd">FileES administrative tickets, revocation, repository repair and erasure closure</p>
 <h3>Role</h3>
 <p>filees-admin is the operator command for onboarding tickets and a small set of fail-closed administrative actions. It writes structured JSON to standard output and diagnostics to standard error. It must run with effective user _filees-state . Creating a ticket as root produces a root-owned mode 0600 file that the set-id onboarding entry intentionally cannot read.</p>
@@ -127,6 +130,7 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h 
 <article class="cli-tool" id="filees-operation">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-operation(8)</h2>
+<p class="man-full"><a href="../man/filees-operation.8.html">Full page: filees-operation(8)</a></p>
 <p class="cli-nd">recover FileES onboarding claims and expire unfinished operations</p>
 <h3>Role</h3>
 <p>filees-operation finishes crash-visible onboarding state. It must run as _filees-state .</p>
@@ -146,6 +150,7 @@ filees-operation [-config path] inspect --operation-id uuid</code></pre>
 <article class="cli-tool" id="filees-onboard">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-onboard(8)</h2>
+<p class="man-full"><a href="../man/filees-onboard.8.html">Full page: filees-onboard(8)</a></p>
 <p class="cli-nd">consume a FileES invitation and create the OTP outbox</p>
 <h3>Role</h3>
 <p>filees-onboard reads one JSON invitation request from standard input and atomically creates or resumes the onboarding operation. It does not send mail. filees-bootstrap-entry(8) calls filees-onboard take and then exactly one filees-mail(8) send .</p>
@@ -164,6 +169,7 @@ filees-onboard take &lt; invitation.json</code></pre>
 <article class="cli-tool" id="filees-mail">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-mail(8)</h2>
+<p class="man-full"><a href="../man/filees-mail.8.html">Full page: filees-mail(8)</a></p>
 <p class="cli-nd">submit one FileES outbox entry or drain Public Shares mail</p>
 <h3>Role</h3>
 <p>send claims one pending control-plane mail job and submits it through the configured SMTP relay. It is the one-shot drain used after filees-admin(8) ticket actions and after filees-bootstrap-entry(8) . Onboarding, realm-removal and data-erasure jobs share this path.</p>
@@ -184,6 +190,7 @@ filees-mail [-config path] public-loop</code></pre>
 <article class="cli-tool" id="filees-bootstrap-entry">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-bootstrap-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-bootstrap-entry.8.html">Full page: filees-bootstrap-entry(8)</a></p>
 <p class="cli-nd">public FileES onboarding forced command</p>
 <h3>Role</h3>
 <p>filees-bootstrap-entry is the sshd(8) forced command for _filees-onboard . It accepts no arguments. The compiled-in bootstrap public key is a public capability: it can only reach this command, and forwarding is disabled.</p>
@@ -202,6 +209,7 @@ filees-bootstrap-entry</code></pre>
 <article class="cli-tool" id="filees-entry">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-entry.8.html">Full page: filees-entry(8)</a></p>
 <p class="cli-nd">FileES OTP-tunnel forced command</p>
 <h3>Role</h3>
 <p>filees-entry is the sshd(8) forced command for _filees-tunnel . It accepts only the literal remote command filees tunnel-v1 .</p>
@@ -219,6 +227,7 @@ filees tunnel-v1</code></pre>
 <article class="cli-tool" id="filees-ssh-auth">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-ssh-auth(8)</h2>
+<p class="man-full"><a href="../man/filees-ssh-auth.8.html">Full page: filees-ssh-auth(8)</a></p>
 <p class="cli-nd">BSD Authentication style for the FileES OTP tunnel</p>
 <h3>Role</h3>
 <p>filees-ssh-auth is installed as /usr/libexec/auth/login_-filees with owner _filees-state , group auth and mode 4550. sshd(8) invokes it for _filees-tunnel keyboard-interactive authentication.</p>
@@ -236,6 +245,7 @@ filees tunnel-v1</code></pre>
 <article class="cli-tool" id="filees-client-entry">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-client-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-client-entry.8.html">Full page: filees-client-entry(8)</a></p>
 <p class="cli-nd">FileES per-key dispatcher for svnserve and control-plane tickets</p>
 <h3>Role</h3>
 <p>filees-client-entry is the set-id dispatcher installed for installation-key sessions. sshd(8) selects the account _filees-client or _filees-data and the per-key command= line. filees-client-entry accepts exactly two original commands: Tunnel-mode Subversion. One authenticated control-plane ticket, then filees-worker(8) .</p>
@@ -255,6 +265,7 @@ filees control-v1</code></pre>
 <article class="cli-tool" id="filees-worker">
 <span class="cli-kind">Forced command, plus two cron verbs you schedule yourself</span>
 <h2>filees-worker(8)</h2>
+<p class="man-full"><a href="../man/filees-worker.8.html">Full page: filees-worker(8)</a></p>
 <p class="cli-nd">execute one authenticated FileES server action and exit</p>
 <h3>Role</h3>
 <p>filees-worker is exec'd once per authenticated deploy or control-plane ticket. It is root : wheel mode 0555 and has no resident service. The next operation execs the current image.</p>
@@ -288,6 +299,7 @@ filees-worker mobile-finish operation-id client-id</code></pre>
 <article class="cli-tool" id="filees-service-wc-corrector">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-service-wc-corrector(8)</h2>
+<p class="man-full"><a href="../man/filees-service-wc-corrector.8.html">Full page: filees-service-wc-corrector(8)</a></p>
 <p class="cli-nd">repair ownership of the FileES service working copy</p>
 <h3>Role</h3>
 <p>filees-service-wc-corrector is a tiny set-id-root helper. It accepts no arguments. It walks the configured service working copy and the shared .service-wc.lock , and runs lchown on any path whose UID or GID is not the state account. It never changes modes or content.</p>
@@ -303,9 +315,29 @@ filees-worker mobile-finish operation-id client-id</code></pre>
 <pre><code># no arguments; invoked by filees-client-entry before a ticket
 filees-service-wc-corrector</code></pre>
 </article>
+
+<article class="cli-tool" id="filees-serving-state">
+<span class="cli-kind">Forced command — filees-client-entry starts it; you do not type flags</span>
+<h2>filees-serving-state(8)</h2>
+<p class="man-full"><a href="../man/filees-serving-state.8.html">Full page: filees-serving-state(8)</a></p>
+<p class="cli-nd">answer one FileES reservation and server-state query</p>
+<h3>Role</h3>
+<p>filees-serving-state is the one-shot worker behind the filees reservation-v1 forced command. filees-client-entry(8) authenticates the key and executes it with that key's client ID. It reads one JSON request of at most 4 KiB and writes one JSON result: the Subversion locks of a repository, whether the repository is still active, or per-object lock ownership for automatic locking.</p>
+<p>A client may ask only about repositories active in its own server-issued view; any other request fails without an answer. When a live query fails, the result carries the last stored answer marked stale, or is marked unknown.</p>
+<p>The installed image is root : wheel mode 0555.</p>
+<h3>Invocation</h3>
+<pre><code>filees-serving-state [-config path] client-id</code></pre>
+<h3>Flags and verbs</h3>
+<p><code>-config path</code> names another absolute server.json; the default is /etc/filees/server.json.</p>
+<h3>Examples</h3>
+<p>No EXAMPLES section in mandoc; the invocation below is taken from the synopsis.</p>
+<pre><code># executed by filees-client-entry for "filees reservation-v1"
+filees-serving-state &lt;client-id&gt; &lt; request.json</code></pre>
+</article>
 <article class="cli-tool" id="filees-install">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-install(8)</h2>
+<p class="man-full"><a href="../man/filees-install.8.html">Full page: filees-install(8)</a></p>
 <p class="cli-nd">update FileES server binaries from a signed FILEES-BIN repository</p>
 <h3>Role</h3>
 <p>filees-install updates installed FileES server binaries from a separate binary release repository. It is not a package manager and does not create a local Subversion working copy. It fetches channel and manifest documents with svn cat , verifies the OpenBSD signify signature against a public key embedded at build time, checks SHA-256 hashes, records a durable pre-image journal, and replaces targets atomically.</p>
@@ -340,6 +372,7 @@ $ doas filees-install --apply</code></pre>
 <article class="cli-tool" id="filees-rotate">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-rotate(8)</h2>
+<p class="man-full"><a href="../man/filees-rotate.8.html">Full page: filees-rotate(8)</a></p>
 <p class="cli-nd">perform an explicit SVN FSFS generation change</p>
 <h3>Role</h3>
 <p>filees-rotate replaces a hot repository with a new generation. The new generation has a new UUID and starts at revision 1 equal to a complete dump of the old HEAD, including versioned properties such as svn:needs-lock . It inherits conf/ and hooks/ , is verified with svnadmin and a tree comparison, then swapped atomically. The old generation becomes a frozen, commit-blocked FSFS archive. Existing working copies do not survive the UUID change.</p>
@@ -364,6 +397,7 @@ $ doas filees-install --apply</code></pre>
 <article class="cli-tool" id="filees-public-authority">
 <span class="cli-kind">Service — started by rc.d, not a one-shot typed verb</span>
 <h2>filees-public-authority(8)</h2>
+<p class="man-full"><a href="../man/filees-public-authority.8.html">Full page: filees-public-authority(8)</a></p>
 <p class="cli-nd">FileES Public Shares backchannel and recipient OTP</p>
 <h3>Role</h3>
 <p>filees-public-authority is the authoritative side of Public Shares. It listens on a Unix socket or loopback TCP. It never terminates TLS. It fetches leaves with svnlook and pushes them to filees-links(8) .</p>
@@ -383,6 +417,7 @@ filees-public-authority --config /etc/filees/server.json</code></pre>
 <article class="cli-tool" id="filees-links">
 <span class="cli-kind">Service — started by rc.d, not a one-shot typed verb</span>
 <h2>filees-links(8)</h2>
+<p class="man-full"><a href="../man/filees-links.8.html">Full page: filees-links(8)</a></p>
 <p class="cli-nd">public FastCGI surface for FileES shares</p>
 <h3>Role</h3>
 <p>filees-links serves the credential-free public HTML and file/ZIP downloads. It reads filees-public-links(5) , not filees.conf(5) . It owns only a temporary cache. It asks filees-public-authority(8) for each leaf.</p>
@@ -402,6 +437,7 @@ filees-links --config /etc/filees/public-links.json</code></pre>
 <article class="cli-tool" id="filees-mobile-v1">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-mobile-v1(8)</h2>
+<p class="man-full"><a href="../man/filees-mobile-v1.8.html">Full page: filees-mobile-v1(8)</a></p>
 <p class="cli-nd">FileES mobile protocol entry</p>
 <h3>Role</h3>
 <p>filees-mobile-v1 is the set-id entry for _filees-mobile . The installed image is _filees-state : _filees-access mode 4550, the same class as filees-client-entry(8) .</p>
@@ -419,6 +455,7 @@ filees-mobile-v1</code></pre>
 <article class="cli-tool" id="filees-recovery-entry">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-recovery-entry(8)</h2>
+<p class="man-full"><a href="../man/filees-recovery-entry.8.html">Full page: filees-recovery-entry(8)</a></p>
 <p class="cli-nd">serve FileES realm-removal archives for one operation</p>
 <h3>Role</h3>
 <p>filees-recovery-entry is the set-id session entry for _filees-recovery . A second image of the same binary is installed as /usr/local/libexec/filees/filees-recovery-authorize owner root , group wheel , mode 0555 because sshd(8) requires every AuthorizedKeysCommand component to be root-owned. Key lookup and session service are therefore distinct executables.</p>
@@ -439,5 +476,5 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 
 <nav class="page-nav"><a href="security.html">← Security</a><span></span></nav>
 </div></div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-09-14</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-09-29</span></footer>
 </main></body></html>

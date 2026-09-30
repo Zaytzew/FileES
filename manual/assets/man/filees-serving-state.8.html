@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-serving-state.8 sha256:55668e62c9b03bf25c009f45f0d547a4154de8761303d61ea9061a7c64a7f829">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-serving-state(8) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-SERVING-STATE(8)</span>
+  <span class="head-vol">System Manager's Manual</span>
+  <span class="head-rtitle">FILEES-SERVING-STATE(8)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees-serving-state</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">answer one FileES reservation and
+    server-state query</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-serving-state</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <var class="Ar">client-id</var></td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees-serving-state</code> is the one-shot
+    worker behind the <code class="Cm">filees reservation-v1</code> forced
+    command.
+    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
+    section 8">filees-client-entry(8)</a> authenticates the key, unveils what
+    the worker needs and executes <code class="Nm">filees-serving-state</code>
+    with the client ID of that key. An operator does not run it.</p>
+<p class="Pp">It reads one JSON request of at most 4 KiB from standard input and
+    writes one JSON result to standard output. The request schema selects the
+    answer:</p>
+<dl class="Bl-tag">
+  <dt id="filees.reservation/v1"><a class="permalink" href="#filees.reservation/v1"><code class="Cm">filees.reservation/v1</code></a></dt>
+  <dd>The Subversion locks of one repository, as reported by
+      <span class="Xr">svn(1)</span>.</dd>
+  <dt id="filees.reservation/v2"><a class="permalink" href="#filees.reservation/v2"><code class="Cm">filees.reservation/v2</code></a></dt>
+  <dd>The same for one repository, together with whether that repository is
+      still active, or the server ID and display name when no repository is
+      named.</dd>
+  <dt id="filees.reservation/v3"><a class="permalink" href="#filees.reservation/v3"><code class="Cm">filees.reservation/v3</code></a></dt>
+  <dd>Per-object lock ownership of one repository for automatic locking,
+      refreshed under the service working copy lock.</dd>
+</dl>
+<p class="Pp">A client may ask only about repositories that are active in its
+    own server-issued view. Any other request fails without an answer. A
+    <code class="Cm">filees.reservation/v2</code> request about a repository
+    withdrawn from the client's realm is answered as deleted and the repository
+    is not queried.</p>
+<p class="Pp">The last known lock state is kept under
+    <span class="Pa">reservation-projection</span> in the repository results
+    root. When a live query fails, the result carries the last stored answer
+    marked stale, or is marked unknown when there is none.</p>
+<p class="Pp">The worker keeps its own
+    <span class="Xr">pledge(2)</span> promises narrower than its parent's and does not call
+    <span class="Xr">unveil(2)</span> itself; the table is inherited from
+    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
+    section 8">filees-client-entry(8)</a>.</p>
+<p class="Pp" id="root">The installed image is
+    <a class="permalink" href="#root"><b class="Sy">root</b></a>:
+    <a class="permalink" href="#wheel"><b class="Sy" id="wheel">wheel</b></a>
+    mode 0555 in <span class="Pa">/usr/local/libexec/filees</span>.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/server.json</span></dt>
+  <dd>Default configuration; <code class="Fl">-config</code> names another
+      absolute path.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h2>
+<p class="Pp"><span class="Xr">sysexits(3)</span> values as in
+    <a class="Xr" href="filees-admin.8.html" aria-label="filees-admin, section
+    8">filees-admin(8)</a>.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><span class="Xr">svn(1)</span>,
+    <a class="Xr" href="filees.conf.5.html" aria-label="filees.conf, section
+    5">filees.conf(5)</a>,
+    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
+    section 8">filees-client-entry(8)</a>,
+    <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker, section
+    8">filees-worker(8)</a></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES-SERVING-STATE(8)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

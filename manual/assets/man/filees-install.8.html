@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-install.8 sha256:2db8f29c922eec68178fbd2af1b13f85a83d58a2e685bb82c712c179e706bf2b">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-install(8) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-INSTALL(8)</span>
+  <span class="head-vol">System Manager's Manual</span>
+  <span class="head-rtitle">FILEES-INSTALL(8)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees-install</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">update FileES server binaries from a
+    signed FILEES-BIN repository</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-install</code></td>
+    <td>[<code class="Fl">-c</code> <var class="Ar">file</var>]
+      [<code class="Fl">--check-config</code>] [<code class="Fl">--check</code>
+      [<var class="Ar">release</var>]] [<code class="Fl">--dry-run</code>
+      [<var class="Ar">release</var>]] [<code class="Fl">--apply</code>
+      [<var class="Ar">release</var>]] [<code class="Fl">--adopt</code>
+      [<var class="Ar">release</var>]] [<code class="Fl">--rollback</code>]
+      [<code class="Fl">--revert-to</code> <var class="Ar">release</var>]
+      [<code class="Fl">--purge</code>] [<code class="Fl">--wipe-state</code>]
+      [<code class="Fl">--allow-rollback</code>] [<code class="Fl">--yes</code>]
+      [<code class="Fl">--talkative</code>]</td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees-install</code> updates installed FileES
+    server binaries from a separate binary release repository. It is not a
+    package manager and does not create a local Subversion working copy. It
+    fetches channel and manifest documents with <code class="Cm">svn cat</code>,
+    verifies the <span class="Ux">OpenBSD</span> signify signature against a
+    public key embedded at build time, checks SHA-256 hashes, records a durable
+    pre-image journal, and replaces targets atomically.</p>
+<p class="Pp">Manifest schema v2 signs owner, group and full mode, including
+    set-id bits. Install and rollback restore content, UID, GID and mode. The
+    apply lock is exclusive; a <code class="Dv">SIGSTOP</code> then
+    <code class="Dv">SIGKILL</code> chaos test on an unlocked earlier build
+    panicked the <span class="Ux">OpenBSD</span> kernel.</p>
+<p class="Pp"><code class="Fl">--adopt</code> records an existing installation
+    as the managed baseline. It changes no files and accepts the host only when
+    every managed path matches the signed hash, owner, group and mode.</p>
+<p class="Pp">A release older than the recorded high-water mark is refused
+    unless <code class="Fl">--allow-rollback</code> is also given. That flag is
+    a deliberate administrative act, never the ordinary update.</p>
+<p class="Pp">Operator configurations are not replaced by examples. Explicit
+    signed configuration contracts may trigger journalled, selective migrations
+    of <span class="Pa">/etc/filees/server.json</span> and
+    <span class="Pa">/etc/filees/public-links.json</span>. Unknown fields and
+    custom storage paths are preserved.</p>
+<p class="Pp">The <code class="Ic">public_downloads_dir</code> key in the
+    <code class="Ic">install</code> section chooses the base for migrating
+    legacy Public Shares temporary roots. Default:
+    <span class="Pa">/var/filees-downloads</span>. Authority staging and
+    frontend cache remain independently configurable in their JSON files. Apply
+    checks capacity and prepares private directories; check and dry-run do not
+    provision them. Existing metadata is not silently corrected and old caches
+    are not deleted.</p>
+<p class="Pp">An older running installer must first update its binary with the
+    existing config, then be invoked again after adding the new key. Review the
+    migration plan and apply the same signed release before restarting Public
+    Shares. The release includes examples/public-storage-migration.md with this
+    bridge.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h2>
+<dl class="Bl-tag">
+  <dt id="c"><a class="permalink" href="#c"><code class="Fl">-c</code></a>
+    <var class="Ar">file</var></dt>
+  <dd>Read the configuration described under
+      <a class="Sx" href="#CONFIGURATION">CONFIGURATION</a> from
+      <var class="Ar">file</var>. The default is
+      <span class="Pa">/etc/filees/install.conf</span>.</dd>
+  <dt id="check-config"><a class="permalink" href="#check-config"><code class="Fl">--check-config</code></a></dt>
+  <dd>Print the resolved configuration and exit.</dd>
+  <dt id="check"><a class="permalink" href="#check"><code class="Fl">--check</code></a></dt>
+  <dd>Fetch the channel and print the install plan without downloading
+    payloads.</dd>
+  <dt id="dry-run"><a class="permalink" href="#dry-run"><code class="Fl">--dry-run</code></a></dt>
+  <dd>Build the full plan, including config-contract drift, without
+    installing.</dd>
+  <dt id="apply"><a class="permalink" href="#apply"><code class="Fl">--apply</code></a></dt>
+  <dd>Download, verify, stage, journal and install the channel head or
+      <var class="Ar">release</var>.</dd>
+  <dt id="adopt"><a class="permalink" href="#adopt"><code class="Fl">--adopt</code></a></dt>
+  <dd>Verify and adopt without modification.</dd>
+  <dt id="rollback"><a class="permalink" href="#rollback"><code class="Fl">--rollback</code></a></dt>
+  <dd>Restore the previous locally installed release from the journalled
+      pre-image.</dd>
+  <dt id="revert-to"><a class="permalink" href="#revert-to"><code class="Fl">--revert-to</code></a>
+    <var class="Ar">release</var></dt>
+  <dd>Install a named release such as <code class="Cm">r1042</code>.</dd>
+  <dt id="purge"><a class="permalink" href="#purge"><code class="Fl">--purge</code></a></dt>
+  <dd>Remove files this installer manages. Keeps
+      <span class="Pa">/var/filees</span> and
+      <span class="Pa">/etc/filees</span> unless
+      <code class="Fl">--wipe-state</code> is also given.</dd>
+  <dt id="allow-rollback"><a class="permalink" href="#allow-rollback"><code class="Fl">--allow-rollback</code></a></dt>
+  <dd>Permit installing a release older than the local high-water mark.</dd>
+  <dt id="yes"><a class="permalink" href="#yes"><code class="Fl">--yes</code></a></dt>
+  <dd>Answer yes to interactive prompts.</dd>
+  <dt id="talkative"><a class="permalink" href="#talkative"><code class="Fl">--talkative</code></a></dt>
+  <dd>Print &#x2018;<code class="Li">[SECURITY]</code>&#x2019; unveil and pledge
+      diagnostics.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h2>
+<p class="Pp"><span class="Pa">/etc/filees/install.conf</span> is a plain
+    <code class="Ic">section.key = value</code> file. Blank lines and lines
+    beginning with &#x2018;<code class="Li">#</code>&#x2019; are ignored. An
+    unknown key is a hard error naming the line, so an obsolete setting stops
+    the tool rather than being silently ignored. Booleans accept
+    <code class="Cm">1</code>, <code class="Cm">yes</code>,
+    <code class="Cm">true</code>, <code class="Cm">on</code> and their
+    negatives. Every path must be absolute.</p>
+<dl class="Bl-tag">
+  <dt id="repo.url"><a class="permalink" href="#repo.url"><code class="Ic">repo.url</code></a></dt>
+  <dd>Base URL of the FILEES-BIN release repository. A trailing slash is
+      trimmed. Schemes accepted: <code class="Cm">svn</code>,
+      <code class="Cm">svn+ssh</code>, <code class="Cm">https</code>.</dd>
+  <dt id="repo.channel"><a class="permalink" href="#repo.channel"><code class="Ic">repo.channel</code></a></dt>
+  <dd>Release channel, default <code class="Cm">stable</code>.</dd>
+  <dt id="repo.platform"><a class="permalink" href="#repo.platform"><code class="Ic">repo.platform</code></a></dt>
+  <dd>Target triple, default the host's own
+    <code class="Ic">GOOS-GOARCH</code>.</dd>
+  <dt id="repo.svn"><a class="permalink" href="#repo.svn"><code class="Ic">repo.svn</code></a></dt>
+  <dd><span class="Xr">svn(1)</span>
+      binary, default <code class="Cm">svn</code> from
+      <code class="Ev">PATH</code>.</dd>
+  <dt id="local.state_dir"><a class="permalink" href="#local.state_dir"><code class="Ic">local.state_dir</code></a></dt>
+  <dd>Recorded release, high-water mark and journal. Default
+      <span class="Pa">/var/filees/install-state</span>.</dd>
+  <dt id="local.stage_dir"><a class="permalink" href="#local.stage_dir"><code class="Ic">local.stage_dir</code></a></dt>
+  <dd>Staging for fetched artifacts, default
+      <span class="Pa">/var/filees/install-stage</span>.</dd>
+  <dt id="local.backup_dir"><a class="permalink" href="#local.backup_dir"><code class="Ic">local.backup_dir</code></a></dt>
+  <dd>Pre-image copies used by rollback, default
+      <span class="Pa">/var/filees/install-backup</span>.</dd>
+  <dt id="local.lock_path"><a class="permalink" href="#local.lock_path"><code class="Ic">local.lock_path</code></a></dt>
+  <dd>Exclusive apply lock, default
+      <span class="Pa">/var/run/filees-install.lock</span>.</dd>
+  <dt id="install.sbin_dir"><a class="permalink" href="#install.sbin_dir"><code class="Ic">install.sbin_dir</code></a>,
+    <code class="Ic">install.libexec_dir</code></dt>
+  <dd>Operator commands and short-lived workers. Defaults
+      <span class="Pa">/usr/local/sbin</span> and
+      <span class="Pa">/usr/local/libexec</span>.</dd>
+  <dt id="install.sysconf_dir"><a class="permalink" href="#install.sysconf_dir"><code class="Ic">install.sysconf_dir</code></a></dt>
+  <dd>Configuration root, default <span class="Pa">/etc/filees</span>.</dd>
+  <dt id="install.sshd_conf_dir"><a class="permalink" href="#install.sshd_conf_dir"><code class="Ic">install.sshd_conf_dir</code></a>,
+    <code class="Ic">install.ssh_keys_dir</code>,
+    <code class="Ic">install.login_conf_dir</code></dt>
+  <dd>Host integration directories. Defaults
+      <span class="Pa">/etc/ssh/sshd_config.d</span>,
+      <span class="Pa">/etc/ssh</span> and
+      <span class="Pa">/etc/login.conf.d</span>.</dd>
+  <dt id="install.data_dir"><a class="permalink" href="#install.data_dir"><code class="Ic">install.data_dir</code></a></dt>
+  <dd>Server state root, default <span class="Pa">/var/filees</span>.</dd>
+  <dt id="install.public_downloads_dir"><a class="permalink" href="#install.public_downloads_dir"><code class="Ic">install.public_downloads_dir</code></a></dt>
+  <dd>Public Shares storage root, default
+      <span class="Pa">/var/filees-downloads</span>. Its parent must be
+      root-owned and not group- or other-writable; the tool refuses otherwise,
+      because this directory holds files served to the public.</dd>
+  <dt id="policy.default_action"><a class="permalink" href="#policy.default_action"><code class="Ic">policy.default_action</code></a></dt>
+  <dd>Action taken when the command line names none:
+      <code class="Cm">check</code> (default), <code class="Cm">dry-run</code>
+      or <code class="Cm">apply</code>.</dd>
+  <dt id="policy.config_drift"><a class="permalink" href="#policy.config_drift"><code class="Ic">policy.config_drift</code></a></dt>
+  <dd>What a locally modified managed configuration file does:
+      <code class="Cm">block</code> (default), <code class="Cm">warn</code> or
+      <code class="Cm">ignore</code>.</dd>
+  <dt id="policy.orphan_files"><a class="permalink" href="#policy.orphan_files"><code class="Ic">policy.orphan_files</code></a></dt>
+  <dd>What an installed file absent from the new manifest does:
+      <code class="Cm">keep</code> (default), <code class="Cm">warn</code> or
+      <code class="Cm">remove</code>.</dd>
+  <dt id="policy.interactive"><a class="permalink" href="#policy.interactive"><code class="Ic">policy.interactive</code></a></dt>
+  <dd>Ask before applying. Default on; <code class="Fl">--yes</code> overrides
+      it for one run.</dd>
+  <dt id="policy.require_hash"><a class="permalink" href="#policy.require_hash"><code class="Ic">policy.require_hash</code></a></dt>
+  <dd>Refuse an artifact whose SHA-256 does not match the manifest. Default on.
+      Turning it off is not an ordinary operation.</dd>
+  <dt id="policy.verify_signature"><a class="permalink" href="#policy.verify_signature"><code class="Ic">policy.verify_signature</code></a></dt>
+  <dd>Verify the release envelope against the key compiled into this binary.
+      Default on.</dd>
+  <dt id="policy.talkative"><a class="permalink" href="#policy.talkative"><code class="Ic">policy.talkative</code></a></dt>
+  <dd>Print sandbox diagnostics. Default off.</dd>
+  <dt id="security.signify"><a class="permalink" href="#security.signify"><code class="Ic">security.signify</code></a></dt>
+  <dd>Accepted and ignored. Signature verification moved in process on
+      2026-09-09, so no external program is named any more. The key is still
+      accepted so that a deployed configuration keeps loading.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/install.conf</span></dt>
+  <dd>Updater configuration.</dd>
+  <dt><span class="Pa">/var/filees/install-state</span></dt>
+  <dd>Recorded release, high-water mark and journal.</dd>
+  <dt><span class="Pa">/var/run/filees-install.lock</span></dt>
+  <dd>Exclusive apply lock.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h2>
+<p class="Pp">The <code class="Nm">filees-install</code> utility exits&#x00A0;0
+    on success, and&#x00A0;&gt;0 if an error occurs.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<p class="Pp">Adopt a host whose files already match a signed baseline
+  release:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas filees-install --adopt r1042</pre>
+</div>
+<p class="Pp">Plan and apply the configured channel:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas filees-install --dry-run
+$ doas filees-install --apply</pre>
+</div>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><span class="Xr">signify(1)</span>, <span class="Xr">svn(1)</span>, <a class="Xr" href="filees.7.html" aria-label="filees,
+    section 7">filees(7)</a></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES-INSTALL(8)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

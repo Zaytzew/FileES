@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-admin.8 sha256:0158457d613e43d1a291f255ff994094760e7e69de4521aa8e02a162753b500b">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-admin(8) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-ADMIN(8)</span>
+  <span class="head-vol">System Manager's Manual</span>
+  <span class="head-rtitle">FILEES-ADMIN(8)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees-admin</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">FileES administrative tickets,
+    revocation, repository repair and erasure closure</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">ticket create</code> <var class="Ar">mailbox</var>
+      [<code class="Fl">--ttl</code> <var class="Ar">duration</var>]
+      [<code class="Fl">--join-realm-alias</code>
+      <var class="Ar">alias</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">ticket resend</code> <code class="Fl">--ticket-id</code>
+      <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">ticket revoke</code> <code class="Fl">--ticket-id</code>
+      <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">ticket list</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">operation inspect</code>
+      <code class="Fl">--operation-id</code> <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">client revoke</code> <code class="Fl">--client-id</code>
+      <var class="Ar">uuid</var> [<code class="Fl">--reason</code>
+      <var class="Ar">text</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">client revoke-realm</code>
+      <code class="Fl">--realm-id</code> <var class="Ar">uuid</var>
+      [<code class="Fl">--reason</code> <var class="Ar">text</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo transfer-owner</code>
+      <code class="Fl">--repo-id</code> <var class="Ar">uuid</var>
+      <code class="Fl">--realm-id</code> <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo check-state</code>
+      [<code class="Fl">--realm-id</code> <var class="Ar">uuid</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo prune</code> [<code class="Fl">--realm-id</code>
+      <var class="Ar">uuid</var>] [<code class="Fl">--older-than</code>
+      <var class="Ar">duration</var>] [<code class="Fl">--apply</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo activate</code> <code class="Fl">--repo-id</code>
+      <var class="Ar">uuid</var> <code class="Fl">--realm-id</code>
+      <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo rotate</code> <code class="Fl">--repo-id</code>
+      <var class="Ar">uuid</var> [<code class="Fl">--size</code>
+      <var class="Ar">size</var>] [<code class="Fl">--age-days</code>
+      <var class="Ar">days</var>] [<code class="Fl">--force</code>]
+      [<code class="Fl">--dry-run</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo lock-guards</code> <code class="Fl">--repo-id</code>
+      <var class="Ar">uuid</var> <code class="Fl">--owner-realm-id</code>
+      <var class="Ar">uuid</var> [<code class="Fl">--apply</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">repo reap-passports</code>
+      <code class="Fl">--repo-id</code> <var class="Ar">uuid</var>
+      <code class="Fl">--owner-realm-id</code> <var class="Ar">uuid</var>
+      [<code class="Fl">--path</code> <var class="Ar">relative</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">share list</code> [<code class="Fl">--json</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">share delete</code> <code class="Fl">--channel-id</code>
+      <var class="Ar">uuid</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">erasure complete</code>
+      <code class="Fl">--operation-id</code> <var class="Ar">uuid</var>
+      [<code class="Fl">--partially-retained</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td><code class="Cm">version</code>
+      [<code class="Fl">--install-config</code> <var class="Ar">path</var>]</td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees-admin</code> is the operator command for
+    onboarding tickets and a small set of fail-closed administrative actions. It
+    writes structured JSON to standard output and diagnostics to standard error.
+    It must run with effective user
+    <a class="permalink" href="#_filees-state"><b class="Sy" id="_filees-state">_filees-state</b></a>.
+    Creating a ticket as root produces a root-owned mode 0600 file that the
+    set-id onboarding entry intentionally cannot read.</p>
+<p class="Pp" id="update_channel"><code class="Cm">version</code> reports the
+    binary build version (including its SVN revision) and platform. Aliases are
+    <code class="Fl">--version</code> and <code class="Fl">-version</code>. No
+    service identity transition or server configuration is required, so the
+    binary can be identified even when <span class="Pa">server.json</span> is
+    suspect. It also reports
+    <a class="permalink" href="#update_channel"><b class="Sy">update_channel</b></a>
+    from <span class="Pa">/etc/filees/install.conf</span> and
+    <a class="permalink" href="#recorded_release"><b class="Sy" id="recorded_release">recorded_release</b></a>
+    from the installer's state directory. Use
+    <code class="Fl">--install-config</code> after the version command to select
+    a nonstandard installer configuration. Unavailable metadata is reported as
+    unknown without hiding the build version. The update channel is a local
+    subscription setting, not a label baked into the binary; promoting an
+    unchanged release does not require rebuilding it. The recorded release does
+    not prove that resident services have restarted.</p>
+<p class="Pp">Normal repository create, grants, public shares and realm removal
+    are desktop control-plane operations. The <code class="Cm">repo
+    check-state</code> and <code class="Cm">repo prune</code> verbs are
+    exceptional operator recovery tools for abandoned repository creation state,
+    not an alternate repository-management interface.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="COMMANDS"><a class="permalink" href="#COMMANDS">COMMANDS</a></h2>
+<dl class="Bl-tag">
+  <dt id="ticket"><a class="permalink" href="#ticket"><code class="Cm">ticket
+    create</code></a></dt>
+  <dd>Issue a one-time invitation to <var class="Ar">mailbox</var> and send it
+      immediately. The mailbox must come before any flag. Without
+      <code class="Fl">--join-realm-alias</code> the ticket authorises a new
+      realm. With the flag the server resolves the immutable alias now and
+      stores the approved realm ID; the client never submits that ID. The
+      invitation capability is not printed.</dd>
+  <dt id="ticket~2"><a class="permalink" href="#ticket~2"><code class="Cm">ticket
+    resend</code></a></dt>
+  <dd>Replace a failed delivery capability without changing recipient or
+    TTL.</dd>
+  <dt id="ticket~3"><a class="permalink" href="#ticket~3"><code class="Cm">ticket
+    revoke</code></a></dt>
+  <dd>Delete an unused ticket. A claimed ticket has already been replaced by an
+      operation bundle.</dd>
+  <dt id="ticket~4"><a class="permalink" href="#ticket~4"><code class="Cm">ticket
+    list</code></a></dt>
+  <dd>List remaining tickets. Names are
+      <a class="permalink" href="#sha256"><code class="Fn" id="sha256">sha256</code></a>(<var class="Fa">mailbox</var>)
+      so the file name does not reveal the address.</dd>
+  <dt id="operation"><a class="permalink" href="#operation"><code class="Cm">operation
+    inspect</code></a></dt>
+  <dd>Show one onboarding operation.</dd>
+  <dt id="client"><a class="permalink" href="#client"><code class="Cm">client
+    revoke</code></a></dt>
+  <dd>Write a durable <code class="Cm">revoking</code> record, drop generated
+      SSH/SVN access, then commit the revoked client. An identical retry is
+      idempotent; a different reason is rejected.</dd>
+  <dt id="client~2"><a class="permalink" href="#client~2"><code class="Cm">client
+    revoke-realm</code></a></dt>
+  <dd>Revoke every installation of a realm with the same sequence.</dd>
+  <dt id="repo"><a class="permalink" href="#repo"><code class="Cm">repo
+    transfer-owner</code></a></dt>
+  <dd>Change <code class="Ic">owner_realm_id</code> and regenerate data-authz.
+      Existing grants issued by the previous owner are not touched.</dd>
+  <dt id="repo~2"><a class="permalink" href="#repo~2"><code class="Cm">repo
+    check-state</code></a></dt>
+  <dd>Read repository-creation backend records and correlate them with canonical
+      authority, FSFS/staging presence and, for a possible abandoned initial
+      creation, <span class="Xr">svnlook(1)</span> youngest revision. Normal active repositories are
+      omitted. The optional <code class="Fl">--realm-id</code> limits the JSON
+      report to one realm. This command does not remove repositories.</dd>
+  <dt id="repo~3"><a class="permalink" href="#repo~3"><code class="Cm">repo
+    prune</code></a></dt>
+  <dd>Report the same abandoned-creation candidates as <code class="Cm">repo
+      check-state</code>. Without <code class="Fl">--apply</code> it is a dry
+      run and changes nothing. <code class="Fl">--older-than</code> defaults to
+      1h and prevents a recent creation attempt from being selected. With
+      <code class="Fl">--apply</code>, only records marked
+      <code class="Ic">prunable</code> and old enough are removed. For a
+      published candidate the canonical state must be
+      <code class="Ic">initializing</code>, there must be no staging tree, and
+      FSFS must be absent or exactly r0. Before removal the command durably
+      records <code class="Ic">prune_pending</code>, blocks commits and checks
+      the youngest revision again. An active repository, an initializing
+      repository at r1 or later, and an ordinary deletion tombstone are never
+      removed by this path.</dd>
+  <dt id="repo~4"><a class="permalink" href="#repo~4"><code class="Cm">repo
+    activate</code></a></dt>
+  <dd>Repair a repository whose <code class="Cm">CREATE_REPOSITORY</code>
+      succeeded and whose initial import reached the backend, but whose
+      <code class="Cm">INITIAL_COMMIT</code> control ticket never landed, so the
+      canonical record stayed <code class="Ic">initializing</code>. Clients keep
+      projecting such a repository as not yet ready and refuse to attach, while
+      the FSFS repository is usable and may already carry commits. Requires
+      <code class="Fl">--repo-id</code> and <code class="Fl">--realm-id</code>.
+      Resuming from the client is possible only while its local provisioning
+      operation survives; once that file is gone this command is the only way
+      out.</dd>
+  <dt id="repo~5"><a class="permalink" href="#repo~5"><code class="Cm">repo
+    rotate</code></a></dt>
+  <dd>Perform an FSFS generation change on one repository, with the same
+      per-command sandbox profile every other administrative operation gets, and
+      with paths taken from the server configuration rather than from
+      <var class="Ar">argv</var>. Requires <code class="Fl">--repo-id</code>.
+      Rotation happens when the packed repository reaches
+      <code class="Fl">--size</code> (default 25GiB) or its oldest revision is
+      older than <code class="Fl">--age-days</code> (default 365);
+      <code class="Fl">--force</code> rotates regardless of both triggers and
+      <code class="Fl">--dry-run</code> evaluates them and prints the decision
+      without rotating. The standalone
+      <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate,
+      section 8">filees-rotate(8)</a> takes its paths from the command line and
+      applies no sandbox; prefer this command.</dd>
+  <dt id="repo~6"><a class="permalink" href="#repo~6"><code class="Cm">repo
+    lock-guards</code></a></dt>
+  <dd>Report, and with <code class="Fl">--apply</code> install, the repository
+      hooks that guard locking. Existing hooks are never overwritten. Requires
+      <code class="Fl">--repo-id</code> and
+      <code class="Fl">--owner-realm-id</code>.</dd>
+  <dt id="repo~7"><a class="permalink" href="#repo~7"><code class="Cm">repo
+    reap-passports</code></a></dt>
+  <dd>Remove expired passports from one repository. Requires
+      <code class="Fl">--repo-id</code> and
+      <code class="Fl">--owner-realm-id</code>; <code class="Fl">--path</code>
+      addresses a single legacy expired passport by its relative path.</dd>
+  <dt id="share"><a class="permalink" href="#share"><code class="Cm">share
+    list</code></a></dt>
+  <dd>List Public Shares channels. <code class="Fl">--json</code> emits the
+      listing as JSON instead of a table.</dd>
+  <dt id="share~2"><a class="permalink" href="#share~2"><code class="Cm">share
+    delete</code></a></dt>
+  <dd>Delete one Public Shares channel, addressed by
+      <code class="Fl">--channel-id</code> as printed by <code class="Cm">share
+      list</code>.</dd>
+  <dt id="erasure"><a class="permalink" href="#erasure"><code class="Cm">erasure
+    complete</code></a></dt>
+  <dd>Close a data-erasure request after the operator has verified backup
+      retention. <code class="Fl">--partially-retained</code> records that
+      policy still requires some copies.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h2>
+<p class="Pp"><code class="Nm">filees-admin</code> uses
+    <span class="Xr">sysexits(3)</span> values:</p>
+<dl class="Bl-tag Bl-compact">
+  <dt>0</dt>
+  <dd>success</dd>
+  <dt>64</dt>
+  <dd>bad arguments</dd>
+  <dt>65</dt>
+  <dd>input data error</dd>
+  <dt>69</dt>
+  <dd>resource unavailable</dd>
+  <dt>70</dt>
+  <dd>internal error</dd>
+  <dt>75</dt>
+  <dd>temporary failure</dd>
+  <dt>78</dt>
+  <dd>configuration error</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<p class="Pp">Create a new-realm invitation:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas -u _filees-state filees-admin ticket create user@example.com</pre>
+</div>
+<p class="Pp">Authorise another desktop in an existing realm:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas -u _filees-state filees-admin ticket create user@example.com \
+    --join-realm-alias acme --ttl 24h</pre>
+</div>
+<p class="Pp">Inspect and then remove abandoned empty initial creations for one
+    realm:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>$ doas -u _filees-state filees-admin repo check-state --realm-id UUID
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID \
+    --older-than 1h
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID \
+    --older-than 1h --apply</pre>
+</div>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><a class="Xr" href="filees.conf.5.html" aria-label="filees.conf,
+    section 5">filees.conf(5)</a>,
+    <a class="Xr" href="filees.7.html" aria-label="filees, section
+    7">filees(7)</a>,
+    <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
+    8">filees-mail(8)</a>,
+    <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
+    section 8">filees-operation(8)</a>,
+    <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate, section
+    8">filees-rotate(8)</a></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="MOBILE_RECOVERY"><a class="permalink" href="#MOBILE_RECOVERY">MOBILE
+  RECOVERY</a></h2>
+<p class="Pp">Run <code class="Cm">mobile recover --request-id UUID</code> as
+    the owner of the mobile ledger directory, normally
+    &#x2018;<code class="Li">doas -u _filees-state filees-admin</code>&#x2019;.
+    The command locks the operation and searches repository history to restore
+    an existing receipt without replaying the upload. An unresolved legacy
+    operation remains blocked by default.</p>
+<p class="Pp">Only after disabling new mobile sessions and stopping all prior
+    workers and SVN children may the administrator add
+    <code class="Cm">--allow-retry --confirm-workers-stopped --reason
+    TEXT</code>. This is an explicit operator attestation of maintenance
+    quiescence, not a process scan. A free lock is not sufficient for
+    pre-upgrade children. The command writes a private durable
+    before-image/planned-decision audit before replacing the ledger record. It
+    preserves the request ID. The optional <code class="Cm">--ledger PATH</code>
+    selects a private ledger owned by the effective user. Do not edit or remove
+    pending records manually.</p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES-ADMIN(8)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

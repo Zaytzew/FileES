@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-worker.8 sha256:325a08a2d68fe62e9c47d65543ae71ae6cde10d36743d701fa12fb7db36eaf80">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-worker(8) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-WORKER(8)</span>
+  <span class="head-vol">System Manager's Manual</span>
+  <span class="head-rtitle">FILEES-WORKER(8)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees-worker</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">execute one authenticated FileES server
+    action and exit</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">deploy</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">repository-control</code>
+      <var class="Ar">client-id</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">whale-v1</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">upload-reap</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">passport-reap</code> [<code class="Fl">-config</code>
+      <var class="Ar">path</var>] [<code class="Fl">--check</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">upload-seed-reject</code>
+      <code class="Fl">-alias</code> <var class="Ar">realm-alias</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">mobile-onboard</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">mobile-proof</code> <var class="Ar">operation-id
+      client-id</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-worker</code></td>
+    <td><code class="Cm">mobile-finish</code> <var class="Ar">operation-id
+      client-id</var></td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees-worker</code> is exec'd once per
+    authenticated deploy or control-plane ticket, dispatching on its first
+    argument to a subcommand; maintenance modes are also invoked by cron.</p>
+<dl class="Bl-tag">
+  <dt id="deploy"><a class="permalink" href="#deploy"><code class="Cm">deploy</code></a></dt>
+  <dd>default path, also reached with no subcommand at all; reads a tunnel
+      session from stdin and runs the desktop/server bootstrap deploy.</dd>
+  <dt id="repository-control"><a class="permalink" href="#repository-control"><code class="Cm">repository-control</code></a></dt>
+  <dd>reads one signed control/v1 ticket from stdin scoped to
+      <var class="Ar">client-id</var> and mutates canonical service-repository
+      records, data repositories, grants, editing policy or Public Shares
+      channel state, as described below.</dd>
+  <dt id="whale-v1"><a class="permalink" href="#whale-v1"><code class="Cm">whale-v1</code></a></dt>
+  <dd>serves one framed Whale PUT window, status or commit request, as described
+      below.</dd>
+  <dt id="upload-reap"><a class="permalink" href="#upload-reap"><code class="Cm">upload-reap</code></a></dt>
+  <dd>the operator cron exception described below.</dd>
+  <dt id="passport-reap"><a class="permalink" href="#passport-reap"><code class="Cm">passport-reap</code></a></dt>
+  <dd>performs one bounded, server-clock cleanup pass over registered passports,
+      without a connected client or service-WC update. Run as _filees-state, not
+      root. Busy locks are not queued; errors are reported and the next
+      scheduled invocation resumes durable state without force. The optional
+      --check reads the last maintenance status and fails for missing, running,
+      failed, corrupt or stale (over five minutes) state. The package provides
+      an example crontab but does not enable it. Expiry is operational, at the
+      next successful pass, not a strict SVN deadline.</dd>
+  <dt id="upload-seed-reject"><a class="permalink" href="#upload-seed-reject"><code class="Cm">upload-seed-reject</code></a></dt>
+  <dd>plants one harmless EICAR reject in the waiting room of
+      <var class="Ar">realm-alias</var> so the owner can receive the quarantine
+      projection without a real infected upload. Run as
+      <b class="Sy">_filees-state</b>, same as
+      <code class="Cm">upload-reap</code>.</dd>
+  <dt id="mobile-onboard"><a class="permalink" href="#mobile-onboard"><code class="Cm">mobile-onboard</code></a></dt>
+  <dd>reads a JSON push payload from stdin and stages a mobile client's
+      activation grant; exec'd by
+      <a class="Xr" href="filees-entry.8.html" aria-label="filees-entry, section
+      8">filees-entry(8)</a>'s mobile push branch.</dd>
+  <dt id="mobile-proof"><a class="permalink" href="#mobile-proof"><code class="Cm">mobile-proof</code></a></dt>
+  <dd>records that a freshly generated mobile installation key proved possession
+      by connecting; exec'd by
+      <a class="Xr" href="filees-mobile-v1.8.html" aria-label="filees-mobile-v1,
+      section 8">filees-mobile-v1(8)</a>'s proof branch.</dd>
+  <dt id="mobile-finish"><a class="permalink" href="#mobile-finish"><code class="Cm">mobile-finish</code></a></dt>
+  <dd>completes a mobile onboarding operation for
+      <var class="Ar">client-id</var>; exec'd by
+      <a class="Xr" href="filees-mobile-v1.8.html" aria-label="filees-mobile-v1,
+      section 8">filees-mobile-v1(8)</a>'s finish branch.</dd>
+</dl>
+It is <a class="permalink" href="#root"><b class="Sy" id="root">root</b></a>:
+  <a class="permalink" href="#wheel"><b class="Sy" id="wheel">wheel</b></a> mode
+  0555 and has no resident service. The next operation execs the current image.
+<p class="Pp">It is the only process that mutates canonical service-repository
+    records, data repositories, grants, editing policy and Public Shares channel
+    state. It publishes through a path-scoped Subversion commit under the shared
+    service-WC lock. Unversioned leftovers from a killed older binary are
+    reconciled before the next scan.</p>
+<p class="Pp">In Whale mode it serves one framed PUT window, status or commit
+    request. It keeps the exact durable offset and immutable generation identity
+    in a server-owned journal, checks the current client projection, and
+    publishes only through <code class="Cm">svnmucc</code> to the reserved
+    <span class="Pa">.filees-whales</span> namespace. The worker establishes its
+    own restricted filesystem profile after the gated session child execs
+  it.</p>
+<p class="Pp">Do not run <code class="Nm">filees-worker</code> as root against
+    the service working copy. Root can bypass the 0700 directory mode and then
+    leaves root-owned pristine objects in <span class="Pa">.svn</span>.</p>
+<p class="Pp"><code class="Nm">filees-worker</code>
+    <code class="Cm">upload-reap</code> is the operator exception to the
+    one-shot deploy contract. It claims ready intake jobs, runs
+    <code class="Ic">upload.av_command</code>, and commits a clean payload into
+    <code class="Ic">upload_repo</code> or copies a rejected payload into the
+    trash tree. Run it as <b class="Sy">_filees-state</b>, never as root:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</pre>
+</div>
+The installer does not install that crontab. Intake job directories are
+  <code class="Cm">0770</code>
+  <a class="permalink" href="#_filees-links"><b class="Sy" id="_filees-links">_filees-links</b></a>:
+  <b class="Sy">_filees-public</b> so <b class="Sy">_filees-state</b> (a member
+  of <b class="Sy">_filees-public</b>) can read them.
+  <code class="Ic">av_command</code> runs as the reaper user and must be able to
+  open the payload; <code class="Nm">clamscan</code> does that,
+  <code class="Nm">clamdscan</code> does not unless
+  <a class="permalink" href="#_clamav"><b class="Sy" id="_clamav">_clamav</b></a>
+  can also read the job directory.
+<p class="Pp"><code class="Nm">filees-worker</code>
+    <code class="Cm">upload-seed-reject</code> <code class="Fl">-alias</code>
+    <var class="Ar">alias</var> plants one EICAR test file in
+    <code class="Ic">trash_root</code> for that realm's waiting room so the
+    owner can receive the quarantine projection without a live infected upload.
+    It does not run <code class="Ic">av_command</code> and does not commit into
+    <code class="Ic">trash_repo</code>; the owner list reads the waiting-room
+    filesystem. <code class="Ic">upload-reap</code> also treats the EICAR test
+    file as infected even when the helper exits 0.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><a class="Xr" href="filees.conf.5.html" aria-label="filees.conf,
+    section 5">filees.conf(5)</a>,
+    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
+    section 8">filees-client-entry(8)</a>,
+    <a class="Xr" href="filees-entry.8.html" aria-label="filees-entry, section
+    8">filees-entry(8)</a>,
+    <a class="Xr" href="filees-mobile-v1.8.html" aria-label="filees-mobile-v1,
+    section 8">filees-mobile-v1(8)</a>,
+    <a class="Xr" href="filees-service-wc-corrector.8.html" aria-label="filees-service-wc-corrector,
+    section 8">filees-service-wc-corrector(8)</a></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES-WORKER(8)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

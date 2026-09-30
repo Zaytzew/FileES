@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-public-authority.8 sha256:a280cfcc33bd9683b2e550d9e63f57c38a9ae400acc7f98268e1cf0b35d79021">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-public-authority(8) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-PUBLIC-AUTHORITY(8)</span>
+  <span class="head-vol">System Manager's Manual</span>
+  <span class="head-rtitle">FILEES-PUBLIC-AUTHORITY(8)</span></div>
+<main class="manual-text">
+<section class="Sh">
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<p class="Pp"><code class="Nm">filees-public-authority</code> &#x2014;
+    <span class="Nd" role="doc-subtitle">FileES Public Shares backchannel and
+    recipient OTP</span></p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-public-authority</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]</td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<p class="Pp"><code class="Nm">filees-public-authority</code> is the
+    authoritative side of Public Shares. It listens on a Unix socket or loopback
+    TCP. It never terminates TLS. It fetches leaves with
+    <code class="Nm">svnlook</code> and pushes them to
+    <a class="Xr" href="filees-links.8.html" aria-label="filees-links, section
+    8">filees-links(8)</a>.</p>
+<p class="Pp">It supervises
+    <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
+    8">filees-mail(8)</a> <code class="Cm">public-loop</code> as a required
+    child. The child holds the SMTP secret.
+    <code class="Nm">filees-public-authority</code> does not. On
+    <code class="Dv">SIGTERM</code> or <code class="Dv">SIGINT</code> it closes
+    the HTTP server, terminates the child and waits, then exits, so an
+    <span class="Xr">rcctl(8)</span>
+    restart cannot leave an orphan poller.</p>
+<p class="Pp">Recipient OTP epochs, attempt counters and invitation hashes live
+    under the Public Shares state root. Revoke and delete cut access immediately
+    and drop pending mail. They do not yet garbage-collect inactive epoch files;
+    those files contain no mailbox and no plaintext code.</p>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<p class="Pp">Staging follows
+    <code class="Ic">public_shares.authority_staging_root</code> in server.json.
+    The directory must survive system temporary cleanup. Changing or recreating
+    an unveiled root requires a service restart. Authorized fetches with
+    unavailable local storage return generic HTTP 503; authorization denial
+    remains HTTP 404.</p>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/server.json</span></dt>
+  <dd>Public Shares section. See
+      <a class="Xr" href="filees.conf.5.html" aria-label="filees.conf, section
+      5">filees.conf(5)</a>.</dd>
+  <dt><span class="Pa">/var/run/filees/public-authority.sock</span></dt>
+  <dd>Default Unix backchannel.</dd>
+  <dt><span class="Pa">/etc/rc.d/filees_public_authority</span></dt>
+  <dd>Disabled-by-default <span class="Ux">OpenBSD</span> rc.d script.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
+    section 5">filees-public-links(5)</a>,
+    <a class="Xr" href="filees-links.8.html" aria-label="filees-links, section
+    8">filees-links(8)</a>,
+    <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
+    8">filees-mail(8)</a></p>
+</section>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">September 29, 2026</span>
+  <span class="foot-right">FILEES-PUBLIC-AUTHORITY(8)</span></div>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

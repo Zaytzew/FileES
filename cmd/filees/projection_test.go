@@ -14,6 +14,7 @@ import (
 	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
+	"filees/pkg/privatefile"
 	"filees/pkg/reposupervisor"
 )
 
@@ -31,6 +32,9 @@ func shortDaemonSocket(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := privatefile.Harden(dir); err != nil {
+		t.Fatal(err)
+	}
 	return filepath.Join(dir, "daemon.sock")
 }
 

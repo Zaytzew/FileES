@@ -15,7 +15,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	"filees/pkg/realmbranding"
@@ -189,7 +188,14 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 				h.notFound(w)
 				return
 			}
-			original := filepath.Base(part.FileName())
+			// Part.FileName silently strips path components. Validate the full
+			// decoded filename (including filename*) rather than a rewritten one.
+			_, disposition, nameErr := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+			if nameErr != nil {
+				h.notFound(w)
+				return
+			}
+			original := disposition["filename"]
 			store := *h.Intake
 			if store.MaxBytes < 1 {
 				store.MaxBytes = max

@@ -25,7 +25,7 @@ func TestActivityIPCGroupLimitDoesNotCutCommit(t *testing.T) {
 			}
 		}
 	}
-	sock := filepath.Join(root, "ipc.sock")
+	sock := testSocketPath(t)
 	s := ipcserver.New(sock)
 	s.SetActivitySource(j)
 	ctx, cancel := context.WithCancel(context.Background())

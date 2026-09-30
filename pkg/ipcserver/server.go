@@ -920,18 +920,8 @@ func (s *Server) NewRepoEvent(repoID, evType string, payload any) contract.Event
 // Cancelling ctx closes the listener and every active request or event-stream
 // connection so clients can immediately enter their reconnect flow.
 func (s *Server) Start(ctx context.Context) error {
-	if err := os.MkdirAll(filepath.Dir(s.sockPath), 0o700); err != nil {
-		return err
-	}
-
-	ln, err := listenUnixSocket(s.sockPath)
+	ln, ownedSocket, err := listenProtectedSocket(s.sockPath, protectSocket)
 	if err != nil {
-		return err
-	}
-	_ = os.Chmod(s.sockPath, 0o600) // restrict to owner
-	ownedSocket, err := os.Stat(s.sockPath)
-	if err != nil {
-		_ = ln.Close()
 		return err
 	}
 

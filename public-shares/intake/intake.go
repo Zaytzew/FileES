@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"filees/internal/durable"
@@ -218,6 +219,14 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 }
 
 func boundedOriginalName(value string) (string, error) {
+	// Check the received name before trimming: otherwise edge controls vanish
+	// before validation. Bidi controls can disguise an extension in the UI;
+	// ordinary right-to-left text and joiners remain valid Unicode filenames.
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+			return "", ErrName
+		}
+	}
 	value = strings.TrimSpace(value)
 	if value == "" || len(value) > maxNameBytes || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 		return "", ErrName

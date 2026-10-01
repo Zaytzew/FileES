@@ -246,8 +246,9 @@ type NoticeViewModel struct {
 // self-detachment removes the client profile that produced the activation.
 type DetachmentViewModel struct {
 	ServerID, DisplayName, Address string
-	// Cause is "self", "revoked", or "demo_expired". An expired demo
-	// cannot be reactivated by this installation.
+	// Cause is "self", "revoked", "demo_expired" or "forced". An expired demo
+	// cannot be reactivated by this installation; "forced" was removed here
+	// without the server's confirmation, which never revoked the key.
 	Cause string
 	// ReattachedAt is set once the client is one of this server's own again.
 	ReattachedAt string
@@ -263,6 +264,9 @@ func (d DetachmentViewModel) SelfDetached() bool { return d.Cause == "self" }
 func (d DetachmentViewModel) DemoExpired() bool { return d.Cause == "demo_expired" }
 
 func (d DetachmentViewModel) NeedsReactivation() bool { return d.Cause == "revoked" }
+
+// ForceDropped reports a removal made here without the server's confirmation.
+func (d DetachmentViewModel) ForceDropped() bool { return d.Cause == "forced" }
 
 // Current reports whether this detachment still describes how things stand.
 //
@@ -509,6 +513,12 @@ func (vm ViewModel) PairableServer() (ServerViewModel, bool) {
 }
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)
+}
+
+// CanForceDropServer gates the fallback offered after an ordinary detach
+// failed: removing the server here without its confirmation.
+func (vm ViewModel) CanForceDropServer() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerForceDrop)
 }
 func (vm ViewModel) CanRestartFileES() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapSystemRestart)

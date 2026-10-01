@@ -214,6 +214,12 @@ type ServerDetachService interface {
 	Detach(context.Context, string) error
 }
 
+// ServerForceDropService is the optional half of a ServerDetachService that
+// removes a server without its confirmation (server.force_drop).
+type ServerForceDropService interface {
+	ForceDrop(context.Context, string) error
+}
+
 type SessionTimeoutService interface {
 	SetSessionTimeout(context.Context, string, int) (int, error)
 }

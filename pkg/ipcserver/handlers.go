@@ -76,6 +76,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleRealmPublicBranding(req, true)
 	case contract.CmdServerDetach:
 		return s.handleServerDetach(req)
+	case contract.CmdServerForceDrop:
+		return s.handleServerForceDrop(req)
 	case contract.CmdServerSetSessionTimeout:
 		return s.handleServerSetSessionTimeout(req)
 	case contract.CmdRealmRemoveBegin:
@@ -396,6 +398,33 @@ func (s *Server) handleServerDetach(req contract.Request) contract.Response {
 	}
 	s.RemoveServer(payload.ServerID)
 	return contract.OKResponse(req.RequestID, contract.ServerDetachResult{ServerID: payload.ServerID})
+}
+
+// handleServerForceDrop never reports the server unreachable: not reaching it
+// is the reason this exists. Its failures are local (a folder that could not
+// be detached, the profile that could not be removed).
+func (s *Server) handleServerForceDrop(req contract.Request) contract.Response {
+	service, ok := s.serverDetachService().(ServerForceDropService)
+	if !ok || service == nil {
+		return contract.ErrResponse(req.RequestID, "SERVER-0001", "ERROR", "NONE", "server.force_drop_unavailable", nil)
+	}
+	var payload contract.ServerForceDropPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	_, active := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !active {
+		return contract.ErrResponse(req.RequestID, "SERVER-0002", "ERROR", "NONE", "server.not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+	if err := service.ForceDrop(ctx, payload.ServerID); err != nil {
+		return contract.ErrResponse(req.RequestID, "SERVER-1005", "ERROR", "REQUIRE_ACTION", "server.force_drop_failed", map[string]string{"detail": err.Error()})
+	}
+	s.RemoveServer(payload.ServerID)
+	return contract.OKResponse(req.RequestID, contract.ServerForceDropResult{ServerID: payload.ServerID})
 }
 
 func (s *Server) handleServerSetSessionTimeout(req contract.Request) contract.Response {

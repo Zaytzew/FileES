@@ -1227,6 +1227,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		summary := fmt.Sprintf("Odłączono od „%s”", item.Name())
 		if item.DemoExpired() {
 			summary = fmt.Sprintf("Demo zakończone · %s", item.Name())
+		} else if item.ForceDropped() {
+			summary = fmt.Sprintf("Usunięto „%s” z tego komputera", item.Name())
 		} else if !item.SelfDetached() {
 			summary = fmt.Sprintf("„%s” odłączył tego klienta", item.Name())
 		}

@@ -165,6 +165,12 @@ type ServerDetacher interface {
 	DetachServer(context.Context, string) error
 }
 
+// ServerForceDropper is implemented by a ServerDetacher that can also remove
+// a server without its confirmation, offered only after DetachServer failed.
+type ServerForceDropper interface {
+	ForceDropServer(context.Context, string) error
+}
+
 type RealmGrantRecipient struct {
 	RealmID string
 	Alias   string
@@ -1695,9 +1701,13 @@ func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
 			return
 		}
 		if err := c.cfg.ServerDetacher.DetachServer(ctx, serverID); err != nil {
-			if ctx.Err() == nil {
-				c.reportActionError(ctx, "server-detach."+serverID, c.uiText("feedback.n005", "Nie udało się odłączyć serwera"), c.actionErrorBody(err))
+			if ctx.Err() != nil {
+				return
 			}
+			if c.offerForceDropServer(ctx, serverID, err) {
+				return
+			}
+			c.reportActionError(ctx, "server-detach."+serverID, c.uiText("feedback.n005", "Nie udało się odłączyć serwera"), c.actionErrorBody(err))
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: "server-detach." + serverID, Group: "server-detach." + serverID, Title: c.uiText("feedback.n006", "Serwer odłączony od FileES"), Body: c.uiText("feedback.n007", "Lokalne dane pozostały na dysku"), Urgency: platform.UrgencyNormal})
@@ -1705,6 +1715,38 @@ func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
 			c.cfg.Refresh()
 		}
 	}()
+}
+
+// offerForceDropServer is the way out when a server cannot confirm its own
+// detachment: unreachable, gone, or holding a folder record that the ordinary
+// path refuses. It reports whether it took over the outcome; false leaves the
+// original failure to the caller. Declining is an answer, not a failure.
+func (c *Controller) offerForceDropServer(ctx context.Context, serverID string, cause error) bool {
+	dropper, ok := c.cfg.ServerDetacher.(ServerForceDropper)
+	if !ok || !c.cfg.ViewModel().CanForceDropServer() {
+		return false
+	}
+	reason := c.actionErrorBody(cause)
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		PresentationKey: "dialog.forceDropServer", PresentationArgs: map[string]string{"reason": reason},
+		Title:       "Serwer nie potwierdził odłączenia",
+		Text:        "Powód: " + reason + "\n\nMożesz usunąć ten serwer tylko z tego komputera. Lokalne foldery zostaną odłączone, a pliki pozostaną na dysku. Klucz tej instalacji pozostanie ważny na serwerze, dopóki nie odwoła go administrator.",
+		ConfirmText: "Usuń z tego komputera", CancelText: "Anuluj",
+	})
+	if err != nil || !confirmed {
+		return true
+	}
+	if err := dropper.ForceDropServer(ctx, serverID); err != nil {
+		if ctx.Err() == nil {
+			c.reportActionError(ctx, "server-detach."+serverID, c.uiText("feedback.n134", "Nie udało się usunąć serwera z tego komputera"), c.actionErrorBody(err))
+		}
+		return true
+	}
+	c.notify(ctx, platform.Notification{ID: "server-detach." + serverID, Group: "server-detach." + serverID, Title: c.uiText("feedback.n135", "Serwer usunięty z tego komputera"), Body: c.uiText("feedback.n136", "Lokalne dane pozostały na dysku; klucz na serwerze nie został odwołany"), Urgency: platform.UrgencyNormal})
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+	return true
 }
 
 func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) {

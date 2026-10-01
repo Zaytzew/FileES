@@ -604,8 +604,8 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const prefixes = [...controller.matchAll(/PresentationKey:\s*"(dialog\.[^"]+)"/g)].map(match => match[1]);
-  assert.equal(prefixes.length, 13); // Revoke has two entry points.
-  assert.equal(new Set(prefixes).size, 12);
+  assert.equal(prefixes.length, 14); // Revoke has two entry points; + dialog.forceDropServer (2026-10-01).
+  assert.equal(new Set(prefixes).size, 13);
   for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
       for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");
@@ -636,7 +636,7 @@ test("operation confirmations keep literal arguments and explicit risk variants"
 
 test("marked fixed confirmations keep their Polish fallback and button semantics", () => {
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
-  const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository"]);
+  const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository", "dialog.forceDropServer"]);
   const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"(dialog\.[^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
   assert.equal(marked.length, 11);
   for (const [, prefix, body] of marked) {

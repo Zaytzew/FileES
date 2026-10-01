@@ -164,6 +164,8 @@
     "reservation.release_failed": "Die Reservierung konnte nicht freigegeben werden",
     "server.detach_failed": "Trennen des Servers fehlgeschlagen",
     "server.detach_unavailable": "Das Trennen eines Servers ist derzeit nicht verfügbar",
+    "server.force_drop_failed": "Der Server konnte nicht von diesem Computer entfernt werden",
+    "server.force_drop_unavailable": "Das Entfernen eines Servers ohne seine Bestätigung ist derzeit nicht verfügbar",
     "server.not_activated": "Dieser Server ist nicht aktiviert",
     "server.session_timeout_failed": "Das Zeitlimit konnte nicht gespeichert werden",
     "server.session_timeout_invalid": "Geben Sie eine Minutenzahl zwischen 1 und 1440 ein",

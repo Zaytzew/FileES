@@ -1025,6 +1025,28 @@ func (adapter serverDetachAdapter) DetachServer(ctx context.Context, serverID st
 	return nil
 }
 
+type serverForceDropClient interface {
+	ServerForceDrop(context.Context, string) (*contract.ServerForceDropResult, error)
+}
+
+// ForceDropServer makes the adapter an actions.ServerForceDropper whenever
+// its client can carry server.force_drop; a client that cannot leaves the
+// controller with the ordinary failure report.
+func (adapter serverDetachAdapter) ForceDropServer(ctx context.Context, serverID string) error {
+	dropper, ok := adapter.client.(serverForceDropClient)
+	if !ok {
+		return errors.New("daemon client cannot remove a server without its confirmation")
+	}
+	result, err := dropper.ServerForceDrop(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ServerID != serverID {
+		return errors.New("daemon did not complete server removal")
+	}
+	return nil
+}
+
 type realmRemovalClient interface {
 	RealmRemoveBegin(context.Context, contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error)
 	RealmRemoveConfirm(context.Context, contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error)

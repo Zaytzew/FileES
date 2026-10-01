@@ -117,6 +117,73 @@ func (s *serverDetachService) Detach(ctx context.Context, serverID string) error
 	return nil
 }
 
+// ForceDrop is Detach for a server that cannot confirm it (server.force_drop):
+// unreachable, gone, or holding a lifecycle record that the ordinary path
+// refuses. Every attached working copy is detached locally exactly as Detach
+// does it - files stay, metadata goes - and every other unfinished record is
+// closed without touching its folder. The server is never contacted, so it
+// never revokes this installation's key; the detachment says so (CauseForced).
+// A pending self-detach intent is dropped together with the profile.
+func (s *serverDetachService) ForceDrop(ctx context.Context, serverID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.local == nil || s.provisioner == nil || s.detachments == nil {
+		return errors.New("server detach service is incomplete")
+	}
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		if s.detachments.Current(serverID) {
+			return nil
+		}
+		return errors.New("activated client profile is unavailable")
+	}
+	name, address := profile.DisplayName, profile.Address
+	workingCopies := workingCopiesOf(s.local, serverID)
+	for _, record := range s.local.List() {
+		if record.ServerID != serverID {
+			continue
+		}
+		switch record.State {
+		case localrepo.StateAttached:
+			started, err := s.local.BeginDetach(serverID, record.RepoID, false)
+			if err != nil {
+				return fmt.Errorf("start detach for %s: %w", record.LocalPath, err)
+			}
+			if _, err := s.provisioner.Detach(ctx, started.OperationID); err != nil {
+				return fmt.Errorf("detach %s: %w", record.LocalPath, err)
+			}
+		case localrepo.StateDetaching:
+			// Resumes the local half only; a detach never contacts the server.
+			if _, err := s.provisioner.Detach(ctx, record.OperationID); err != nil {
+				return fmt.Errorf("detach %s: %w", record.LocalPath, err)
+			}
+		case localrepo.StateDetached, localrepo.StateDeleted, localrepo.StateAbandoned:
+			// Finished locally. A pending metadata cleanup of a copy the
+			// server withdrew stays as it is; its folder is listed below.
+		case localrepo.StateDeleting:
+			// A requested deletion is forward-only and needs the server. It
+			// stays recorded: the detachment fence keeps it inert, and a later
+			// re-activation of this server resumes it instead of forgetting it.
+		default:
+			if _, err := s.local.AbandonForDroppedServer(record.OperationID); err != nil {
+				return fmt.Errorf("close unfinished operation for %s: %w", record.LocalPath, err)
+			}
+		}
+	}
+	// Record, not RecordFirstNoticed: this is the exact moment the owner chose.
+	if err := s.detachments.Record(detachment.Record{
+		ServerID: serverID, DisplayName: name, Address: address,
+		Cause: detachment.CauseForced, At: time.Now(), WorkingCopies: workingCopies,
+	}); err != nil {
+		return fmt.Errorf("persist forced server removal: %w", err)
+	}
+	if err := clientprofile.Remove(s.profileRoot, serverID); err != nil {
+		return fmt.Errorf("remove local credentials: %w", err)
+	}
+	s.provisioner.RemoveProfile(serverID)
+	return nil
+}
+
 // A pending intent is not a detachment fence: only a successful result or a
 // terminal server refusal may remove the profile. The ticket survives retries.
 type serverDetachIntent struct {

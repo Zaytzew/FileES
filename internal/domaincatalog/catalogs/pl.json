@@ -164,6 +164,8 @@
     "reservation.release_failed": "Nie udało się zwolnić rezerwacji",
     "server.detach_failed": "Odłączenie serwera nie powiodło się",
     "server.detach_unavailable": "Odłączanie serwera jest teraz niedostępne",
+    "server.force_drop_failed": "Nie udało się usunąć serwera z tego komputera",
+    "server.force_drop_unavailable": "Usuwanie serwera bez jego potwierdzenia jest teraz niedostępne",
     "server.not_activated": "Ten serwer nie jest aktywowany",
     "server.session_timeout_failed": "Nie udało się zapisać limitu czasu",
     "server.session_timeout_invalid": "Podaj liczbę minut od 1 do 1440",

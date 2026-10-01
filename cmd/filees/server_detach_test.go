@@ -142,3 +142,84 @@ func TestServerDetachRejectsCorruptOrForeignIntent(t *testing.T) {
 		t.Fatal("corrupt intent replaced with fresh operation")
 	}
 }
+
+// The two lab servers this was written for: one holding a self-detach intent
+// whose reply never arrived, one with folder records stuck in error before any
+// repository ID existed. Neither can confirm; ForceDrop must still finish, and
+// never by talking to the server.
+func TestServerForceDropFinishesWithoutTheServer(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	root := clientprofile.DefaultRoot()
+	profile := clientprofile.Profile{ServerID: "lab", ClientID: uuid.NewString(), DisplayName: "Lab"}
+	credential := filepath.Join(root, "lab", "key")
+	if err := os.MkdirAll(filepath.Dir(credential), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credential, []byte("test-only"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareServerDetach(root, profile, nil); err != nil {
+		t.Fatal(err)
+	}
+	stuck := t.TempDir()
+	userFile := filepath.Join(stuck, "drawing.dwg")
+	if err := os.WriteFile(userFile, []byte("user data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "local.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, err := local.BeginCreate(profile.ServerID, "TRANSCOLOR", stuck)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkError(failed.OperationID, errors.New("create failed")); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := local.BeginCreate(profile.ServerID, "Pobrane", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notices, err := detachment.Open(filepath.Join(t.TempDir(), "detached.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &serverDetachService{local: local, provisioner: newDaemonProvisioner(local, nil, []clientprofile.Profile{profile}), profileRoot: root, detachments: notices,
+		exchange: func(context.Context, clientprofile.Profile, control.Ticket) (control.Result, error) {
+			t.Fatal("force drop contacted the server")
+			return control.Result{}, nil
+		},
+	}
+	// The ordinary path refuses first: that refusal is what offers ForceDrop.
+	if err := service.Detach(t.Context(), profile.ServerID); err == nil {
+		t.Fatal("ordinary detach accepted an unfinished folder record")
+	}
+	if err := service.ForceDrop(t.Context(), profile.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{failed.OperationID, pending.OperationID} {
+		if record, _ := local.Get(id); record.State != localrepo.StateAbandoned {
+			t.Fatalf("record %s left in %s", record.DisplayName, record.State)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "lab")); !os.IsNotExist(err) {
+		t.Fatalf("profile, key or pending intent survived: %v", err)
+	}
+	if _, ok := service.provisioner.Profile(profile.ServerID); ok {
+		t.Fatal("profile still active")
+	}
+	records := notices.List()
+	if len(records) != 1 || records[0].Cause != detachment.CauseForced || !notices.Current(profile.ServerID) {
+		t.Fatalf("no forced detachment fence: %#v", records)
+	}
+	if !reflect.DeepEqual(records[0].WorkingCopies, workingCopiesOf(local, profile.ServerID)) || len(records[0].WorkingCopies) != 2 {
+		t.Fatalf("folders not listed for the reader: %#v", records[0].WorkingCopies)
+	}
+	if raw, err := os.ReadFile(userFile); err != nil || string(raw) != "user data" {
+		t.Fatalf("user file changed: %q %v", raw, err)
+	}
+	if err := service.ForceDrop(t.Context(), profile.ServerID); err != nil {
+		t.Fatalf("completed force drop not idempotent: %v", err)
+	}
+}

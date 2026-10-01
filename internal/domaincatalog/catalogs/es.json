@@ -164,6 +164,8 @@
     "reservation.release_failed": "No se pudo liberar la reserva",
     "server.detach_failed": "La desconexión del servidor falló",
     "server.detach_unavailable": "La desconexión de servidores no está disponible ahora",
+    "server.force_drop_failed": "No se pudo quitar el servidor de este equipo",
+    "server.force_drop_unavailable": "Quitar un servidor sin su confirmación no está disponible ahora",
     "server.not_activated": "Este servidor no está activado",
     "server.session_timeout_failed": "No se pudo guardar el tiempo límite",
     "server.session_timeout_invalid": "Introduzca un número de minutos entre 1 y 1440",

@@ -493,6 +493,34 @@ func (s *Store) Abandon(operationID string) (Record, error) {
 	})
 }
 
+// AbandonForDroppedServer closes one unfinished create/attach/move operation
+// of a server that this installation is removing without the server's
+// confirmation (server.force_drop). Unlike Abandon it also takes an unknown
+// server outcome: the server is leaving this client, so no later answer from
+// it could be applied here anyway. Nothing on disk changes; the folder keeps
+// whatever it holds. Refused: attached and detaching records (the ordinary
+// local detach removes their metadata) and a requested deletion, which stays
+// forward-only - inert while the server is detached, resumed if it returns.
+func (s *Store) AbandonForDroppedServer(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		switch record.State {
+		case StateAbandoned:
+			return nil
+		case StateAttached, StateDetaching, StateDeleting, StateDetached, StateDeleted:
+			return errors.New("only an unfinished create, attach or move can be abandoned with its server")
+		}
+		record.State, record.LastError = StateAbandoned, ""
+		record.LastErrorKey = ""
+		record.PendingLocalPath = ""
+		record.RelocationAdoptExisting = false
+		record.RelocationMoveExisting = false
+		record.ReconcileOperationID = ""
+		record.LoadDumpApplyIgnorePolicy = false
+		record.LoadDumpKeepLastRevisions = nil
+		return nil
+	})
+}
+
 // RepairCreatedRepositoryInput corrects user input that was corrupted before
 // it crossed the daemon IPC boundary. It is intentionally limited to the
 // durable post-CREATE_REPOSITORY/pre-import boundary: the server repository

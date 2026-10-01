@@ -772,3 +772,60 @@ func TestDetachDeletingLocalIsDurable(t *testing.T) {
 		t.Fatalf("after reopen=%+v ok=%v", got, ok)
 	}
 }
+
+// AbandonForDroppedServer is wider than Abandon on purpose (no repository ID),
+// but it must never close a working copy that still has metadata to remove,
+// nor a requested deletion, and the result must survive a reopen.
+func TestAbandonForDroppedServerClosesOnlyUnfinishedRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := store.BeginCreate("lab", "TRANSCOLOR", filepath.Join(t.TempDir(), "transcolor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkError(unknown.OperationID, errors.New("create failed")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Abandon(unknown.OperationID); err == nil {
+		t.Fatal("ordinary Abandon must keep refusing an unknown server outcome")
+	}
+	remoteOnly, err := store.BeginDelete("lab", uuid.NewString(), "Archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	attached, _, err := store.EnsureConfiguredAttached("lab", repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(t.TempDir(), "wc"), "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AbandonForDroppedServer(attached.OperationID); err == nil {
+		t.Fatal("attached working copy closed without removing its metadata")
+	}
+	if _, err := store.AbandonForDroppedServer(remoteOnly.OperationID); err == nil {
+		t.Fatal("requested deletion forgotten instead of staying forward-only")
+	}
+	for _, id := range []string{unknown.OperationID} {
+		if _, err := store.AbandonForDroppedServer(id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.AbandonForDroppedServer(id); err != nil {
+			t.Fatalf("not idempotent: %v", err)
+		}
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("abandoned records do not reload: %v", err)
+	}
+	if record, _ := reopened.Get(unknown.OperationID); record.State != StateAbandoned {
+		t.Fatalf("%s reloaded as %s", record.DisplayName, record.State)
+	}
+	if record, _ := reopened.Get(remoteOnly.OperationID); record.State != StateDeleting {
+		t.Fatalf("requested deletion reloaded as %s", record.State)
+	}
+	if record, _ := reopened.Get(attached.OperationID); record.State != StateAttached {
+		t.Fatalf("attached record changed to %s", record.State)
+	}
+}

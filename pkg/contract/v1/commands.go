@@ -36,6 +36,7 @@ const (
 	CmdRealmPublicBrandingGet  = "realm.public_branding_get"
 	CmdRealmPublicBrandingSet  = "realm.public_branding_set"
 	CmdServerDetach            = "server.detach"
+	CmdServerForceDrop         = "server.force_drop"          // remove a server that cannot confirm the detach
 	CmdServerSetSessionTimeout = "server.set_session_timeout" // how long one send or fetch may run on this server
 	CmdRealmRemoveBegin        = "realm.remove_begin"
 	CmdRealmRemoveConfirm      = "realm.remove_confirm"
@@ -144,6 +145,7 @@ const (
 	CapRealmPublicBrandingGet  = "realm.public_branding_get"
 	CapRealmPublicBrandingSet  = "realm.public_branding_set"
 	CapServerDetach            = "server.detach"
+	CapServerForceDrop         = "server.force_drop"
 	CapServerSetSessionTimeout = "server.set_session_timeout"
 	CapRealmRemoveBegin        = "realm.remove_begin"
 	CapRealmRemoveConfirm      = "realm.remove_confirm"
@@ -228,6 +230,7 @@ var AllCapabilities = []string{
 	CapActivationResume,
 	CapRealmAliasClaim,
 	CapServerDetach,
+	CapServerForceDrop,
 	CapRealmRemoveBegin,
 	CapRealmRemoveConfirm,
 	CapRecoveryDownload,
@@ -322,9 +325,11 @@ type Detachment struct {
 	ServerID    string `json:"server_id"`
 	DisplayName string `json:"display_name,omitempty"`
 	Address     string `json:"address,omitempty"`
-	// Cause is "self", "revoked", or "demo_expired". The last means the
-	// announced demo deadline passed and the server refused the credential;
-	// it must not offer reactivation of the one-use demo.
+	// Cause is "self", "revoked", "demo_expired" or "forced". "demo_expired"
+	// means the announced demo deadline passed and the server refused the
+	// credential; it must not offer reactivation of the one-use demo.
+	// "forced" means the owner removed the server here without its
+	// confirmation (server.force_drop): the key was never revoked there.
 	Cause string `json:"cause"`
 	// At is RFC3339. For "revoked" it is when the daemon first noticed, never
 	// when the decision was made on the server, and the wording that reaches
@@ -564,6 +569,17 @@ type ServerDetachPayload struct {
 }
 
 type ServerDetachResult struct {
+	ServerID string `json:"server_id"`
+}
+
+// ServerForceDropPayload asks the daemon to remove a server without the
+// server's confirmation. Local working copies are detached (files stay);
+// the server is not contacted and does not revoke this installation's key.
+type ServerForceDropPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+type ServerForceDropResult struct {
 	ServerID string `json:"server_id"`
 }
 

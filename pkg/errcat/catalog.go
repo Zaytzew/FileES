@@ -172,6 +172,8 @@ var specs = []Spec{
 	{"SERVER-1003", "server.session_timeout_failed", SevError, HintRequireAction, nil, "Session timeout could not be saved"},
 	{"SERVER-0002", "server.not_activated", SevError, HintNone, nil, "Server is not activated"},
 	{"SERVER-1001", "server.detach_failed", SevError, HintRequireAction, detailOnly(), "Server detach failed"},
+	{"SERVER-0001", "server.force_drop_unavailable", SevError, HintNone, nil, "Removing a server without its confirmation is not available"},
+	{"SERVER-1005", "server.force_drop_failed", SevError, HintRequireAction, detailOnly(), "Removing the server from this computer failed"},
 
 	{"LOCK-2101", "reservation.list_failed", SevError, HintRetry, []Field{{"repo_id", ParamIdentifier}, detailField}, "Reservation list failed"},
 	{"LOCK-2102", "reservation.invalid_path", SevError, HintNone, nil, "Reservation path is invalid"},

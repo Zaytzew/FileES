@@ -59,6 +59,7 @@ var commandTimeouts = map[string]time.Duration{
 	"repo.upload_channel_revoke":   1 * time.Minute,
 	"repo.upload_channel_update":   1 * time.Minute,
 	"server.detach":                45 * time.Minute,
+	"server.force_drop":            45 * time.Minute,
 	"server.set_session_timeout":   15 * time.Second,
 	"update.apply":                 15 * time.Minute,
 	"update.plan":                  2 * time.Minute,

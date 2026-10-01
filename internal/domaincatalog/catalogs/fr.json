@@ -164,6 +164,8 @@
     "reservation.release_failed": "Impossible de libérer la réservation",
     "server.detach_failed": "Échec de la déconnexion du serveur",
     "server.detach_unavailable": "La déconnexion d’un serveur est indisponible pour le moment",
+    "server.force_drop_failed": "Impossible de retirer le serveur de cet ordinateur",
+    "server.force_drop_unavailable": "Retirer un serveur sans sa confirmation est indisponible pour le moment",
     "server.not_activated": "Ce serveur n’est pas activé",
     "server.session_timeout_failed": "Impossible d’enregistrer le délai",
     "server.session_timeout_invalid": "Saisissez un nombre de minutes entre 1 et 1440",

@@ -63,6 +63,11 @@ const (
 	// CauseDemoExpired: the announced demo deadline passed and the server
 	// refused the credential. This installation cannot activate demo again.
 	CauseDemoExpired Cause = "demo_expired"
+	// CauseForced: the owner removed the server here although it could not
+	// confirm (server.force_drop). Local business is as finished as after
+	// CauseSelf, but the server never revoked this installation's key: it
+	// stays valid there until an administrator revokes it.
+	CauseForced Cause = "forced"
 )
 
 type Record struct {
@@ -207,7 +212,7 @@ func (s *Store) Record(rec Record) error {
 	if strings.TrimSpace(rec.ServerID) == "" {
 		return errors.New("detachment record needs a server id")
 	}
-	if rec.Cause != CauseSelf && rec.Cause != CauseRevoked && rec.Cause != CauseDemoExpired {
+	if rec.Cause != CauseSelf && rec.Cause != CauseRevoked && rec.Cause != CauseDemoExpired && rec.Cause != CauseForced {
 		return errors.New("detachment record needs a known cause")
 	}
 	s.mu.Lock()

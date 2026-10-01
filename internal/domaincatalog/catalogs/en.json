@@ -164,6 +164,8 @@
     "reservation.release_failed": "The reservation could not be released",
     "server.detach_failed": "Detaching the server failed",
     "server.detach_unavailable": "Detaching a server is not available right now",
+    "server.force_drop_failed": "Removing the server from this computer failed",
+    "server.force_drop_unavailable": "Removing a server without its confirmation is not available right now",
     "server.not_activated": "This server is not activated",
     "server.session_timeout_failed": "The time limit could not be saved",
     "server.session_timeout_invalid": "Enter a number of minutes between 1 and 1440",

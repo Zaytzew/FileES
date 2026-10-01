@@ -318,6 +318,15 @@ func (c *Client) RepoRelocate(ctx context.Context, payload contract.RepoRelocate
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) ServerForceDrop(ctx context.Context, serverID string) (*contract.ServerForceDropResult, error) {
+	resp, err := c.do(ctx, contract.CmdServerForceDrop, "", contract.ServerForceDropPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ServerForceDropResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) ServerDetach(ctx context.Context, serverID string) (*contract.ServerDetachResult, error) {
 	resp, err := c.do(ctx, contract.CmdServerDetach, "", contract.ServerDetachPayload{ServerID: serverID})
 	if err != nil {

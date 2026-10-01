@@ -200,6 +200,7 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapActivationResume:       true,
 		contract.CapRealmAliasClaim:        true,
 		contract.CapServerDetach:           true,
+		contract.CapServerForceDrop:        true,
 		contract.CapRealmRemoveBegin:       true,
 		contract.CapRealmRemoveConfirm:     true,
 		contract.CapRecoveryDownload:       true,

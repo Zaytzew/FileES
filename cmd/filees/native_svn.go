@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +20,21 @@ import (
 // choices; missing payloads never silently select CLI in a bundled build.
 var nativeRuntimeLease *nativeruntime.Lease
 
+// A files-layout build embeds only an inventory, never helper/DLL bytes.
+// Its exact immutable directory must have been installed before the daemon.
+var injectedNativeFilesManifestB64 string
+var installedNativeSVN = sync.OnceValues(func() (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(injectedNativeFilesManifestB64)
+	if err != nil {
+		return "", err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return nativeruntime.VerifyFiles(nativeruntime.FilesRoot(filepath.Dir(exe), raw), raw)
+})
+
 var bundledNativeSVN = sync.OnceValues(func() (string, error) {
 	cache, err := nativeCacheRoot()
 	if err != nil {
@@ -34,6 +50,10 @@ var bundledNativeSVN = sync.OnceValues(func() (string, error) {
 })
 
 func prepareNativeSVN() error {
+	if injectedNativeFilesManifestB64 != "" {
+		_, err := installedNativeSVN()
+		return err // no env override, self-extraction or CLI fallback in releases
+	}
 	if (runtime.GOOS != "windows" && runtime.GOOS != "linux") || len(nativeruntime.Payload) == 0 || os.Getenv("FILEES_NATIVE_SVN") != "" {
 		return nil
 	}
@@ -44,6 +64,13 @@ func prepareNativeSVN() error {
 // Desktop bundle builds use all native WC/RA operations by default;
 // untagged developer builds retain explicit opt-in.
 func nativeSVNPath() string {
+	if injectedNativeFilesManifestB64 != "" {
+		path, err := installedNativeSVN()
+		if err != nil {
+			panic(fmt.Sprintf("installed native SVN unavailable: %v", err))
+		}
+		return path
+	}
 	if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		return ""
 	}

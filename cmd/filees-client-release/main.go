@@ -32,6 +32,7 @@ import (
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the client bundle tar.gz")
+	bundleKind := flag.String("bundle-kind", "bundle", "bundle or bundle-native-files (old updaters must refuse this layout)")
 	installer := flag.String("installer", "", "path to the platform installer, e.g. MSI")
 	component := flag.String("component", config.DesktopUpdateComponent, "component name")
 	platform := flag.String("platform", "", "target platform, e.g. windows-amd64")
@@ -53,7 +54,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "         -release-root DIR -channel-out FILE [-merge-channel FILE]")
 		os.Exit(2)
 	}
-	if err := run(*bundle, *installer, *component, *platform, *releaseID, *version, *keyID, *expires,
+	if err := runKind(*bundleKind, *bundle, *installer, *component, *platform, *releaseID, *version, *keyID, *expires,
 		*releaseRoot, *channelOut, *mergeChannel, *sequence, *securityEpoch); err != nil {
 		fmt.Fprintln(os.Stderr, "filees-client-release:", err)
 		os.Exit(1)
@@ -62,10 +63,21 @@ func main() {
 
 func run(bundlePath, installerPath, component, platform, releaseID, version, keyID, expires,
 	releaseRoot, channelOut, mergeChannel string, sequence, securityEpoch uint64) error {
+	return runKind("bundle", bundlePath, installerPath, component, platform, releaseID, version, keyID, expires, releaseRoot, channelOut, mergeChannel, sequence, securityEpoch)
+}
+
+func runKind(kind, bundlePath, installerPath, component, platform, releaseID, version, keyID, expires,
+	releaseRoot, channelOut, mergeChannel string, sequence, securityEpoch uint64) error {
+	if kind != "bundle" && kind != "bundle-native-files" {
+		return errors.New("invalid bundle kind")
+	}
+	if kind == "bundle-native-files" && platform != "windows-amd64" {
+		return errors.New("native-files bundle currently requires Windows")
+	}
 	if platform == "windows-amd64" && strings.TrimSpace(installerPath) == "" {
 		return errors.New("windows-amd64 release requires the MSI installer artifact")
 	}
-	bundle, err := artifact(bundlePath, "bundle")
+	bundle, err := artifact(bundlePath, kind)
 	if err != nil {
 		return fmt.Errorf("bundle: %w", err)
 	}

@@ -142,8 +142,14 @@ Envelope klienta ma ścisły schemat i wskazuje manifest każdego
 
 Manifest v2 musi powtórzyć `release_id`, `sequence`, `security_epoch`, `key_id`,
 `component` i `platform`, podać wersję oraz dokładny rozmiar i SHA-256 każdego
-artefaktu. Dla Windows są to bundel aktualizatora (`kind=bundle`) i MSI
+artefaktu. Dla nowego Windows MSI są to bundel aktualizatora
+(`kind=bundle-native-files`, od 2026-10-01) i MSI
 (`kind=installer`) z tych samych binarek.
+Pierwsze przejście ze starszej instalacji wymaga MSI: jej aktualizator
+odmawia nowego kind przed podmianą, bo nie potrafi przenieść całego runtime'u
+SVN. Nie oznaczać nowej paczki jako `bundle`, nie dodawać drugiego artefaktu
+o tym kind jako obejścia. Linux i wcześniejsze Windows mają kind `bundle`;
+Linux oraz Store nadal korzystają z własnego embedded runtime'u.
 Kanał i manifest są podpisywane oddzielnie tym samym zaufanym kluczem. Nie wolno
 ponownie użyć sequence dla innego release ani go obniżyć; zainstalowany klient
 utrzymuje trwały high-water mark.

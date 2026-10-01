@@ -141,7 +141,48 @@ try {
     }
     Copy-Item (Join-Path $PSScriptRoot "..\..\cmd\filees\assets\filees-folder.ico") $staging
 
-    & $wixCommand build $Wxs `
+    # Sidecar runtime files are installed declaratively, never unpacked by the
+    # daemon. The content-addressed directory keeps running/rollback versions
+    # separate. Embed only its inventory in the Go executable.
+    $sources = @($Wxs)
+    $nativeInventory = Join-Path $bundle "bin\native-svn.json"
+    if (Test-Path -LiteralPath $nativeInventory) {
+        $raw = [IO.File]::ReadAllBytes($nativeInventory)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $nativeId = ([BitConverter]::ToString($sha.ComputeHash($raw))).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+        $manifest = [Text.Encoding]::UTF8.GetString($raw) | ConvertFrom-Json
+        if ($manifest.schema -ne 'filees.native-files/v1' -or $manifest.platform -ne 'windows-amd64') { throw 'invalid native sidecar inventory' }
+        $nativeBase = Join-Path $bundle ("bin\native-svn\" + $nativeId)
+        $xml = New-Object Xml.XmlDocument
+        $xml.LoadXml('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"><Fragment><DirectoryRef Id="INSTALLFOLDER"><Directory Id="NativeSVNRoot" Name="native-svn"><Directory Id="NativeSVNVersion" /></Directory></DirectoryRef><ComponentGroup Id="NativeSVNFiles" /></Fragment></Wix>')
+        $ns = New-Object Xml.XmlNamespaceManager($xml.NameTable)
+        $ns.AddNamespace('w', $xml.DocumentElement.NamespaceURI)
+        $versionDir = $xml.SelectSingleNode('//w:Directory[@Id="NativeSVNVersion"]', $ns)
+        $versionDir.SetAttribute('Name', $nativeId)
+        $notices = $xml.CreateElement('Directory', $xml.DocumentElement.NamespaceURI)
+        $notices.SetAttribute('Id', 'NativeSVNNotices'); $notices.SetAttribute('Name', 'notices')
+        [void]$versionDir.AppendChild($notices)
+        $group = $xml.SelectSingleNode('//w:ComponentGroup', $ns)
+        $index = 0
+        foreach ($item in $manifest.files) {
+            if ($item.name -notmatch '^[A-Za-z0-9_.-]+$|^notices/[A-Za-z0-9_.-]+$' -or $item.name.Contains('..')) { throw 'unsafe native sidecar path' }
+            $path = Join-Path $nativeBase $item.name.Replace('/', '\')
+            if ((Get-Item -LiteralPath $path).Length -ne $item.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.sha256) { throw "native sidecar hash mismatch: $path" }
+            $component = $xml.CreateElement('Component', $xml.DocumentElement.NamespaceURI)
+            $component.SetAttribute('Id', "NativeFile$index"); $component.SetAttribute('Guid', '*')
+            $component.SetAttribute('Directory', $(if ($item.name.StartsWith('notices/')) { 'NativeSVNNotices' } else { 'NativeSVNVersion' }))
+            $file = $xml.CreateElement('File', $xml.DocumentElement.NamespaceURI)
+            $file.SetAttribute('Id', "NativePayload$index"); $file.SetAttribute('Source', $path); $file.SetAttribute('KeyPath', 'yes')
+            [void]$component.AppendChild($file); [void]$group.AppendChild($component); $index++
+        }
+        $fragment = Join-Path $staging 'native-files.wxs'
+        $xml.Save($fragment)
+        $sources += $fragment
+        $withNativeFiles = '1'
+    } else { $withNativeFiles = '0' }
+
+    & $wixCommand build @sources `
         -arch x64 `
         -ext $uiExtension `
         -pdbtype none `
@@ -149,6 +190,7 @@ try {
         -d "ProductVersion=$msiVersion" `
         -d "BundleVersion=$bundleVersion" `
         -d "WithCfapi=$withCfapi" `
+        -d "WithNativeFiles=$withNativeFiles" `
         -out $Output
     if ($LASTEXITCODE -ne 0) {
         throw "WiX build failed with exit code $LASTEXITCODE"

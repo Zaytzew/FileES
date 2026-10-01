@@ -1,5 +1,30 @@
 # Autostart pary desktopowej na Windows
 
+## Bieżący kontrakt MSI — 2026-10-01
+
+Skróty uruchamiają `filees-launch.exe`: bez argumentów przy logowaniu,
+`--show` przy kliknięciu. Launcher i długowieczny supervisor są napisane
+w Go; normalny start nie uruchamia PowerShell ani VBScript. Zachowuje mutex
+sesji, wybór kanału/config, odmowę startu obok Store i adopcję własnego demona
+po aktualizacji. Błąd startu/awaria są ponawiane co 15 sekund; wyjście demona
+z kodem 0 bez zastępcy kończy supervisor. Zamknięcie GUI nie kończy demona.
+Jawne usuwanie poprzedniej aplikacji Store może nadal używać PowerShell;
+nie jest to część zwykłego startu MSI.
+
+`start-filees.ps1` i `.vbs` są wyłącznie adapterami starych skrótów do
+Go launchera. Nie mają pętli restartu. Konfiguracja istniejąca nie jest
+przepisywana. Anulowany pierwszy wybór kanału nie zapisuje configu.
+Logi: `logs/supervisor.log` i osobny `daemon-<czas UTC>.log` na każdy start.
+
+Pierwsze przejście wymaga nowego MSI, nie starego self-update. Przed
+instalacją zamknąć GUI i łagodnie zakończyć demona przez `filees shutdown`,
+zaczekać na zakończenie demona oraz starego supervisora. Nie usuwać configu,
+manifestów, intentów ani lokalnych kopii. Po instalacji otworzyć nowy skrót.
+Odbiór na działającej instalacji wymaga oddzielnej zgody; izolowane testy
+opisuje `implementation notes (not distributed)`.
+
+## Historia — poniższe instrukcje nie opisują nowego MSI
+
 Instalacja produkcyjna właściciela, założona 2026-09-03. Skrypty tu leżą, bo
 przez cały poprzedni dzień istniały **wyłącznie** na jego dysku — a to znaczy,
 że nikt poza sesją, która je napisała, nie wiedział ani że istnieją, ani jak
@@ -83,7 +108,7 @@ demonowi domknąć cykl skanowania. Windows nie ma SIGTERM do dostarczenia, wię
 **to jest jedyna łagodna droga z wiersza poleceń**; `Stop-Process` nią nie jest
 i kosztuje manifest obserwatora. Kolejność przy podmianie binarek niżej.
 
-## Kolejność przy podmianie binarek
+## Historyczna kolejność przy podmianie binarek (sprzed korekty wyjścia)
 
 Nadzorca wskrzesza demona w ciągu piętnastu sekund, więc samo `filees shutdown`
 nie wystarczy — demon wróci, zanim zdążysz podmienić plik.

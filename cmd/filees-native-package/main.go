@@ -12,14 +12,62 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Fprintln(os.Stderr, "usage: filees-native-package SOURCE-TREE STAGED-RUNTIME OUTPUT-DIRECTORY")
+	args := os.Args[1:]
+	files := len(args) == 4 && args[0] == "--files"
+	if files {
+		args = args[1:]
+	}
+	if len(args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: filees-native-package [--files] SOURCE-TREE STAGED-RUNTIME OUTPUT-DIRECTORY")
 		os.Exit(2)
 	}
-	if err := run(os.Args[1], os.Args[2], os.Args[3]); err != nil {
+	var err error
+	if files {
+		err = runFiles(args[0], args[1], args[2])
+	} else {
+		err = run(args[0], args[1], args[2])
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// runFiles is build-time only. Unlike the embedded producer it copies the
+// measured helper/DLL/notices as ordinary installation files, plus an inventory.
+func runFiles(source, stage, output string) error {
+	if err := verifySources(source, stage); err != nil {
+		return err
+	}
+	payload, err := nativeruntime.Pack(stage)
+	if err != nil {
+		return err
+	}
+	raw, files, err := nativeruntime.BuildFileManifest(payload)
+	if err != nil {
+		return err
+	}
+	if err := os.Mkdir(output, 0700); err != nil {
+		return err
+	}
+	base := nativeruntime.FilesRoot(output, raw)
+	for name, data := range files {
+		path := filepath.Join(base, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(output, "native-svn.json"), raw, 0644); err != nil {
+		return err
+	}
+	_, err = nativeruntime.VerifyFiles(base, raw)
+	if err == nil {
+		fmt.Println(nativeruntime.ID(raw))
+	}
+	return err
 }
 
 func run(source, stage, output string) error {

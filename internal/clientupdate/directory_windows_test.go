@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,4 +131,29 @@ func TestBlockedHelperRetirementDoesNotReplaceDaemon(t *testing.T) {
 		t.Fatal("retirement of a locked helper succeeded")
 	}
 	assertOldInstallation(t, installer)
+}
+
+func TestLaterAVSharingDenialRollsBackEarlierBinarySwap(t *testing.T) {
+	installer := newInstaller(t.TempDir(), "")
+	if err := installer.applyStaged(writeBundle(t, completeBundle("old"))); err != nil {
+		t.Fatal(err)
+	}
+	gui := filepath.Join(installer.Paths.InstallDir, "filees-gui-wails.exe")
+	locked, err := os.Open(gui)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer locked.Close()
+	if err := installer.applyStaged(writeBundle(t, completeBundle("new"))); err == nil {
+		t.Fatal("locked GUI update succeeded")
+	}
+	for _, name := range []string{"filees.exe", "filees-gui-wails.exe", "filees-launch.exe", "start-filees.ps1", "start-filees.vbs"} {
+		got, err := os.ReadFile(filepath.Join(installer.Paths.InstallDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(got), "old") {
+			t.Fatalf("mixed installation after denial: %s=%q", name, got)
+		}
+	}
 }

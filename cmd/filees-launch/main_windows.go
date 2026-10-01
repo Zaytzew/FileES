@@ -1,63 +1,90 @@
 //go:build windows
 
-// filees-launch starts the MSI supervisor (start-filees.ps1) with no window
-// at all. It replaces the wscript shim start-filees.vbs as the target of the
-// Start menu, desktop and Startup shortcuts: Microsoft is retiring VBScript,
-// and a clean Windows Sandbox on 2026-09-24 already answered the shortcut
-// with "There is no script engine for file extension .vbs", so FileES never
-// started.
-//
-// Built with -H=windowsgui, so no console is ever created for it, and the
-// PowerShell child gets CREATE_NO_WINDOW - the property the shim existed for:
-// powershell.exe -WindowStyle Hidden still flashes a console, because the
-// console host exists before the style applies (packaging/windows/AUTOSTART.md).
+// filees-launch is both the MSI shortcut target and its native supervisor.
+// Ordinary startup never executes a shell or an interpreted script.
 package main
 
 import (
+	"context"
+	"errors"
+	"filees/internal/msistartup"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"unsafe"
 )
 
 const createNoWindow = 0x08000000
 
-func main() {
-	os.Exit(run(os.Args[1:]))
-}
+func main() { os.Exit(run(os.Args[1:])) }
 
-// run mirrors autostart-launch.vbs: no argument starts the supervisor, --show
-// also asks it to bring up the interface, anything else is refused with 2.
-// It does not wait: the supervisor lives for the whole session.
 func run(args []string) int {
-	command, ok := supervisorCommand(args)
+	mode, ok := launchMode(args)
 	if !ok {
 		return 2
 	}
-	executable, err := os.Executable()
+	exe, err := os.Executable()
 	if err != nil {
 		return 1
 	}
-	here := filepath.Dir(executable)
-	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-		append(command, filepath.Join(here, "start-filees.ps1"))...)
-	if len(args) == 1 {
-		cmd.Args = append(cmd.Args, "-ShowGUI")
+	paths := msistartup.Paths(filepath.Dir(exe))
+	if mode == "supervise" || mode == "interactive-supervise" {
+		err = msistartup.Supervise(context.Background(), paths, mode == "interactive-supervise")
+	} else if mode == "show" {
+		err = msistartup.Open(context.Background(), paths, func() error { return startSupervisor(exe, paths.Root, true) })
+	} else {
+		err = startSupervisor(exe, paths.Root, false)
 	}
-	cmd.Dir = here
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
-	if err := cmd.Start(); err != nil {
+	if err != nil {
+		msistartup.Note(paths, fmt.Sprintf("launcher: %v", err))
+		if mode == "show" && !errors.Is(err, msistartup.ErrCancelled) {
+			showError(err.Error())
+		}
 		return 1
 	}
-	_ = cmd.Process.Release()
 	return 0
 }
 
-// supervisorCommand is the fixed PowerShell prefix, or false for arguments
-// the shortcuts never pass.
-func supervisorCommand(args []string) ([]string, bool) {
-	if len(args) > 1 || (len(args) == 1 && args[0] != "--show") {
-		return nil, false
+func startSupervisor(exe, root string, interactive bool) error {
+	args := []string{"--supervise"}
+	if interactive {
+		args = append(args, "--interactive")
 	}
-	return []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"}, true
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = root
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+func launchMode(args []string) (string, bool) {
+	if len(args) == 0 {
+		return "startup", true
+	}
+	if len(args) == 2 && args[0] == "--supervise" && args[1] == "--interactive" {
+		return "interactive-supervise", true
+	}
+	if len(args) != 1 {
+		return "", false
+	}
+	switch args[0] {
+	case "--show":
+		return "show", true
+	case "--supervise":
+		return "supervise", true
+	default:
+		return "", false
+	}
+}
+
+func showError(message string) {
+	title, _ := syscall.UTF16PtrFromString("FileES")
+	text, err := syscall.UTF16PtrFromString(message)
+	if err == nil {
+		_, _, _ = syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
+	}
 }

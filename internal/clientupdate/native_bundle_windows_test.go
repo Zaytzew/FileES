@@ -5,6 +5,8 @@ package clientupdate
 import (
 	"archive/tar"
 	"encoding/json"
+	"filees/internal/nativeruntime"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,24 +14,41 @@ import (
 	"testing"
 )
 
-// Opt-in acceptance of the actual bundle, using the unchanged four-file
-// installer, not a separate payload-copy script. No installed user processes
+// Opt-in acceptance of the actual bundle through the production installer.
+// No installed user processes
 // or configuration are touched. Signature tests live in releaseenvelope.
-func TestNativeBundleThroughFourFileInstaller(t *testing.T) {
+func TestNativeBundleThroughDirectoryInstaller(t *testing.T) {
 	bundle := os.Getenv("FILEES_TEST_NATIVE_BUNDLE")
 	if !filepath.IsAbs(bundle) {
 		t.Fatal("absolute FILEES_TEST_NATIVE_BUNDLE required")
 	}
 	var entries []tarEntry
-	for _, name := range RequiredBundleFiles() {
-		data, err := os.ReadFile(filepath.Join(bundle, filepath.FromSlash(name)))
+	if err := filepath.WalkDir(bundle, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
-		entries = append(entries, tarEntry{name: name, typeflag: tar.TypeReg, mode: 0755, data: string(data)})
+		if d.IsDir() {
+			return nil
+		}
+		name, err := filepath.Rel(bundle, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, tarEntry{name: filepath.ToSlash(name), typeflag: tar.TypeReg, mode: 0755, data: string(data)})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	archive := makeBundle(t, entries...)
 	resolved := stagedRelease(archive)
+	nativeRaw, readErr := os.ReadFile(filepath.Join(bundle, "bin", "native-svn.json"))
+	if readErr == nil {
+		resolved.Manifest.Artifacts[0].Kind = "bundle-native-files"
+	}
 	root := t.TempDir()
 	installer := newInstaller(filepath.Join(root, "installed"), filepath.Join(root, "config.json"))
 	installer.Stager = BundleStager{Fetcher: artifactFetcher{"releases/r1/desktop/linux-amd64/client.tar.gz": archive}, Root: root}
@@ -38,10 +57,6 @@ func TestNativeBundleThroughFourFileInstaller(t *testing.T) {
 	}
 	if err := installer.Apply(t.Context(), resolved); err != nil {
 		t.Fatal(err)
-	}
-	installed, err := os.ReadDir(installer.Paths.InstallDir)
-	if err != nil || len(installed) != 4 {
-		t.Fatalf("installer layout changed: %v %v", installed, err)
 	}
 	got, _ := os.ReadFile(installer.Paths.ConfigPath)
 	if string(got) != "do not change" {
@@ -58,9 +73,19 @@ func TestNativeBundleThroughFourFileInstaller(t *testing.T) {
 	}
 	helper := strings.TrimSpace(string(out))
 	cacheRoot := filepath.Join(root, "cache", "FileES", "native-svn")
-	rel, err := filepath.Rel(cacheRoot, helper)
-	if err != nil || strings.HasPrefix(rel, "..") || filepath.Base(helper) != "filees-svn.exe" {
-		t.Fatalf("not an embedded helper: %q %v", helper, err)
+	if readErr == nil {
+		want := filepath.Join(nativeruntime.FilesRoot(installer.Paths.InstallDir, nativeRaw), nativeruntime.Executable)
+		if helper != want {
+			t.Fatalf("not installed sidecar: %q want %q", helper, want)
+		}
+		if _, err := os.Stat(cacheRoot); !os.IsNotExist(err) {
+			t.Fatal("sidecar build created native cache", err)
+		}
+	} else {
+		rel, err := filepath.Rel(cacheRoot, helper)
+		if err != nil || strings.HasPrefix(rel, "..") || filepath.Base(helper) != "filees-svn.exe" {
+			t.Fatalf("not an embedded helper: %q %v", helper, err)
+		}
 	}
 	out, err = exec.Command(helper, "--version").CombinedOutput()
 	if err != nil {

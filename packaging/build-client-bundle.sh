@@ -88,17 +88,21 @@ windows-amd64)
 	[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
 	[ -d "$FILEES_NATIVE_RUNTIME" ] || die "native runtime directory not found: $FILEES_NATIVE_RUNTIME"
 	mkdir -p "$out/bin" "$out/autostart"
-
-	# Embed through an overlay, never overwrite generated assets in the source WC.
-	# The old four-file updater and MSI therefore receive the complete runtime in
-	# the same daemon image. Runtime extraction uses a content-addressed cache.
+	# Windows MSI/update bundles install the complete immutable runtime as files.
+	# The first transition is through MSI; old updaters refuse the new bundle kind.
+	# Linux and Store retain their separate embedded-runtime producers.
 	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
 	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
-	go run ./cmd/filees-native-package "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
+	go run ./cmd/filees-native-package --files "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
+	cp -R "$native_build/packed/native-svn" "$out/bin/native-svn"
+	cp "$native_build/packed/native-svn.json" "$out/bin/native-svn.json"
+	native_manifest_b64=$(base64 <"$out/bin/native-svn.json" | tr -d '\r\n')
+	release_ldflags="$release_ldflags -X main.injectedNativeFilesManifestB64=$native_manifest_b64"
+	case "$daemon_tags" in *nocfapi*) daemon_tags=nocfapi ;; *) daemon_tags= ;; esac
 	# Only the interface gets -tags production and -H=windowsgui: the tag is a Wails
 	# convention that drops the dev server and devtools, and the daemon is a console
 	# program that must keep its console for `filees status` and friends.
-	GOOS=$goos GOARCH=$goarch go build -tags "$daemon_tags" -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
+	GOOS=$goos GOARCH=$goarch go build -tags "$daemon_tags" -trimpath -buildvcs=false \
 		-ldflags "-X main.version=$stamp $release_ldflags" \
 		-o "$out/bin/$daemon" ./cmd/filees
 	GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \

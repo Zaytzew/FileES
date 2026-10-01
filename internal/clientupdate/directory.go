@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"filees/internal/nativeruntime"
 	"filees/internal/releaseenvelope"
 	contract "filees/pkg/contract/v1"
 )
@@ -117,6 +119,10 @@ func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releasee
 		return nil, false, err
 	}
 	files := presentFiles(staged.Root, installer.managedFiles())
+	native, err := nativeBundleFiles(staged.Root, paths.InstallDir)
+	if err != nil {
+		return nil, false, err
+	}
 	retired, retiring, err := installer.retiredFiles(staged.Root)
 	if err != nil {
 		return nil, false, err
@@ -136,6 +142,13 @@ func (installer DirectoryInstaller) Plan(ctx context.Context, resolved *releasee
 	}
 	for _, file := range retired {
 		changes = append(changes, contract.UpdateChange{Action: "remove", Path: file.target, Detail: file.detail})
+	}
+	for _, file := range native {
+		action, err := compareFile(filepath.Join(staged.Root, filepath.FromSlash(file.source)), file.target)
+		if err != nil {
+			return nil, false, err
+		}
+		changes = append(changes, contract.UpdateChange{Action: action, Path: file.target, Detail: file.detail})
 	}
 	// Said out loud rather than left to inference. The owner has been burned by
 	// tools that rewrite configuration during an upgrade, and a plan that
@@ -171,6 +184,9 @@ func (installer DirectoryInstaller) applyStaged(root string) error {
 		return err
 	}
 	files := presentFiles(root, installer.managedFiles())
+	if _, err := nativeBundleFiles(root, paths.InstallDir); err != nil {
+		return err
+	}
 	retired, retiring, err := installer.retiredFiles(root)
 	if err != nil {
 		return err
@@ -196,20 +212,70 @@ func (installer DirectoryInstaller) applyStaged(root string) error {
 			return err
 		}
 	}
-	stamp := installer.clock()().UTC().Format("20060102-150405")
+	if raw, err := os.ReadFile(filepath.Join(root, "bin", "native-svn.json")); err == nil {
+		if err := nativeruntime.PublishFiles(nativeruntime.FilesRoot(filepath.Join(root, "bin"), raw), paths.InstallDir, raw); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	stamp := installer.clock()().UTC().Format("20060102-150405.000000000") + "-" + uuid.NewString()
+	// Refuse obstruction before swapping the first binary; recorded backups
+	// let a later sharing violation/AV denial roll earlier swaps back.
+	for _, file := range append(append([]managedFile{}, retired...), files...) {
+		if st, err := os.Lstat(file.target); err == nil && !st.Mode().IsRegular() {
+			return fmt.Errorf("installation target is not a regular file: %s", file.target)
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	type swappedFile struct {
+		target  string
+		existed bool
+	}
+	var swapped []swappedFile
+	rollback := func(cause error) error {
+		for i := len(swapped) - 1; i >= 0; i-- {
+			f := swapped[i]
+			backup := f.target + supersededSuffix + stamp
+			if f.existed {
+				if _, err := os.Lstat(backup); errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				failed := f.target + ".failed-" + stamp
+				if _, err := os.Lstat(f.target); err == nil {
+					if err := os.Rename(f.target, failed); err != nil {
+						cause = errors.Join(cause, fmt.Errorf("rollback move %s: %w", f.target, err))
+						continue
+					}
+				}
+				if err := os.Rename(backup, f.target); err != nil {
+					cause = errors.Join(cause, fmt.Errorf("rollback restore %s: %w", f.target, err))
+				} else {
+					_ = os.Remove(failed)
+				}
+			} else if err := os.Remove(f.target); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cause = errors.Join(cause, fmt.Errorf("rollback new %s: %w", f.target, err))
+			}
+		}
+		return cause
+	}
 	// Retire before replacing binaries. A helper that cannot be moved aside
 	// must not leave a new daemon installed alongside the old optional helper.
 	for _, file := range retired {
 		if err := os.Rename(file.target, file.target+supersededSuffix+stamp); err != nil {
-			return fmt.Errorf("retire %s: %w", file.target, err)
+			return rollback(fmt.Errorf("retire %s: %w", file.target, err))
 		}
+		swapped = append(swapped, swappedFile{file.target, true})
 	}
 	for i, file := range files {
+		_, err := os.Lstat(file.target)
+		swapped = append(swapped, swappedFile{file.target, err == nil})
 		if err := installer.replace(file.target, payloads[i], stamp); err != nil {
-			return fmt.Errorf("install %s: %w", file.target, err)
+			return rollback(fmt.Errorf("install %s: %w", file.target, err))
 		}
 	}
-	installer.forgetSupersededFiles(paths.InstallDir)
+	installer.forgetOlderSupersededFiles(paths.InstallDir, stamp)
 	return nil
 }
 
@@ -307,12 +373,19 @@ const supersededSuffix = ".superseded-"
 // restart this update requires. Failing to delete it is not a failed update -
 // the next one will collect it - so nothing here is allowed to return an error.
 func (installer DirectoryInstaller) forgetSupersededFiles(directory string) {
+	installer.forgetOlderSupersededFiles(directory, "")
+}
+
+func (installer DirectoryInstaller) forgetOlderSupersededFiles(directory, keepStamp string) {
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.Contains(entry.Name(), supersededSuffix) {
+			continue
+		}
+		if keepStamp != "" && strings.HasSuffix(entry.Name(), supersededSuffix+keepStamp) {
 			continue
 		}
 		_ = os.Remove(filepath.Join(directory, entry.Name()))

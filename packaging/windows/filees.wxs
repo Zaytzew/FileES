@@ -85,10 +85,8 @@
       <File Id="FileESInterfaceExe" Source="$(var.SourceDir)\filees-gui-wails.exe" KeyPath="yes" />
     </Component>
 
-    <!-- The supervisor. Task Scheduler and a plain shortcut both leave a
-         console window when they run powershell.exe directly, because the
-         console host is created before -WindowStyle can hide it; that is why
-         the shortcuts go through the launcher below. -->
+    <!-- Compatibility shim for callers of the old script. All current entry
+         points run the Go supervisor in filees-launch.exe directly. -->
     <Component Id="FileESSupervisor" Directory="INSTALLFOLDER" Guid="*">
       <File Id="FileESSupervisorScript" Source="$(var.SourceDir)\start-filees.ps1" KeyPath="yes" />
     </Component>
@@ -191,6 +189,9 @@
       <ComponentRef Id="FileESFolderIcon" />
       <ComponentRef Id="FileESRegistry" />
       <ComponentRef Id="FileESLogs" />
+      <?if $(var.WithNativeFiles) = "1" ?>
+      <ComponentGroupRef Id="NativeSVNFiles" />
+      <?endif?>
     </Feature>
 
     <ui:WixUI Id="WixUI_Minimal" />

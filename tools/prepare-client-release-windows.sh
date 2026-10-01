@@ -132,7 +132,10 @@ elif [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ] &&
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
 fi
 
+bundle_kind=bundle
+if [ -f "$staging/bin/native-svn.json" ]; then bundle_kind=bundle-native-files; fi
 go run ./cmd/filees-client-release \
+	-bundle-kind "$bundle_kind" \
 	-bundle "$bundle" \
 	-installer "$installer" \
 	-component "$COMPONENT" \

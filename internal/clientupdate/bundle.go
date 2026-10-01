@@ -221,6 +221,16 @@ func (stager BundleStager) Stage(ctx context.Context, resolved *releaseenvelope.
 		os.RemoveAll(temp)
 		return nil, err
 	}
+	if artifact.Kind == "bundle-native-files" {
+		if _, err := os.Stat(filepath.Join(temp, "bin", "native-svn.json")); err != nil {
+			os.RemoveAll(temp)
+			return nil, fmt.Errorf("native-files bundle has no inventory: %w", err)
+		}
+		if _, err := nativeBundleFiles(temp, temp); err != nil {
+			os.RemoveAll(temp)
+			return nil, err
+		}
+	}
 	return &StagedBundle{Root: temp, Artifact: artifact}, nil
 }
 
@@ -241,7 +251,7 @@ func (stager BundleStager) fileLimit() int {
 func selectBundle(artifacts []releaseenvelope.Artifact) (releaseenvelope.Artifact, error) {
 	var selected releaseenvelope.Artifact
 	for _, artifact := range artifacts {
-		if artifact.Kind != "bundle" {
+		if artifact.Kind != "bundle" && artifact.Kind != "bundle-native-files" {
 			continue
 		}
 		if selected.Source != "" {

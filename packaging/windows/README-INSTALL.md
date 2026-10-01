@@ -48,6 +48,17 @@ Beta nie została jeszcze opublikowana — to opis przygotowanej ścieżki.
 
 ## Aktualizacje
 
+Od nowego formatu Windows (2026-10-01) pierwsze przejście wymaga MSI.
+Starszy aktualizator nie potrafi przenieść osobnych bibliotek SVN i bezpiecznie
+odmówi tej paczki. Zakończ FileES łagodnie, zainstaluj nowe MSI na poprzedniej
+instalacji i otwórz skrót. Nie kasuj konfiguracji ani oczekujących zmian.
+Późniejsze aktualizacje kanałem obsługują już pełny zestaw plików.
+
+Nowy start używa programu Go zamiast skryptowego nadzorcy. Helper SVN i jego
+biblioteki są instalowane jako zwykłe pliki — nie wypakowują się przy starcie.
+Zmniejsza to powierzchnię podejrzanych dla AV zachowań; nie gwarantuje braku
+alarmów i nie zastępuje podpisu Authenticode ani reputacji instalatora.
+
 Są dwie drogi i **obie prowadzą do tego samego katalogu**:
 
 1. **Kanał** — klient sam pyta `FILEES-BIN` o nowe wydanie na swoim kanale i

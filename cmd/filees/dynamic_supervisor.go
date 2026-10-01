@@ -633,7 +633,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+serverID).Warnf("suspend removed server: %v", err)
 			}
 			cancel()
-			talk.With("projection:"+serverID).Infof("server removed on this computer; polling stopped until it is activated again")
+			talk.With("projection:" + serverID).Infof("server removed on this computer; polling stopped until it is activated again")
 		case serverID := <-detachedEvents:
 			// Activation and suspension are serialized in this loop. If a new
 			// profile won the race, a late event from the old proof must not stop

@@ -244,6 +244,23 @@ func (c *moveFaultClient) RecordMove(ctx context.Context, wc, old, dst string) (
 func (c *moveFaultClient) VerifyCommittedMove(ctx context.Context, wc, old, dst string) (bool, error) {
 	return c.mover.VerifyCommittedMove(ctx, wc, old, dst)
 }
+func (c *moveFaultClient) UnscheduleMove(ctx context.Context, wc, old, dst string) (string, error) {
+	return c.mover.(client.MoveUnscheduler).UnscheduleMove(ctx, wc, old, dst)
+}
+
+// legacyMoverClient is a helper from before unschedule-move.
+type legacyMoverClient struct {
+	client.Client
+	mover client.MetadataMover
+}
+
+func (c *legacyMoverClient) MetadataMovesEnabled() bool { return true }
+func (c *legacyMoverClient) RecordMove(ctx context.Context, wc, old, dst string) (string, error) {
+	return c.mover.RecordMove(ctx, wc, old, dst)
+}
+func (c *legacyMoverClient) VerifyCommittedMove(ctx context.Context, wc, old, dst string) (bool, error) {
+	return c.mover.VerifyCommittedMove(ctx, wc, old, dst)
+}
 func (c *moveFaultClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, msg string) (string, error) {
 	out, err := c.Client.CommitKeepLocks(ctx, wc, paths, msg)
 	if err == nil && c.failCommit {
@@ -354,22 +371,58 @@ func TestNativeRenameChainAndNewParent(t *testing.T) {
 	f.verify(t, dst)
 }
 
-func TestNativeScheduledChainBlocksInsteadOfHalfCommit(t *testing.T) {
-	f := newNativeFixture(t)
-	fault := &moveFaultClient{Client: f.cli, mover: f.cli.(client.MetadataMover), failCommit: false}
-	s := f.service(fault)
+// scheduleThenMoveOn reproduces the owner's KIWERSKA state (2026-10-01): a
+// rename already scheduled in SVN metadata, then the renamed file moved on to
+// another directory before the commit carried the first hop.
+func scheduleThenMoveOn(t *testing.T, f nativeFixture, s *Service, mover client.MetadataMover) string {
+	t.Helper()
 	ev := f.move(t, "middle.txt")
 	s.acceptEvent(ev)
-	// Schedule directly and persist the exact phase; then user moves again.
-	if _, err := fault.RecordMove(context.Background(), f.wc, "old.txt", "middle.txt"); err != nil {
+	if _, err := mover.RecordMove(context.Background(), f.wc, "old.txt", "middle.txt"); err != nil {
 		t.Fatal(err)
 	}
 	s.staging["middle.txt"].MoveScheduled = true
 	s.saveCache()
-	if err := os.Rename(ev.Path, filepath.Join(f.wc, "final.txt")); err != nil {
+	dst := "nowy katalog/final.txt"
+	if err := os.Mkdir(filepath.Join(f.wc, "nowy katalog"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	s.acceptEvent(watcher.Event{Path: filepath.Join(f.wc, "final.txt"), Rel: "final.txt", OldRel: "middle.txt", Op: watcher.Renamed, Type: watcher.EntryFile, IdentityVerified: true})
+	if err := os.Rename(ev.Path, filepath.Join(f.wc, dst)); err != nil {
+		t.Fatal(err)
+	}
+	s.acceptEvent(watcher.Event{Path: filepath.Join(f.wc, dst), Rel: dst, OldRel: "middle.txt", Op: watcher.Renamed, Type: watcher.EntryFile, IdentityVerified: true})
+	if s.staging[dst].Op != watcher.RenameUncertain {
+		t.Fatalf("second hop of a scheduled chain must not be committed as is: %v", s.staging[dst].Op)
+	}
+	return dst
+}
+
+func TestNativeScheduledChainCollapsesWhenItsDestinationLeft(t *testing.T) {
+	f := newNativeFixture(t)
+	fault := &moveFaultClient{Client: f.cli, mover: f.cli.(client.MetadataMover)}
+	s := f.service(fault)
+	dst := scheduleThenMoveOn(t, f, s, fault)
+	if err := s.tryCommit(context.Background(), f.wc); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.staging) != 0 {
+		t.Fatalf("queue not drained: %+v", s.staging)
+	}
+	// One move old.txt -> final, creator and bytes kept; nothing restored to
+	// the old or middle path on disk.
+	f.verify(t, dst)
+	for _, gone := range []string{"old.txt", "middle.txt"} {
+		if _, err := os.Lstat(filepath.Join(f.wc, gone)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s reappeared on disk: %v", gone, err)
+		}
+	}
+}
+
+func TestNativeScheduledChainStaysHeldWithAnOlderHelper(t *testing.T) {
+	f := newNativeFixture(t)
+	legacy := &legacyMoverClient{Client: f.cli, mover: f.cli.(client.MetadataMover)}
+	s := f.service(legacy)
+	scheduleThenMoveOn(t, f, s, legacy)
 	err := s.tryCommit(context.Background(), f.wc)
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("scheduled chain not held: %v", err)
@@ -377,6 +430,43 @@ func TestNativeScheduledChainBlocksInsteadOfHalfCommit(t *testing.T) {
 	if rev, _ := f.cli.Revision(context.Background(), f.repoURL); rev != 1 {
 		t.Fatal("half-chain committed")
 	}
+}
+
+// The ordinary flow: rename, then move within the quiet period. SVN sees one
+// move, and nothing is scheduled while the path is still settling.
+func TestNativeRenameQuietPeriodCollapsesRenameThenMove(t *testing.T) {
+	f := newNativeFixture(t)
+	s := f.service(f.cli)
+	s.Rules.RenamedQuiet = time.Hour
+	s.Rules.ModifiedMaxWait = 2 * time.Hour
+	ev := f.move(t, "middle.txt")
+	s.acceptEvent(ev)
+	if err := s.tryCommit(context.Background(), f.wc); err != nil {
+		t.Fatal(err)
+	}
+	if s.staging["middle.txt"] == nil || s.staging["middle.txt"].MoveScheduled {
+		t.Fatal("rename scheduled in SVN before its path was quiet")
+	}
+	if rev, _ := f.cli.Revision(context.Background(), f.repoURL); rev != 1 {
+		t.Fatal("rename published before its path was quiet")
+	}
+	dst := "nowy katalog/final.txt"
+	if err := os.Mkdir(filepath.Join(f.wc, "nowy katalog"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(ev.Path, filepath.Join(f.wc, dst)); err != nil {
+		t.Fatal(err)
+	}
+	s.acceptEvent(watcher.Event{Path: filepath.Join(f.wc, dst), Rel: dst, OldRel: "middle.txt", Op: watcher.Renamed, Type: watcher.EntryFile, IdentityVerified: true})
+	if len(s.staging) != 1 || s.staging[dst].OldRel != "old.txt" || s.staging[dst].Op != watcher.Renamed {
+		t.Fatalf("chain not collapsed in the local queue: %+v", s.staging)
+	}
+	s.Rules.RenamedQuiet = time.Nanosecond
+	time.Sleep(time.Millisecond)
+	if err := s.tryCommit(context.Background(), f.wc); err != nil {
+		t.Fatal(err)
+	}
+	f.verify(t, dst)
 }
 
 func TestNativeMoveDefersOldDirectoryDeletion(t *testing.T) {

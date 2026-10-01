@@ -46,6 +46,11 @@ svn_error_t *filees_abs_paths(apr_array_header_t **out, const char *wc,
 svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
                                 const char *new_rel, svn_boolean_t live,
                                 const char **state, apr_pool_t *pool);
+/* Metadata-only undo of a scheduled, uncommitted move whose destination left
+ * the disk before the commit carried it. Never touches files or the server. */
+svn_error_t *filees_unschedule_move(const char *wc_arg, const char *old_rel,
+                                    const char *new_rel, svn_boolean_t live,
+                                    const char **state, apr_pool_t *pool);
 
 /* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
 svn_error_t *filees_ra_ctx(svn_client_ctx_t **ctx, apr_pool_t *pool);

@@ -27,6 +27,13 @@ type MetadataMover interface {
 
 func (c *execClient) MetadataMovesEnabled() bool { return c.nativeSVNPath != "" }
 
+// MoveUnscheduler is the optional undo of RecordMove for a scheduled,
+// uncommitted move whose destination left the disk before the commit carried
+// it. Metadata only: no file is restored and the server is never asked.
+type MoveUnscheduler interface {
+	UnscheduleMove(context.Context, string, string, string) (string, error)
+}
+
 func missingPathLockConfirmed(raw, comment string) bool {
 	if comment == "" {
 		return false
@@ -128,6 +135,47 @@ func (c *execClient) RecordMove(ctx context.Context, wc, old, dst string) (strin
 			nativeFault("record-move", err, false, stdout.buffer.String(), stderr.buffer.String()))
 	}
 	c.lg.Infof("native-move %s: %s -> %s (%s)", result.State, old, dst, time.Since(started).Round(time.Millisecond))
+	return result.State, nil
+}
+
+// UnscheduleMove runs the helper's unschedule-move under the same client lock
+// and receipt checks as RecordMove. A retried call after a lost reply answers
+// "already_unscheduled".
+func (c *execClient) UnscheduleMove(ctx context.Context, wc, old, dst string) (string, error) {
+	if !filepath.IsAbs(c.nativeSVNPath) || !filepath.IsAbs(wc) || !validMovePath(old) || !validMovePath(dst) || old == dst {
+		return "", errors.New("native SVN unschedule: explicit absolute executable/WC and distinct relative data paths required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	deadline := min(c.timeout, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.nativeSVNPath, "unschedule-move", "--wc", wc, old, dst)
+	releaseRuntime, pinErr := nativeruntime.PinCommand(cmd)
+	if pinErr != nil {
+		return "", pinErr
+	}
+	defer releaseRuntime()
+	cmd.Dir = wc
+	cmd.Env = svnProcessEnvironment(os.Environ(), "")
+	var stdout, stderr nativeOutput
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if err != nil || stdout.truncated || stderr.truncated {
+		return "", fmt.Errorf("native SVN unschedule %q -> %q: %w", old, dst,
+			nativeFault("unschedule-move", errors.Join(err, ctx.Err()),
+				stdout.truncated || stderr.truncated, stdout.buffer.String(), stderr.buffer.String()))
+	}
+	var result struct {
+		Schema string
+		OK     bool
+		State  string
+	}
+	if err := json.Unmarshal(stdout.buffer.Bytes(), &result); err != nil || result.Schema != "filees.native-svn/v1" || !result.OK || (result.State != "unscheduled" && result.State != "already_unscheduled") {
+		return "", fmt.Errorf("native SVN unschedule returned invalid receipt: %w",
+			nativeFault("unschedule-move", err, false, stdout.buffer.String(), stderr.buffer.String()))
+	}
+	c.lg.Infof("native-move %s: %s -> %s", result.State, old, dst)
 	return result.State, nil
 }
 

@@ -87,3 +87,57 @@ svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
     return svn_client_move7(sources, dst, FALSE, FALSE, FALSE, TRUE,
                             NULL, NULL, NULL, ctx, pool);
 }
+
+/* The one race a quiet period before scheduling cannot close: the owner moves
+ * a renamed file on again between scheduling and the commit that carries it.
+ * The scheduled pair (source deleted and moved to the destination, the
+ * destination moved here and now missing) is reverted in metadata only:
+ * nothing is restored to disk and nothing is asked of the server. The source
+ * returns to a plain missing committed file, so the daemon can schedule the
+ * whole chain again as one move. Anything else is refused untouched. */
+svn_error_t *filees_unschedule_move(const char *wc_arg, const char *old_rel,
+                                    const char *new_rel, svn_boolean_t live,
+                                    const char **state, apr_pool_t *pool)
+{
+    const char *wc, *root, *src, *dst;
+    svn_client_ctx_t *ctx;
+    svn_client_status_t *s, *d;
+    apr_array_header_t *targets;
+    apr_finfo_t finfo;
+    if (!filees_safe_relative(old_rel) || !filees_safe_relative(new_rel) || !strcmp(old_rel, new_rel))
+        return filees_refuse("expected two distinct canonical relative data paths");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
+    src = svn_dirent_join(wc, old_rel, pool);
+    dst = svn_dirent_join(wc, new_rel, pool);
+    /* Both paths must be absent from disk: this never reverts over a file. */
+    if (apr_stat(&finfo, src, APR_FINFO_LINK, pool) == APR_SUCCESS ||
+        apr_stat(&finfo, dst, APR_FINFO_LINK, pool) == APR_SUCCESS)
+        return filees_refuse("a path of the scheduled move still exists on disk");
+    SVN_ERR(svn_client_get_wc_root(&root, src, ctx, pool, pool));
+    if (strcmp(root, wc)) return filees_refuse("source belongs to another WC");
+    SVN_ERR(read_status(&s, src, ctx, pool));
+    if (s->versioned && s->kind == svn_node_file && s->node_status == svn_wc_status_missing &&
+        SVN_IS_VALID_REVNUM(s->revision) && !s->copied && !s->conflicted &&
+        !s->moved_from_abspath && !s->moved_to_abspath) {
+        /* Retried after a lost reply: already undone. */
+        *state = "already_unscheduled";
+        return SVN_NO_ERROR;
+    }
+    SVN_ERR(read_status(&d, dst, ctx, pool));
+    if (!s->versioned || s->kind != svn_node_file || s->node_status != svn_wc_status_deleted ||
+        s->conflicted || s->wc_is_locked || !s->moved_to_abspath || strcmp(s->moved_to_abspath, dst))
+        return filees_refuse("source is not deleted and moved to the destination");
+    /* SVN reports neither moved-from nor copied for a missing node; the
+     * source's moved-to above is the authoritative half of the pair. */
+    if (!d->versioned || d->node_status != svn_wc_status_missing ||
+        d->conflicted || d->wc_is_locked ||
+        (d->moved_from_abspath && strcmp(d->moved_from_abspath, src)))
+        return filees_refuse("destination is not a missing node moved here from the source");
+    targets = apr_array_make(pool, 2, sizeof(const char *));
+    APR_ARRAY_PUSH(targets, const char *) = dst;
+    APR_ARRAY_PUSH(targets, const char *) = src;
+    SVN_ERR(svn_client_revert4(targets, svn_depth_empty, NULL, FALSE, TRUE, TRUE, ctx, pool));
+    *state = "unscheduled";
+    return SVN_NO_ERROR;
+}

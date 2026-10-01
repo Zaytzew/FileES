@@ -19,7 +19,7 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
+    "record-move", "unschedule-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "writer-inspect", "list",
     "fetch-file", "list-tree", "fetch-tree", NULL
@@ -543,6 +543,17 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         else if (!strcmp(argv[2], "--disposable-wc")) live = FALSE;
         else return filees_refuse("usage: filees-svn record-move --wc|--disposable-wc WC OLD_REL NEW_REL");
         SVN_ERR(filees_record_move(argv[3], argv[4], argv[5], live, &state, pool));
+        printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
+        return SVN_NO_ERROR;
+    }
+
+    if (!strcmp(verb, "unschedule-move")) {
+        const char *state = "unscheduled";
+        if (argc != 6) return filees_refuse("usage: filees-svn unschedule-move --wc|--disposable-wc WC OLD_REL NEW_REL");
+        if (!strcmp(argv[2], "--wc")) live = TRUE;
+        else if (!strcmp(argv[2], "--disposable-wc")) live = FALSE;
+        else return filees_refuse("usage: filees-svn unschedule-move --wc|--disposable-wc WC OLD_REL NEW_REL");
+        SVN_ERR(filees_unschedule_move(argv[3], argv[4], argv[5], live, &state, pool));
         printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
         return SVN_NO_ERROR;
     }

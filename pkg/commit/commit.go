@@ -57,6 +57,7 @@ type Rules struct {
 	NewLatency        time.Duration  // delay for new (Added) entries before commit (default 5m)
 	ModifiedQuiet     time.Duration  // debounce: commit a Modified entry after this much quiet since its last write (default 2m)
 	ModifiedMaxWait   time.Duration  // hard ceiling from a Modified entry's first unconfirmed write, never reset (default 5m)
+	RenamedQuiet      time.Duration  // hold a rename/move in the local queue until this much quiet, so rename-then-move collapses into one move before SVN sees it (default 1m; ceiling ModifiedMaxWait)
 	SizeTiers         []SizeTier     // size-adaptive intervals; empty = use Window only
 	PollInterval      time.Duration  // HEAD polling interval; 0 = disabled
 }
@@ -451,6 +452,9 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	}
 	if s.Rules.ModifiedMaxWait <= 0 {
 		s.Rules.ModifiedMaxWait = 5 * time.Minute
+	}
+	if s.Rules.RenamedQuiet <= 0 {
+		s.Rules.RenamedQuiet = time.Minute
 	}
 	if s.Rules.MaxBatchFiles <= 0 {
 		s.Rules.MaxBatchFiles = 1000
@@ -1112,6 +1116,9 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	if found, err := s.recoverCommit(ctx, wc); found || err != nil {
 		return err
 	}
+	if err := s.repairOrphanedScheduledMoves(ctx, wc); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	for _, it := range s.staging {
 		if (it.RenameVerified || it.MoveScheduled) && s.nativeMover() == nil {
@@ -1166,6 +1173,19 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 				continue
 			}
 			if !force && now.Sub(it.FirstSeen) < s.Rules.NewLatency {
+				continue
+			}
+		}
+		if it.Op == watcher.Renamed && !it.MoveScheduled && !force && !backlogHigh && s.Rules.RenamedQuiet > 0 {
+			// A file saved under a bad name is renamed and then moved to its
+			// place within seconds, many times a day. Until the path is quiet
+			// the rename stays a local intent: the next hop collapses into it
+			// (addEventLocked) instead of finding half a chain already
+			// scheduled in SVN. The ceiling keeps a busy path from waiting
+			// forever.
+			quiet := now.Sub(it.LastSeen) >= s.Rules.RenamedQuiet
+			ceiling := now.Sub(it.FirstSeen) >= s.Rules.ModifiedMaxWait
+			if !quiet && !ceiling {
 				continue
 			}
 		}
@@ -2277,6 +2297,75 @@ func (s *Service) saveCacheChecked() error {
 		err = atomicWriteJSONSlice(s.cachePath, value)
 	}
 	return err
+}
+
+// repairOrphanedScheduledMoves closes the race the rename quiet period cannot:
+// a move scheduled in SVN metadata whose destination left the disk before the
+// commit carried it (the owner moved the renamed file on). Such a pair can
+// never commit, and the next hop was held as uncertain because half a chain was
+// already scheduled. The pair is unscheduled in metadata only - nothing is
+// restored to disk, nothing is asked of the server - and the queue is folded
+// back to what happened: one verified move from the original path to the new
+// one, or, without a verified next hop, a deletion of the original. Caller
+// holds wcOpMu. A helper without the verb leaves the hold as it was.
+func (s *Service) repairOrphanedScheduledMoves(ctx context.Context, wc string) error {
+	unscheduler, ok := s.nativeMover().(client.MoveUnscheduler)
+	if !ok {
+		return nil
+	}
+	s.mu.Lock()
+	type orphan struct{ rel, oldRel string }
+	var orphans []orphan
+	for _, it := range s.staging {
+		if !it.MoveScheduled || it.IsDir || it.OldRel == "" {
+			continue
+		}
+		if _, err := os.Lstat(it.Abs); errors.Is(err, os.ErrNotExist) {
+			orphans = append(orphans, orphan{it.Rel, it.OldRel})
+		}
+	}
+	s.mu.Unlock()
+	sort.Slice(orphans, func(i, j int) bool { return orphans[i].rel < orphans[j].rel })
+	for _, o := range orphans {
+		if _, err := unscheduler.UnscheduleMove(ctx, wc, o.oldRel, o.rel); err != nil {
+			return fmt.Errorf("unschedule orphaned move %s -> %s: %w", o.oldRel, o.rel, err)
+		}
+		now := time.Now()
+		s.mu.Lock()
+		scheduled := s.staging[o.rel]
+		delete(s.staging, o.rel)
+		var next *stageItem
+		for _, candidate := range s.staging {
+			if candidate.OldRel == o.rel && !candidate.MoveScheduled && !candidate.IsDir {
+				next = candidate
+				break
+			}
+		}
+		switch {
+		case next != nil && next.RenameVerified && scheduled != nil && scheduled.RenameVerified:
+			next.OldRel, next.Op, next.ResolutionID = o.oldRel, watcher.Renamed, ""
+			next.LastSeen = now
+			next.ver++
+		default:
+			if next != nil {
+				// Unverified hop: its source is no longer a scheduled node, so
+				// the ordinary intent resolution can decide it.
+				next.OldRel = ""
+				next.ver++
+			}
+			if _, exists := s.staging[o.oldRel]; !exists {
+				s.staging[o.oldRel] = &stageItem{Rel: o.oldRel, Abs: filepath.Join(wc, filepath.FromSlash(o.oldRel)), Op: watcher.Deleted, FirstSeen: now, LastSeen: now}
+			}
+		}
+		s.mu.Unlock()
+		s.Logger.Infof("orphaned scheduled move %s -> %s folded back into the local queue", o.oldRel, o.rel)
+		if s.cachePath != "" {
+			if err := s.saveCacheChecked(); err != nil {
+				return fmt.Errorf("persist folded move: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) nativeMover() client.MetadataMover {

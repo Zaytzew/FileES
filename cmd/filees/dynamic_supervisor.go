@@ -224,7 +224,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, removedEvents <-chan string, attachmentEvents chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	alerts := &serverAlertSources{}
@@ -618,6 +618,22 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				}
 			}
 			event.done <- err
+		case serverID := <-removedEvents:
+			// Removed on this computer; the detachment is already durable.
+			// Stop every lane now instead of waiting for a refusal that an
+			// unreachable server never sends.
+			reservationRefreshes.pauseRemoved(serverID)
+			stopMonitor(serverID)
+			freshness.Detached(serverID, true)
+			if scoped, ok := shareCache.(interface{ SetDetached(string, bool) }); ok {
+				scoped.SetDetached(serverID, true)
+			}
+			stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+			if err := supervisor.SuspendServer(stopCtx, serverID); err != nil {
+				talk.With("projection:"+serverID).Warnf("suspend removed server: %v", err)
+			}
+			cancel()
+			talk.With("projection:"+serverID).Infof("server removed on this computer; polling stopped until it is activated again")
 		case serverID := <-detachedEvents:
 			// Activation and suspension are serialized in this loop. If a new
 			// profile won the race, a late event from the old proof must not stop

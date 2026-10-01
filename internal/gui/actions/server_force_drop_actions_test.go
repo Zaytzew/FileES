@@ -3,6 +3,7 @@ package actions_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,26 @@ func (fake *fakeServerDetacher) ForceDropServer(_ context.Context, serverID stri
 	return nil
 }
 
+type recordedProgress struct {
+	mu   sync.Mutex
+	keys []string
+	open int
+}
+
+func (p *recordedProgress) ShowProgress(_ context.Context, request platform.ProgressRequest) (func(), error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.keys = append(p.keys, request.PresentationKey+":"+request.PresentationArgs["name"])
+	p.open++
+	return func() { p.mu.Lock(); p.open--; p.mu.Unlock() }, nil
+}
+
+func (p *recordedProgress) state() ([]string, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.keys...), p.open
+}
+
 func waitSnapshot(fake *platformtest.Fake, done func(platformtest.Snapshot) bool) platformtest.Snapshot {
 	deadline := time.Now().Add(2 * time.Second)
 	snapshot := fake.Snapshot()
@@ -43,9 +64,10 @@ func TestServerDetachFailureOffersForceDropAndRunsItOnlyWhenConfirmed(t *testing
 			fake := &platformtest.Fake{ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
 				return request.PresentationKey != "dialog.forceDropServer" || accept, nil
 			}}
+			progress := &recordedProgress{}
 			intents, cancel := setup(actions.Config{
 				ViewModel: viewCopy(lifecycleView(contract.CapServerDetach, contract.CapServerForceDrop)),
-				Prompter:  fake, Notifier: fake, ServerDetacher: detacher,
+				Prompter:  fake, Notifier: fake, ServerDetacher: detacher, Progress: progress,
 			})
 			defer cancel()
 			send(t, intents, tray.Intent{Kind: tray.IntentDetachServer, ServerID: "office"})
@@ -71,6 +93,11 @@ func TestServerDetachFailureOffersForceDropAndRunsItOnlyWhenConfirmed(t *testing
 			snapshot = waitSnapshot(fake, func(s platformtest.Snapshot) bool { return len(s.Notifications) > 0 })
 			if len(snapshot.Notifications) == 0 || snapshot.Notifications[0].Title != "Serwer usunięty z tego komputera" {
 				t.Fatalf("notifications=%+v", snapshot.Notifications)
+			}
+			// Both waits look like work (the first one may last until a
+			// connection timeout), and neither window outlives its wait.
+			if keys, open := progress.state(); len(keys) != 2 || keys[0] != "progress.detachServer:office" || keys[1] != "progress.forceDropServer:office" || open != 0 {
+				t.Fatalf("progress=%v open=%d", keys, open)
 			}
 		})
 	}

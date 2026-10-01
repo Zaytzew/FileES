@@ -31,6 +31,10 @@ type serverDetachService struct {
 	provisioner *daemonProvisioner
 	profileRoot string
 	detachments *detachment.Store
+	// onRemoved stops the server's background lanes once its profile is
+	// gone. Without it they wait for a refusal, which never comes from a
+	// server removed while unreachable.
+	onRemoved func(string)
 }
 
 func (s *serverDetachService) Detach(ctx context.Context, serverID string) error {
@@ -114,6 +118,9 @@ func (s *serverDetachService) Detach(ctx context.Context, serverID string) error
 		return fmt.Errorf("remove local credentials after server revoke: %w", err)
 	}
 	s.provisioner.RemoveProfile(serverID)
+	if s.onRemoved != nil {
+		s.onRemoved(serverID)
+	}
 	return nil
 }
 
@@ -181,6 +188,9 @@ func (s *serverDetachService) ForceDrop(ctx context.Context, serverID string) er
 		return fmt.Errorf("remove local credentials: %w", err)
 	}
 	s.provisioner.RemoveProfile(serverID)
+	if s.onRemoved != nil {
+		s.onRemoved(serverID)
+	}
 	return nil
 }
 

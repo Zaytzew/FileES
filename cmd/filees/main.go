@@ -172,6 +172,7 @@ func runDaemon() {
 	clientView = withoutDetachedClientView(clientView, detachmentStore)
 	profileEvents := make(chan clientprofile.Profile, 8)
 	timeoutEvents := make(chan clientprofile.Profile, 8)
+	removedEvents := make(chan string, 8)
 	publicShareEvents := make(chan string, 16)
 
 	gate := runtime.NewHostGate(3)
@@ -287,7 +288,14 @@ func runDaemon() {
 	ipc.SetHistoryExportService(historyExports)
 	ipc.SetHistoryDensityService(newHistoryDensityService(defaultHistoryIndexPath(), history.densitySource))
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
-	ipc.SetServerDetachService(&serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), detachments: detachmentStore})
+	ipc.SetServerDetachService(&serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), detachments: detachmentStore, onRemoved: func(serverID string) {
+		select {
+		case removedEvents <- serverID:
+		default:
+			// The detachment is durable; the next start honours it anyway.
+			lg.Warnf("server %s removed; its background polling stops at the next start", serverID)
+		}
+	}})
 	ipc.SetSessionTimeoutService(sessionTimeoutService{root: clientprofile.DefaultRoot(), provisioner: provisioner, onChange: func(profile clientprofile.Profile) {
 		select {
 		case timeoutEvents <- profile:
@@ -320,7 +328,7 @@ func runDaemon() {
 	supervisorDone := make(chan error, 1)
 	memorySupervisorDone := make(chan error, 1)
 	runtime.Go(ctx, func() {
-		err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository)
+		err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, removedEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository)
 		supervisorDone <- err
 		memorySupervisorDone <- err
 	})

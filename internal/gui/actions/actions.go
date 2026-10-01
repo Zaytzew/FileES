@@ -1700,7 +1700,14 @@ func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
 		if err != nil || !confirmed {
 			return
 		}
-		if err := c.cfg.ServerDetacher.DetachServer(ctx, serverID); err != nil {
+		// A server that does not answer is only known to be gone when the
+		// connection times out; until then the wait must look like work, not
+		// like a frozen window, and the owner may send it to the background.
+		name := serverDisplayName(vm, serverID)
+		closeProgress := c.showProgressKey(ctx, "progress.detachServer", map[string]string{"name": name}, "Odłączanie serwera", "„"+name+"” — czekam na potwierdzenie serwera. Gdy serwer nie odpowiada, potrwa to do upływu limitu czasu; FileES pracuje dalej także w tle.")
+		err = c.cfg.ServerDetacher.DetachServer(ctx, serverID)
+		closeProgress()
+		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -1736,7 +1743,11 @@ func (c *Controller) offerForceDropServer(ctx context.Context, serverID string, 
 	if err != nil || !confirmed {
 		return true
 	}
-	if err := dropper.ForceDropServer(ctx, serverID); err != nil {
+	name := serverDisplayName(c.cfg.ViewModel(), serverID)
+	closeProgress := c.showProgressKey(ctx, "progress.forceDropServer", map[string]string{"name": name}, "Usuwanie serwera z tego komputera", "„"+name+"” — odłączam lokalne foldery; pliki zostają na dysku.")
+	err = dropper.ForceDropServer(ctx, serverID)
+	closeProgress()
+	if err != nil {
 		if ctx.Err() == nil {
 			c.reportActionError(ctx, "server-detach."+serverID, c.uiText("feedback.n134", "Nie udało się usunąć serwera z tego komputera"), c.actionErrorBody(err))
 		}
@@ -1747,6 +1758,16 @@ func (c *Controller) offerForceDropServer(ctx context.Context, serverID string, 
 		c.cfg.Refresh()
 	}
 	return true
+}
+
+// serverDisplayName is the name the owner gave the server, or its ID.
+func serverDisplayName(vm app.ViewModel, serverID string) string {
+	for _, server := range vm.Servers {
+		if server.ID == serverID && strings.TrimSpace(server.DisplayName) != "" {
+			return server.DisplayName
+		}
+	}
+	return serverID
 }
 
 func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) {

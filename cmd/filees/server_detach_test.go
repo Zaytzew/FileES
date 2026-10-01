@@ -185,11 +185,13 @@ func TestServerForceDropFinishesWithoutTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var removed []string
 	service := &serverDetachService{local: local, provisioner: newDaemonProvisioner(local, nil, []clientprofile.Profile{profile}), profileRoot: root, detachments: notices,
 		exchange: func(context.Context, clientprofile.Profile, control.Ticket) (control.Result, error) {
 			t.Fatal("force drop contacted the server")
 			return control.Result{}, nil
 		},
+		onRemoved: func(serverID string) { removed = append(removed, serverID) },
 	}
 	// The ordinary path refuses first: that refusal is what offers ForceDrop.
 	if err := service.Detach(t.Context(), profile.ServerID); err == nil {
@@ -221,5 +223,26 @@ func TestServerForceDropFinishesWithoutTheServer(t *testing.T) {
 	}
 	if err := service.ForceDrop(t.Context(), profile.ServerID); err != nil {
 		t.Fatalf("completed force drop not idempotent: %v", err)
+	}
+	// Background lanes wait for a refusal that an unreachable server never
+	// sends; the removal itself must stop them, exactly once.
+	if !reflect.DeepEqual(removed, []string{"lab"}) {
+		t.Fatalf("background lanes notified %v", removed)
+	}
+}
+
+func TestPauseRemovedStopsTheStateLaneWithoutRewritingTheCause(t *testing.T) {
+	coordinator := newReservationProjectionCoordinator(t.Context(), nil)
+	called := false
+	coordinator.onDetached = func(string, bool) { called = true }
+	coordinator.pauseRemoved("lab")
+	if !coordinator.Paused("lab") {
+		t.Fatal("state lane still scheduled for a removed server")
+	}
+	if called {
+		t.Fatal("removal reported as a refusal; that path records cause revoked")
+	}
+	if !coordinator.Resume("lab") || coordinator.Paused("lab") {
+		t.Fatal("activation cannot resume a removed server")
 	}
 }

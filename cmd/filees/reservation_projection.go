@@ -527,6 +527,26 @@ func (coordinator *reservationProjectionCoordinator) pauseDetached(serverID stri
 	}
 }
 
+// pauseRemoved stops this server's state lane after the owner removed the
+// server on this computer (server.detach or server.force_drop). Unlike
+// pauseDetached it reports nothing to onDetached: the remover already wrote
+// the durable detachment with its own cause ("self" or "forced"), and the
+// refusal path would overwrite it with "revoked". Waiting for that refusal is
+// no option either: a removed server that never answers would be polled
+// until the daemon restarted.
+func (coordinator *reservationProjectionCoordinator) pauseRemoved(serverID string) {
+	if coordinator == nil || serverID == "" {
+		return
+	}
+	coordinator.mu.Lock()
+	coordinator.detached[serverID] = true
+	coordinator.paused[serverID] = true
+	coordinator.mu.Unlock()
+	if coordinator.ipc != nil {
+		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
+	}
+}
+
 // isDetachedClient reports whether the server refused us because this client
 // is no longer one of its own.
 //

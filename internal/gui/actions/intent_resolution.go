@@ -153,6 +153,16 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 			c.reportActionError(ctx, key, c.uiText("intent.planFailed", "Nie można przygotować planu zmian"), c.actionErrorBody(err))
 			return
 		}
+		if plan != nil && plan.RepoID == repoID && len(plan.Paths) == 0 {
+			// The offer was older than the queue: it settled by itself (for
+			// example a renamed file moved on was folded into one move).
+			// Saying "cannot resolve" here reads as a failure; it is not one.
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.intentSettled", Title: "Nie ma już czego rozstrzygać", Text: "Zmiany plików zostały uzgodnione samoczynnie i wróciły do zwykłej kolejki wysyłki."})
+			return
+		}
 		if plan == nil || plan.ID == "" || plan.RepoID != repoID || plan.Choice != "delete_add" || len(plan.Paths) == 0 {
 			return
 		}

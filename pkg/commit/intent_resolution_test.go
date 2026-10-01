@@ -190,3 +190,26 @@ func TestIntentReceiptCannotMaskRestoredSource(t *testing.T) {
 		t.Fatal("restored source was ignored")
 	}
 }
+
+// An offer older than the queue: by the time the owner clicks, the uncertainty
+// is gone (an orphaned scheduled move was folded into one move). The answer is
+// an empty plan, not "cannot resolve", even with a scheduled move queued.
+func TestIntentPlanIsEmptyWhenNothingIsUncertain(t *testing.T) {
+	s := intentFixture(t)
+	for _, it := range s.staging {
+		if it.Op == watcher.RenameUncertain {
+			it.Op = watcher.Renamed
+			it.OldRel, it.RenameVerified, it.MoveScheduled = "old.txt", true, true
+		}
+	}
+	plan, err := s.PlanIntents(t.Context())
+	if err != nil {
+		t.Fatalf("settled queue reported as a refusal: %v", err)
+	}
+	if plan == nil || plan.PlanID != "" || len(plan.Paths) != 0 || plan.RepoID != s.repoID {
+		t.Fatalf("plan=%+v", plan)
+	}
+	if _, err := s.ApplyIntents(t.Context(), "anything", contract.IntentDeleteAdd); err == nil {
+		t.Fatal("an empty plan left something to apply")
+	}
+}

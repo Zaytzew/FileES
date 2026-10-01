@@ -24,6 +24,11 @@ import (
 
 const intentCacheSchema = "filees.commit-cache/v2"
 
+// errNoIntentUncertainty means there is nothing left to decide - typically the
+// queue settled by itself (an orphaned scheduled move was folded back) after
+// the interface had already offered a resolution. It is not a refusal.
+var errNoIntentUncertainty = errors.New("no uncertain file intent left to resolve")
+
 // One actionable diagnostic for an unchanged HOLD, not a new error each tick.
 // Reuse the already-journaled wrapper to prevent the publication caller logging
 // the same fault again. This never chooses a fallback or changes the queue.
@@ -100,6 +105,12 @@ func (s *Service) PlanIntents(ctx context.Context) (*contract.IntentPlan, error)
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
 	paths, fingerprint, err := s.inspectIntents(ctx)
+	if errors.Is(err, errNoIntentUncertainty) {
+		// An empty plan, not an error: the caller says "nothing left to
+		// decide" instead of "cannot resolve". Nothing is stored to apply.
+		s.intentPlan = nil
+		return &contract.IntentPlan{RepoID: s.repoID, Choice: contract.IntentDeleteAdd}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +214,16 @@ func (s *Service) inspectIntents(ctx context.Context) ([]contract.IntentPath, st
 	s.mu.Lock()
 	entries := s.intentEntriesLocked()
 	s.mu.Unlock()
+	pending := false
+	for _, e := range entries {
+		if e.Op == "rename_uncertain" {
+			pending = true
+			break
+		}
+	}
+	if !pending {
+		return nil, "", errNoIntentUncertainty
+	}
 	var selected []cacheEntry
 	uncertain := 0
 	for _, e := range entries {
@@ -221,7 +242,7 @@ func (s *Service) inspectIntents(ctx context.Context) ([]contract.IntentPath, st
 		selected = append(selected, e)
 	}
 	if uncertain == 0 || len(selected) > 128 {
-		return nil, "", errors.New("no eligible uncertainty or plan exceeds 128 paths")
+		return nil, "", errors.New("plan exceeds 128 paths")
 	}
 	rels := make([]string, 0, len(selected))
 	for _, e := range selected {

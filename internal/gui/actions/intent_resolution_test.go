@@ -181,3 +181,44 @@ func TestIntentDialogConfirmationAndCancellation(t *testing.T) {
 		})
 	}
 }
+
+type settledIntentResolver struct{ fakeIntentResolver }
+
+func (f *settledIntentResolver) PlanIntents(_ context.Context, repoID string) (*actions.IntentResolutionPlan, error) {
+	return &actions.IntentResolutionPlan{RepoID: repoID, Choice: "delete_add"}, nil
+}
+
+// The offer was older than the queue, which settled by itself: say so, as
+// information, and never as "cannot resolve".
+func TestIntentOfferThatSettledShowsInformationNotFailure(t *testing.T) {
+	resolver := &settledIntentResolver{fakeIntentResolver{calls: make(chan string, 1)}}
+	fake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) {
+		t.Error("a settled queue must not ask for a decision")
+		return false, nil
+	}}
+	view := lifecycleView(contract.CapRepoIntentResolution)
+	view.Repos[0].Pending.RenameUncertain = 1
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), Prompter: fake, Notifier: fake, IntentResolver: resolver})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentResolveIntents, ServerID: "office", RepoID: "repo-1"})
+	deadline := time.Now().Add(2 * time.Second)
+	snapshot := fake.Snapshot()
+	for len(snapshot.InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		snapshot = fake.Snapshot()
+	}
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].PresentationKey != "info.intentSettled" {
+		t.Fatalf("info=%+v", snapshot.InfoRequests)
+	}
+	for _, n := range snapshot.Notifications {
+		if n.Urgency == platform.UrgencyCritical {
+			t.Fatalf("settled queue reported as an error: %+v", n)
+		}
+	}
+	select {
+	case got := <-resolver.calls:
+		t.Fatalf("decision applied: %s", got)
+	default:
+	}
+}

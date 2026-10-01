@@ -1,0 +1,7 @@
+# /etc/pam.d/filees-tunnel - used only by sshd's "Match User _filees-tunnel"
+# block (PAMServiceName filees-tunnel). The system's sshd service is not
+# changed. The module carries the FileES challenge and the client's answer to
+# filees-ssh-auth; it refuses every other user.
+auth     requisite /usr/local/libexec/filees/pam_filees_tunnel.so
+account  requisite /usr/local/libexec/filees/pam_filees_tunnel.so
+session  requisite /usr/local/libexec/filees/pam_filees_tunnel.so

@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.canonicalRecovery.title": "Reconstruir carpeta desde el servidor",
+  "details.canonicalRecovery.confirm": "Conservar archivos locales y reconstruir",
+  "details.canonicalRecovery.cancel": "Cancelar",
+  "details.canonicalRecovery.warning": "No se puede confirmar el resultado de la publicación anterior. ¿Usar el servidor r{headRevision} como versión canónica para TODA la carpeta?\n\nTodos los archivos locales se conservarán y verificarán en:\n{copy}\n\nLa copia de trabajo anterior completa, con su cola y diagnósticos, permanecerá en:\n{archive}\n\nFileES detendrá esta carpeta, descargará y verificará una copia nueva y la reiniciará. No se reintentará la cola anterior; otros cambios no enviados también quedarán solo en la copia de seguridad. El servidor no se modificará. Cierre los editores y no cambie archivos hasta que termine la operación. Cancelar no cambia nada.",
   "display.recovering": "FileES está restaurando su ventana. El servicio en segundo plano sigue funcionando.",
   "display.recoveryStopped": "FileES no puede restaurar su ventana automáticamente. Reinicie solo el panel; el servicio en segundo plano sigue funcionando.",
   "display.recoveryDeferred": "La ventana de FileES no está disponible. La recuperación automática espera a que termine una operación o se cierre un diálogo. El servicio en segundo plano sigue funcionando.",
@@ -821,7 +825,7 @@ export default {
   "intent.paused": "Envío en pausa · {name}",
   "commitRecovery.paused": "La publicación requiere conciliación · {name}",
   "commitRecovery.required": "Una publicación no confirmada requiere conciliación.",
-  "commitRecovery.help": "FileES no puede confirmar con seguridad el intento anterior. Compruebe el estado del servidor y decida si reintenta la cola conservada.",
+  "commitRecovery.help": "FileES no puede confirmar con seguridad el intento anterior. Compruebe la solución disponible: un reintento seguro o reconstruir desde el servidor conservando los archivos locales.",
   "commitRecovery.resolve": "Conciliar publicación…",
   "copy.info": "Detalles completos de la carpeta conservada",
   "error.actionsUnavailable": "Las acciones del sistema no están disponibles en esta compilación.",

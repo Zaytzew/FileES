@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.canonicalRecovery.title": "Odbuduj folder z serwera",
+  "details.canonicalRecovery.confirm": "Zachowaj lokalne pliki i odbuduj",
+  "details.canonicalRecovery.cancel": "Anuluj",
+  "details.canonicalRecovery.warning": "Nie można potwierdzić wyniku starej publikacji. Przyjąć serwer r{headRevision} jako kanoniczny dla CAŁEGO folderu?\n\nWszystkie lokalne pliki zostaną zachowane i sprawdzone w:\n{copy}\n\nPełna stara kopia, z kolejką i diagnostyką, pozostanie w:\n{archive}\n\nFileES zatrzyma pracę tego folderu, pobierze i sprawdzi nową kopię, a następnie uruchomi ją ponownie. Stara kolejka nie będzie ponowiona; także inne niewysłane zmiany pozostaną tylko w kopii. Serwer nie zostanie zmieniony. Zamknij edytory i nie zmieniaj plików do końca operacji. Anulowanie niczego nie zmienia.",
   "display.recovering": "FileES odtwarza okno aplikacji. Demon pracuje dalej.",
   "display.recoveryStopped": "FileES nie może automatycznie odtworzyć okna. Uruchom ponownie tylko panel; demon nadal pracuje.",
   "display.recoveryDeferred": "Okno FileES jest niedostępne. Automatyczne odtworzenie czeka na zakończenie działania lub zamknięcie okna opcji. Demon pracuje dalej.",
@@ -835,7 +839,7 @@ export default {
   "intent.paused": "Wysyłka wstrzymana — {name}",
   "commitRecovery.paused": "Publikacja wymaga uzgodnienia — {name}",
   "commitRecovery.required": "Niepotwierdzona publikacja wymaga uzgodnienia.",
-  "commitRecovery.help": "FileES nie potrafi bezpiecznie potwierdzić wyniku poprzedniej próby. Sprawdź stan serwera i zdecyduj o ponowieniu zachowanej kolejki.",
+  "commitRecovery.help": "FileES nie potrafi bezpiecznie potwierdzić wyniku poprzedniej próby. Sprawdź dostępne rozwiązanie: bezpieczne ponowienie albo odbudowę z serwera z zachowaniem lokalnych plików.",
   "commitRecovery.resolve": "Uzgodnij publikację…",
   "copy.info": "Pełna informacja o zachowanym folderze",
   "error.actionsUnavailable": "Akcje systemowe są niedostępne w tym buildzie.",

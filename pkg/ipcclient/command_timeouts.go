@@ -32,6 +32,8 @@ var commandTimeouts = map[string]time.Duration{
 	"realm.set_visibility":         30 * time.Second,
 	"recovery.download":            2 * time.Hour,
 	"repo.delete":                  45 * time.Minute,
+	"repo.commit_recovery.plan":    2 * time.Minute,
+	"repo.commit_recovery.apply":   30 * time.Minute,
 	"repo.detach":                  45 * time.Minute,
 	"repo.grant_access":            30 * time.Second,
 	"repo.lifecycle_repair":        2 * time.Minute,

@@ -22,12 +22,14 @@ type IntentResolutionPath struct {
 }
 
 // Commit recovery choices as the daemon names them (contract
-// CommitRecoveryRetryQueue / CommitRecoveryServerCopy). Repeated here because
+// CommitRecoveryRetryQueue / CommitRecoveryServerCopy / CommitRecoveryRebuild).
+// Repeated here because
 // the controller must not import the daemon contract (archtest); the Wails
-// adapter's test pins the two spellings together.
+// adapter's test pins all three spellings together.
 const (
 	CommitRecoveryChoiceRetryQueue = "retry_preserved_queue"
 	CommitRecoveryChoiceServerCopy = "server_wins_preserve_local"
+	CommitRecoveryChoiceRebuild    = "server_rebuild_preserve_local"
 )
 
 // CommitRecoveryPlan contains only the daemon proof displayed by the dialog.
@@ -38,6 +40,7 @@ type CommitRecoveryPlan struct {
 	Paths                                 []string
 	Conflicts                             []string
 	ConflictCopy                          string
+	Archive                               string
 }
 
 type IntentResolver interface {
@@ -80,7 +83,11 @@ func (c *Controller) startResolveCommitRecovery(ctx context.Context, serverID, r
 		if err != nil || !confirmed {
 			return
 		}
-		applyCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		timeout := 2 * time.Minute
+		if plan.Choice == CommitRecoveryChoiceRebuild {
+			timeout = 30 * time.Minute
+		}
+		applyCtx, cancel := context.WithTimeout(ctx, timeout)
 		err = c.cfg.IntentResolver.ApplyCommitRecovery(applyCtx, repoID, plan.PlanID, plan.Choice)
 		cancel()
 		if err != nil {
@@ -110,6 +117,15 @@ func commitRecoveryPrompt(plan *CommitRecoveryPlan) (platform.ConfirmRequest, er
 		prompt.PresentationArgs["copy"] = plan.ConflictCopy
 		prompt.ConfirmText = "Zachowaj kopię i przyjmij serwerową"
 		prompt.Text = fmt.Sprintf("Serwer r%d wygrywa dla:\n%s\n\nLokalny plik i warianty konfliktu zostaną zachowane w %s. Dopiero po sprawdzeniu kopii FileES rozstrzygnie konflikt i wznowi kolejkę. Anulowanie niczego nie zmienia. Zamknij edytory tych plików przed potwierdzeniem.", plan.HeadRevision, strings.Join(plan.Conflicts, "\n"), plan.ConflictCopy)
+	case CommitRecoveryChoiceRebuild:
+		if plan.ConflictCopy == "" || plan.Archive == "" {
+			return prompt, fmt.Errorf("canonical reconstruction preservation plan missing")
+		}
+		prompt.PresentationKey = "details.canonicalRecovery"
+		prompt.PresentationArgs["copy"] = plan.ConflictCopy
+		prompt.PresentationArgs["archive"] = plan.Archive
+		prompt.ConfirmText = "Zachowaj lokalne pliki i odbuduj z serwera"
+		prompt.Text = fmt.Sprintf("Nie można potwierdzić wyniku starej publikacji. Przyjąć serwer r%d jako kanoniczny dla CAŁEGO folderu?\n\nWszystkie lokalne pliki zostaną zachowane w %s, a pełna stara kopia wraz z kolejką i diagnostyką w %s. FileES zatrzyma pracę tego folderu, pobierze i sprawdzi nową kopię, a następnie uruchomi ją ponownie. Stara kolejka nie będzie ponowiona; również inne niewysłane zmiany pozostaną tylko w kopii. Serwer nie zostanie zmieniony. Zamknij edytory i nie zmieniaj plików do końca operacji. Anulowanie niczego nie zmienia.", plan.HeadRevision, plan.ConflictCopy, plan.Archive)
 	default:
 		return prompt, fmt.Errorf("unsupported recovery choice")
 	}

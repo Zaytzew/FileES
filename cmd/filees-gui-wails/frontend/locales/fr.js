@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.canonicalRecovery.title": "Reconstruire le dossier depuis le serveur",
+  "details.canonicalRecovery.confirm": "Conserver les fichiers locaux et reconstruire",
+  "details.canonicalRecovery.cancel": "Annuler",
+  "details.canonicalRecovery.warning": "Le résultat de l’ancienne publication ne peut pas être confirmé. Utiliser le serveur r{headRevision} comme version canonique pour TOUT le dossier ?\n\nTous les fichiers locaux seront conservés et vérifiés dans :\n{copy}\n\nL’ancienne copie de travail complète, avec sa file et ses diagnostics, restera dans :\n{archive}\n\nFileES arrêtera ce dossier, téléchargera et vérifiera une nouvelle copie, puis le redémarrera. L’ancienne file ne sera pas renvoyée ; les autres modifications non envoyées resteront aussi uniquement dans la sauvegarde. Le serveur ne sera pas modifié. Fermez les éditeurs et ne modifiez aucun fichier avant la fin de l’opération. Annuler ne change rien.",
   "display.recovering": "FileES restaure sa fenêtre. Le service en arrière-plan continue de fonctionner.",
   "display.recoveryStopped": "FileES ne peut pas restaurer sa fenêtre automatiquement. Redémarrez uniquement le panneau ; le service en arrière-plan continue de fonctionner.",
   "display.recoveryDeferred": "La fenêtre FileES est indisponible. La restauration automatique attend la fin d’une opération ou la fermeture d’une boîte de dialogue. Le service en arrière-plan continue de fonctionner.",
@@ -821,7 +825,7 @@ export default {
   "intent.paused": "Envoi en pause · {name}",
   "commitRecovery.paused": "La publication doit être rapprochée · {name}",
   "commitRecovery.required": "Une publication non confirmée doit être rapprochée.",
-  "commitRecovery.help": "FileES ne peut pas confirmer en sécurité la tentative précédente. Vérifiez l’état du serveur et décidez de relancer la file conservée.",
+  "commitRecovery.help": "FileES ne peut pas confirmer l’ancienne tentative en sécurité. Vérifiez la solution disponible : reprise sûre ou reconstruction depuis le serveur en conservant les fichiers locaux.",
   "commitRecovery.resolve": "Rapprocher la publication…",
   "copy.info": "Détails complets du dossier conservé",
   "error.actionsUnavailable": "Les actions système ne sont pas disponibles dans cette compilation.",

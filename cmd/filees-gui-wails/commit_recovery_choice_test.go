@@ -10,7 +10,7 @@ import (
 // The controller repeats the daemon's recovery choice names because it may
 // not import the contract; this pins both spellings together.
 func TestCommitRecoveryChoicesMatchTheContract(t *testing.T) {
-	if actions.CommitRecoveryChoiceRetryQueue != contract.CommitRecoveryRetryQueue || actions.CommitRecoveryChoiceServerCopy != contract.CommitRecoveryServerCopy {
+	if actions.CommitRecoveryChoiceRetryQueue != contract.CommitRecoveryRetryQueue || actions.CommitRecoveryChoiceServerCopy != contract.CommitRecoveryServerCopy || actions.CommitRecoveryChoiceRebuild != contract.CommitRecoveryRebuild {
 		t.Fatal("controller commit recovery choices drifted from the daemon contract")
 	}
 }

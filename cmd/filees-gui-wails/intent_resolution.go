@@ -27,6 +27,7 @@ func (a intentResolverAdapter) PlanCommitRecovery(ctx context.Context, repoID st
 		Choice: plan.Choice, FirstRevision: plan.FirstRevision, HeadRevision: plan.HeadRevision,
 		Paths:     append([]string(nil), plan.Paths...),
 		Conflicts: append([]string(nil), plan.Conflicts...), ConflictCopy: plan.ConflictCopy,
+		Archive: plan.Archive,
 	}, nil
 }
 
@@ -35,7 +36,7 @@ func (a intentResolverAdapter) ApplyCommitRecovery(ctx context.Context, repoID, 
 	if err != nil {
 		return err
 	}
-	if result == nil || result.PlanID != planID || result.State != "queued" {
+	if result == nil || result.PlanID != planID || (choice == contract.CommitRecoveryRebuild && result.State != "rebuilt") || (choice != contract.CommitRecoveryRebuild && result.State != "queued") {
 		return errors.New("invalid commit recovery response")
 	}
 	return nil

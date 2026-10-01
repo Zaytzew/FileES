@@ -9,6 +9,19 @@ import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("canonical reconstruction warns about the whole folder without claiming no effect", () => {
+  for (const language of languages) {
+    const body = promptDetailText("details.canonicalRecovery", {headRevision:"264",copy:"!kolizje/conflicted-copy-opaque",archive:"F:/wc-original"}, (key,args) => translate(catalogues,language.code,key,args));
+    assert.ok(body.includes("264"), language.code);
+    assert.ok(body.includes("!kolizje/conflicted-copy-opaque"), language.code);
+    assert.ok(body.includes("F:/wc-original"), language.code);
+    assert.ok(!body.includes("{archive}") && !body.includes("{copy}"), language.code);
+    assert.equal(body.split("\n\n").length,4, language.code);
+  }
+  assert.match(catalogues.pl["details.canonicalRecovery.warning"],/CAŁEGO/);
+  assert.match(catalogues.pl["details.canonicalRecovery.warning"],/nie będzie ponowiona/);
+});
+
 test("Explorer attachment uses the agreed Polish name and explains local-only detach", () => {
   assert.equal(catalogues.pl["repo.createAnchor"], "Utwórz punkt zaczepienia w Eksploratorze");
   for (const key of ["select.detachFolder.text", "confirm.detachFolder.text"]) {

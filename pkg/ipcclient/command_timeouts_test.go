@@ -96,3 +96,13 @@ func TestShortCommandsKeepTheDefault(t *testing.T) {
 		t.Fatalf("repo.status waits %v; a refresh must stay short", got)
 	}
 }
+
+// This daemon handler uses a variable deadline, which the source parser above
+// cannot infer. Pin both reconstruction commands explicitly.
+func TestCanonicalRecoveryCommandsHaveReconstructionBudgets(t *testing.T) {
+	for command, limit := range map[string]time.Duration{"repo.commit_recovery.plan": 2 * time.Minute, "repo.commit_recovery.apply": 30 * time.Minute} {
+		if got := timeoutFor(command, defaultTimeout); got != limit+commandAnswerMargin {
+			t.Fatalf("%s: %v", command, got)
+		}
+	}
+}

@@ -23,6 +23,25 @@ func TestConflictRecoveryWireCarriesClosedChoiceAndPreservedCopy(t *testing.T) {
 	}
 }
 
+func TestCanonicalRecoveryHasSeparateChoiceArchiveAndCompletion(t *testing.T) {
+	plan := contract.CommitRecoveryPlan{PlanID: "opaque", RepoID: "repo", Choice: contract.CommitRecoveryRebuild, FirstRevision: 140, HeadRevision: 264, ConflictCopy: "!kolizje/conflicted-copy-opaque", Archive: "F:/wc-original"}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got contract.CommitRecoveryPlan
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Archive != plan.Archive || got.Choice == contract.CommitRecoveryServerCopy || got.Choice == contract.CommitRecoveryRetryQueue || got.HeadRevision < got.FirstRevision {
+		t.Fatal(got)
+	}
+	result := contract.CommitRecoveryApplyResult{PlanID: plan.PlanID, State: "rebuilt"}
+	if result.State == "queued" {
+		t.Fatal("canonical replacement advertised a retry")
+	}
+}
+
 func TestCommitRecoveryRefusalsHaveDomainMessages(t *testing.T) {
 	registry, err := domaincatalog.Load()
 	if err != nil {

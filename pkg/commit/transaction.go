@@ -48,8 +48,9 @@ func (s *Service) CommitRecoveryRequired() bool {
 	return required
 }
 
-// PlanCommitRecovery proves that an attempted transaction has no possible
-// receipt yet. It does not alter the transaction, watcher checkpoint or queue.
+// PlanCommitRecovery proves no effect for retry, or offers a separate explicit
+// canonical reconstruction without claiming proof about the old transaction.
+// It does not alter the transaction, watcher checkpoint or queue.
 func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecoveryPlan, error) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
@@ -72,21 +73,21 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 		return nil, fmt.Errorf("read repository head: %w", err)
 	}
 	if head >= in.FirstRevision {
-		return nil, errors.New("repository advanced; check the transaction receipt again")
+		return s.planCanonicalRecovery(ctx, in, head, errors.New("repository advanced; check the transaction receipt again"))
 	}
 	now := time.Now()
 	plan := &commitRecoveryPlanState{id: uuid.NewString(), transactionID: in.ID, firstRevision: in.FirstRevision, headRevision: head, expires: now.Add(2 * time.Minute)}
 	plan.transactionProof = recoveryIntentDigest(in)
 	plan.writerID, plan.writerProof, err = s.recoveryWriter(ctx, in, head)
 	if err != nil {
-		return nil, err
+		return s.planCanonicalRecovery(ctx, in, head, err)
 	}
 	if in.Phase == "done" && plan.writerID == "" {
 		return nil, errors.New("no pending native writer requires recovery")
 	}
 	plan.conflicts, err = s.inspectRecoveryConflicts(ctx, head)
 	if err != nil {
-		return nil, err
+		return s.planCanonicalRecovery(ctx, in, head, err)
 	}
 	plan.choice = contract.CommitRecoveryRetryQueue
 	var conflicts []string
@@ -101,8 +102,9 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 	return &contract.CommitRecoveryPlan{PlanID: plan.id, RepoID: in.RepoID, TransactionID: in.ID, Choice: plan.choice, Conflicts: conflicts, ConflictCopy: plan.copyDirectory, FirstRevision: in.FirstRevision, HeadRevision: head, Paths: append([]string(nil), in.Paths...), ExpiresAt: plan.expires.UTC().Format(time.RFC3339Nano)}, nil
 }
 
-// ApplyCommitRecovery retires only an attempt proven to have had no remote
-// effect. Staging and the publication observation are deliberately untouched.
+// ApplyCommitRecovery retires only a no-effect-proven attempt for retry. A
+// canonical decision persists a request instead, leaving the uncertain intent,
+// writer, staging and publication observation untouched for full archival.
 func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string) (*contract.CommitRecoveryApplyResult, error) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
@@ -120,8 +122,20 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 		return nil, errors.New("commit recovery requires transaction-aware SVN client")
 	}
 	head, err := c.CommitHead(ctx, in.RepoURL)
-	if err != nil || head != plan.headRevision || head >= in.FirstRevision {
+	if err != nil || head != plan.headRevision || (head >= in.FirstRevision && choice != contract.CommitRecoveryRebuild) {
 		return nil, errors.New("repository changed after the recovery plan")
+	}
+	if choice == contract.CommitRecoveryRebuild {
+		if s.AcceptCanonicalRecovery == nil {
+			return nil, errors.New("canonical working-copy recovery unavailable")
+		}
+		if err := s.AcceptCanonicalRecovery(ctx, planID); err != nil {
+			return nil, err
+		}
+		// The old intent, native writer, scanner observation and staging stay
+		// untouched. The lifecycle replaces the whole stopped instance, not
+		// its uncertain transaction. Never fall through to writer-release.
+		return &contract.CommitRecoveryApplyResult{PlanID: planID, State: "rebuild_requested"}, nil
 	}
 	writerID, proof, err := s.recoveryWriter(ctx, in, head)
 	if err != nil || writerID != plan.writerID || proof != plan.writerProof {

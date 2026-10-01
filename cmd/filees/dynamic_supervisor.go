@@ -224,7 +224,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	alerts := &serverAlertSources{}
@@ -348,6 +348,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal, reservations: reservationRefreshes}
+	deps.canonicalRebuild = canonicalRecoveryLifecycle(ctx, attachmentEvents, recoverCanonicalWorkingCopy)
 	deps.pathOwnership = reservationRefreshes.Ownership
 	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {
 		return newControlPassportBackend(repo, svn, reservationRefreshes.Profile)
@@ -681,9 +682,15 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
 			if lifecycle.RemoteDeleted(key.ServerID, key.RepoID) && !attachment.Quiesce {
 				// A late provisioning completion cannot defeat a newer receipt.
+				if attachment.Result != nil {
+					attachment.Result <- errors.New("repository withdrawn during recovery")
+				}
 				continue
 			}
 			if repo.Purpose == clientview.PurposeUploadShelf && !attachment.Quiesce {
+				if attachment.Result != nil {
+					attachment.Result <- errors.New("canonical recovery is unavailable for upload shelves")
+				}
 				if view, ok := currentViews[repo.ServerID]; ok {
 					syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
 				}
@@ -728,28 +735,41 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				continue
 			}
 			if reservationRefreshes.Paused(repo.ServerID) {
+				if attachment.Result != nil {
+					attachment.Result <- errors.New("server access suspended during recovery")
+				}
 				continue
 			}
 			if _, exists := runtimes[key]; exists {
+				if attachment.Result != nil {
+					attachment.Result <- errors.New("repository runtime already exists")
+				}
 				continue
 			}
 			state := ipc.RegisterRepoAccess(repo.ID, repo.RepoURL, repo.LocalPath, repo.ServerID, repo.Access)
 			runtimes[key] = repoRuntime{config: repo, state: state}
 			view, exists := currentViews[repo.ServerID]
 			if !exists {
+				if attachment.Result != nil {
+					attachment.Result <- errors.New("authoritative projection unavailable")
+				}
 				continue
 			}
 			applyRealmOwnership(repo.ServerID, view, runtimes)
 			desired := attachedProjection(repo.ServerID, view, runtimes)
-			if err := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, func(item reposupervisor.Desired) {
+			startErr := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, func(item reposupervisor.Desired) {
 				if runtime, ok := runtimes[item.Key]; ok {
 					runtime.state.SetProjection(item.URL, item.Access)
 				}
-			}); err != nil && ctx.Err() == nil {
-				talk.With("projection:"+repo.ServerID).Errorf("attach repository %s: %v", repo.ID, err)
+			})
+			if startErr != nil && ctx.Err() == nil {
+				talk.With("projection:"+repo.ServerID).Errorf("attach repository %s: %v", repo.ID, startErr)
 			}
 			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
 			reservationRefreshes.UpdateView(repo.ServerID, view)
+			if attachment.Result != nil {
+				attachment.Result <- startErr
+			}
 		}
 	}
 }

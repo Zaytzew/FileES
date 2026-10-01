@@ -295,13 +295,14 @@ type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 
 type readWriteDependencies struct {
-	passportBackend func(config.Repo, client.Client) (passport.Backend, error)
-	pathOwnership   func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
-	gate            runtime.Gate
-	mutex           runtime.RepoMutex
-	ipc             *ipcserver.Server
-	activity        *activity.Journal
-	reservations    *reservationProjectionCoordinator
+	canonicalRebuild func(context.Context, config.Repo, client.Client) error
+	passportBackend  func(config.Repo, client.Client) (passport.Backend, error)
+	pathOwnership    func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
+	gate             runtime.Gate
+	mutex            runtime.RepoMutex
+	ipc              *ipcserver.Server
+	activity         *activity.Journal
+	reservations     *reservationProjectionCoordinator
 }
 
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
@@ -488,7 +489,29 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
-	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, service.ApplyCommitRecovery)
+	var canonicalPlan *canonicalRecoveryJob
+	if deps.canonicalRebuild != nil {
+		service.PlanCanonicalRecovery = func(ctx context.Context, transaction string, head int64) (*contract.CommitRecoveryPlan, error) {
+			job, plan, err := planCanonicalWorkingCopy(ctx, repo, svn, transaction, head)
+			canonicalPlan = job
+			return plan, err
+		}
+		service.AcceptCanonicalRecovery = func(ctx context.Context, id string) error {
+			return acceptCanonicalWorkingCopy(ctx, repo, svn, canonicalPlan, id)
+		}
+	}
+	runtimeRepo.state.SetCommitRecoveryFuncs(service.CommitRecoveryRequired, service.PlanCommitRecovery, func(ctx context.Context, id, choice string) (*contract.CommitRecoveryApplyResult, error) {
+		result, err := service.ApplyCommitRecovery(ctx, id, choice)
+		if err != nil || result.State != "rebuild_requested" {
+			return result, err
+		}
+		// Service released wcOpMu before we stop its pipeline. Otherwise Stop
+		// would wait for the very lock the request was still holding.
+		if err := deps.canonicalRebuild(ctx, repo, svn); err != nil {
+			return nil, err
+		}
+		return &contract.CommitRecoveryApplyResult{PlanID: id, State: "rebuilt"}, nil
+	})
 	lockFuncsWired := true
 	defer func() {
 		if sizeFuncWired {
@@ -792,6 +815,15 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	runtime.config.EditingPolicy = desired.EditingPolicy
 	runtime.config.EditPassports = passportsRequired(desired.EditingPolicy)
 	svn := s.newSVN(runtime.config)
+	if job, err := readCanonicalJob(runtime.config); err != nil {
+		return nil, err
+	} else if job != nil && job.Stage != "done" && job.Stage != "failed" {
+		// Resume before identity validation or scanner/passport startup: root
+		// can be absent in the persisted archive/install rename window.
+		if err := recoverCanonicalWorkingCopy(startCtx, runtime.config, svn); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateAttachedWorkingCopy(startCtx, svn, runtime.config.LocalPath, desired); err != nil {
 		return s.waitForWorkingCopy(runtime, svn, desired, err), nil
 	}

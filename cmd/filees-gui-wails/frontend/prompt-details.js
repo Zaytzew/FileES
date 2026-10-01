@@ -7,7 +7,7 @@ export function promptDetailText(key, args, text = t) {
     const rows = paths.map(item => text(item.Operation === "add" ? "details.intent.add" : "details.intent.delete", {path: item.Path, size: item.Size}));
     return args.name + "\n\n" + text("details.intent.warning") + "\n\n" + rows.join("\n") + "\n\n" + text("details.intent.next");
   }
-  if (key === "details.commitRecovery" || key === "details.conflictRecovery") {
+  if (key === "details.commitRecovery" || key === "details.conflictRecovery" || key === "details.canonicalRecovery") {
     return text(key + ".warning", args);
   }
   if (key === "details.server") {

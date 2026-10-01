@@ -22,13 +22,48 @@ func (f *fakeIntentResolver) PlanCommitRecovery(context.Context, string) (*actio
 type fakeCommitRecoveryResolver struct {
 	calls     chan string
 	conflicts bool
+	rebuild   bool
 }
 
 func (f *fakeCommitRecoveryResolver) PlanCommitRecovery(_ context.Context, repoID string) (*actions.CommitRecoveryPlan, error) {
+	if f.rebuild {
+		return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "uncertain", Choice: contract.CommitRecoveryRebuild, FirstRevision: 140, HeadRevision: 264, ConflictCopy: "!kolizje/conflicted-copy-plan", Archive: "F:/old-original"}, nil
+	}
 	if f.conflicts {
 		return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryServerCopy, FirstRevision: 44, HeadRevision: 43, Paths: []string{"plan.dwg"}, Conflicts: []string{"plan.dwg"}, ConflictCopy: "!kolizje/conflicted-copy-plan"}, nil
 	}
 	return &actions.CommitRecoveryPlan{PlanID: "recovery-plan", RepoID: repoID, TransactionID: "transaction-1", Choice: contract.CommitRecoveryRetryQueue, FirstRevision: 44, HeadRevision: 43, Paths: []string{"old/folder", "new/file.pdf"}}, nil
+}
+
+func TestCanonicalRecoveryDialogNeverPromisesRetryAndCancellationIsReadOnly(t *testing.T) {
+	for _, confirm := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "accept"}[confirm], func(t *testing.T) {
+			resolver := &fakeCommitRecoveryResolver{calls: make(chan string, 1), rebuild: true}
+			shown := make(chan platform.ConfirmRequest, 1)
+			fake := &platformtest.Fake{ConfirmFunc: func(_ context.Context, r platform.ConfirmRequest) (bool, error) { shown <- r; return confirm, nil }}
+			view := lifecycleView(contract.CapRepoCommitRecovery)
+			view.Repos[0].CommitRecoveryRequired = true
+			view.Servers[0].Repos[0] = view.Repos[0]
+			intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), Prompter: fake, IntentResolver: resolver})
+			defer cancel()
+			send(t, intents, tray.Intent{Kind: tray.IntentResolveCommitRecovery, ServerID: "office", RepoID: "repo-1"})
+			dialog := awaitCh(t, shown, "canonical decision")
+			if dialog.PresentationKey != "details.canonicalRecovery" || dialog.PresentationArgs["archive"] != "F:/old-original" || dialog.PresentationArgs["headRevision"] != "264" || !strings.Contains(dialog.Text, "CAŁEGO") || !strings.Contains(dialog.Text, "nie będzie ponowiona") {
+				t.Fatal(dialog)
+			}
+			if confirm {
+				if got := awaitCh(t, resolver.calls, "canonical decision"); got != "repo-1:recovery-plan:"+contract.CommitRecoveryRebuild {
+					t.Fatal(got)
+				}
+			} else {
+				select {
+				case <-resolver.calls:
+					t.Fatal("cancel mutated")
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+		})
+	}
 }
 
 func TestConflictRecoveryRequiresExplicitServerChoice(t *testing.T) {

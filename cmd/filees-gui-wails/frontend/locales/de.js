@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.canonicalRecovery.title": "Ordner vom Server neu aufbauen",
+  "details.canonicalRecovery.confirm": "Lokale Dateien behalten und neu aufbauen",
+  "details.canonicalRecovery.cancel": "Abbrechen",
+  "details.canonicalRecovery.warning": "Das Ergebnis der alten Veröffentlichung lässt sich nicht bestätigen. Server r{headRevision} für den GESAMTEN Ordner als maßgeblich verwenden?\n\nAlle lokalen Dateien werden hier gesichert und geprüft:\n{copy}\n\nDie vollständige alte Arbeitskopie mit Warteschlange und Diagnose bleibt hier erhalten:\n{archive}\n\nFileES stoppt diesen Ordner, lädt und prüft eine neue Kopie und startet ihn erneut. Die alte Warteschlange wird nicht erneut gesendet; auch andere ungesendete Änderungen bleiben nur in der Sicherung. Der Server wird nicht verändert. Schließen Sie Editoren und ändern Sie bis zum Abschluss keine Dateien. Abbrechen ändert nichts.",
   "display.recovering": "FileES stellt sein Fenster wieder her. Der Hintergrunddienst arbeitet weiter.",
   "display.recoveryStopped": "FileES kann sein Fenster nicht automatisch wiederherstellen. Starten Sie nur das Bedienfeld neu; der Hintergrunddienst läuft weiter.",
   "display.recoveryDeferred": "Das FileES-Fenster ist nicht verfügbar. Die automatische Wiederherstellung wartet auf den Abschluss eines Vorgangs oder das Schließen eines Dialogs. Der Hintergrunddienst arbeitet weiter.",
@@ -808,7 +812,7 @@ export default {
   "intent.paused": "Versand pausiert · {name}",
   "commitRecovery.paused": "Veröffentlichung muss abgeglichen werden · {name}",
   "commitRecovery.required": "Eine unbestätigte Veröffentlichung muss abgeglichen werden.",
-  "commitRecovery.help": "FileES kann das Ergebnis des vorherigen Versuchs nicht sicher bestätigen. Prüfen Sie den Serverstatus und entscheiden Sie über die erhaltene Warteschlange.",
+  "commitRecovery.help": "FileES kann den vorherigen Versuch nicht sicher bestätigen. Prüfen Sie die verfügbare Lösung: sicherer neuer Versuch oder Neuaufbau vom Server mit gesicherten lokalen Dateien.",
   "commitRecovery.resolve": "Veröffentlichung abgleichen…",
   "copy.info": "Vollständige Angaben zum beibehaltenen Ordner",
   "error.actionsUnavailable": "Systemaktionen sind in diesem Build nicht verfügbar.",

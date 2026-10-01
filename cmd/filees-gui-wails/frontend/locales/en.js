@@ -1,5 +1,9 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "details.canonicalRecovery.title": "Rebuild folder from server",
+  "details.canonicalRecovery.confirm": "Keep local files and rebuild",
+  "details.canonicalRecovery.cancel": "Cancel",
+  "details.canonicalRecovery.warning": "The result of the old publication cannot be confirmed. Use server r{headRevision} as canonical for the ENTIRE folder?\n\nAll local files will be preserved and verified in:\n{copy}\n\nThe complete old working copy, including its queue and diagnostics, will remain in:\n{archive}\n\nFileES will stop this folder, download and verify a fresh copy, then restart it. The old queue will not be retried; other unsent changes will also remain only in the backup. The server will not be changed. Close editors and do not change files until the operation finishes. Cancel changes nothing.",
   "display.recovering": "FileES is restoring its window. The daemon continues working.",
   "display.recoveryStopped": "FileES cannot restore its window automatically. Restart only the panel; the daemon is still running.",
   "display.recoveryDeferred": "The FileES window is unavailable. Automatic recovery is waiting for an operation or an open dialog. The daemon continues working.",
@@ -809,7 +813,7 @@ export default {
   "intent.paused": "Sending paused — {name}",
   "commitRecovery.paused": "Publication needs reconciliation — {name}",
   "commitRecovery.required": "An unconfirmed publication needs reconciliation.",
-  "commitRecovery.help": "FileES cannot safely confirm the previous attempt. Check the server state and decide whether to retry the preserved queue.",
+  "commitRecovery.help": "FileES cannot safely confirm the previous attempt. Check the available remedy: a proven safe retry or a server rebuild that preserves local files.",
   "commitRecovery.resolve": "Reconcile publication…",
   "copy.info": "Full details of the preserved folder",
   "error.actionsUnavailable": "System actions are unavailable in this build.",

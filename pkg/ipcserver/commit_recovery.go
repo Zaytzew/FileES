@@ -26,7 +26,11 @@ func (s *Server) handleRepoCommitRecovery(req contract.Request) contract.Respons
 	if !allowed || plan == nil || apply == nil {
 		return contract.ErrResponse(req.RequestID, "COMMIT-3100", "ERROR", "REQUIRE_ACTION", "commit.recovery_unavailable", nil)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	timeout := 2 * time.Minute
+	if req.Command == contract.CmdRepoCommitRecoveryApply {
+		timeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	var result any
 	var err error

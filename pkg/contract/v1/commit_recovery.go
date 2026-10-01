@@ -5,11 +5,12 @@ const (
 	CmdRepoCommitRecoveryApply = "repo.commit_recovery.apply"
 	CommitRecoveryRetryQueue   = "retry_preserved_queue"
 	CommitRecoveryServerCopy   = "server_wins_preserve_local"
+	CommitRecoveryRebuild      = "server_rebuild_preserve_local"
 )
 
-// CommitRecoveryPlan describes one failed publication attempt whose remote
-// effect has been proven absent at HeadRevision. Applying it retires only the
-// attempt marker; the daemon-owned pending queue remains intact.
+// Retry/server-copy require a no-effect proof. Rebuild is a distinct explicit
+// decision to replace the entire local WC from the server while archiving it;
+// it makes no assertion about the remote effect and never retries the queue.
 type CommitRecoveryPlan struct {
 	PlanID        string   `json:"plan_id"`
 	RepoID        string   `json:"repo_id"`
@@ -21,6 +22,7 @@ type CommitRecoveryPlan struct {
 	ExpiresAt     string   `json:"expires_at"`
 	Conflicts     []string `json:"conflicts,omitempty"`
 	ConflictCopy  string   `json:"conflict_copy,omitempty"`
+	Archive       string   `json:"archive,omitempty"`
 }
 
 type CommitRecoveryApplyPayload struct {
@@ -30,5 +32,5 @@ type CommitRecoveryApplyPayload struct {
 
 type CommitRecoveryApplyResult struct {
 	PlanID string `json:"plan_id"`
-	State  string `json:"state"` // queued: old attempt retired; pending queue preserved
+	State  string `json:"state"` // queued, rebuild_requested (internal), rebuilt
 }

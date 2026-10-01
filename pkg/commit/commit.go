@@ -77,6 +77,11 @@ func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
 type Service struct {
+	// Canonical recovery is provided by the attachment lifecycle, not SVN
+	// writer retirement. Accept persists a decision before that lifecycle stops
+	// the scanner/passports and reconstructs the WC. Both run under wcOpMu.
+	PlanCanonicalRecovery   func(context.Context, string, int64) (*contract.CommitRecoveryPlan, error)
+	AcceptCanonicalRecovery func(context.Context, string) error
 	// CheckPublication admits only a new batch, after recovery and before WC
 	// mutations. It never interrupts an already started durable transaction.
 	CheckPublication func(context.Context) error

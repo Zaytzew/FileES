@@ -1,4 +1,4 @@
-.Dd September 9, 2026
+.Dd October 3, 2026
 .Dt FILEES-ROTATE 8
 .Os
 .Sh NAME
@@ -6,6 +6,7 @@
 .Nd perform an explicit SVN FSFS generation change
 .Sh SYNOPSIS
 .Nm
+.Op Fl config Ar file
 .Fl repo Ar path
 .Fl archive Ar directory
 .Op Fl size Ar threshold
@@ -50,16 +51,30 @@ profile that every other administrative operation gets, and takes its paths
 from the server configuration instead of the command line, so it cannot
 address a repository outside the configured tree.
 .Nm
-applies no sandbox at all: it is the one server executable that runs as root
-with no profile and takes absolute paths from
-.Ar argv ,
-which is also why it can break live locks.
-Sandboxing
-.Nm
-itself is not implemented yet; until then it is the manual escape hatch for a
-repository the configured path cannot reach, not the ordinary way to rotate.
+also applies a restricted
+.Xr pledge 2
+and
+.Xr unveil 2
+profile on OpenBSD.
+It takes the repository and archive paths from
+.Ar argv ;
+prefer the configured administrative command for ordinary operation.
+.Pp
+An operation that can change files requires the server configuration and
+holds the persistent capacity write admission through recovery, child
+processes and cleanup.
+The operation is refused while the server write stop is active or its
+policy cannot be read safely.
+A dry run does not require the server configuration.
 .Sh OPTIONS
 .Bl -tag -width Ds
+.It Fl config Ar file
+Server configuration used to locate persistent capacity write admission.
+Default
+.Pa /etc/filees/server.json .
+Required for operations that can change files, including recovery;
+not read for
+.Fl dry-run .
 .It Fl repo Ar path
 Absolute path of the hot repository.
 .It Fl archive Ar directory

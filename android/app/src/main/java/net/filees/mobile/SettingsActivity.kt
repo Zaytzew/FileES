@@ -712,14 +712,15 @@ class SettingsActivity : AppCompatActivity() {
                     getString(R.string.watch_backlog_message, depthCount(pending)),
                     pending,
                 ) { depth ->
-                    if (watchCurrent() && request == watchChange) {
+                    if (!watchCurrent() || request != watchChange) return@showWatchDepthDialog
+                    Thread {
                         try {
                             markOutsideDepth(pending, depth, repoId)
-                            onPicked?.invoke()
+                            watchUi { if (request == watchChange) onPicked?.invoke() }
                         } catch (e: Exception) {
-                            showTransportError(getString(R.string.error_send), e, null)
+                            watchUi { if (request == watchChange) showTransportError(getString(R.string.error_send), e, null) }
                         }
-                    }
+                    }.start()
                 }
             }
         }.start()
@@ -818,8 +819,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun markOutsideDepth(files: List<WalkedFile>, depth: WatchDepth, repoId: String) {
         val now = System.currentTimeMillis()
-        files.filterNot { depth.includes(it, now) }
-            .forEach { watched.markSeen(CaptureTransfers.source(it), repoId) }
+        // One prefs write. A commit per file rewrote the whole file on the
+        // click that closed the depth dialog; a large paused folder died there
+        // and the process came back as a restart.
+        watched.markSeen(
+            files.filterNot { depth.includes(it, now) }.map { CaptureTransfers.source(it) },
+            repoId,
+        )
     }
 
     // Files outside the chosen depth are marked seen, so the next tick
@@ -839,25 +845,28 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         val addThisWatch = {
-            val server = FileesSession.current(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))
-            val repoId = server?.uploadRepoId.orEmpty()
-            if (server?.id == watched.serverId && watchCurrent() && repoId.isNotBlank()) {
-                // Persist exclusions BEFORE making the tree visible to workers.
+            Thread {
                 try {
+                    val server = FileesSession.current(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))
+                    val repoId = server?.uploadRepoId.orEmpty()
+                    if (server?.id != watched.serverId || repoId.isBlank()) return@Thread
+                    // Exclusions land before the tree is visible to a worker.
                     markOutsideDepth(files, depth, repoId)
                     watched.rememberDepth(uri, depth)
                     watched.add(uri)
-                    renderWatched()
-                    FileesWatchScheduler.runSoon(this)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    watchUi {
+                        renderWatched()
+                        FileesWatchScheduler.runSoon(this)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     }
                 } catch (e: Exception) {
-                    showTransportError(getString(R.string.error_send), e, null)
+                    watchUi { showTransportError(getString(R.string.error_send), e, null) }
                 }
-            }
+            }.start()
         }
         if (getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE).getString(FileesSession.PREF_UPLOAD_REPO_ID, null).isNullOrBlank()) {
             pickUploadTarget(addThisWatch)

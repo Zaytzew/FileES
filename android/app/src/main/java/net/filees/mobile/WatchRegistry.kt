@@ -7,6 +7,10 @@ internal class WatchRegistry(private val store: Store, val serverId: String?) {
         fun lists(values: Map<String, List<String>>)
         fun flag(key: String): Boolean
         fun flag(key: String, value: Boolean)
+        /** One write for the whole map. The default is correct, not fast. */
+        fun flags(values: Map<String, Boolean>) {
+            for ((key, value) in values) flag(key, value)
+        }
     }
 
     fun trees(): List<String> = synchronized(guard) {
@@ -29,7 +33,13 @@ internal class WatchRegistry(private val store: Store, val serverId: String?) {
         store.lists(mapOf(LEGACY_TREES to unassigned().filterNot { it == uri }))
     }
     fun seen(repoId: String, source: String): Boolean = store.flag(seenKey(repoId, source))
-    fun markSeen(repoId: String, source: String) = store.flag(seenKey(repoId, source), true)
+    fun markSeen(repoId: String, source: String) = markSeen(repoId, listOf(source))
+    fun markSeen(repoId: String, sources: Collection<String>) {
+        if (sources.isEmpty()) return
+        synchronized(guard) {
+            store.flags(sources.associate { seenKey(repoId, it) to true })
+        }
+    }
 
     private fun treeKey() = "trees-v2:" + component(serverId.orEmpty())
     private fun seenKey(repoId: String, source: String): String {

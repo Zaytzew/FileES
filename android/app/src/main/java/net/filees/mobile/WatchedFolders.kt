@@ -19,8 +19,12 @@ class WatchedFolders(context: Context, val serverId: String? = FileesSession.cur
             if (!editor.commit()) throw java.io.IOException("Cannot persist watch binding")
         }
         override fun flag(key: String): Boolean = prefs.getBoolean(key, false)
-        override fun flag(key: String, value: Boolean) {
-            if (!prefs.edit().putBoolean(key, value).commit()) throw java.io.IOException("Cannot persist capture receipt")
+        override fun flag(key: String, value: Boolean) = flags(mapOf(key to value))
+        override fun flags(values: Map<String, Boolean>) {
+            if (values.isEmpty()) return
+            val editor = prefs.edit()
+            values.forEach { (key, value) -> editor.putBoolean(key, value) }
+            if (!editor.commit()) throw java.io.IOException("Cannot persist capture receipt")
         }
     }, serverId)
     private fun uris(values: List<String>) = values.mapNotNull { value ->
@@ -36,6 +40,7 @@ class WatchedFolders(context: Context, val serverId: String? = FileesSession.cur
     fun removeUnassigned(uri: Uri) = registry.removeUnassigned(uri.toString())
     fun alreadySeen(key: String, repoId: String): Boolean = registry.seen(repoId, key)
     fun markSeen(key: String, repoId: String) = registry.markSeen(repoId, key)
+    fun markSeen(keys: Collection<String>, repoId: String) = registry.markSeen(repoId, keys)
 
     /** Depth chosen for this tree. Folders added before the choice was stored return null. */
     fun depth(uri: Uri): WatchDepth? {

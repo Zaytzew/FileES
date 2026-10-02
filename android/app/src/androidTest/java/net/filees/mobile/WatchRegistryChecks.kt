@@ -6,28 +6,32 @@ internal object WatchRegistryChecks {
         val lists = mutableMapOf<String, List<String>>()
         val flags = mutableMapOf<String, Boolean>()
         var rejectWrites = false
+        var flagBatches = 0
         override fun list(key: String) = lists[key].orEmpty()
         override fun lists(values: Map<String, List<String>>) {
             check(!rejectWrites) { "disk failure" }
             lists.putAll(values.mapValues { it.value.toList() })
         }
         override fun flag(key: String) = flags[key] == true
-        override fun flag(key: String, value: Boolean) {
+        override fun flag(key: String, value: Boolean) = flags(mapOf(key to value))
+        override fun flags(values: Map<String, Boolean>) {
             check(!rejectWrites) { "disk failure" }
-            flags[key] = value
+            flagBatches++
+            values.forEach { (key, value) -> flags[key] = value }
         }
         fun reopen() = MemoryStore().also { it.lists.putAll(lists); it.flags.putAll(flags) }
     }
 
     @JvmStatic fun main(args: Array<String>) {
         run()
-        println("WatchRegistryChecks: 8 cases PASS")
+        println("WatchRegistryChecks: 9 cases PASS")
     }
     fun run() {
         legacyNeverGuessesAnOwner()
         explicitAdoptionOnlyMovesChosenTree()
         bindingsRemainSeparate()
         receiptsBelongToServerAndRepository()
+        manyReceiptsAreOneWrite()
         oldReceiptsAreNotAdopted()
         missingServerFailsClosed()
         failedWriteLeavesMigrationUnfinished()
@@ -80,6 +84,16 @@ internal object WatchRegistryChecks {
         // Separators in source/ID components cannot alias another tuple.
         a.markSeen("x:y", "z")
         check(!a.seen("x", "y:z"))
+    }
+
+    private fun manyReceiptsAreOneWrite() {
+        val store = MemoryStore()
+        val a = WatchRegistry(store, "A")
+        a.markSeen("repo", listOf("one", "two", "three"))
+        check(store.flagBatches == 1)
+        check(a.seen("repo", "one") && a.seen("repo", "two") && a.seen("repo", "three"))
+        a.markSeen("repo", emptyList())
+        check(store.flagBatches == 1)
     }
 
     private fun oldReceiptsAreNotAdopted() {

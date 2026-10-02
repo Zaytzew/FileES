@@ -53,8 +53,8 @@ out="$dist/filees-server-$target"
 mkdir -p "$dist"
 tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/share/man/man5" \
-	"$tmp/share/man/man7" "$tmp/share/man/man8" "$tmp/openbsd"
+mkdir -p "$tmp/bin" "$tmp/share/filees/$goos" "$tmp/share/man/man5" \
+	"$tmp/share/man/man7" "$tmp/share/man/man8" "$tmp/$goos"
 
 # Stamp the bundle version into the binaries that can report it. Without this
 # the only way to tell how old a deployed tool is was to compare its usage text
@@ -99,15 +99,52 @@ cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/public-links.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/install.example.conf" "$tmp/share/filees/"
 cp "$root/packaging/server/public-storage-migration.md" "$tmp/share/filees/"
-cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/filees_public_authority" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/filees_links" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/passport-reap.crontab.example" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/lock-requests-reap.crontab.example" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/openbsd/"
-cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
+if [ "$goos" = openbsd ]; then
+	cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/filees_public_authority" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/filees_links" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/passport-reap.crontab.example" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/lock-requests-reap.crontab.example" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/openbsd/"
+	cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
+	chmod +x "$tmp/openbsd/install-ssh.sh"
+else
+	# Linux: no sandbox, no rc.d and no web server configuration. The tunnel
+	# account authenticates through a PAM module, which is native code and
+	# has to be built on Linux with the PAM headers (or supplied prebuilt).
+	mkdir -p "$tmp/lib"
+	if [ -n "${FILEES_PAM_MODULE:-}" ]; then
+		[ -f "$FILEES_PAM_MODULE" ] || { echo "FILEES_PAM_MODULE not found: $FILEES_PAM_MODULE" >&2; exit 2; }
+		cp "$FILEES_PAM_MODULE" "$tmp/lib/pam_filees_tunnel.so"
+	elif [ "$(uname -s)" = Linux ]; then
+		sh "$root/native/filees-pam/build.sh" "$tmp/lib/pam_filees_tunnel.so" >/dev/null
+	else
+		echo "linux-amd64 needs pam_filees_tunnel.so: build on Linux or set FILEES_PAM_MODULE" >&2
+		exit 2
+	fi
+	pam_magic=$(od -An -tx1 -N4 "$tmp/lib/pam_filees_tunnel.so" | tr -d ' \r\n')
+	[ "$pam_magic" = "7f454c46" ] || { echo "pam_filees_tunnel.so is not an ELF object" >&2; exit 2; }
+	# The onboarding key is a public capability shared by both platforms.
+	cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/linux/"
+	cp "$root/packaging/server/linux/filees.conf" "$tmp/share/filees/linux/"
+	cp "$root/packaging/server/linux/filees-tunnel.pam" "$tmp/share/filees/linux/"
+	cp "$root/packaging/server/linux/install-ssh.sh" "$tmp/linux/"
+	chmod +x "$tmp/linux/install-ssh.sh"
+	# The example names OpenBSD's ports prefix; Debian and Fedora ship
+	# Subversion and ClamAV under /usr/bin. Only the example is rewritten -
+	# an existing server.json is never touched by the installers.
+	sed -e 's|"/usr/local/bin/svn"|"/usr/bin/svn"|' \
+		-e 's|"/usr/local/bin/svnserve"|"/usr/bin/svnserve"|' \
+		-e 's|"/usr/local/bin/svnadmin"|"/usr/bin/svnadmin"|' \
+		-e 's|"/usr/local/bin/clamdscan"|"/usr/bin/clamdscan"|' \
+		"$root/packaging/server/server.example.json" >"$tmp/share/filees/server.example.json"
+	if grep -q '/usr/local/bin/' "$tmp/share/filees/server.example.json"; then
+		echo "linux server.example.json still names /usr/local/bin" >&2
+		exit 2
+	fi
+fi
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"
 cp "$root/packaging/server/BACKCHANNEL_UNIX.md" "$tmp/"
@@ -118,7 +155,6 @@ if [ -d "$root/docs/man" ]; then
 fi
 printf '%s\n' "$version" >"$tmp/VERSION"
 chmod +x "$tmp/install-server.sh"
-chmod +x "$tmp/openbsd/install-ssh.sh"
 (
 	cd "$tmp"
 	if command -v sha256sum >/dev/null 2>&1; then

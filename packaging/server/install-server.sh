@@ -105,7 +105,11 @@ echo "Existing intake jobs were not migrated. Intake is a delivery queue, not a 
 echo "Set install.public_downloads_dir=$public_downloads_dir in install.conf; use the same PUBLIC_* settings for install-ssh.sh."
 echo "No daemon or rc.d service was installed."
 echo "Manual pages installed under $prefix/man (man filees, man filees-admin)."
-echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."
+if [ -f "$bundle/linux/install-ssh.sh" ]; then
+	echo "On Linux, review and run linux/install-ssh.sh to create the accounts and enable the system-sshd entries."
+else
+	echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."
+fi
 
 install -m 0644 "$bundle/share/filees/capacity-alerts.example.json" "$sysconfdir/capacity-alerts.example.json"
 if id _filees-state >/dev/null 2>&1; then

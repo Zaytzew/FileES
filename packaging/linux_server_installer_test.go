@@ -258,3 +258,51 @@ func TestLinuxReleasePolicyGeneratesAnAcceptableManifest(t *testing.T) {
 		t.Error("Linux bundle must ship an install.conf example that follows the linux-amd64 manifest")
 	}
 }
+
+// Scheduled maintenance is the administrator's choice between systemd timers
+// and cron, with a keyboard-free equivalent. Both must run the same commands,
+// and switching must leave exactly one scheduler behind.
+func TestLinuxScheduledMaintenanceHasTwoEquivalentSchedulers(t *testing.T) {
+	installer := readLinuxServerFile(t, "server/linux/install-ssh.sh")
+	builder := readLinuxServerFile(t, "build-server.sh")
+	jobs := map[string]string{
+		"filees-passport-reap":       "/usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json",
+		"filees-passport-reap-check": "/usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json --check",
+		"filees-lock-requests-reap":  "/usr/local/sbin/filees-admin -config /etc/filees/server.json repo reap-lock-requests",
+		"filees-capacity":            "/usr/local/sbin/filees-admin -config /etc/filees/server.json alert capacity --scheduled",
+	}
+	units, err := filepath.Glob("server/linux/systemd/*")
+	if err != nil || len(units) != 2*len(jobs) {
+		t.Fatalf("expected a service and a timer per job, found %d files (%v)", len(units), err)
+	}
+	cronCommands := strings.ReplaceAll(installer, "$libexec", "/usr/local/libexec/filees")
+	for name, command := range jobs {
+		service := readLinuxServerFile(t, "server/linux/systemd/"+name+".service")
+		if !strings.Contains(service, "ExecStart="+command+"\n") || !strings.Contains(service, "User=_filees-state\n") || !strings.Contains(service, "Type=oneshot\n") {
+			t.Errorf("%s.service does not run %q as the state user", name, command)
+		}
+		timer := readLinuxServerFile(t, "server/linux/systemd/"+name+".timer")
+		if !strings.Contains(timer, "OnCalendar=") || !strings.Contains(timer, "WantedBy=timers.target") {
+			t.Errorf("%s.timer is not an installable calendar timer", name)
+		}
+		if !strings.Contains(installer, name+".timer") {
+			t.Errorf("installer does not enable %s.timer", name)
+		}
+		// The capacity entry is written by filees-install itself.
+		if name != "filees-capacity" && !strings.Contains(cronCommands, command+" >/dev/null") {
+			t.Errorf("cron variant does not run %q", command)
+		}
+	}
+	for _, need := range []string{
+		`scheduler=${FILEES_SCHEDULER:-}`, `if [ -t 0 ]; then`, `systemctl enable --now $timers`,
+		`systemctl disable --now $timers`, `rm -f "/etc/systemd/system/$(basename "$unit")"`,
+		`--ensure-capacity-cron`, `FILEES_SCHEDULER must be systemd, cron or none`,
+	} {
+		if !strings.Contains(installer, need) {
+			t.Errorf("installer lacks %s", need)
+		}
+	}
+	if !strings.Contains(builder, `packaging/server/linux/systemd/*.timer "$tmp/share/filees/linux/systemd/"`) {
+		t.Error("builder does not stage the systemd units")
+	}
+}

@@ -235,4 +235,110 @@ else
 fi
 echo "FileES accounts, binaries and SSH entries installed. Linux runs without a sandbox."
 echo "Public shares were not configured; no listener and no web server were touched."
-echo "Scheduled maintenance (passport, lock-request and upload reaping, capacity alerts) is not installed yet."
+
+# Scheduled maintenance: passport expiry (every minute, with a health check
+# every five), lock-release request cleanup (every 15 minutes) and capacity
+# alerts (every minute). Every job is a short process run as the state user;
+# nothing resident is installed. The administrator chooses what runs them:
+#   FILEES_SCHEDULER=systemd  timers under /etc/systemd/system
+#   FILEES_SCHEDULER=cron     the state user's crontab; cron is installed if missing
+#   FILEES_SCHEDULER=none     nothing now; run this script again to choose
+# Without the variable the question is asked on a terminal, and nothing is
+# installed when there is no terminal. Choosing one removes the other.
+marker_passport='# filees-passport-reap-v1'
+marker_check='# filees-passport-check-v1'
+marker_lock='# filees-lock-requests-reap-v1'
+marker_capacity='# filees-capacity-v1'
+timers="filees-passport-reap.timer filees-passport-reap-check.timer filees-lock-requests-reap.timer filees-capacity.timer"
+
+scheduler=${FILEES_SCHEDULER:-}
+if [ -z "$scheduler" ]; then
+	if [ -t 0 ]; then
+		printf '%s\n' "Scheduled maintenance (passports, lock requests, capacity alerts) can be run by:" \
+			"  s) systemd timers - nothing else to install" \
+			"  c) cron - a separate, plain scheduler; installed if it is missing" \
+			"  n) nothing for now"
+		printf 'Choice [s/c/n]: '
+		read -r answer
+		case "$answer" in
+			s|S) scheduler=systemd ;;
+			c|C) scheduler=cron ;;
+			*) scheduler=none ;;
+		esac
+	else
+		scheduler=none
+	fi
+fi
+
+# Lines of ours in the state user's crontab, by marker; everything else stays.
+crontab_without_filees() { # extra markers to drop are passed as arguments
+	current=$(crontab -u "$state_user" -l 2>/dev/null || true)
+	[ -n "$current" ] || return 0
+	printf '%s\n' "$current" | while IFS= read -r line; do
+		keep=1
+		for marker in "$@"; do
+			case "$line" in *"$marker") keep=0 ;; esac
+		done
+		[ "$keep" -eq 0 ] || printf '%s\n' "$line"
+	done
+}
+
+case "$scheduler" in
+systemd)
+	[ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 || {
+		echo "install-ssh.sh: FILEES_SCHEDULER=systemd requires a running systemd" >&2; exit 1; }
+	for unit in "$bundle"/share/filees/linux/systemd/*.service "$bundle"/share/filees/linux/systemd/*.timer; do
+		install -o root -g root -m 0644 "$unit" /etc/systemd/system/
+	done
+	systemctl daemon-reload
+	# shellcheck disable=SC2086
+	systemctl enable --now $timers
+	if command -v crontab >/dev/null 2>&1; then
+		crontab_without_filees "$marker_passport" "$marker_check" "$marker_lock" "$marker_capacity" | crontab -u "$state_user" -
+	fi
+	echo "Scheduled maintenance runs from systemd timers (systemctl list-timers 'filees-*'). Failures: systemctl --failed."
+	;;
+cron)
+	if ! command -v crontab >/dev/null 2>&1; then
+		if command -v apt-get >/dev/null 2>&1; then
+			DEBIAN_FRONTEND=noninteractive apt-get install -y cron
+		elif command -v dnf >/dev/null 2>&1; then
+			dnf install -y cronie
+		else
+			echo "install-ssh.sh: install cron for this distribution, then run this script again" >&2; exit 1
+		fi
+	fi
+	if command -v systemctl >/dev/null 2>&1; then
+		for cron_unit in cron crond; do
+			if systemctl cat "$cron_unit.service" >/dev/null 2>&1; then
+				systemctl enable --now "$cron_unit"
+				break
+			fi
+		done
+		# shellcheck disable=SC2086
+		systemctl disable --now $timers >/dev/null 2>&1 || true
+		# The unit files go too: filees-install treats an installed
+		# filees-capacity.timer as "systemd schedules the capacity job" and
+		# would not write the cron entry below.
+		for unit in "$bundle"/share/filees/linux/systemd/*.service "$bundle"/share/filees/linux/systemd/*.timer; do
+			rm -f "/etc/systemd/system/$(basename "$unit")"
+		done
+		systemctl daemon-reload
+	fi
+	{
+		crontab_without_filees "$marker_passport" "$marker_check" "$marker_lock"
+		echo "* * * * * $libexec/filees-worker passport-reap -config /etc/filees/server.json >/dev/null $marker_passport"
+		echo "*/5 * * * * /bin/sleep 50 && $libexec/filees-worker passport-reap -config /etc/filees/server.json --check >/dev/null $marker_check"
+		echo "*/15 * * * * /usr/local/sbin/filees-admin -config /etc/filees/server.json repo reap-lock-requests >/dev/null $marker_lock"
+	} | crontab -u "$state_user" -
+	/usr/local/sbin/filees-install --ensure-capacity-cron /usr/local/sbin /etc/filees/server.json
+	echo "Scheduled maintenance runs from the $state_user crontab (crontab -u $state_user -l). Errors go to cron mail."
+	;;
+none)
+	echo "Scheduled maintenance was left as it is. Run again with FILEES_SCHEDULER=systemd or FILEES_SCHEDULER=cron to choose."
+	;;
+*)
+	echo "install-ssh.sh: FILEES_SCHEDULER must be systemd, cron or none" >&2
+	exit 1
+	;;
+esac

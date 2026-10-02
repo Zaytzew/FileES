@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -81,7 +82,26 @@ func read(ctx context.Context, program string) (string, error) {
 	}
 	return s, e
 }
+
+// systemdCapacityTimer is the unit the Linux installer puts in place when the
+// administrator chose systemd timers over cron (FILEES_SCHEDULER=systemd).
+var systemdCapacityTimer = "/etc/systemd/system/filees-capacity.timer"
+
+// scheduledBySystemd reports that capacity alerts already have a scheduler.
+// A cron entry next to the timer would run the job twice, and requiring
+// crontab would fail every update on a host that deliberately has no cron.
+func scheduledBySystemd() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	info, err := os.Stat(systemdCapacityTimer)
+	return err == nil && info.Mode().IsRegular()
+}
+
 func Prepare(ctx context.Context, admin, config string, firstInstall bool) (*Plan, error) {
+	if scheduledBySystemd() {
+		return nil, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	line, e := Line(admin, config)
@@ -137,6 +157,9 @@ func Ensure(ctx context.Context, admin, config string) error {
 	p, e := Prepare(ctx, admin, config, false)
 	if e != nil {
 		return e
+	}
+	if p == nil {
+		return nil // a systemd timer runs the job
 	}
 	return p.Apply(ctx)
 }

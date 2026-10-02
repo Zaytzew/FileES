@@ -1,0 +1,10 @@
+# Installed by linux/install-ssh.sh when FILEES_SCHEDULER=systemd. No sandboxing
+# directives: Linux is the build without a sandbox (see the manual).
+[Unit]
+Description=FileES capacity alerts
+
+[Service]
+Type=oneshot
+User=_filees-state
+ExecStart=/usr/local/sbin/filees-admin -config /etc/filees/server.json alert capacity --scheduled
+StandardOutput=null

@@ -1,0 +1,10 @@
+# Installed by linux/install-ssh.sh when FILEES_SCHEDULER=systemd. No sandboxing
+# directives: Linux is the build without a sandbox (see the manual).
+[Unit]
+Description=FileES passport expiry maintenance
+
+[Service]
+Type=oneshot
+User=_filees-state
+ExecStart=/usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json
+StandardOutput=null

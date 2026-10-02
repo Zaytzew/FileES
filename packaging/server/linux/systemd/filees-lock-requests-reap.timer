@@ -1,0 +1,9 @@
+[Unit]
+Description=FileES lock release request cleanup (timer)
+
+[Timer]
+OnCalendar=*:0/15:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

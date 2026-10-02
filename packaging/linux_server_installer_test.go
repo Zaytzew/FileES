@@ -238,8 +238,18 @@ func TestLinuxReleasePolicyGeneratesAnAcceptableManifest(t *testing.T) {
 	if !module {
 		t.Fatal("the PAM module is not in the generated manifest")
 	}
+	// Found by the first real update on Debian: "*.so" is in Subversion's
+	// default global-ignores, so a payload file with that name is signed in
+	// the manifest but never added to FILEES-BIN.
+	for _, file := range spec.Files {
+		for _, pattern := range []string{"*.so", "*.so.[0-9]*", "*.a", "*.o", "*.la", "*.lo", "*.pyc", "*~"} {
+			if ok, _ := filepath.Match(pattern, filepath.Base(file.Source)); ok {
+				t.Errorf("payload source %s would be ignored by svn add", file.Source)
+			}
+		}
+	}
 	script := readLinuxServerFile(t, "../tools/prepare-server-release.sh")
-	for _, need := range []string{`"packaging/server/${platform%-amd64}-binary-policy.json"`, `cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/"`, `openbsd-amd64|linux-amd64) ;;`} {
+	for _, need := range []string{`"packaging/server/${platform%-amd64}-binary-policy.json"`, `cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/pam_filees_tunnel.module"`, `openbsd-amd64|linux-amd64) ;;`, `svn would ignore these payload files`} {
 		if !strings.Contains(script, need) {
 			t.Errorf("prepare-server-release.sh lacks %s", need)
 		}

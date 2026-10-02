@@ -170,7 +170,7 @@
       "group": "root"
     },
     {
-      "source": "lib/pam_filees_tunnel.so",
+      "source": "lib/pam_filees_tunnel.module",
       "target": "{libexec_dir}/filees/pam_filees_tunnel.so",
       "kind": "file",
       "mode": "0644",

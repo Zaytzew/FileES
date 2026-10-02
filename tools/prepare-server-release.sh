@@ -67,9 +67,12 @@ for platform in $PLATFORMS; do
 	mkdir -p "$release_root/bin" "$release_root/examples" "$release_root/share/filees"
 	cp "$bundle"/bin/* "$release_root/bin/"
 	if [ "$platform" = linux-amd64 ]; then
-		# The tunnel account's PAM module is part of the signed payload.
+		# The tunnel account's PAM module is part of the signed payload. It is
+		# stored under a name Subversion does not ignore: "*.so" is in the
+		# default global-ignores, so "svn add" would silently leave the module
+		# out of FILEES-BIN and every Linux update would fail on fetching it.
 		mkdir -p "$release_root/lib"
-		cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/"
+		cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/pam_filees_tunnel.module"
 	fi
 	# Manual pages are part of the signed release, so filees-install upgrades them
 	# with the binaries they describe. Their targets are absolute /usr/local/man
@@ -92,6 +95,14 @@ for platform in $PLATFORMS; do
 		-sequence "$SEQUENCE" \
 		-security-epoch "$SECURITY_EPOCH"
 done
+
+# A payload file matching Subversion's default global-ignores would be signed
+# in the manifest and then never reach the repository.
+ignored=$(find "$FILEES_BIN_WC/releases/$RELEASE_ID" \( -name '*.o' -o -name '*.lo' -o -name '*.la' -o -name '*.al' \
+	-o -name '.libs' -o -name '*.so' -o -name '*.so.[0-9]*' -o -name '*.a' -o -name '*.pyc' -o -name '*.pyo' \
+	-o -name '__pycache__' -o -name '*.rej' -o -name '*~' -o -name '#*#' -o -name '.#*' -o -name '.*.swp' \
+	-o -name '.DS_Store' -o -name '[Tt]humbs.db' \) -print)
+[ -z "$ignored" ] || die "svn would ignore these payload files, leaving the release incomplete: $ignored"
 
 candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.json"
 cat >"$candidate" <<EOF

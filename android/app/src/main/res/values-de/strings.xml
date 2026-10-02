@@ -265,6 +265,7 @@
     <string name="watch_state_attention">Prüfung nötig</string>
     <string name="watch_state_unknown">Noch nicht geprüft</string>
     <string name="watch_queue_count">Ausstehend: %1$d</string>
+    <string name="watch_queue_speed">Ausstehend: %1$d · %2$s</string>
     <string name="watch_last_checked">Geprüft: %1$s</string>
     <string name="watch_queue_title">Warteschlange</string>
     <string name="watch_queue_empty">Keine ausstehenden Dateien</string>

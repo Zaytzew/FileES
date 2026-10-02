@@ -265,6 +265,7 @@
     <string name="watch_state_attention">Requiere atención</string>
     <string name="watch_state_unknown">Sin comprobar</string>
     <string name="watch_queue_count">Por enviar: %1$d</string>
+    <string name="watch_queue_speed">Por enviar: %1$d · %2$s</string>
     <string name="watch_last_checked">Comprobado: %1$s</string>
     <string name="watch_queue_title">Cola</string>
     <string name="watch_queue_empty">Sin archivos pendientes</string>

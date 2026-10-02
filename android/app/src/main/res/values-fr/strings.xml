@@ -265,6 +265,7 @@
     <string name="watch_state_attention">À vérifier</string>
     <string name="watch_state_unknown">Pas encore vérifié</string>
     <string name="watch_queue_count">À envoyer : %1$d</string>
+    <string name="watch_queue_speed">À envoyer : %1$d · %2$s</string>
     <string name="watch_last_checked">Vérifié : %1$s</string>
     <string name="watch_queue_title">File en attente</string>
     <string name="watch_queue_empty">Aucun fichier en attente</string>

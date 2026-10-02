@@ -3,11 +3,20 @@ package net.filees.mobile
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.TrafficStats
 import android.os.Build
+import android.os.Process
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidbind.Androidbind
+import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * One scan of the operator-chosen Android locations. New objects go to
@@ -29,8 +38,13 @@ object FileesWatchTick {
     private const val NOTIFICATION_FAIL_ID = 1002
     private const val NOTIFICATION_WAIT_ID = 1003
     private const val NOTIFICATION_SENT_ID = 1005
+    private val foregroundNote = AtomicInteger(0)
+    private var activeMeter: TransferMeter? = null
 
     fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation(), onWork: (String) -> Unit = {}): Int = CaptureCoordinator.run(cancel) {
+        foregroundNote.set(0)
+        activeMeter?.stop()
+        activeMeter = null
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
         FileesSession.migrate(prefs)
         // One persisted server record: never mix the endpoint of A with B's target
@@ -62,7 +76,8 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,before.values.toList())
             // Promotion keeps a long send alive. A refusal must not skip the
             // walk or the dial: the new file is the trigger, in every tree.
-            fun promote(text: String) {
+            fun promote(files: Int) {
+                val text = sendingLine(context, files, activeMeter?.speed())
                 if (foregroundRefused) {
                     notifyProgress(context, text)
                     return
@@ -75,7 +90,7 @@ object FileesWatchTick {
                     notifyProgress(context, text)
                 }
             }
-            if (pendingCount > 0) promote(context.getString(R.string.watch_queue_count, pendingCount))
+            if (pendingCount > 0) promote(pendingCount)
             before.values.filter { it.delivered }.forEach { CaptureTransfers.acknowledge(local, repoId, it, watched) }
             for (tree in trees) {
                 cancel.check()
@@ -111,7 +126,12 @@ object FileesWatchTick {
             } else {
                 // The queue item already exists. Ask for the foreground service
                 // when the walk did not need one, then dial either way.
-                promote(context.getString(R.string.watch_queue_count, queued.sumOf { it.fileCount }))
+                val queuedFiles = queued.sumOf { it.fileCount }
+                activeMeter = TransferMeter(context) { foregroundRefused }.also {
+                    it.setFiles(queuedFiles)
+                    it.start()
+                }
+                promote(queuedFiles)
                 clearStartDeferred(context)
                 // Android's answer wins. The saved address is only for a miss,
                 // and it is replaced only after a handshake accepts the pinned key.
@@ -127,7 +147,8 @@ object FileesWatchTick {
                     for (item in queued) {
                         cancel.check()
                         val remaining = PendingUpload.listFromJson(sender.listUploadsJSON(repoId)).filter { !it.delivered && it.state != "discarded" }.sumOf { it.fileCount }
-                        promote(context.getString(R.string.watch_queue_count, remaining))
+                        activeMeter?.setFiles(remaining)
+                        promote(remaining)
                         trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
                             .forEach { status.phase(scope,it,"sending") }
                         sender.sendUploadJSON(repoId,item.id)
@@ -172,7 +193,11 @@ object FileesWatchTick {
             trees.forEach { status.problem(scope,it,e.message ?: context.getString(R.string.error_send)) }
             cancel.check()
             result.errors += e.message ?: context.getString(R.string.error_send)
-        } finally { status.end(token) }
+        } finally {
+            status.end(token)
+            activeMeter?.stop()
+            activeMeter = null
+        }
         val failure = result.errors.distinct().take(5).joinToString("\n").ifBlank { null }
         val announce = recordJournal(context, scope, result.sent, result.waiting, repoName, failure)
         if (announce && failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)
@@ -190,6 +215,10 @@ object FileesWatchTick {
             NotificationManagerCompat.from(context).cancel(NOTIFICATION_PROGRESS_ID)
         }
         result.sent
+    }
+
+    internal fun attachForeground(id: Int) {
+        foregroundNote.set(id)
     }
 
     internal fun clearStartDeferred(context: Context) {
@@ -269,10 +298,10 @@ object FileesWatchTick {
     }
 
     private fun notifyProgress(context: Context, text: String) {
-        notifyMessage(context, context.getString(R.string.watch_state_sending), text, NOTIFICATION_PROGRESS_ID, onlyAlertOnce = true)
+        notifyMessage(context, context.getString(R.string.watch_state_sending), text, NOTIFICATION_PROGRESS_ID, onlyAlertOnce = true, spinning = true)
     }
 
-    private fun notifyMessage(context: Context, title: String, text: String, id: Int, onlyAlertOnce: Boolean = false) {
+    private fun notifyMessage(context: Context, title: String, text: String, id: Int, onlyAlertOnce: Boolean = false, spinning: Boolean = false) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -291,10 +320,96 @@ object FileesWatchTick {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(android.app.PendingIntent.getActivity(context,0,android.content.Intent(context,MainActivity::class.java),
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
-            .setAutoCancel(true)
+            .setAutoCancel(!spinning)
             .setOnlyAlertOnce(onlyAlertOnce)
+            .setOngoing(spinning)
+            .setProgress(0, 0, spinning)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
         NotificationManagerCompat.from(context).notify(id, notification)
+    }
+
+    private fun sendingLine(context: Context, files: Int, speed: String?): String {
+        if (files > 1 && speed != null) return context.getString(R.string.watch_queue_speed, files, speed)
+        if (speed != null) return speed
+        return context.getString(R.string.watch_queue_count, files.coerceAtLeast(1))
+    }
+
+    private class TransferMeter(private val context: Context, private val refused: () -> Boolean) {
+        private val files = AtomicInteger(0)
+        private val stopped = AtomicBoolean(false)
+        private var task: ScheduledFuture<*>? = null
+        @Volatile private var rate: String? = null
+        private var lastBytes = TrafficStats.UNSUPPORTED.toLong()
+        private var lastAt = 0L
+        private var moved = false
+
+        fun speed(): String? = rate
+
+        fun setFiles(count: Int) { files.set(count) }
+
+        fun start() {
+            val uid = Process.myUid()
+            lastBytes = TrafficStats.getUidTxBytes(uid)
+            lastAt = SystemClock.elapsedRealtime()
+            if (lastBytes == TrafficStats.UNSUPPORTED.toLong()) return
+            task = speedScheduler.scheduleWithFixedDelay({
+                try { sample(uid) } catch (_: Exception) {}
+            }, 1, 1, TimeUnit.SECONDS)
+        }
+
+        fun stop() {
+            stopped.set(true)
+            task?.cancel(false)
+            task = null
+        }
+
+        private fun sample(uid: Int) {
+            if (stopped.get()) return
+            val nowBytes = TrafficStats.getUidTxBytes(uid)
+            val nowAt = SystemClock.elapsedRealtime()
+            if (nowBytes == TrafficStats.UNSUPPORTED.toLong()) return
+            val dt = nowAt - lastAt
+            if (dt < 800L) return
+            var delta = nowBytes - lastBytes
+            if (delta < 0L) delta = 0L
+            val bps = delta * 1000L / dt
+            lastBytes = nowBytes
+            lastAt = nowAt
+            if (delta > 0L) moved = true
+            if (!moved || stopped.get()) return
+            rate = formatRate(bps)
+            publish()
+        }
+
+        private fun publish() {
+            if (stopped.get()) return
+            val text = sendingLine(context, files.get(), rate)
+            if (refused()) {
+                notifyProgress(context, text)
+                return
+            }
+            val id = foregroundNote.get()
+            if (id == 0) {
+                notifyProgress(context, text)
+                return
+            }
+            val info = FileesWatchWorker.foregroundInfo(context, text, id)
+            NotificationManagerCompat.from(context).notify(id, info.notification)
+        }
+
+        companion object {
+            private val speedScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "filees-watch-speed").apply { isDaemon = true }
+            }
+
+            private fun formatRate(bps: Long): String {
+                if (bps <= 0L) return "0 KB/s"
+                if (bps < 1024L) return "1 KB/s"
+                if (bps < 1024L * 1024L) return "${bps / 1024L} KB/s"
+                val mb = bps / (1024.0 * 1024.0)
+                return if (mb < 10.0) String.format(Locale.getDefault(), "%.1f MB/s", mb) else "${mb.toLong()} MB/s"
+            }
+        }
     }
 }

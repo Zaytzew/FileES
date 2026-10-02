@@ -281,6 +281,7 @@
     <string name="watch_state_attention">Wymaga uwagi</string>
     <string name="watch_state_unknown">Przed sprawdzeniem</string>
     <string name="watch_queue_count">Do wysłania: %1$d</string>
+    <string name="watch_queue_speed">Do wysłania: %1$d · %2$s</string>
     <string name="watch_last_checked">Sprawdzono: %1$s</string>
     <string name="watch_queue_title">Kolejka</string>
     <string name="watch_queue_empty">Brak oczekujących plików</string>

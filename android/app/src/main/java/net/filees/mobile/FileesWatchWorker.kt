@@ -26,7 +26,9 @@ class FileesWatchWorker(context: Context, params: WorkerParameters) : Worker(con
             if (isStopped) return Result.retry()
             val ran = CaptureCoordinator.tryRun(cancellation) {
                 FileesWatchTick.run(applicationContext, cancellation) { text ->
-                    setForegroundAsync(foregroundInfo(applicationContext,text,10000 + (id.hashCode() and 0x3fffffff))).get()
+                    val noteId = 10000 + (id.hashCode() and 0x3fffffff)
+                    FileesWatchTick.attachForeground(noteId)
+                    setForegroundAsync(foregroundInfo(applicationContext,text,noteId)).get()
                     FileesWatchTick.clearStartDeferred(applicationContext)
                 }
             }
@@ -60,6 +62,7 @@ class FileesWatchWorker(context: Context, params: WorkerParameters) : Worker(con
             val notification = androidx.core.app.NotificationCompat.Builder(context,channel)
                 .setSmallIcon(R.drawable.ic_file).setContentTitle(context.getString(R.string.watch_state_sending))
                 .setContentText(text).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
+                .setProgress(0, 0, true)
                 .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_PRIVATE).build()
             return if (Build.VERSION.SDK_INT >= 29) ForegroundInfo(notificationId,notification,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
                 else ForegroundInfo(notificationId,notification)

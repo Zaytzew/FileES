@@ -271,6 +271,7 @@
     <string name="watch_state_attention">Needs attention</string>
     <string name="watch_state_unknown">Not checked yet</string>
     <string name="watch_queue_count">To send: %1$d</string>
+    <string name="watch_queue_speed">To send: %1$d · %2$s</string>
     <string name="watch_last_checked">Checked: %1$s</string>
     <string name="watch_queue_title">Queue</string>
     <string name="watch_queue_empty">No pending files</string>

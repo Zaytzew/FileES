@@ -4,6 +4,7 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "commit.foreign_placeholder_wait": "Diese Datei ist auf diesem Laufwerk nicht verfügbar — laden Sie sie mit ihrem Anbieter (z. B. Nextcloud oder OneDrive) herunter. FileES behält sie in der Warteschlange; es löscht sie nicht und lädt sie nicht herunter.",
     "commit.server_storage_held": "Die Veröffentlichung wartet auf die Bestätigung, dass auf dem Server Speicherplatz verfügbar ist. Lokale Änderungen bleiben erhalten.",
     "system.quiescing": "FileES bereitet einen sicheren Neustart vor. Diese Aktion wurde nicht gestartet; versuchen Sie es in Kürze erneut.",
     "activation.begin_failed": "Aktivierung konnte nicht gestartet werden",

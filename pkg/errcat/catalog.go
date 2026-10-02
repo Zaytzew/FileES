@@ -25,6 +25,7 @@ const (
 	KeyLockInvalidPath           Key = "lock.invalid_path"
 	KeyLockNotPublished          Key = "lock.not_published"
 	KeyCommitFailed              Key = "commit.failed"
+	KeyForeignPlaceholderWait    Key = "commit.foreign_placeholder_wait"
 	KeyServerStorageHeld         Key = "commit.server_storage_held"
 	KeyCommitRecoveryHeld        Key = "commit.recovery_held"
 	KeyCommitRecoveryRefused     Key = "commit.recovery_refused"
@@ -94,6 +95,7 @@ var detailField = Field{"detail", ParamDiagnostic}
 func detailOnly() []Field { return []Field{detailField} }
 
 var specs = []Spec{
+	{"COMMIT-3113", KeyForeignPlaceholderWait, SevWarn, HintRequireAction, detailOnly(), "Publication deferred: another provider's placeholder has no local content"},
 	// Existing lock-release IPC pairs, now covered by the shared dictionary.
 	{"LOCK-2201", "lock_release.unavailable", SevError, HintRetry, nil, "Lock release service is unavailable"},
 	{"LOCK-2202", "lock_release.inspection_failed", SevError, HintRetry, nil, "Could not inspect the current reservation"},

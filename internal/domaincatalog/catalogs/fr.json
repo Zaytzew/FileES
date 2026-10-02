@@ -4,6 +4,7 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "commit.foreign_placeholder_wait": "Ce fichier n’est pas disponible sur ce disque — téléchargez-le avec son fournisseur (comme Nextcloud ou OneDrive). FileES le conserve dans la file d’attente ; il ne le supprime ni ne le télécharge.",
     "commit.server_storage_held": "La publication attend la confirmation que de l’espace est disponible sur le serveur. Les modifications locales sont conservées.",
     "system.quiescing": "FileES prépare un redémarrage sûr. Cette action n’a pas été lancée ; réessayez dans quelques instants.",
     "activation.begin_failed": "Impossible de lancer l’activation",

@@ -4,6 +4,7 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "commit.foreign_placeholder_wait": "Este archivo no está disponible en este disco: descárguelo con su proveedor (como Nextcloud o OneDrive). FileES lo mantiene en la cola; no lo elimina ni lo descarga.",
     "commit.server_storage_held": "La publicación espera la confirmación de que hay espacio disponible en el servidor. Los cambios locales se conservan.",
     "system.quiescing": "FileES está preparando un reinicio seguro. Esta acción no se ha iniciado; inténtalo de nuevo en unos instantes.",
     "activation.begin_failed": "No se pudo iniciar la activación",

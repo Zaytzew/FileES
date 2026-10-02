@@ -227,17 +227,18 @@ func (s *Service) RecoveryStats() RecoveryStats {
 }
 
 type stageItem struct {
-	ResolutionID   string // accepted interpretation of this still-pending item
-	Rel            string
-	Abs            string
-	OldRel         string // source path for Renamed; empty otherwise
-	RenameVerified bool
-	MoveScheduled  bool
-	IsDir          bool
-	Op             watcher.OpType
-	FirstSeen      time.Time // for Added latency; also the Modified debounce ceiling anchor
-	LastSeen       time.Time // most recent write; anchors the Modified debounce quiet period
-	ver            uint64    // incremented on every in-place update
+	ResolutionID            string // accepted interpretation of this still-pending item
+	Rel                     string
+	Abs                     string
+	OldRel                  string // source path for Renamed; empty otherwise
+	RenameVerified          bool
+	MoveScheduled           bool
+	IsDir                   bool
+	Op                      watcher.OpType
+	FirstSeen               time.Time // for Added latency; also the Modified debounce ceiling anchor
+	LastSeen                time.Time // most recent write; anchors the Modified debounce quiet period
+	ver                     uint64    // incremented on every in-place update
+	placeholderWaitReported bool      // One diagnostic per pending foreign-provider episode; not durable.
 }
 
 type revisionCommitter interface {
@@ -1420,8 +1421,10 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		case placeholderWait:
 			// Another provider holds its bytes elsewhere: reading it would
 			// download it. It stays queued until it is back on this disk.
-			s.Logger.Warnf("defer add %s (another cloud provider keeps it off this disk)", p)
+			s.reportForeignPlaceholderWait(p, pending)
 			continue
+		case placeholderAddIt:
+			s.markPlaceholderWait(p, pending, false)
 		}
 		item := st[p]
 		if item == "" && hasUnversionedAncestor(p, st) && anchored && placeholderAncestor(wc, p) {

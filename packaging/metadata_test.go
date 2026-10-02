@@ -617,7 +617,7 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 	}
 	text := string(data)
 	for _, required := range []string{
-		"build $Wxs", "WixToolset.UI.wixext",
+		"$sources = @($Wxs)", "build @sources", "$sources += $fragment", "WixToolset.UI.wixext",
 		`SourceDir=$staging`, `ProductVersion=$msiVersion`,
 		`BundleVersion=$bundleVersion`, `-pdbtype none`, `VERSION`,
 	} {

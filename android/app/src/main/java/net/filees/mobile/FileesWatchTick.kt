@@ -17,8 +17,11 @@ import androidbind.Androidbind
  * back.
  *
  * The look itself is local: the folder walk and the upload queue do not
- * resolve a name or open SSH. A dial happens only when a file is new or a
- * queued item is still allowed to send. A conflict waits for the person.
+ * resolve a name or open SSH. A new file in any watched tree is written to
+ * that queue before a foreground service or a dial, and that queue item is
+ * what starts the send. Android may refuse the service; the dial still
+ * happens, and a kill leaves the same id for the next tick. A conflict
+ * waits for the person. The stored send-depth is not consulted here.
  */
 object FileesWatchTick {
     const val NOTIFICATION_CHANNEL_ID = "filees-watch-uploads"
@@ -48,12 +51,21 @@ object FileesWatchTick {
             val local = Androidbind.newClient(context.filesDir.absolutePath, address, FileesSession.MOBILE_USER, hostKey)
             cancel.attach(local)
             val before = PendingUpload.listFromJson(local.listUploadsJSON(repoId)).associateBy { it.id }
-            // Recover an existing queue before a potentially slow SAF scan eats
-            // the temporary permission to start a foreground service.
             val pendingCount = before.values.filter { it.state == "pending-create" || it.state == "uploading" }.sumOf { it.fileCount }
             status.updateQueue(scope,trees,before.values.toList())
-            if (pendingCount > 0) onWork(context.getString(R.string.watch_queue_count,pendingCount))
-            val ownedSources = before.values.flatMap { it.sources }.toSet()
+            // Promotion keeps a long send alive. A refusal must not skip the
+            // walk or the dial: the new file is the trigger, in every tree.
+            var foregroundRefused = false
+            fun promote(text: String) {
+                if (foregroundRefused) return
+                try {
+                    onWork(text)
+                } catch (e: Exception) {
+                    if (cancel.isCancelled || !FileesWatchWorker.backgroundStartDenied(e)) throw e
+                    foregroundRefused = true
+                }
+            }
+            if (pendingCount > 0) promote(context.getString(R.string.watch_queue_count, pendingCount))
             before.values.filter { it.delivered }.forEach { CaptureTransfers.acknowledge(local, repoId, it, watched) }
             for (tree in trees) {
                 cancel.check()
@@ -63,7 +75,6 @@ object FileesWatchTick {
                     }
                     status.scanned(scope,tree)
                     if (unseen.isEmpty()) continue
-                    if (unseen.any { CaptureTransfers.source(it) !in ownedSources }) onWork(context.getString(R.string.watch_state_preparing))
                     status.phase(scope,tree,"preparing")
                     val part = CaptureTransfers.send(context, local, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true, progress = {
                         status.phase(scope,tree,"preparing")
@@ -88,6 +99,10 @@ object FileesWatchTick {
                 status.updateQueue(scope,trees,resting,finish = true)
                 local.pruneDeliveredUploads(repoId)
             } else {
+                // The queue item already exists. Ask for the foreground service
+                // when the walk did not need one, then dial either way.
+                promote(context.getString(R.string.watch_queue_count, queued.sumOf { it.fileCount }))
+                clearStartDeferred(context)
                 // Android's answer wins. The saved address is only for a miss,
                 // and it is replaced only after a handshake accepts the pinned key.
                 val dial = try {
@@ -102,7 +117,7 @@ object FileesWatchTick {
                     for (item in queued) {
                         cancel.check()
                         val remaining = PendingUpload.listFromJson(sender.listUploadsJSON(repoId)).filter { !it.delivered && it.state != "discarded" }.sumOf { it.fileCount }
-                        onWork(context.getString(R.string.watch_queue_count,remaining))
+                        promote(context.getString(R.string.watch_queue_count, remaining))
                         trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
                             .forEach { status.phase(scope,it,"sending") }
                         sender.sendUploadJSON(repoId,item.id)

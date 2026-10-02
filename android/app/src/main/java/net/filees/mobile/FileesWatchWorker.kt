@@ -77,9 +77,30 @@ object FileesWatchScheduler {
         enqueue(context, TICK_MINUTES, UNIQUE, ExistingWorkPolicy.KEEP, true)
         migrateBackoff(context.applicationContext)
     }
+    fun nudge(context: Context) {
+        ensure(context)
+        val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
+        val server = FileesSession.current(prefs) ?: return
+        if (server.uploadRepoId.isBlank() || WatchedFolders(context, server.id).uris().isEmpty()) return
+        runSoon(context)
+    }
     fun runSoon(context: Context) {
-        // A nudge cannot replace/cancel the live periodic chain.
-        enqueue(context, 0, "$UNIQUE-soon", ExistingWorkPolicy.KEEP, false)
+        // Does not touch the periodic chain. A soon-work that is only waiting
+        // out a backoff is replaced, so a newly queued file is not stuck behind
+        // earlier background failures. A send that is already running is left alone.
+        val app = context.applicationContext
+        migrationExecutor.execute {
+            try {
+                val manager = WorkManager.getInstance(app)
+                val name = "$UNIQUE-soon"
+                val infos = manager.getWorkInfosForUniqueWork(name).get()
+                if (infos.any { it.state == WorkInfo.State.RUNNING }) return@execute
+                val policy = if (infos.any { !it.state.isFinished }) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+                manager.enqueueUniqueWork(name, policy, request(0, false))
+            } catch (e: Exception) {
+                android.util.Log.w("FileesWatch", "Could not nudge watch", e)
+            }
+        }
     }
     fun scheduleNext(context: Context) {
         // Append after this worker; REPLACE used to cancel the very worker

@@ -100,6 +100,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun watchUi(action: () -> Unit) = uiSafe { if (watchCurrent()) action() }
 
+    override fun onResume() {
+        super.onResume()
+        FileesWatchScheduler.nudge(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installFileesWindow()

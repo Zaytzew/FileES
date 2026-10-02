@@ -162,6 +162,9 @@ class MainActivity : AppCompatActivity() {
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             if (client == null) {
                 selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
+                // The watch reads its own paired target. A DNS miss in the
+                // browser must not postpone a file already waiting to send.
+                scanWatchedFolders()
                 activate(address, hostKey)
             } else {
                 // activate() already ran successfully in an earlier
@@ -1252,11 +1255,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanWatchedFolders() {
-        FileesWatchScheduler.ensure(this)
-        if (client == null || selectedRepoId.isNullOrBlank() || watched.uris().isEmpty()) return
-        // Watch lifetime belongs to WorkManager, not this Activity. Large
-        // videos need the long-running worker even while a screen is open.
-        FileesWatchScheduler.runSoon(this)
+        // The screen does not need a live SSH client or a browsed repository.
+        // The worker reads the paired upload target and every watched tree itself.
+        FileesWatchScheduler.nudge(this)
     }
 
     private fun failBusy(headline: String, err: Exception) {

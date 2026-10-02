@@ -813,6 +813,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	defer done()
 	out, err := s.Cli.Update(ctx, wc)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return // Our shutdown is deferred work, not a synchronization fault.
+		}
 		if client.IsNetworkError(err) {
 			s.goOffline()
 			return
@@ -832,6 +835,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 			}
 		}
 		if err != nil {
+			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+				return
+			}
 			s.Logger.Warnf("poll: svn update failed: %v\n%s", err, out)
 			s.ErrSink.Emit(errmap.Classify(err))
 			return

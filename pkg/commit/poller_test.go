@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/errmap"
 	"filees/pkg/talk"
 )
 
@@ -59,7 +60,8 @@ type revisionClient struct {
 	cleanupErr    error
 	// theirs, when set, is what "theirs-full" writes into a resolved file,
 	// as Subversion does with the server version.
-	theirs string
+	theirs     string
+	updateHook func() error
 }
 
 func (c *revisionClient) ConflictDetails(context.Context, string, string) ([]client.ConflictDetail, error) {
@@ -74,10 +76,53 @@ func (c *revisionClient) Revision(_ context.Context, target string) (int64, erro
 }
 func (c *revisionClient) Update(context.Context, string) (string, error) {
 	c.update++
+	if c.updateHook != nil {
+		return "", c.updateHook()
+	}
 	if c.updateErrOnce && c.update > 1 {
 		return "", nil
 	}
 	return "", c.updateErr
+}
+
+func TestPollShutdownDoesNotJournalCanceledUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		cause        error
+		cancelParent bool
+		wantError    bool
+	}{
+		{"shutdown", context.Canceled, true, false},
+		{"independent timeout", context.DeadlineExceeded, false, true},
+		{"independent failure during shutdown", errors.New("disk read failure"), true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			cli := &revisionClient{remote: 8, local: 7}
+			cli.updateHook = func() error {
+				if tc.cancelParent {
+					cancel()
+				}
+				return &client.NativeFailure{Verb: "update", Exit: tc.cause}
+			}
+			var journal bytes.Buffer
+			s := &Service{Cli: cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-cancel-test"), ErrSink: errmap.NewSink(&journal, "fixture")}
+			wc := t.TempDir()
+			head := filepath.Join(wc, "head.rev")
+			if err := os.WriteFile(head, []byte("7\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s.pollOnce(ctx, wc, head)
+			if (journal.Len() > 0) != tc.wantError {
+				t.Fatalf("journal=%s", journal.String())
+			}
+			b, err := os.ReadFile(head)
+			if err != nil || string(b) != "7\n" || cli.cleanupCalls != 0 || cli.update != 1 {
+				t.Fatalf("failed update changed state or retried: %q %v %+v", b, err, cli)
+			}
+		})
+	}
 }
 
 func (*revisionClient) UpdateDepthEmpty(context.Context, string, []string) (string, error) {

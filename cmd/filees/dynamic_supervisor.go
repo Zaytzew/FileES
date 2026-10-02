@@ -145,10 +145,10 @@ func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clie
 // handling below), never from the supervisor's own select loop, since each
 // owned repo costs one blocking SSH exchange.
 func refreshPublicShares(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server, serverID string, view clientview.View) {
-	if lister == nil || cache == nil || view.RealmID == "" {
+	if lister == nil || cache == nil || view.RealmID == "" || ctx.Err() != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	listingCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	shares := make([]contract.PublicShareSummary, 0, len(view.Repositories))
 	var failed []string
@@ -156,7 +156,16 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 		if repo.OwnerRealmID != view.RealmID || repo.State != "active" {
 			continue
 		}
-		listed, err := lister.ListPublicShares(ctx, serverID, repo.RepoID)
+		if ctx.Err() != nil {
+			return
+		}
+		listed, err := lister.ListPublicShares(listingCtx, serverID, repo.RepoID)
+		// Shutdown/profile removal cancels the entire aggregate. Do not publish
+		// a partial result as an outage or overwrite the last complete view.
+		// The local listing deadline remains an ordinary, visible failure.
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			failed = append(failed, repo.RepoID)
 			talk.With("public-shares:"+serverID).Warnf("aggregate listing failed for repo %s: %v", repo.RepoID, err)
@@ -168,6 +177,9 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 			share.RepoDisplayName = repo.DisplayName
 			shares = append(shares, share)
 		}
+	}
+	if ctx.Err() != nil {
+		return
 	}
 	if partial, ok := cache.(interface {
 		SetPartial(string, []contract.PublicShareSummary, []string)

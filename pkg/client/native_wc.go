@@ -335,8 +335,24 @@ func (c *execClient) InspectCommitWriter(ctx context.Context, wc string) (string
 	if !nativeWCOps(c) {
 		return "", nil
 	}
-	if err := c.nativeRequireFeature(ctx, "writer_inspect_v1"); err != nil {
-		return "", err
+	for attempt := 0; ; attempt++ {
+		err := c.nativeRequireFeature(ctx, "writer_inspect_v1")
+		if err == nil {
+			break
+		}
+		// Old Linux installers briefly made the launch target non-executable.
+		// Retry only the read-only capability probe, never writer-inspect or a
+		// mutation. A persistent fault remains visible after this bounded grace.
+		if attempt == 2 || !retryWriterProbeLaunch(err) {
+			return "", err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", errors.Join(err, ctx.Err())
+		case <-timer.C:
+		}
 	}
 	raw, err := c.nativeRun(ctx, wc, "writer-inspect", "--wc", wc)
 	if err != nil {
@@ -347,4 +363,14 @@ func (c *execClient) InspectCommitWriter(ctx context.Context, wc string) (string
 		return "", errors.New("native writer identity missing from receipt")
 	}
 	return id, nil
+}
+
+func retryWriterProbeLaunch(err error) bool {
+	var fault *NativeFailure
+	if runtime.GOOS != "linux" || !errors.As(err, &fault) || fault.Verb != "--version" ||
+		len(fault.Entries) != 0 || fault.Truncated || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var exit *exec.ExitError
+	return errors.Is(fault.Exit, os.ErrPermission) || (errors.As(fault.Exit, &exit) && exit.ExitCode() == 126)
 }

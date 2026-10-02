@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -149,6 +150,33 @@ func TestRefreshPublicSharesNoopsWithoutRealmID(t *testing.T) {
 	refreshPublicShares(t.Context(), lister, cache, nil, "srv-1", clientview.View{})
 	if len(lister.calls) != 0 {
 		t.Fatalf("expected no calls for a view without a RealmID, got %v", lister.calls)
+	}
+}
+
+type cancelingShareLister struct {
+	cancel context.CancelFunc
+}
+
+func (l cancelingShareLister) ListPublicShares(ctx context.Context, _, _ string) ([]contract.PublicShareSummary, error) {
+	l.cancel()
+	return nil, ctx.Err()
+}
+
+func TestCanceledShareRefreshRetainsCompleteProjection(t *testing.T) {
+	cache := newPublicShareCache()
+	cache.Set("server", []contract.PublicShareSummary{{RepoID: "repo", ChannelID: "known"}})
+	before := cache.Snapshot()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	view := clientview.View{RealmID: "owner", Repositories: []clientview.Repository{{RepoID: "repo", OwnerRealmID: "owner", State: "active"}}}
+	refreshPublicShares(ctx, cancelingShareLister{cancel}, cache, nil, "server", view)
+	if after := cache.Snapshot(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("shutdown degraded complete projection: before=%+v after=%+v", before, after)
+	}
+	// A timeout not caused by the parent shutdown must still mark data stale.
+	refreshPublicShares(t.Context(), &fakePublicShareLister{err: map[string]error{"repo": context.DeadlineExceeded}}, cache, nil, "server", view)
+	if after := cache.Snapshot(); after.Generation == before.Generation || len(after.Shares) != 1 || !after.Shares[0].Stale {
+		t.Fatalf("independent timeout hidden: %+v", after)
 	}
 }
 

@@ -39,6 +39,8 @@
     <string name="status_downloading">Downloading…</string>
     <string name="status_downloaded">Saved: %1$s</string>
     <string name="action_add_watched">Watch folder…</string>
+    <string name="action_add_watched_folder">Add watched folder</string>
+    <string name="action_watch_settings">Folder settings</string>
     <string name="action_remove_watched">Stop watching</string>
     <string name="settings_upload_target">Destination for new files</string>
     <string name="settings_upload_target_shared">Shared destination for every watched folder below — not set separately per folder.</string>
@@ -58,6 +60,11 @@
     <string name="watch_depth_all">Everything</string>
     <string name="watch_depth_none">nothing already there</string>
     <string name="watch_depth_item">%1$s — %2$s</string>
+    <string name="watch_card_depth">What to send</string>
+    <string name="watch_card_depth_note">A narrower range skips older files. A wider range does not bring back files already skipped.</string>
+    <string name="watch_card_recent">Recently added</string>
+    <string name="watch_card_recent_empty">Nothing in the journal.</string>
+    <string name="watch_unassigned_short">Watching paused</string>
     <string name="action_cancel">Cancel</string>
     <string name="notification_channel_watch">Watched-folder uploads</string>
     <string name="notification_channel_watch_description">Notifications about files sent automatically from watched folders.</string>
@@ -79,7 +86,7 @@
     <string name="settings_pairing">Pairing (fallback)</string>
     <string name="settings_device">This device</string>
     <string name="settings_watched">Watched folders</string>
-    <string name="watched_empty">No watched folders. New files from a chosen place go to mobile-uploads, about every 5 minutes or when you open the app.</string>
+    <string name="watched_empty">No watched folders.</string>
     <string name="status_folder_queued">Folder queued: %1$d files</string>
     <string name="status_watched_added">Watching this folder. New files will go to mobile-uploads.</string>
     <string name="label_device_public_key">Public key of this device:</string>

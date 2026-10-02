@@ -29,8 +29,32 @@ class WatchedFolders(context: Context, val serverId: String? = FileesSession.cur
     fun uris(): List<Uri> = uris(registry.trees())
     fun unassigned(): List<Uri> = uris(registry.unassigned())
     fun add(uri: Uri) = registry.add(uri.toString())
-    fun remove(uri: Uri) = registry.remove(uri.toString())
+    fun remove(uri: Uri) {
+        registry.remove(uri.toString())
+        forgetDepth(uri)
+    }
     fun removeUnassigned(uri: Uri) = registry.removeUnassigned(uri.toString())
     fun alreadySeen(key: String, repoId: String): Boolean = registry.seen(repoId, key)
     fun markSeen(key: String, repoId: String) = registry.markSeen(repoId, key)
+
+    /** Depth chosen for this tree. Folders added before the choice was stored return null. */
+    fun depth(uri: Uri): WatchDepth? {
+        val server = serverId ?: return null
+        val raw = prefs.getString(depthKey(server, uri), null) ?: return null
+        return runCatching { WatchDepth.valueOf(raw) }.getOrNull()
+    }
+
+    fun rememberDepth(uri: Uri, depth: WatchDepth) {
+        val server = serverId ?: return
+        if (!prefs.edit().putString(depthKey(server, uri), depth.name).commit()) {
+            throw java.io.IOException("Cannot persist watch depth")
+        }
+    }
+
+    private fun forgetDepth(uri: Uri) {
+        val server = serverId ?: return
+        prefs.edit().remove(depthKey(server, uri)).commit()
+    }
+
+    private fun depthKey(server: String, uri: Uri) = "depth-v2:$server\u0000$uri"
 }

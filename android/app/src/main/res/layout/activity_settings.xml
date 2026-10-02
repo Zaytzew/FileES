@@ -107,19 +107,20 @@
             android:text="@string/settings_upload_target_shared"
             android:textAppearance="@style/TextAppearance.Filees.Meta" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/buttonAddWatched"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            style="@style/Widget.Filees.Button.Filled"
-            android:text="@string/action_add_watched" />
-
         <LinearLayout
             android:id="@+id/listWatched"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:orientation="vertical" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonAddWatched"
+            style="@style/Widget.Filees.Button.Filled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/action_add_watched_folder" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonAdvanced"

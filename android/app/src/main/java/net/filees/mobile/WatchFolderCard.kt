@@ -1,61 +1,100 @@
 package net.filees.mobile
 
 import android.content.Context
-import android.content.SharedPreferences
-import android.net.Uri
-import android.widget.ScrollView
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.Observer
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
+import com.google.android.material.radiobutton.MaterialRadioButton
 
+/** One folder: send range, stop watching, and a short journal extract. */
 object WatchFolderCard {
-    fun show(context: Context, tree: Uri) {
-        val store = WatchStatusStore(context)
-        val scope = WatchStatusStore.scope(context)
-        var scheduled = emptyList<WorkInfo>()
-        val work = WorkManager.getInstance(context).getWorkInfosByTagLiveData(FileesWatchWorker::class.java.name)
-        val body = TextView(context).apply {
-            setTextAppearance(R.style.TextAppearance_Filees_Body)
-            setTextIsSelectable(true)
-            val pad = context.resources.getDimensionPixelSize(R.dimen.filees_gutter)
-            setPadding(pad,pad,pad,pad)
+    interface Actions {
+        fun depth(): WatchDepth?
+        fun label(depth: WatchDepth): String
+        fun apply(depth: WatchDepth, done: (Boolean) -> Unit)
+        fun recent(): List<String>
+        fun unwatch()
+    }
+
+    fun show(context: Context, title: String, actions: Actions) {
+        val view = android.view.LayoutInflater.from(context).inflate(R.layout.dialog_watch_folder, null)
+        val group = view.findViewById<RadioGroup>(R.id.groupWatchDepth)
+        val unwatch = view.findViewById<View>(R.id.buttonUnwatch)
+        val recent = view.findViewById<LinearLayout>(R.id.listWatchRecent)
+        val ids = linkedMapOf<WatchDepth, Int>()
+        for (depth in WatchDepth.entries) {
+            val id = View.generateViewId()
+            ids[depth] = id
+            group.addView(MaterialRadioButton(context).apply {
+                this.id = id
+                text = actions.label(depth)
+                minHeight = context.resources.getDimensionPixelSize(R.dimen.filees_touch_min)
+                isAllCaps = false
+                setTextAppearance(R.style.TextAppearance_Filees_Body)
+                layoutParams = RadioGroup.LayoutParams(
+                    RadioGroup.LayoutParams.MATCH_PARENT,
+                    RadioGroup.LayoutParams.WRAP_CONTENT,
+                )
+            })
         }
-        fun render() {
-            val state = store.state(scope,tree)
-            val pending = scheduled.filter { it.state == WorkInfo.State.ENQUEUED }
-                .minByOrNull { it.nextScheduleTimeMillis }
-            val stopped = android.os.Build.VERSION.SDK_INT >= 31 && pending != null && pending.runAttemptCount > 0 &&
-                pending.stopReason != WorkInfo.STOP_REASON_NOT_STOPPED
-            val busy = state.phase in setOf("checking","preparing","sending")
-            val phase = if (!busy && stopped && state.phase != "complete") "paused" else state.phase
-            val lines = mutableListOf(store.label(phase),context.getString(R.string.watch_queue_count,state.waiting))
-            if (phase == "paused") lines += store.pauseDescription(if(state.stopReason == WatchStatusStore.START_NOT_ALLOWED) state.stopReason else if(stopped) pending!!.stopReason else state.stopReason)
-            if (!busy && state.waiting > 0 && pending != null) {
-                val earliest = pending.nextScheduleTimeMillis
-                lines += if (earliest > System.currentTimeMillis() && earliest != Long.MAX_VALUE)
-                    context.getString(R.string.watch_retry_earliest,java.text.DateFormat.getTimeInstance().format(java.util.Date(earliest)))
-                else context.getString(R.string.watch_retry_scheduled)
+        val lines = actions.recent()
+        if (lines.isEmpty()) {
+            recent.addView(meta(context, context.getString(R.string.watch_card_recent_empty)))
+        } else {
+            lines.forEachIndexed { index, line ->
+                if (index > 0) recent.addView(hairline(context))
+                recent.addView(meta(context, line).apply {
+                    setTextAppearance(R.style.TextAppearance_Filees_Body)
+                    setPadding(0, context.resources.getDimensionPixelSize(R.dimen.filees_space), 0, context.resources.getDimensionPixelSize(R.dimen.filees_space))
+                })
             }
-            if (state.checked > 0) lines += context.getString(R.string.watch_last_checked,java.text.DateFormat.getDateTimeInstance().format(java.util.Date(state.checked)))
-            lines += context.getString(R.string.watch_scope_note)
-            lines += state.errors
-            lines += "\n${context.getString(R.string.watch_queue_title)}"
-            lines += state.queue.ifEmpty { listOf(context.getString(R.string.watch_queue_empty)) }
-            if (state.waiting > 200) lines += context.getString(R.string.watch_queue_more)
-            lines += "\n${context.getString(R.string.watch_journal_title)}"
-            lines += state.events
-            body.text = lines.joinToString("\n\n")
         }
-        val observer = Observer<List<WorkInfo>> { scheduled = it; render() }
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> body.post { render() } }
-        val dialog = AlertDialog.Builder(context).setTitle(tree.lastPathSegment ?: tree.toString())
-            .setView(ScrollView(context).apply { addView(body) })
-            .setPositiveButton(R.string.action_close,null)
-            .setOnDismissListener { store.prefs.unregisterOnSharedPreferenceChangeListener(listener); work.removeObserver(observer) }.create()
-        render(); store.prefs.registerOnSharedPreferenceChangeListener(listener); dialog.show()
-        (context as? LifecycleOwner)?.let { work.observe(it,observer) }
+        var suppress = false
+        var generation = 0
+        fun select(depth: WatchDepth?) {
+            suppress = true
+            if (depth == null) group.clearCheck() else group.check(ids.getValue(depth))
+            suppress = false
+        }
+        fun busy(value: Boolean) {
+            for (i in 0 until group.childCount) group.getChildAt(i).isEnabled = !value
+            unwatch.isEnabled = !value
+        }
+        select(actions.depth())
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(title)
+            .setView(view)
+            .setPositiveButton(R.string.action_close, null)
+            .create()
+        group.setOnCheckedChangeListener { _, checkedId ->
+            if (suppress) return@setOnCheckedChangeListener
+            val depth = ids.entries.firstOrNull { it.value == checkedId }?.key ?: return@setOnCheckedChangeListener
+            val previous = actions.depth()
+            if (depth == previous) return@setOnCheckedChangeListener
+            val ticket = ++generation
+            busy(true)
+            actions.apply(depth) done@{ ok ->
+                if (!dialog.isShowing || ticket != generation) return@done
+                busy(false)
+                if (!ok) select(previous) else select(depth)
+            }
+        }
+        unwatch.setOnClickListener {
+            dialog.dismiss()
+            actions.unwatch()
+        }
+        dialog.show()
+    }
+
+    private fun meta(context: Context, value: String) = TextView(context).apply {
+        setTextAppearance(R.style.TextAppearance_Filees_Meta)
+        text = value
+    }
+
+    private fun hairline(context: Context) = View(context).apply {
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, context.resources.getDimensionPixelSize(R.dimen.filees_hairline))
+        setBackgroundColor(context.getColor(R.color.filees_line))
     }
 }

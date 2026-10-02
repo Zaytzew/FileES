@@ -76,30 +76,6 @@ class SettingsActivity : AppCompatActivity() {
         joinAlert(getString(R.string.join_error_cancelled))
     }
 
-    private val watchStatus by lazy { WatchStatusStore(this) }
-    private val watchLabels = mutableMapOf<Uri, TextView>()
-    private val watchListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        uiSafe { refreshWatchLabels() }
-    }
-    override fun onResume() {
-        super.onResume()
-        watchStatus.prefs.registerOnSharedPreferenceChangeListener(watchListener)
-        refreshWatchLabels()
-    }
-    override fun onPause() {
-        watchStatus.prefs.unregisterOnSharedPreferenceChangeListener(watchListener)
-        super.onPause()
-    }
-    private fun refreshWatchLabels() {
-        val scope = WatchStatusStore.scope(this)
-        watchLabels.forEach { (uri,label) ->
-            val state = watchStatus.state(scope,uri)
-            label.text = "● ${watchStatus.label(state.phase)} · ${getString(R.string.watch_queue_count,state.waiting)}"
-            label.setTextColor(androidx.core.content.ContextCompat.getColor(this,
-                if(state.phase == "error") R.color.filees_destructive else R.color.filees_text))
-        }
-    }
-
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(FileesLocale.wrap(newBase))
     }
@@ -864,6 +840,7 @@ class SettingsActivity : AppCompatActivity() {
                 // Persist exclusions BEFORE making the tree visible to workers.
                 try {
                     markOutsideDepth(files, depth, repoId)
+                    watched.rememberDepth(uri, depth)
                     watched.add(uri)
                     renderWatched()
                     FileesWatchScheduler.runSoon(this)
@@ -886,7 +863,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun renderWatched() {
         binding.listWatched.removeAllViews()
-        watchLabels.clear()
         binding.listWatched.addView(fileesMetaText(getString(R.string.watch_server_scope,
             FileesSession.serverLabel(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)))))
         val uris = watched.uris()
@@ -894,23 +870,9 @@ class SettingsActivity : AppCompatActivity() {
         if (unassigned.isNotEmpty()) {
             binding.listWatched.addView(fileesMetaText(getString(R.string.watch_unassigned)))
             for (uri in unassigned) {
-                val row = fileesSettingsRow().apply { orientation = LinearLayout.VERTICAL }
-                val label = fileesMetaText(uri.lastPathSegment ?: uri.toString()).apply {
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                }
-                val bind = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-                bind.text = getString(R.string.action_add_watched)
-                styleFileesOutline(bind, R.color.filees_accent_text)
-                bind.isEnabled = !watched.serverId.isNullOrBlank()
-                bind.setOnClickListener { confirmAndAddWatch(uri) }
-                val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-                remove.text = getString(R.string.action_remove_watched)
-                styleFileesOutline(remove, R.color.filees_destructive)
-                remove.setOnClickListener { watched.removeUnassigned(uri); renderWatched() }
-                val actions = fileesSettingsRow()
-                actions.addView(bind); actions.addView(remove)
-                row.addView(label); row.addView(actions)
-                binding.listWatched.addView(row)
+                binding.listWatched.addView(watchedRow(uri, getString(R.string.watch_unassigned_short)) {
+                    showUnassignedMenu(it, uri)
+                })
             }
         }
         if (uris.isEmpty()) {
@@ -918,34 +880,98 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         for (uri in uris) {
-            val row = fileesSettingsRow()
-            val label = TextView(this)
-            label.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            label.setTextAppearance(R.style.TextAppearance_Filees_Name)
-            label.maxLines = 2
-            label.ellipsize = TextUtils.TruncateAt.END
-            label.text = uri.lastPathSegment ?: uri.toString()
-            val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-            remove.text = getString(R.string.action_remove_watched)
-            styleFileesOutline(remove, R.color.filees_destructive)
-            remove.setOnClickListener {
+            val depth = watched.depth(uri)?.let { depthLabel(it) }
+            binding.listWatched.addView(watchedRow(uri, depth) { showWatchFolder(uri) })
+        }
+    }
+
+    private fun watchedRow(uri: Uri, meta: String?, open: (View) -> Unit): View {
+        val row = net.filees.mobile.databinding.ItemWatchedFolderBinding.inflate(layoutInflater, binding.listWatched, false)
+        row.textWatchedName.text = treeLabel(uri)
+        if (meta.isNullOrBlank()) {
+            row.textWatchedMeta.visibility = View.GONE
+        } else {
+            row.textWatchedMeta.visibility = View.VISIBLE
+            row.textWatchedMeta.text = meta
+        }
+        row.root.setOnClickListener { open(row.buttonWatchedSettings) }
+        row.buttonWatchedSettings.setOnClickListener { open(row.buttonWatchedSettings) }
+        return row.root
+    }
+
+    private fun showUnassignedMenu(anchor: View, uri: Uri) {
+        val menu = androidx.appcompat.widget.PopupMenu(this, anchor)
+        val assign = menu.menu.add(0, 1, 0, R.string.action_add_watched)
+        assign.isEnabled = !watched.serverId.isNullOrBlank()
+        menu.menu.add(0, 2, 1, R.string.action_remove_watched)
+        menu.setOnMenuItemClickListener {
+            when (it.itemId) {
+                1 -> confirmAndAddWatch(uri)
+                2 -> {
+                    watched.removeUnassigned(uri)
+                    renderWatched()
+                }
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun showWatchFolder(uri: Uri) {
+        WatchFolderCard.show(this, treeLabel(uri), object : WatchFolderCard.Actions {
+            override fun depth() = watched.depth(uri)
+            override fun label(depth: WatchDepth) = depthLabel(depth)
+            override fun apply(depth: WatchDepth, done: (Boolean) -> Unit) = applyWatchDepth(uri, depth, done)
+            override fun recent() = recentJournalLines()
+            override fun unwatch() {
                 watched.remove(uri)
                 renderWatched()
             }
-            val labels = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
-            }
-            label.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT)
-            val status = fileesMetaText("")
-            watchLabels[uri] = status
-            labels.addView(label); labels.addView(status)
-            labels.setOnClickListener { WatchFolderCard.show(this,uri) }
-            row.addView(labels)
-            row.addView(remove)
-            binding.listWatched.addView(row)
+        })
+    }
+
+    private fun applyWatchDepth(uri: Uri, depth: WatchDepth, done: (Boolean) -> Unit) {
+        if (!watchCurrent()) {
+            done(false)
+            return
         }
-        refreshWatchLabels()
+        Thread {
+            try {
+                val files = DocumentWalk.tree(contentResolver, uri)
+                val repoId = FileesSession.current(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))?.uploadRepoId.orEmpty()
+                if (!watchCurrent() || repoId.isBlank()) throw IllegalStateException(getString(R.string.upload_target_none))
+                markOutsideDepth(files, depth, repoId)
+                watched.rememberDepth(uri, depth)
+                FileesWatchScheduler.runSoon(this)
+                watchUi {
+                    renderWatched()
+                    done(true)
+                }
+            } catch (e: Exception) {
+                watchUi {
+                    showTransportError(getString(R.string.error_list), e, null)
+                    done(false)
+                }
+            }
+        }.start()
+    }
+
+    private fun recentJournalLines(): List<String> {
+        val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+        val server = FileesSession.current(prefs)
+        val scope = server?.uploadRepoName?.ifBlank { server.uploadRepoId }.orEmpty()
+        if (scope.isBlank()) return emptyList()
+        val format = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+        return FileesSession.journal(prefs).asSequence()
+            .filter { it.scope == scope && it.entry.isNotBlank() }
+            .take(8)
+            .map { entry ->
+                val text = entry.entry.trim().lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+                val whenText = if (entry.at > 0L) format.format(java.util.Date(entry.at)) else ""
+                if (whenText.isBlank()) text else "$whenText · $text"
+            }
+            .filter { it.isNotBlank() }
+            .toList()
     }
 
     private fun fileesSettingsRow(): LinearLayout {

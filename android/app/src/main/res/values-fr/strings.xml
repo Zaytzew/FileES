@@ -37,6 +37,8 @@
     <string name="status_downloading">Téléchargement…</string>
     <string name="status_downloaded">Enregistré : %1$s</string>
     <string name="action_add_watched">Surveiller un dossier…</string>
+    <string name="action_add_watched_folder">Ajouter un dossier suivi</string>
+    <string name="action_watch_settings">Réglages du dossier</string>
     <string name="action_remove_watched">Ne plus surveiller</string>
     <string name="settings_upload_target">Destination des nouveaux fichiers</string>
     <string name="settings_upload_target_shared">Destination commune à tous les dossiers surveillés ci-dessous — non définie séparément pour chacun.</string>
@@ -56,6 +58,11 @@
     <string name="watch_depth_all">Tout</string>
     <string name="watch_depth_none">rien de ce qui est déjà là</string>
     <string name="watch_depth_item">%1$s — %2$s</string>
+    <string name="watch_card_depth">Étendue de l’envoi</string>
+    <string name="watch_card_depth_note">Une étendue plus courte ignore les fichiers plus anciens. Une étendue plus large ne ramène pas les fichiers déjà ignorés.</string>
+    <string name="watch_card_recent">Ajoutés récemment</string>
+    <string name="watch_card_recent_empty">Aucune entrée dans le journal.</string>
+    <string name="watch_unassigned_short">Surveillance en pause</string>
     <string name="action_cancel">Annuler</string>
     <string name="notification_channel_watch">Envois depuis les dossiers surveillés</string>
     <string name="notification_channel_watch_description">Notifications des fichiers envoyés automatiquement depuis les dossiers surveillés.</string>
@@ -77,7 +84,7 @@
     <string name="settings_pairing">Appariement (secours)</string>
     <string name="settings_device">Cet appareil</string>
     <string name="settings_watched">Dossiers surveillés</string>
-    <string name="watched_empty">Aucun dossier surveillé. Les nouveaux fichiers d’un emplacement choisi vont dans mobile-uploads, environ toutes les 5 minutes ou à l’ouverture de l’application.</string>
+    <string name="watched_empty">Aucun dossier surveillé.</string>
     <string name="status_folder_queued">Dossier mis en file : %1$d fichiers</string>
     <string name="status_watched_added">Dossier surveillé. Les nouveaux fichiers iront dans mobile-uploads.</string>
     <string name="label_device_public_key">Clé publique de cet appareil :</string>

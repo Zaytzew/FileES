@@ -41,6 +41,8 @@
     <string name="status_downloading">Pobieranie…</string>
     <string name="status_downloaded">Zapisano: %1$s</string>
     <string name="action_add_watched">Śledź folder…</string>
+    <string name="action_add_watched_folder">Dodaj folder śledzony</string>
+    <string name="action_watch_settings">Ustawienia folderu</string>
     <string name="action_remove_watched">Nie śledź</string>
     <string name="settings_upload_target">Cel wysyłki nowych plików</string>
     <string name="settings_upload_target_shared">Wspólny cel dla wszystkich śledzonych folderów poniżej — nie ustawia się osobno dla każdego.</string>
@@ -60,6 +62,11 @@
     <string name="watch_depth_all">Wszystko</string>
     <string name="watch_depth_none">nic z tego, co już jest</string>
     <string name="watch_depth_item">%1$s — %2$s</string>
+    <string name="watch_card_depth">Zakres wysyłki</string>
+    <string name="watch_card_depth_note">Węższy zakres pomija starsze pliki. Szerszy nie przywraca już pominiętych.</string>
+    <string name="watch_card_recent">Ostatnio dodane</string>
+    <string name="watch_card_recent_empty">Brak wpisów w dzienniku.</string>
+    <string name="watch_unassigned_short">Śledzenie wstrzymane</string>
     <string name="action_cancel">Anuluj</string>
     <string name="notification_channel_watch">Wysyłka śledzonych folderów</string>
     <string name="notification_channel_watch_description">Powiadomienia o plikach wysłanych automatycznie z obserwowanych folderów.</string>
@@ -85,7 +92,7 @@
     <string name="settings_pairing">Parowanie (awaryjne)</string>
     <string name="settings_device">To urządzenie</string>
     <string name="settings_watched">Śledzone foldery</string>
-    <string name="watched_empty">Brak śledzonych folderów. Nowe pliki z wybranego miejsca trafiają do mobile-uploads, co około 5 minut albo przy otwarciu aplikacji.</string>
+    <string name="watched_empty">Brak śledzonych folderów.</string>
     <string name="status_folder_queued">Dodano folder do kolejki: %1$d plików</string>
     <string name="status_watched_added">Śledzę folder. Nowe pliki trafią do mobile-uploads.</string>
     <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>

@@ -37,6 +37,8 @@
     <string name="status_downloading">Wird heruntergeladen…</string>
     <string name="status_downloaded">Gespeichert: %1$s</string>
     <string name="action_add_watched">Ordner beobachten…</string>
+    <string name="action_add_watched_folder">Beobachteten Ordner hinzufügen</string>
+    <string name="action_watch_settings">Ordnereinstellungen</string>
     <string name="action_remove_watched">Nicht mehr beobachten</string>
     <string name="settings_upload_target">Ziel für neue Dateien</string>
     <string name="settings_upload_target_shared">Gemeinsames Ziel für alle unten aufgeführten beobachteten Ordner — nicht einzeln pro Ordner festgelegt.</string>
@@ -56,6 +58,11 @@
     <string name="watch_depth_all">Alles</string>
     <string name="watch_depth_none">nichts von dem, was schon da ist</string>
     <string name="watch_depth_item">%1$s — %2$s</string>
+    <string name="watch_card_depth">Was gesendet wird</string>
+    <string name="watch_card_depth_note">Ein engerer Bereich lässt ältere Dateien aus. Ein weiterer Bereich holt bereits übersprungene Dateien nicht zurück.</string>
+    <string name="watch_card_recent">Zuletzt hinzugefügt</string>
+    <string name="watch_card_recent_empty">Keine Einträge im Journal.</string>
+    <string name="watch_unassigned_short">Beobachtung pausiert</string>
     <string name="action_cancel">Abbrechen</string>
     <string name="notification_channel_watch">Uploads aus beobachteten Ordnern</string>
     <string name="notification_channel_watch_description">Hinweise zu Dateien, die automatisch aus beobachteten Ordnern gesendet wurden.</string>
@@ -77,7 +84,7 @@
     <string name="settings_pairing">Kopplung (Notfall)</string>
     <string name="settings_device">Dieses Gerät</string>
     <string name="settings_watched">Beobachtete Ordner</string>
-    <string name="watched_empty">Keine beobachteten Ordner. Neue Dateien aus einem gewählten Ort gehen nach mobile-uploads, etwa alle 5 Minuten oder beim Öffnen der App.</string>
+    <string name="watched_empty">Keine beobachteten Ordner.</string>
     <string name="status_folder_queued">Ordner in die Warteschlange: %1$d Dateien</string>
     <string name="status_watched_added">Ordner wird beobachtet. Neue Dateien gehen nach mobile-uploads.</string>
     <string name="label_device_public_key">Öffentlicher Schlüssel dieses Geräts:</string>

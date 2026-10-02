@@ -2,9 +2,13 @@ package packaging
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"filees/internal/releasepublish"
+	installmanifest "filees/internal/serverinstall/manifest"
 )
 
 func readLinuxServerFile(t *testing.T, name string) string {
@@ -126,5 +130,121 @@ func TestLinuxSELinuxPolicyCoversWhatSSHDRunsBeforeLogin(t *testing.T) {
 	}
 	if !strings.Contains(installer, "selinuxenabled") || !strings.Contains(installer, `semodule -i "$bundle/share/filees/linux/filees.cil"`) {
 		t.Error("installer does not load the policy where SELinux is enabled")
+	}
+}
+
+// The updater's policy and the installer describe the same files. If they
+// disagree on owner, group or mode, the first update changes permissions the
+// installer set on purpose, and --adopt refuses a fresh installation.
+func TestLinuxReleasePolicyMatchesWhatTheInstallerInstalls(t *testing.T) {
+	spec, err := releasepublish.LoadSpec("server/linux-binary-policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Platform != "linux-amd64" {
+		t.Fatalf("platform=%q", spec.Platform)
+	}
+	installer := readLinuxServerFile(t, "server/linux/install-ssh.sh")
+	expand := strings.NewReplacer(`"$state_user"`, "_filees-state", `"$client_access_group"`, "_filees-access",
+		`"$libexec/`, `"/usr/local/libexec/filees/`)
+	type installed struct{ owner, group, mode string }
+	byTarget := map[string]installed{}
+	line := regexp.MustCompile(`^install -o (\S+) -g (\S+) -m (\d+) "\$bundle/(\S+)" "?(/[^"\s]+)"?$`)
+	for _, raw := range strings.Split(installer, "\n") {
+		if m := line.FindStringSubmatch(expand.Replace(strings.TrimSpace(raw))); m != nil {
+			byTarget[m[5]] = installed{m[1], m[2], strings.TrimLeft(m[3], "0")}
+		}
+	}
+	if len(byTarget) < 18 {
+		t.Fatalf("parsed only %d install lines from install-ssh.sh", len(byTarget))
+	}
+	targets := strings.NewReplacer("{sbin_dir}", "/usr/local/sbin", "{libexec_dir}", "/usr/local/libexec")
+	checked := 0
+	for _, file := range spec.Files {
+		if file.Group == "wheel" || strings.Contains(file.Target, "/usr/libexec/auth/") {
+			t.Errorf("%s carries an OpenBSD-only group or path: %+v", file.Source, file)
+		}
+		if strings.HasPrefix(file.Source, "share/") {
+			continue // examples and manual pages come from install-server.sh
+		}
+		target := targets.Replace(file.Target)
+		got, ok := byTarget[target]
+		if !ok {
+			t.Errorf("policy manages %s, which install-ssh.sh does not install", target)
+			continue
+		}
+		if got.owner != file.Owner || got.group != file.Group || got.mode != strings.TrimLeft(file.Mode, "0") {
+			t.Errorf("%s: installer %+v, policy %s:%s %s", target, got, file.Owner, file.Group, file.Mode)
+		}
+		delete(byTarget, target)
+		checked++
+	}
+	if checked < 18 {
+		t.Fatalf("compared only %d files", checked)
+	}
+	for target := range byTarget {
+		if strings.HasPrefix(target, "/usr/local/") {
+			t.Errorf("installer installs %s, which no update would ever replace", target)
+		}
+	}
+}
+
+// The Linux policy turns into a manifest the installer accepts, carries every
+// manual page with the ownership install-server.sh leaves on Linux, and is
+// what the release script uses for that platform.
+func TestLinuxReleasePolicyGeneratesAnAcceptableManifest(t *testing.T) {
+	spec, err := releasepublish.LoadSpec("server/linux-binary-policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := t.TempDir()
+	pages := 0
+	for _, file := range spec.Files {
+		if strings.HasPrefix(file.Source, "share/man/") {
+			pages++
+			if file.Mode != "0444" || file.Owner != "root" || file.Group != "root" {
+				t.Errorf("%s: %+v", file.Source, file)
+			}
+		}
+		path := filepath.Join(payload, filepath.FromSlash(file.Source))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(file.Source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pages != len(manPages(t)) {
+		t.Fatalf("policy carries %d manual pages, docs/man has %d", pages, len(manPages(t)))
+	}
+	spec.ReleaseID, spec.Sequence, spec.SecurityEpoch = "r9999-server", 9999, 1
+	raw, err := releasepublish.Generate(payload, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := installmanifest.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Platform != "linux-amd64" {
+		t.Fatalf("manifest platform=%q", m.Platform)
+	}
+	module := false
+	for _, file := range m.Files {
+		if file.Target == "{libexec_dir}/filees/pam_filees_tunnel.so" {
+			module = true
+		}
+	}
+	if !module {
+		t.Fatal("the PAM module is not in the generated manifest")
+	}
+	script := readLinuxServerFile(t, "../tools/prepare-server-release.sh")
+	for _, need := range []string{`"packaging/server/${platform%-amd64}-binary-policy.json"`, `cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/"`, `openbsd-amd64|linux-amd64) ;;`} {
+		if !strings.Contains(script, need) {
+			t.Errorf("prepare-server-release.sh lacks %s", need)
+		}
+	}
+	if !strings.Contains(readLinuxServerFile(t, "build-server.sh"), `platform=linux-amd64`) {
+		t.Error("Linux bundle must ship an install.conf example that follows the linux-amd64 manifest")
 	}
 }

@@ -1,7 +1,14 @@
 #!/bin/sh
-# Build and stage one immutable OpenBSD server release in a FILEES-BIN WC.
+# Build and stage one immutable server release in a FILEES-BIN WC.
 # This host receives only the public release key. Signing and channel promotion
 # happen later on the dedicated signing machine.
+#
+# PLATFORMS lists what the release carries: "openbsd-amd64" (default),
+# "linux-amd64", or both separated by a space. Each platform gets its own
+# manifest under releases/<id>/<platform>/; the channel names them through
+# {platform}, and the signing script signs every manifest it finds. The Linux
+# payload contains a native PAM module, so it is built on Linux (or with
+# FILEES_PAM_MODULE pointing at a prebuilt pam_filees_tunnel.so).
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -9,6 +16,7 @@ FILEES_BIN_WC="${FILEES_BIN_WC:-$HOME/FILEES-BIN}"
 RELEASE_ID="${RELEASE_ID:-}"
 SEQUENCE="${SEQUENCE:-}"
 SECURITY_EPOCH="${SECURITY_EPOCH:-1}"
+PLATFORMS="${PLATFORMS:-openbsd-amd64}"
 
 die() {
 	echo "filees-prepare-server-release: $*" >&2
@@ -22,6 +30,13 @@ case "$SEQUENCE" in *[!0-9]*|'') die "SEQUENCE must be a positive integer" ;; es
 case "$SECURITY_EPOCH" in *[!0-9]*|'') die "SECURITY_EPOCH must be a positive integer" ;; esac
 [ "$SEQUENCE" -gt 0 ] || die "SEQUENCE must be greater than zero"
 [ "$SECURITY_EPOCH" -gt 0 ] || die "SECURITY_EPOCH must be greater than zero"
+[ -n "$PLATFORMS" ] || die "PLATFORMS must name at least one platform"
+for platform in $PLATFORMS; do
+	case "$platform" in
+		openbsd-amd64|linux-amd64) ;;
+		*) die "unsupported platform: $platform" ;;
+	esac
+done
 [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || die "FILEES_RELEASE_PUBKEY is required"
 [ -f "$FILEES_RELEASE_PUBKEY" ] || die "release public key not found: $FILEES_RELEASE_PUBKEY"
 [ -d "$root/.svn" ] || die "source is not an SVN working copy: $root"
@@ -40,34 +55,43 @@ cd "$FILEES_BIN_WC"
 [ -z "$(svn status)" ] || die "FILEES-BIN WC has local or unversioned changes"
 svn update --quiet
 [ -z "$(svn status -u -q | sed -n '/^[[:space:]]*\*/p')" ] || die "FILEES-BIN WC is not at repository HEAD"
-release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/openbsd-amd64"
-[ ! -e "$release_root" ] || die "release already exists: $release_root"
-
-FILEES_SOURCE_REVISION="$source_revision" FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY" "$root/packaging/build-server.sh" openbsd-amd64
-bundle="${DIST:-$root/dist}/filees-server-openbsd-amd64"
-mkdir -p "$release_root/bin" "$release_root/examples" "$release_root/share/filees"
-cp "$bundle"/bin/* "$release_root/bin/"
-# Manual pages are part of the signed release, so filees-install upgrades them
-# with the binaries they describe. Their targets are absolute /usr/local/man
-# paths: an installer older than a new target variable would leave it
-# unexpanded and write a relative path.
-for section in 5 7 8; do
-	mkdir -p "$release_root/share/man/man$section"
-	cp "$bundle/share/man/man$section/"* "$release_root/share/man/man$section/"
+for platform in $PLATFORMS; do
+	[ ! -e "$FILEES_BIN_WC/releases/$RELEASE_ID/$platform" ] || die "release already exists: $FILEES_BIN_WC/releases/$RELEASE_ID/$platform"
 done
-cp "$bundle/share/filees/capacity-alerts.example.json" "$release_root/share/filees/"
-cp "$bundle/share/filees/install.example.conf" "$release_root/examples/"
-cp "$bundle/share/filees/public-storage-migration.md" "$release_root/examples/"
 
-cd "$root"
-go run ./cmd/filees-release-manifest \
-	-spec packaging/server/openbsd-binary-policy.json \
-	-payload "$release_root" \
-	-output "$release_root/manifest.json" \
-	-release-id "$RELEASE_ID" \
-	-svn-revision "$source_revision" \
-	-sequence "$SEQUENCE" \
-	-security-epoch "$SECURITY_EPOCH"
+for platform in $PLATFORMS; do
+	release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$platform"
+	cd "$root"
+	FILEES_SOURCE_REVISION="$source_revision" FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY" "$root/packaging/build-server.sh" "$platform"
+	bundle="${DIST:-$root/dist}/filees-server-$platform"
+	mkdir -p "$release_root/bin" "$release_root/examples" "$release_root/share/filees"
+	cp "$bundle"/bin/* "$release_root/bin/"
+	if [ "$platform" = linux-amd64 ]; then
+		# The tunnel account's PAM module is part of the signed payload.
+		mkdir -p "$release_root/lib"
+		cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/"
+	fi
+	# Manual pages are part of the signed release, so filees-install upgrades them
+	# with the binaries they describe. Their targets are absolute /usr/local/man
+	# paths: an installer older than a new target variable would leave it
+	# unexpanded and write a relative path.
+	for section in 5 7 8; do
+		mkdir -p "$release_root/share/man/man$section"
+		cp "$bundle/share/man/man$section/"* "$release_root/share/man/man$section/"
+	done
+	cp "$bundle/share/filees/capacity-alerts.example.json" "$release_root/share/filees/"
+	cp "$bundle/share/filees/install.example.conf" "$release_root/examples/"
+	cp "$bundle/share/filees/public-storage-migration.md" "$release_root/examples/"
+
+	go run ./cmd/filees-release-manifest \
+		-spec "packaging/server/${platform%-amd64}-binary-policy.json" \
+		-payload "$release_root" \
+		-output "$release_root/manifest.json" \
+		-release-id "$RELEASE_ID" \
+		-svn-revision "$source_revision" \
+		-sequence "$SEQUENCE" \
+		-security-epoch "$SECURITY_EPOCH"
+done
 
 candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.json"
 cat >"$candidate" <<EOF
@@ -84,5 +108,5 @@ EOF
 COMPONENT=server RELEASE_ID="$RELEASE_ID" SEQUENCE="$SEQUENCE" SECURITY_EPOCH="$SECURITY_EPOCH" SOURCE_REVISION="$source_revision" \
 	PREVIOUS_CHANNEL="$FILEES_BIN_WC/channels/alpha.json" FILEES_BIN_WC="$FILEES_BIN_WC" SOURCE_WC="$root" \
 	sh "$root/tools/release-notes-draft.sh"
-echo "prepared immutable release $RELEASE_ID from source SVN r$source_revision"
+echo "prepared immutable release $RELEASE_ID ($PLATFORMS) from source SVN r$source_revision"
 echo "review, then svn add/commit only releases/$RELEASE_ID; do not change channels/ on this host"

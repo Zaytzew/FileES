@@ -145,6 +145,15 @@ else
 		echo "linux server.example.json still names /usr/local/bin" >&2
 		exit 2
 	fi
+	# The updater's own configuration: which manifest to follow and where
+	# Subversion lives. login_conf_dir stays; it is unused on Linux.
+	sed -e 's|^platform=openbsd-amd64$|platform=linux-amd64|' \
+		-e 's|^svn=/usr/local/bin/svn$|svn=/usr/bin/svn|' \
+		"$root/packaging/server/install.example.conf" >"$tmp/share/filees/install.example.conf"
+	grep -qx 'platform=linux-amd64' "$tmp/share/filees/install.example.conf" && grep -qx 'svn=/usr/bin/svn' "$tmp/share/filees/install.example.conf" || {
+		echo "linux install.example.conf was not rewritten" >&2
+		exit 2
+	}
 fi
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"

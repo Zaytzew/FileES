@@ -1,0 +1,349 @@
+{
+  "platform": "linux-amd64",
+  "configs": [
+    {
+      "name": "public-download-storage",
+      "path": "/etc/filees/server.json",
+      "default_changed": [
+        {
+          "key": "layout",
+          "old": "temporary-storage",
+          "new": "filees.public-download-storage/v1"
+        }
+      ]
+    },
+    {
+      "name": "server",
+      "path": "/etc/filees/server.json",
+      "default_changed": [
+        {
+          "key": "schema",
+          "old": "filees.server-toolchain/v1",
+          "new": "filees.server-toolchain/v2"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "source": "bin/filees-admin",
+      "target": "{sbin_dir}/filees-admin",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-operation",
+      "target": "{sbin_dir}/filees-operation",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-install",
+      "target": "{sbin_dir}/filees-install",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-rotate",
+      "target": "{sbin_dir}/filees-rotate",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-onboard",
+      "target": "{libexec_dir}/filees/filees-onboard",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-bootstrap-entry",
+      "target": "{libexec_dir}/filees/filees-bootstrap-entry",
+      "kind": "binary",
+      "mode": "4511",
+      "owner": "_filees-state",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-mail",
+      "target": "{libexec_dir}/filees/filees-mail",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-entry",
+      "target": "{libexec_dir}/filees/filees-entry",
+      "kind": "binary",
+      "mode": "4511",
+      "owner": "_filees-state",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-worker",
+      "target": "{libexec_dir}/filees/filees-worker",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-service-wc-corrector",
+      "target": "{libexec_dir}/filees/filees-service-wc-corrector",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "root",
+      "group": "_filees-access"
+    },
+    {
+      "source": "bin/filees-client-entry",
+      "target": "{libexec_dir}/filees/filees-client-entry",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-access"
+    },
+    {
+      "source": "bin/filees-mobile-v1",
+      "target": "{libexec_dir}/filees/filees-mobile-v1",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-access"
+    },
+    {
+      "source": "bin/filees-recovery-entry",
+      "target": "{libexec_dir}/filees/filees-recovery-entry",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-recovery"
+    },
+    {
+      "source": "bin/filees-recovery-entry",
+      "target": "{libexec_dir}/filees/filees-recovery-authorize",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-public-authority",
+      "target": "{libexec_dir}/filees/filees-public-authority",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-links",
+      "target": "{libexec_dir}/filees/filees-links",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-serving-state",
+      "target": "{libexec_dir}/filees/filees-serving-state",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "bin/filees-ssh-auth",
+      "target": "{libexec_dir}/filees/filees-ssh-auth",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "lib/pam_filees_tunnel.so",
+      "target": "{libexec_dir}/filees/pam_filees_tunnel.so",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/capacity-alerts.example.json",
+      "target": "{sysconf_dir}/capacity-alerts.example.json",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man5/filees-public-links.5",
+      "target": "/usr/local/man/man5/filees-public-links.5",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man5/filees.conf.5",
+      "target": "/usr/local/man/man5/filees.conf.5",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man7/filees.7",
+      "target": "/usr/local/man/man7/filees.7",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-admin.8",
+      "target": "/usr/local/man/man8/filees-admin.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-bootstrap-entry.8",
+      "target": "/usr/local/man/man8/filees-bootstrap-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-client-entry.8",
+      "target": "/usr/local/man/man8/filees-client-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-entry.8",
+      "target": "/usr/local/man/man8/filees-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-install.8",
+      "target": "/usr/local/man/man8/filees-install.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-links.8",
+      "target": "/usr/local/man/man8/filees-links.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-mail.8",
+      "target": "/usr/local/man/man8/filees-mail.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-mobile-v1.8",
+      "target": "/usr/local/man/man8/filees-mobile-v1.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-onboard.8",
+      "target": "/usr/local/man/man8/filees-onboard.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-operation.8",
+      "target": "/usr/local/man/man8/filees-operation.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-public-authority.8",
+      "target": "/usr/local/man/man8/filees-public-authority.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-recovery-entry.8",
+      "target": "/usr/local/man/man8/filees-recovery-entry.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-rotate.8",
+      "target": "/usr/local/man/man8/filees-rotate.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-service-wc-corrector.8",
+      "target": "/usr/local/man/man8/filees-service-wc-corrector.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-serving-state.8",
+      "target": "/usr/local/man/man8/filees-serving-state.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-ssh-auth.8",
+      "target": "/usr/local/man/man8/filees-ssh-auth.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/man/man8/filees-worker.8",
+      "target": "/usr/local/man/man8/filees-worker.8",
+      "kind": "file",
+      "mode": "0444",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 
+	"filees/internal/storagewatch"
 	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"filees/public-shares/gate"
@@ -197,11 +198,25 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 			}
 			original := disposition["filename"]
 			store := *h.Intake
+			store.ReceiveContext = request.Context()
+			store.CheckWrite = func() error {
+				current, err := h.Backend.InspectUpload(projection.Alias, projection.Slug)
+				if err != nil {
+					return storagewatch.ErrWriteHeld
+				}
+				if current.Validate() != nil || current.ChannelID != projection.ChannelID || !uploadAuthorized(current, invitation) {
+					return intake.ErrIncomplete
+				}
+				if current.WriteBlocked {
+					return storagewatch.ErrWriteHeld
+				}
+				return nil
+			}
 			if store.MaxBytes < 1 {
 				store.MaxBytes = max
 			}
 			_, err = store.Accept(projection.ChannelID, projection.Alias, projection.Slug, gate.TokenHash(invitation), original, part)
-			if errors.Is(err, intake.ErrChannelFull) || errors.Is(err, intake.ErrQuarantineFull) || errors.Is(err, intake.ErrBudgetState) {
+			if errors.Is(err, storagewatch.ErrWriteHeld) || errors.Is(err, intake.ErrChannelFull) || errors.Is(err, intake.ErrQuarantineFull) || errors.Is(err, intake.ErrBudgetState) {
 				// The contributor is authorized; capacity is full or unknown.
 				// Do not drain the rejected body or pretend the link is dead.
 				w.Header().Set("Cache-Control", "no-store")

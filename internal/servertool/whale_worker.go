@@ -88,6 +88,12 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 		report(stderr, "Whale worker config", err)
 		return ExitConfig
 	}
+	return runCapacityWriter(config, stderr, func() int {
+		return runPreparedWhaleWorker(config, configPath, args, in, out, stderr)
+	})
+}
+
+func runPreparedWhaleWorker(config serverconfig.Config, configPath string, args []string, in io.Reader, out, stderr io.Writer) int {
 	r := config.Repositories
 	if !filepath.IsAbs(r.Root) || !filepath.IsAbs(r.ResultsRoot) || !filepath.IsAbs(config.Activation.ServiceWorkingCopy) || !filepath.IsAbs(r.EffectiveSVNLookBinary()) || !filepath.IsAbs(r.EffectiveSVNMuccBinary()) {
 		fmt.Fprintln(stderr, "Whale worker: repository configuration is incomplete")
@@ -122,7 +128,7 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 
 func whaleWorkerProfile(config serverconfig.Config, configPath, stateRoot string) obsandbox.Profile {
 	r := config.Repositories
-	return obsandbox.Profile{Name: "filees-worker/whale-v1", Promises: whaleWorkerPromises, Paths: []obsandbox.Path{
+	profile := obsandbox.Profile{Name: "filees-worker/whale-v1", Promises: whaleWorkerPromises, Paths: []obsandbox.Path{
 		{Label: "server-config", Name: configPath, Perms: "r"},
 		{Label: "service-working-copy-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
 		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
@@ -140,4 +146,6 @@ func whaleWorkerProfile(config serverconfig.Config, configPath, stateRoot string
 		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
 		{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 	}}
+	profile.Paths = append(profile.Paths, capacityGatePaths(config)...)
+	return profile
 }

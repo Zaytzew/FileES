@@ -39,10 +39,19 @@ func (m *Manager) WithAllSessionsStopped(ctx context.Context, publish func() err
 	return m.withSessionsStopped(ctx, "", publish)
 }
 
+// SignalAllSessions requests shutdown before the caller waits for the global
+// writer gate. It is not acknowledgement: WithAllSessionsStopped must still
+// prove completion before a read-only cutover is reported successful.
+func (m *Manager) SignalAllSessions(ctx context.Context) error {
+	return withFileLockContext(ctx, filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		return signalSessionLeases(m.sessionRoot(), "", "")
+	})
+}
+
 func (m *Manager) withSessionsStopped(ctx context.Context, realmID string, publish func() error) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+	return withFileLockContext(ctx, filepath.Join(m.config.Root, ".activation.lock"), func() error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

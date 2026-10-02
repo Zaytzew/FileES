@@ -46,6 +46,10 @@ func RunMobileOnboardWorker(stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func runMobileOnboardWorker(configPath string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runConfiguredCapacityWriter(configPath, stderr, func() int { return runAdmittedMobileOnboardWorker(configPath, stdin, stdout, stderr) })
+}
+
+func runAdmittedMobileOnboardWorker(configPath string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var payload MobileOnboardPushPayload
 	if err := json.NewDecoder(io.LimitReader(stdin, 64*1024)).Decode(&payload); err != nil {
 		report(stderr, "filees-worker mobile-onboard payload", err)
@@ -95,6 +99,13 @@ func RunMobileProofWorker(args []string, stdout, stderr io.Writer) int {
 }
 
 func runMobileProofWorker(configPath string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 || args[0] == "" || args[1] == "" {
+		return ExitUsage
+	}
+	return runConfiguredCapacityWriter(configPath, stderr, func() int { return runAdmittedMobileProofWorker(configPath, args, stdout, stderr) })
+}
+
+func runAdmittedMobileProofWorker(configPath string, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 || args[0] == "" || args[1] == "" {
 		fmt.Fprintln(stderr, "filees-worker mobile-proof: operation_id and client_id required")
 		return ExitUsage
@@ -150,6 +161,13 @@ func RunMobileFinishWorker(args []string, stdout, stderr io.Writer) int {
 }
 
 func runMobileFinishWorker(configPath string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 || args[0] == "" || args[1] == "" {
+		return ExitUsage
+	}
+	return runConfiguredCapacityWriter(configPath, stderr, func() int { return runAdmittedMobileFinishWorker(configPath, args, stdout, stderr) })
+}
+
+func runAdmittedMobileFinishWorker(configPath string, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 || args[0] == "" || args[1] == "" {
 		fmt.Fprintln(stderr, "filees-worker mobile-finish: operation_id and client_id required")
 		return ExitUsage

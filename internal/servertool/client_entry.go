@@ -98,6 +98,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	}
 	if originalCommand == ClientControlCommand {
 		r := config.Repositories
+		profile.Paths = append(profile.Paths, capacityGatePaths(config)...)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"})
@@ -151,6 +152,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	}
 	if originalCommand == ClientReservationCommand {
 		r := config.Repositories
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-write-policy", Name: filepath.Join(config.Activation.Root, "capacity-write-policy.json"), Perms: "r"})
 		profile.Paths = append(profile.Paths, storageWriteReadPaths(configPath)...)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-results-volume", Name: r.ResultsRoot, Perms: "r"})
 		// filees-serving-state calls its own sandboxApplyForExec after this

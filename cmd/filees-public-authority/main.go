@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"filees/internal/obsandbox"
+	"filees/internal/storagewatch"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"filees/public-shares/authority"
@@ -92,7 +93,17 @@ func run(ctx context.Context, configPath string) error {
 	if !filepath.IsAbs(svnlook) {
 		return errors.New("svnlook path must be absolute")
 	}
+	writeGate := storagewatch.Gate{Root: config.Activation.Root}
+	prepareCtx, prepareDone := context.WithTimeout(ctx, 15*time.Second)
+	err = writeGate.Prepare(prepareCtx)
+	prepareDone()
+	if err != nil {
+		return err
+	}
 	paths := []obsandbox.Path{
+		{Label: "capacity-policy", Name: filepath.Join(config.Activation.Root, "capacity-write-policy.json"), Perms: "r"},
+		{Label: "capacity-writer-lock", Name: filepath.Join(config.Activation.Root, ".capacity-writers.lock"), Perms: "rw"},
+		{Label: "capacity-writer-acknowledgements", Name: filepath.Join(config.Activation.Root, "capacity-active-writers"), Perms: "rwc"},
 		{Label: "public-share-state", Name: stateRoot, Perms: "rwc"},
 		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
 		{Label: "repositories", Name: r.Root, Perms: "r"},
@@ -129,6 +140,8 @@ func run(ctx context.Context, configPath string) error {
 	stopMaintenance := maintenance.Start(ctx)
 	defer stopMaintenance()
 	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, Trees: authority.NewTreeCache(256), FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, Staging: staging, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
+	resolver.WritesHeld = writeGate.Held
+	resolver.WithWrites = writeGate.WithWriter
 	handler := backchannel.Server{Authority: resolver, FetchSlots: make(chan struct{}, 2)}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !active.Enter() {

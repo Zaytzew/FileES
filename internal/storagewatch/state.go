@@ -156,6 +156,10 @@ func (s State) Save(path string) error {
 		return err
 	}
 	defer os.Remove(f.Name())
+	if err := preservePolicyOwner(f, path); err != nil {
+		f.Close()
+		return err
+	}
 	if _, err = f.Write(raw); err != nil {
 		f.Close()
 		return err

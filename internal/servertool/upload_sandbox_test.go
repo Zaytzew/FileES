@@ -22,6 +22,7 @@ import (
 func TestUploadMaintenanceProfilesSeparateSeedFromReaper(t *testing.T) {
 	var config serverconfig.Config
 	config.Repositories.Root = "/srv/repos"
+	config.Activation.Root = "/srv/activation"
 	config.Repositories.ResultsRoot = "/srv/results"
 	config.Repositories.SVNAdminBinary = "/usr/local/bin/svnadmin"
 	config.Upload.IntakeRoot = "/srv/intake"

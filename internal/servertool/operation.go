@@ -14,6 +14,14 @@ import (
 )
 
 func RunOperation(args []string, stdout, stderr io.Writer) int {
+	path, rest, err := configPath(args)
+	if err == nil && len(rest) == 1 && rest[0] == "recover" {
+		return runConfiguredCapacityWriter(path, stderr, func() int { return runAdmittedOperation(args, stdout, stderr) })
+	}
+	return runAdmittedOperation(args, stdout, stderr)
+}
+
+func runAdmittedOperation(args []string, stdout, stderr io.Writer) int {
 	path, args, err := configPath(args)
 	if err != nil || len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: filees-operation [-config path] recover | inspect --operation-id UUID")

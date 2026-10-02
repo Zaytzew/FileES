@@ -1,9 +1,17 @@
 package repoworker
 
 import (
+	"context"
 	"errors"
 	"os"
 )
+
+func WithFileLockContext(ctx context.Context, path string, fn func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return WithFileLock(path, fn)
+}
 
 func WithFileLock(path string, fn func() error) error {
 	lock := path + ".exclusive"

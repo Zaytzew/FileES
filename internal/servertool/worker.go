@@ -40,6 +40,16 @@ func runWorker(configPath string, args []string, stdin io.Reader, stdout, stderr
 type workerCheckpoint func(string) error
 
 func runWorkerWithCheckpoint(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, checkpoint workerCheckpoint) int {
+	if len(args) != 1 || args[0] != "deploy" {
+		fmt.Fprintln(stderr, "usage: filees-worker deploy < tunnel-session.json")
+		return ExitUsage
+	}
+	return runConfiguredCapacityWriter(configPath, stderr, func() int {
+		return runAdmittedWorkerWithCheckpoint(configPath, args, stdin, stdout, stderr, checkpoint)
+	})
+}
+
+func runAdmittedWorkerWithCheckpoint(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, checkpoint workerCheckpoint) int {
 	reached := func(name string) bool {
 		if checkpoint == nil {
 			return true

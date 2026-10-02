@@ -29,6 +29,10 @@ func runAdminReapPassports(configPath string, args []string, out, stderr io.Writ
 			return adminUsage(stderr, flags, "--repo-id UUID --owner-realm-id UUID [--path relative-path]")
 		}
 	}
+	return runConfiguredCapacityWriter(configPath, stderr, func() int { return runPreparedAdminReapPassports(configPath, repoID, owner, path, out, stderr) })
+}
+
+func runPreparedAdminReapPassports(configPath string, repoID, owner, path *string, out, stderr io.Writer) int {
 	_, config, err := openFiles(configPath, toolAccess{name: "filees-admin/reap-passports", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true, needSVN: true, needLockGuards: true})
 	if err != nil {
 		report(stderr, "passport reap config", err)

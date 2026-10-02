@@ -23,6 +23,17 @@ func RunPassportReap(args []string, stdout, stderr io.Writer) int {
 
 func runPassportReap(args []string, stdout, stderr io.Writer, worker string) int {
 	path, rest, err := configPath(args)
+	if err != nil || (len(rest) != 0 && (len(rest) != 1 || rest[0] != "--check")) {
+		return ExitUsage
+	}
+	if len(rest) == 1 {
+		return runAdmittedPassportReap(args, stdout, stderr, worker)
+	}
+	return runConfiguredCapacityWriter(path, stderr, func() int { return runAdmittedPassportReap(args, stdout, stderr, worker) })
+}
+
+func runAdmittedPassportReap(args []string, stdout, stderr io.Writer, worker string) int {
+	path, rest, err := configPath(args)
 	check := len(rest) == 1 && rest[0] == "--check"
 	if err != nil || (len(rest) != 0 && !check) {
 		fmt.Fprintln(stderr, "usage: filees-worker passport-reap [-config path] [--check]")

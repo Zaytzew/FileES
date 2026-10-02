@@ -60,6 +60,8 @@ type TreeObject struct {
 }
 
 type Resolver struct {
+	WritesHeld   func() (bool, error)
+	WithWrites   func(context.Context, func() error) error
 	Staging      *storage.Staging
 	Channels     *channel.Store
 	Source       Source
@@ -171,6 +173,10 @@ func (r Resolver) InspectUpload(alias, channelSlug string) (channel.UploadProjec
 	if err != nil {
 		return channel.UploadProjection{}, ErrNotFound
 	}
+	if r.WritesHeld != nil {
+		held, err := r.WritesHeld()
+		projection.WriteBlocked = held || err != nil
+	}
 	return projection, nil
 }
 
@@ -236,6 +242,22 @@ func (r Resolver) Check(ctx context.Context, request ObjectRequest) (ObjectPermi
 // canonical mapped leaf into private staging. MD5 is local corruption
 // detection for the subsequent cache push, not a trust proof.
 func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf, error) {
+	if r.WithWrites == nil {
+		return r.fetch(ctx, request)
+	}
+	var result FetchedLeaf
+	err := r.WithWrites(ctx, func() error {
+		var err error
+		result, err = r.fetch(ctx, request)
+		return err
+	})
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return FetchedLeaf{}, fmt.Errorf("%w: %v", storage.ErrUnavailable, err)
+	}
+	return result, err
+}
+
+func (r Resolver) fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf, error) {
 	if err := r.validate(); err != nil {
 		return FetchedLeaf{}, err
 	}

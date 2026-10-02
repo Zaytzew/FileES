@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"filees/internal/obsandbox"
+	"filees/internal/storagewatch"
 	"filees/pkg/activation"
 	"filees/pkg/serverconfig"
 
@@ -44,7 +45,7 @@ var svnserveEnvironment = []string{"LC_CTYPE=C.UTF-8"}
 // authority is the inherited gate descriptor; it has no SSH command parsing
 // and receives no caller-controlled argv from the forced-command path.
 func RunClientSessionChild(args []string, stderr io.Writer) int {
-	if len(args) != 4 {
+	if len(args) != 4 && (len(args) != 5 || args[4] != "read-only") {
 		return ExitUsage
 	}
 	svnserve, root, clientID, nonce := args[0], args[1], args[2], args[3]
@@ -72,7 +73,11 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 		report(stderr, "filees-client-entry child sandbox", err)
 		return ExitSoftware
 	}
-	if err := syscall.Exec(svnserve, []string{filepath.Base(svnserve), "-t", "--tunnel-user", clientID, "-r", root}, svnserveEnvironment); err != nil {
+	argv := []string{filepath.Base(svnserve), "-t", "--tunnel-user", clientID, "-r", root}
+	if len(args) == 5 {
+		argv = append(argv, "-R")
+	}
+	if err := syscall.Exec(svnserve, argv, svnserveEnvironment); err != nil {
 		report(stderr, "filees-client-entry child exec", err)
 		return ExitSoftware
 	}
@@ -208,7 +213,8 @@ func runSessionSupervisor(config serverconfig.Config, clientID, childRoot string
 		closeSessionPipes(gateWrite, childInWrite, childOutRead, childErrRead)
 		return 0, err
 	}
-	if !manager.SessionAllowed(lease.Metadata.OperationID, clientID) {
+	revoked, revokeErr := lease.Revoked()
+	if revokeErr != nil || revoked || !manager.SessionAllowed(lease.Metadata.OperationID, clientID) {
 		reportSessionEnded(stderr, "not-allowed")
 		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
@@ -232,7 +238,11 @@ func runSessionSupervisor(config serverconfig.Config, clientID, childRoot string
 }
 
 var startSessionChild = func(config serverconfig.Config, clientID, root, nonce string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
-	cmd := exec.Command(config.Activation.ClientEntryPath, "--session-child", config.Activation.SVNServeBinary, root, clientID, nonce)
+	args := []string{"--session-child", config.Activation.SVNServeBinary, root, clientID, nonce}
+	if held, err := (storagewatch.Gate{Root: config.Activation.Root}).Held(); held || err != nil {
+		args = append(args, "read-only")
+	}
+	cmd := exec.Command(config.Activation.ClientEntryPath, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.ExtraFiles = []*os.File{gate}
 	cmd.Env = []string{}

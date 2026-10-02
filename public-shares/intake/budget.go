@@ -94,7 +94,7 @@ func (s Store) usage(channelID string) (pending int, total int64, err error) {
 		return 0, 0, err
 	}
 	for _, entry := range entries {
-		if entry.Name() == budgetLockName || entry.Name() == budgetLockName+".exclusive" {
+		if entry.Name() == budgetLockName || entry.Name() == budgetLockName+".exclusive" || entry.Name() == ".capacity-receivers.lock" || entry.Name() == ".capacity-receivers.lock.exclusive" {
 			continue
 		}
 		if !entry.IsDir() || !canonicalID(entry.Name()) {

@@ -1,7 +1,12 @@
 package servertool
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"filees/internal/storagewatch"
+	control "filees/pkg/control/v1"
 	"fmt"
 
 	"filees/pkg/activation"
@@ -28,6 +33,50 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		report(stderr, "repository worker config", err)
 		return ExitConfig
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	code := ExitTempFail
+	err = (storagewatch.Gate{Root: config.Activation.Root}).WithWriter(ctx, func() error {
+		code = runPreparedRepositoryWorker(config, args, in, out, stderr)
+		return nil
+	})
+	if errors.Is(err, storagewatch.ErrWriteHeld) {
+		return serveCapacityRefusal(config, args[0], in, out, stderr)
+	}
+	if err != nil {
+		report(stderr, "repository capacity admission", err)
+		return ExitTempFail
+	}
+	return code
+}
+
+// A transient dependency refusal must not become a terminal operation record.
+// This route reads only the existing authenticated view; no worker, WC
+// reconciliation, ledger binding, maintenance or operation side effects run.
+func serveCapacityRefusal(config serverconfig.Config, clientID string, in io.Reader, out, stderr io.Writer) int {
+	raw, err := io.ReadAll(io.LimitReader(in, control.MaxShareTicketBytes+1))
+	if err != nil || len(raw) > control.MaxShareTicketBytes {
+		return ExitData
+	}
+	ticket, err := control.ParseTicket(bytes.TrimSpace(raw))
+	if err != nil || len(raw) > control.TicketByteLimit(ticket.Type) || ticket.ClientID != clientID {
+		return ExitData
+	}
+	if _, err := (repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}).Resolve(clientID); err != nil {
+		return ExitUnavailable
+	}
+	result, err := control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{Code: "STORAGE_INSUFFICIENT", Message: "Server writes are temporarily held until storage recovery"}, time.Now())
+	if err == nil {
+		err = json.NewEncoder(out).Encode(result)
+	}
+	if err != nil {
+		report(stderr, "repository capacity refusal", err)
+		return ExitData
+	}
+	return ExitOK
+}
+
+func runPreparedRepositoryWorker(config serverconfig.Config, args []string, in io.Reader, out, stderr io.Writer) int {
 	r := config.Repositories
 	if !filepath.IsAbs(r.Root) || !filepath.IsAbs(r.ResultsRoot) || !filepath.IsAbs(r.DataAuthzFile) || !filepath.IsAbs(r.SVNAdminBinary) || r.URLPrefix == "" {
 		fmt.Fprintln(stderr, "repository worker: repository configuration is incomplete")

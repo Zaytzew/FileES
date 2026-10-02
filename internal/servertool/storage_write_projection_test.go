@@ -75,6 +75,21 @@ func TestStorageWriteProjectionScopeFreshnessAndPrivacy(t *testing.T) {
 			t.Fatal("unsolicited storage signal")
 		}
 	}
+	if err := (storagewatch.Gate{Root: root}).Hold(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "capacity-alerts.json")); err != nil {
+		t.Fatal(err)
+	}
+	if got := projectStorageWrite(configPath, c, "ok", now.Add(time.Hour), device); got.State != "blocked" {
+		t.Fatal("durable stop lost after settings removal", got)
+	}
+	if err := (storagewatch.Gate{Root: root}).Resume(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "capacity-alerts.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "capacity.json"), []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}

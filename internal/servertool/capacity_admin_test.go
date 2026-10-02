@@ -110,6 +110,10 @@ func TestCapacityCronSMTPAndSandbox(t *testing.T) {
 	if e = os.WriteFile(rpath, []byte("{}"), 0600); e != nil {
 		t.Fatal(e)
 	}
+	// A real realm is versioned. Cutover reconciles the service WC; an
+	// unversioned fixture would correctly disappear on its first reconciliation.
+	runRepoPruneCommand(t, cfg.Activation.SVNBinary, "add", filepath.Join(cfg.Activation.ServiceWorkingCopy, "admin"))
+	runRepoPruneCommand(t, cfg.Activation.SVNBinary, "commit", cfg.Activation.ServiceWorkingCopy, "-m", "synthetic capacity realm")
 	setting := capacityConfig{Schema: "filees.capacity-alerts/v1", Realm: realm, Email: "admin@example.test", StateDir: filepath.Join(sandboxTempDir(t), "state"), Policy: storagewatch.DefaultPolicy()}
 	setting.Policy.WarningBytes = 1 << 61
 	setting.Policy.CriticalBytes = 1 << 60
@@ -202,6 +206,22 @@ func TestCapacityCronSMTPAndSandbox(t *testing.T) {
 	call(ExitOK)
 	if messages.Load() != after {
 		t.Fatal("receipt not durable")
+	}
+	// An unreadable write policy refuses admission, but must not swallow the
+	// independently queued administrator mail or claim a successful cutover.
+	setting.Policy = storagewatch.Policy{WarningPercent: 0.00001, CriticalPercent: 0.000001, HysteresisPercent: 0.000001, WarningBytes: 2, CriticalBytes: 1, HysteresisBytes: 1}
+	save()
+	call(ExitOK)
+	if e = os.WriteFile(filepath.Join(cfg.Activation.Root, "capacity-write-policy.json"), []byte("invalid"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	setting.Policy = storagewatch.DefaultPolicy()
+	setting.Policy.WarningBytes = 1 << 61
+	setting.Policy.CriticalBytes = 1 << 60
+	save()
+	call(ExitTempFail)
+	if messages.Load() <= after {
+		t.Fatal("cutover failure swallowed mail")
 	}
 
 }

@@ -116,6 +116,37 @@ func TestUploadGetRequiresInvitationAndHidesIdentity(t *testing.T) {
 	}
 }
 
+func TestCapacityHoldKeepsUploadLinkVisibleButRefusesPayload(t *testing.T) {
+	token := "invite-token"
+	projection := validUploadProjection(token)
+	projection.WriteBlocked = true
+	h, store := uploadHandler(t, projection)
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/atmprojekt/oferta-a?invite="+token, nil))
+	if get.Code != http.StatusOK {
+		t.Fatal(get.Code)
+	}
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "test.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	part.Write([]byte("held payload"))
+	mw.Close()
+	r := httptest.NewRequest(http.MethodPost, "/atmprojekt/oferta-a?invite="+token, &body)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	post := httptest.NewRecorder()
+	h.ServeHTTP(post, r)
+	if post.Code != http.StatusServiceUnavailable {
+		t.Fatal(post.Code, post.Body.String())
+	}
+	ready, err := store.ListReady()
+	if err != nil || len(ready) != 0 {
+		t.Fatal(ready, err)
+	}
+}
+
 func TestUploadPostStoresPayloadWithoutServingIt(t *testing.T) {
 	token := "invite-token"
 	handler, store := uploadHandler(t, validUploadProjection(token))

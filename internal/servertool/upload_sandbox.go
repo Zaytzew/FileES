@@ -20,6 +20,7 @@ func uploadMaintenanceProfile(config serverconfig.Config, seed bool) obsandbox.P
 	if seed {
 		return p
 	}
+	p.Paths = append(p.Paths, capacityGatePaths(config)...)
 	p.Promises = uploadMaintenancePromises
 	p.Paths = append(p.Paths,
 		obsandbox.Path{Label: "intake", Name: config.Upload.IntakeRoot, Perms: "rwc"},

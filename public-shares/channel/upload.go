@@ -309,15 +309,16 @@ const UploadProjectionSchema = "filees.upload-channel-projection/v1"
 // UploadProjection is all the public FastCGI process may know. Repository
 // IDs, mailbox addresses and the upload target never appear here.
 type UploadProjection struct {
-	Schema     string                 `json:"schema"`
-	ChannelID  string                 `json:"channel_id"`
-	Alias      string                 `json:"alias"`
-	Slug       string                 `json:"slug"`
-	State      string                 `json:"state"`
-	RequireOTP bool                   `json:"require_otp,omitempty"`
-	Recipients []PublicRecipient      `json:"recipients"`
-	Branding   realmbranding.Branding `json:"branding"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+	WriteBlocked bool                   `json:"write_blocked,omitempty"`
+	Schema       string                 `json:"schema"`
+	ChannelID    string                 `json:"channel_id"`
+	Alias        string                 `json:"alias"`
+	Slug         string                 `json:"slug"`
+	State        string                 `json:"state"`
+	RequireOTP   bool                   `json:"require_otp,omitempty"`
+	Recipients   []PublicRecipient      `json:"recipients"`
+	Branding     realmbranding.Branding `json:"branding"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
 func (s *Store) ResolveUploadAddress(alias, channelSlug string) (UploadRecord, error) {

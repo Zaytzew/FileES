@@ -5,6 +5,7 @@
 package intake
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,6 +50,8 @@ type Store struct {
 	MaxUploadsPerChannel int
 	MaxQuarantineBytes   int64
 	Now                  func() time.Time
+	CheckWrite           func() error    // authoritative admission and bounded body checks
+	ReceiveContext       context.Context // request lifetime while waiting for admission
 }
 
 type Record struct {
@@ -66,6 +69,46 @@ type Record struct {
 }
 
 func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, body io.Reader) (Record, error) {
+	var record Record
+	// Keep legacy test/embedding stores independent of the operational gate.
+	if s.CheckWrite == nil {
+		return s.accept(channelID, alias, slug, tokenSHA256, originalName, body)
+	}
+	// Reject an invalid contributor name before creating any lock or job.
+	if _, err := boundedOriginalName(originalName); err != nil {
+		return record, err
+	}
+	ctx := s.ReceiveContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err := WithReceiveBarrier(ctx, s.Root, false, func() error {
+		if err := s.CheckWrite(); err != nil {
+			return err
+		}
+		var err error
+		record, err = s.accept(channelID, alias, slug, tokenSHA256, originalName, &checkedUploadReader{Reader: body, check: s.CheckWrite})
+		return err
+	})
+	return record, err
+}
+
+type checkedUploadReader struct {
+	io.Reader
+	check func() error
+}
+
+func (r *checkedUploadReader) Read(p []byte) (int, error) {
+	if err := r.check(); err != nil {
+		return 0, err
+	}
+	if len(p) > 64<<10 {
+		p = p[:64<<10]
+	}
+	return r.Reader.Read(p)
+}
+
+func (s Store) accept(channelID, alias, slug, tokenSHA256, originalName string, body io.Reader) (Record, error) {
 	if !filepath.IsAbs(s.Root) || s.MaxBytes < 1 || s.MaxBytes > 1<<40 || s.MaxUploadsPerChannel < 0 || s.MaxUploadsPerChannel > 1000000 || s.MaxQuarantineBytes < 0 || body == nil {
 		return Record{}, ErrIncomplete
 	}
@@ -180,6 +223,11 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 		return Record{}, err
 	}
 	publish := func() error {
+		if s.CheckWrite != nil {
+			if err := s.CheckWrite(); err != nil {
+				return err
+			}
+		}
 		ready := filepath.Join(dir, readyName)
 		if err := os.WriteFile(ready, []byte(record.UploadID+"\n"), jobFilePerm); err != nil {
 			return err

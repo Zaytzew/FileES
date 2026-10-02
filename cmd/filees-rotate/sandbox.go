@@ -15,7 +15,7 @@ const rotatePromises = "stdio rpath wpath cpath fattr flock proc exec"
 // This compatibility entrypoint is also callable directly by cron. It has no
 // servertool parent to establish its confinement. The repo parent is writable
 // because interrupted swaps must recover even when the hot path is absent.
-func confineRotation(repo, archive string) error {
+func confineRotation(repo, archive string, gateRoots ...string) error {
 	if runtime.GOOS != "openbsd" {
 		return nil
 	}
@@ -40,6 +40,13 @@ func confineRotation(repo, archive string) error {
 		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
 		{Label: "svn-config", Name: "/etc/subversion", Perms: "r"},
 	}}
+	for _, root := range gateRoots {
+		if root == "" {
+			continue
+		}
+		p.Paths = append(p.Paths, obsandbox.Path{Label: "capacity-policy", Name: filepath.Join(root, "capacity-write-policy.json"), Perms: "r"}, obsandbox.Path{Label: "capacity-writer-lease", Name: filepath.Join(root, ".capacity-writers.lock"), Perms: "rw"})
+		p.Paths = append(p.Paths, obsandbox.Path{Label: "capacity-writer-acknowledgements", Name: filepath.Join(root, "capacity-active-writers"), Perms: "rwc"})
+	}
 	for _, name := range []string{"svn", "svnadmin", "svnlook"} {
 		path, err := exec.LookPath(name)
 		if err != nil {

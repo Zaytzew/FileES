@@ -56,16 +56,35 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|reap-passports|reap-lock-requests|rotate | erasure complete | demo reap | alert publish|capacity | mobile recover | version")
 		return ExitUsage
 	}
+	return runAdminRoute(path, args, stdout, stderr, false)
+}
+
+func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitted bool) int {
+	admit := func() int {
+		return runConfiguredCapacityWriter(path, stderr, func() int { return runAdminRoute(path, args, stdout, stderr, true) })
+	}
 	switch args[0] + " " + args[1] {
 	case "mobile recover":
+		if !admitted {
+			return admit()
+		}
 		return runAdminMobileRecover(path, args[2:], stdout, stderr)
 	case "alert capacity":
 		return runAdminCapacity(path, args[2:], stdout, stderr)
 	case "alert publish":
+		if !admitted {
+			return admit()
+		}
 		return runAdminAlertPublish(path, args[2:], stdout, stderr)
 	case "demo reap":
+		if !admitted {
+			return admit()
+		}
 		return runAdminDemoReap(path, args[2:], stdout, stderr)
 	case "repo reap-lock-requests":
+		if !admitted {
+			return admit()
+		}
 		return runAdminReapLockRequests(path, args[2:], stdout, stderr)
 	case "repo reap-passports":
 		return runAdminReapPassports(path, args[2:], stdout, stderr)
@@ -95,6 +114,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if email == "" {
 			fmt.Fprintln(stderr, ticketCreateUsage)
 			return ExitUsage
+		}
+		if !admitted {
+			return admit()
 		}
 		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true, needRealmAlias: *joinRealmAlias != ""})
 		if err != nil {
@@ -137,6 +159,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *ticketID == "" {
 			return adminUsage(stderr, flags, "--ticket-id UUID")
 		}
+		if !admitted {
+			return admit()
+		}
 		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-resend", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
@@ -156,6 +181,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		ticketID := flags.String("ticket-id", "", "ticket UUID")
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *ticketID == "" {
 			return adminUsage(stderr, flags, "--ticket-id UUID")
+		}
+		if !admitted {
+			return admit()
 		}
 		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-revoke", areas: onboarding.AreaTickets | onboarding.AreaAudit, write: true})
 		if err != nil {
@@ -185,6 +213,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 	case "share list":
 		return runShareList(path, args, stdout, stderr)
 	case "share delete":
+		if !admitted {
+			return admit()
+		}
 		return runShareDelete(path, args, stdout, stderr)
 	case "ticket list":
 		if len(args) != 2 {
@@ -234,6 +265,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *clientID == "" {
 			return adminUsage(stderr, flags, "--client-id UUID [--reason text]")
 		}
+		if !admitted {
+			return admit()
+		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/client-revoke", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
@@ -263,6 +297,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *realmID == "" {
 			return adminUsage(stderr, flags, "--realm-id UUID [--reason text]")
 		}
+		if !admitted {
+			return admit()
+		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/client-revoke-realm", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
@@ -291,6 +328,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		realmID := flags.String("realm-id", "", "new owner realm UUID")
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *repoID == "" || *realmID == "" {
 			return adminUsage(stderr, flags, "--repo-id UUID --realm-id UUID")
+		}
+		if !admitted {
+			return admit()
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-transfer-owner", areas: onboarding.AreaOperations, write: true, needSVN: true})
 		if err != nil {
@@ -337,6 +377,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		realmID := flags.String("realm-id", "", "owner realm UUID")
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *repoID == "" || *realmID == "" {
 			return adminUsage(stderr, flags, "--repo-id UUID --realm-id UUID")
+		}
+		if !admitted {
+			return admit()
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-activate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needSVN: true})
 		if err != nil {
@@ -456,6 +499,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "filees-admin repo rotate: --age-days must be positive")
 			return ExitUsage
 		}
+		if !admitted {
+			return admit()
+		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-rotate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needRepoInspection: true, needSVN: true, needRotationArchive: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
@@ -511,6 +557,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if *olderThan < 0 {
 			fmt.Fprintln(stderr, "filees-admin repo prune: --older-than must not be negative")
 			return ExitUsage
+		}
+		if !admitted {
+			return admit()
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true, needRepoInspection: true, needSVN: true})
 		if err != nil {
@@ -583,6 +632,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *operationID == "" {
 			fmt.Fprintln(stderr, "usage: filees-admin [-config path] erasure complete --operation-id UUID [--partially-retained]")
 			return ExitUsage
+		}
+		if !admitted {
+			return admit()
 		}
 		files, config, err := openFiles(path, toolAccess{
 			name: "filees-admin/erasure-complete", areas: onboarding.AreaOperations | onboarding.AreaAudit,

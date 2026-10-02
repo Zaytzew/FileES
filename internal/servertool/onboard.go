@@ -18,6 +18,15 @@ import (
 const demoReapGrace = time.Minute
 
 func RunOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	path, rest, err := configPath(args)
+	if err != nil || len(rest) != 1 || rest[0] != "take" {
+		fmt.Fprintln(stderr, "usage: filees-onboard [-config path] take < request.json")
+		return ExitUsage
+	}
+	return runConfiguredCapacityWriter(path, stderr, func() int { return runAdmittedOnboard(args, stdin, stdout, stderr) })
+}
+
+func runAdmittedOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	path, args, err := configPath(args)
 	if err != nil || len(args) != 1 || args[0] != "take" {
 		fmt.Fprintln(stderr, "usage: filees-onboard [-config path] take < request.json")

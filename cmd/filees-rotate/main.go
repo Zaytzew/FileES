@@ -4,15 +4,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"time"
 
+	"filees/internal/storagewatch"
 	"filees/internal/svnrotate"
+	"filees/pkg/serverconfig"
 )
 
 func main() {
+	configPath := flag.String("config", "/etc/filees/server.json", "server configuration for persistent write admission")
 	repo := flag.String("repo", "", "absolute path to the SVN hot-repository (required)")
 	archive := flag.String("archive", "", "archive directory, same filesystem as the repo (required)")
 	size := flag.String("size", "25GiB", "rotate when packed repo size reaches this (KiB/MiB/GiB/TiB or bytes)")
@@ -50,45 +54,63 @@ func main() {
 		DumpDepth:     *dumpDepth,
 	}
 
-	if err := confineRotation(cfg.RepoPath, cfg.ArchiveDir); err != nil {
-		fmt.Fprintf(os.Stderr, "filees-rotate: sandbox: %v\n", err)
-		os.Exit(1)
-	}
-
+	var gateRoot string
 	if !*dryRun {
-		if _, found, err := svnrotate.Recover(cfg.RepoPath, cfg.ArchiveDir, ""); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		} else if found {
-			fmt.Println("filees-rotate: interrupted generation recovered")
-			return
-		}
-	}
-	reason := "forced"
-	if !*force {
-		rotate, why, err := svnrotate.ShouldRotate(cfg, os.Stdout)
+		c, err := serverconfig.LoadFor(*configPath, 0)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "filees-rotate: server configuration: %v\n", err)
+			os.Exit(1)
+		}
+		gateRoot = c.Activation.Root
+	}
+	run := func() error { return runRotation(cfg, *dryRun, *force, gateRoot) }
+	if !*dryRun {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := (storagewatch.Gate{Root: gateRoot}).WithWriter(ctx, run); err != nil {
 			fmt.Fprintf(os.Stderr, "filees-rotate: %v\n", err)
 			os.Exit(1)
 		}
+	} else if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "filees-rotate: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runRotation(cfg svnrotate.Config, dryRun, force bool, gateRoot string) error {
+	if err := confineRotation(cfg.RepoPath, cfg.ArchiveDir, gateRoot); err != nil {
+		return fmt.Errorf("rotation sandbox: %w", err)
+	}
+
+	if !dryRun {
+		if _, found, err := svnrotate.Recover(cfg.RepoPath, cfg.ArchiveDir, ""); err != nil {
+			return err
+		} else if found {
+			fmt.Println("filees-rotate: interrupted generation recovered")
+			return nil
+		}
+	}
+	reason := "forced"
+	if !force {
+		rotate, why, err := svnrotate.ShouldRotate(cfg, os.Stdout)
+		if err != nil {
+			return err
+		}
 		if !rotate {
 			fmt.Println("filees-rotate: no rotation needed")
-			return
+			return nil
 		}
 		fmt.Printf("filees-rotate: trigger: %s\n", why)
-		if *dryRun {
-			return
+		if dryRun {
+			return nil
 		}
 		reason = why
-	} else if *dryRun {
+	} else if dryRun {
 		fmt.Println("filees-rotate: -force with -dry-run: would rotate unconditionally")
-		return
+		return nil
 	} else {
 		fmt.Println("filees-rotate: forced rotation")
 	}
 
-	if err := svnrotate.Rotate(cfg, reason, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "filees-rotate: %v\n", err)
-		os.Exit(1)
-	}
+	return svnrotate.Rotate(cfg, reason, os.Stdout)
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func withServiceWorkingCopy(ctx context.Context, config activation.Config, fn func() error) error {
-	return repoworker.WithFileLock(filepath.Join(config.Root, ".service-wc.lock"), func() error {
+	return repoworker.WithFileLockContext(ctx, filepath.Join(config.Root, ".service-wc.lock"), func() error {
 		if err := repoworker.ReconcileServiceWorkingCopy(ctx, config.SVNBinary, config.ServiceWorkingCopy); err != nil {
 			return err
 		}

@@ -13,6 +13,7 @@ import (
 
 	"filees/internal/mobileworker"
 	"filees/internal/obsandbox"
+	"filees/internal/storagewatch"
 	"filees/pkg/clientview"
 	"filees/pkg/guiblob"
 	"filees/pkg/realmbranding"
@@ -248,12 +249,20 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		Promises: mobileEntryPromises,
 		Paths:    mobileUnveilPaths(config.Repositories.Root, config.Activation.ServiceWorkingCopy, guiBlobRoot, ledgerDir, svnPath, svnlookPath),
 	}
+	profile.Paths = append(profile.Paths, capacityGatePaths(config)...)
 	if err := obsandbox.Apply(profile); err != nil {
 		report(stderr, "filees-mobile-v1 sandbox", err)
 		return ExitSoftware
 	}
 
 	dispatcher := mobileworker.Dispatcher{
+		WithWrites: func(ctx context.Context, run func() error) error {
+			err := (storagewatch.Gate{Root: config.Activation.Root}).WithWriter(ctx, run)
+			if errors.Is(err, storagewatch.ErrWriteHeld) {
+				return mobileworker.ErrStorageFull
+			}
+			return err
+		},
 		MaxReadSpoolBytes: config.Mobile.MaxReadSpoolSize,
 		Browser: mobileworker.Browser{
 			MaxReadBytes: config.Mobile.MaxDownloadSize,

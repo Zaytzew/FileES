@@ -34,6 +34,12 @@ func RunUploadReap(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "upload intake is not configured")
 		return ExitOK
 	}
+	return runCapacityWriter(config, stderr, func() int {
+		return runPreparedUploadReap(config, stdout, stderr)
+	})
+}
+
+func runPreparedUploadReap(config serverconfig.Config, stdout, stderr io.Writer) int {
 	if len(config.Upload.AVCommand) == 0 {
 		fmt.Fprintln(stderr, "upload-reap: av_command is required")
 		return ExitConfig
@@ -111,6 +117,10 @@ func RunUploadSeedReject(args []string, _ io.Reader, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "upload-seed-reject: upload intake is not configured")
 		return ExitConfig
 	}
+	return runCapacityWriter(config, stderr, func() int { return runPreparedUploadSeedReject(config, alias, name, stdout, stderr) })
+}
+
+func runPreparedUploadSeedReject(config serverconfig.Config, alias, name string, stdout, stderr io.Writer) int {
 	stateRoot := config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)
 	store := &channel.Store{Root: stateRoot, TokenKey: config.Onboarding.OTPPepper}
 	if err := os.MkdirAll(config.Upload.EffectiveTrashRoot(config.Repositories.ResultsRoot), 0700); err != nil {

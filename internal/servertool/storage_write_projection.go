@@ -38,6 +38,14 @@ func attachStorageWrite(configPath string, c serverconfig.Config, req reservatio
 
 func projectStorageWrite(configPath string, c serverconfig.Config, repoID string, now time.Time, device func(string) (uint64, error)) *reservationv1.StorageWrite {
 	unknown := &reservationv1.StorageWrite{State: "unknown"}
+	// A durable stop is current policy, not an available-space observation.
+	// It remains visible even if monitoring settings disappear or expire.
+	if held, err := (storagewatch.Gate{Root: c.Activation.Root}).Held(); err != nil {
+		return unknown
+	} else if held {
+		measured := now.UTC()
+		return &reservationv1.StorageWrite{State: "blocked", MeasuredAt: &measured, ValidForSeconds: int(storagewatch.ObservationTTL / time.Second)}
+	}
 	settings, err := loadCapacityConfig(filepath.Join(filepath.Dir(configPath), "capacity-alerts.json"))
 	if err != nil {
 		return unknown

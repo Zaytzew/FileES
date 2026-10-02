@@ -69,7 +69,16 @@ func capacityPaths(c serverconfig.Config) []storagewatch.Path {
 	if session == "" {
 		session = filepath.Join(c.Activation.Root, "sessions")
 	}
-	paths := []storagewatch.Path{{"repositories", c.Repositories.Root}, {"operations", c.Repositories.ResultsRoot}, {"onboarding", c.Root}, {"activation", c.Activation.Root}, {"sessions", session}, {"service-repo", c.Activation.ServiceRepository}, {"service-wc", c.Activation.ServiceWorkingCopy}, {"temporary", os.TempDir()}}
+	paths := []storagewatch.Path{
+		{Label: "repositories", Name: c.Repositories.Root},
+		{Label: "operations", Name: c.Repositories.ResultsRoot},
+		{Label: "onboarding", Name: c.Root},
+		{Label: "activation", Name: c.Activation.Root},
+		{Label: "sessions", Name: session},
+		{Label: "service-repo", Name: c.Activation.ServiceRepository},
+		{Label: "service-wc", Name: c.Activation.ServiceWorkingCopy},
+		{Label: "temporary", Name: os.TempDir()},
+	}
 	add := func(label, path string) {
 		if path != "" {
 			paths = append(paths, storagewatch.Path{Label: label, Name: path})
@@ -100,7 +109,11 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 		return adminUsage(stderr, flags, "[--settings path] [--dry-run]")
 	}
 	// SMTP and SVN are both required; children retain only SVN exec promises.
-	if e := sandboxBegin(svnPromises + " inet dns"); e != nil {
+	promises := svnPromises + " inet dns"
+	if os.Geteuid() == 0 {
+		promises += " chown"
+	}
+	if e := sandboxBegin(promises); e != nil {
 		report(stderr, "capacity sandbox", e)
 		return ExitSoftware
 	}
@@ -125,13 +138,19 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 		return ExitSoftware
 	}
 	if !*dry {
-		if e = os.MkdirAll(settings.StateDir, 0700); e != nil {
+		if e = storagewatch.EnsurePrivateDirectory(settings.StateDir, c.Activation.Root); e != nil {
 			report(stderr, "capacity state", e)
 			return ExitSoftware
 		}
 	}
 	profile := repositoryProfile(c.Root, toolAccess{name: "filees-admin/capacity", write: true, needActivation: true, needSVN: true}, c.Activation, "", "", "")
-	profile.Promises = svnPromises + " inet dns"
+	profile.Promises = promises
+	if !*dry {
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-repository-policy", Name: c.Repositories.Root, Perms: "rwc"})
+		if c.Upload.Enabled() {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-intake-barrier", Name: c.Upload.IntakeRoot, Perms: "rwc"})
+		}
+	}
 	profile.Paths = append(profile.Paths, obsandbox.Path{Label: "svnlook", Name: c.Repositories.EffectiveSVNLookBinary(), Perms: "rx"}, obsandbox.Path{Label: "svnmucc", Name: c.Repositories.EffectiveSVNMuccBinary(), Perms: "rx"}, obsandbox.Path{Label: "temporary", Name: os.TempDir(), Perms: "rwc"}, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
 	if !*dry {
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-state", Name: settings.StateDir, Perms: "rwc"})
@@ -182,15 +201,22 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 	// Persist the email intent before either delivery route. SMTP success is not
 	// proof of mailbox delivery; a crash after SMTP acceptance may cause a retry.
 	if e = state.Save(statePath); e != nil {
-		report(stderr, "capacity persist", e)
+		report(stderr, "capacity state", e)
 		return ExitSoftware
 	}
 	failed := false
+	if e = applyCapacityCutover(ctx, c, state, statePath); e != nil {
+		report(stderr, "capacity write cutover", e)
+		failed = true
+	}
+	cutoverFailed := failed
 	// Email goes first and has an independent budget; service-repo failure cannot
 	// swallow the fallback or consume all the available execution time.
+	mailBudget, stopMail := context.WithTimeout(context.Background(), 45*time.Second)
+	defer stopMail()
 	for len(state.Pending) > 0 {
 		m := state.Pending[0]
-		mailCtx, done := context.WithTimeout(ctx, 15*time.Second)
+		mailCtx, done := context.WithTimeout(mailBudget, 15*time.Second)
 		message := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: FileES server capacity alert\r\nMessage-ID: <capacity-%s@%s>\r\nDate: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nServer: %s\r\n%s\r\n", c.SMTPFrom, settings.Email, m.ID, c.MessageIDDomain, time.Now().Format(time.RFC1123Z), strings.ReplaceAll(c.ServerDisplayName, "\n", " "), m.Text)
 		e = smtpSubmit(mailCtx, c.SMTP, smtpsubmit.Request{EnvelopeFrom: c.SMTPFrom, Recipient: settings.Email, Message: []byte(message)})
 		done()
@@ -205,6 +231,11 @@ func runAdminCapacity(path string, args []string, stdout, stderr io.Writer) int 
 			failed = true
 			break
 		}
+	}
+	if cutoverFailed {
+		// Never publish an acknowledged stop/recovery after a failed cutover.
+		// The independent, durably queued mail remains the administrator's path.
+		return ExitTempFail
 	}
 	manager, e := activation.New(c.Activation, nil)
 	if e == nil {

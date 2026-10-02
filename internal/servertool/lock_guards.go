@@ -69,6 +69,10 @@ func runAdminLockGuards(configPath string, args []string, out, stderr io.Writer)
 			return adminUsage(stderr, flags, "--repo-id UUID --owner-realm-id UUID [--apply]")
 		}
 	}
+	return runConfiguredCapacityWriter(configPath, stderr, func() int { return runPreparedAdminLockGuards(configPath, repoID, realmID, apply, out, stderr) })
+}
+
+func runPreparedAdminLockGuards(configPath string, repoID, realmID *string, apply *bool, out, stderr io.Writer) int {
 	_, config, err := openFiles(configPath, toolAccess{name: "filees-admin/repo-lock-guards", areas: onboarding.AreaOperations, write: *apply, needRepoResults: true, needRepositoryData: true, needSVN: true, needLockGuards: *apply})
 	if err != nil {
 		report(stderr, "lock guards config", err)

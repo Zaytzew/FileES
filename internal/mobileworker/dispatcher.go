@@ -20,8 +20,9 @@ type Dispatcher struct {
 	Appender          Appender
 	Joiner            JoinRequester
 	ClientID          string
-	readSpace         func(string, int64) error // nil uses the actual spool filesystem
-	MaxReadSpoolBytes int64                     // shared reservations; zero disables the quota
+	readSpace         func(string, int64) error                 // nil uses the actual spool filesystem
+	MaxReadSpoolBytes int64                                     // shared reservations; zero disables the quota
+	WithWrites        func(context.Context, func() error) error // lease spans spool/commit/cleanup
 }
 
 // JoinRequester accepts an authenticated demand for a desktop join ticket.
@@ -43,7 +44,18 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 	if err != nil {
 		return err
 	}
+	if d.WithWrites != nil && (req.Operation == v1.OpReadObject || req.Operation == v1.OpUploadObject || req.Operation == v1.OpUploadTree || req.Operation == v1.OpOperationStatus || req.Operation == v1.OpRequestDesktopJoin) {
+		err := d.WithWrites(ctx, func() error { return d.serveRequest(ctx, req, br, out) })
+		if errors.Is(err, ErrStorageFull) || errors.Is(err, ErrReadStorage) {
+			// Admission refusal must not create an error ledger on a held disk.
+			return d.writeErrorBody(out, req, v1.ErrorBody{Code: "storage.full", Message: "storage temporarily unavailable"})
+		}
+		return err
+	}
+	return d.serveRequest(ctx, req, br, out)
+}
 
+func (d Dispatcher) serveRequest(ctx context.Context, req v1.Request, br io.Reader, out io.Writer) error {
 	switch req.Operation {
 	case v1.OpRefreshManifest:
 		var p v1.RefreshManifestPayload

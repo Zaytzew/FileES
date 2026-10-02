@@ -69,6 +69,7 @@ func TestLinuxServerBundleStagesWhatItsInstallerRequires(t *testing.T) {
 		{`"$bundle/lib/pam_filees_tunnel.so"`, `"$tmp/lib/pam_filees_tunnel.so"`},
 		{`"$bundle/share/filees/linux/filees.conf"`, `"$root/packaging/server/linux/filees.conf" "$tmp/share/filees/linux/"`},
 		{`"$bundle/share/filees/linux/filees-tunnel.pam"`, `"$root/packaging/server/linux/filees-tunnel.pam" "$tmp/share/filees/linux/"`},
+		{`"$bundle/share/filees/linux/filees.cil"`, `"$root/packaging/server/linux/filees.cil" "$tmp/share/filees/linux/"`},
 		{`"$bundle/share/filees/linux/bootstrap_authorized_keys"`, `bootstrap_authorized_keys" "$tmp/share/filees/linux/"`},
 	} {
 		if !strings.Contains(installer, need.inInstaller) {
@@ -85,5 +86,45 @@ func TestLinuxServerBundleStagesWhatItsInstallerRequires(t *testing.T) {
 	}
 	if !strings.Contains(builder, `"/usr/bin/svnserve"`) {
 		t.Error("Linux bundle must not ship an example pointing at OpenBSD's /usr/local/bin")
+	}
+}
+
+// Under SELinux three programs run inside the confined sshd domain before any
+// login exists. Each path they use must carry a FileES type, and the installer
+// must label exactly those paths; a path sshd reads that the policy does not
+// cover fails only on a real Fedora, as "Authentication failure".
+func TestLinuxSELinuxPolicyCoversWhatSSHDRunsBeforeLogin(t *testing.T) {
+	policy := readLinuxServerFile(t, "server/linux/filees.cil")
+	installer := readLinuxServerFile(t, "server/linux/install-ssh.sh")
+	fragment := readLinuxServerFile(t, "server/linux/filees.conf")
+	for _, labelled := range []string{"/var/filees/onboarding", "/var/filees/activation", "/var/filees/repository-operations/recovery-keys"} {
+		if !strings.Contains(policy, `(filecon "`+labelled+`(/.*)?"`) {
+			t.Errorf("policy does not label %s", labelled)
+		}
+		if !regexp.MustCompile(`restorecon -R [^\n]*` + regexp.QuoteMeta(labelled) + `(\s|$)`).MatchString(installer) {
+			t.Errorf("installer does not relabel %s", labelled)
+		}
+	}
+	// The key file sshd reads lives in the labelled activation directory.
+	for _, command := range regexp.MustCompile(`AuthorizedKeysCommand /bin/cat (\S+)`).FindAllStringSubmatch(fragment, -1) {
+		if !strings.HasPrefix(command[1], "/var/filees/activation/") {
+			t.Errorf("sshd reads %s, which the policy does not label", command[1])
+		}
+	}
+	// A directory created later would take the generic /var type.
+	if !strings.Contains(installer, "-m 700 /var/filees/repository-operations/recovery-keys") {
+		t.Error("installer must create recovery-keys before labelling it")
+	}
+	for _, domain := range []string{"sshd_session_t", "sshd_t"} {
+		if !regexp.MustCompile(`\(allow `+domain+` filees_onboarding_t \(file \([^)]*\bwrite\b`).MatchString(policy) ||
+			!regexp.MustCompile(`\(allow `+domain+` filees_keys_t \(file \([^)]*\bread\b`).MatchString(policy) {
+			t.Errorf("policy lacks the rules for %s", domain)
+		}
+		if regexp.MustCompile(`\(allow ` + domain + ` filees_keys_t \(file \([^)]*\bwrite\b`).MatchString(policy) {
+			t.Errorf("%s must only read the key directories", domain)
+		}
+	}
+	if !strings.Contains(installer, "selinuxenabled") || !strings.Contains(installer, `semodule -i "$bundle/share/filees/linux/filees.cil"`) {
+		t.Error("installer does not load the policy where SELinux is enabled")
 	}
 }

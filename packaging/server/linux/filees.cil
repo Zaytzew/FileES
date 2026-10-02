@@ -1,0 +1,46 @@
+; FileES policy for SELinux systems (Fedora and relatives). Installed by
+; linux/install-ssh.sh only where SELinux is enabled.
+;
+; The tunnel account authenticates through pam_filees_tunnel.so, which starts
+; filees-ssh-auth inside the sshd session domain, before any login exists.
+; That helper keeps the one-time-code and reconnect state under
+; /var/filees/onboarding: it locks .toolchain.lock, reads an operation record
+; and replaces it atomically. A confined sshd may not touch generic /var
+; files, so the directory gets a type of its own and the sshd domains get
+; exactly these operations on it - nothing else in /var is opened up.
+; Every later FileES program runs after login, outside the sshd domain.
+;
+; sshd also reads, before login, the keys it authenticates against:
+; "cat /var/filees/activation/authorized_keys" for the client, data and
+; mobile accounts, and filees-recovery-authorize, which looks a key up under
+; repository-operations/recovery-keys. Both get a second, read-only type. It
+; sits on the directories, because the key file is replaced by rename and a
+; new file takes its directory's type.
+(type filees_onboarding_t)
+(roletype object_r filees_onboarding_t)
+(typeattributeset file_type (filees_onboarding_t))
+(typeattributeset non_security_file_type (filees_onboarding_t))
+(typeattributeset non_auth_file_type (filees_onboarding_t))
+(type filees_keys_t)
+(roletype object_r filees_keys_t)
+(typeattributeset file_type (filees_keys_t))
+(typeattributeset non_security_file_type (filees_keys_t))
+(typeattributeset non_auth_file_type (filees_keys_t))
+
+; Fedora 43 and newer run the pre-authentication child as sshd_session_t;
+; older policies use sshd_t for it. A block naming a type the loaded policy
+; does not have is dropped, so both are optional.
+(optional filees_sshd_session
+	(allow sshd_session_t filees_onboarding_t (dir (getattr search open read write add_name remove_name lock ioctl)))
+	(allow sshd_session_t filees_onboarding_t (file (getattr open read write append create rename setattr unlink lock ioctl)))
+	(allow sshd_session_t filees_keys_t (dir (getattr search open read lock ioctl)))
+	(allow sshd_session_t filees_keys_t (file (getattr open read lock ioctl))))
+(optional filees_sshd
+	(allow sshd_t filees_onboarding_t (dir (getattr search open read write add_name remove_name lock ioctl)))
+	(allow sshd_t filees_onboarding_t (file (getattr open read write append create rename setattr unlink lock ioctl)))
+	(allow sshd_t filees_keys_t (dir (getattr search open read lock ioctl)))
+	(allow sshd_t filees_keys_t (file (getattr open read lock ioctl))))
+
+(filecon "/var/filees/onboarding(/.*)?" any (system_u object_r filees_onboarding_t ((s0) (s0))))
+(filecon "/var/filees/activation(/.*)?" any (system_u object_r filees_keys_t ((s0) (s0))))
+(filecon "/var/filees/repository-operations/recovery-keys(/.*)?" any (system_u object_r filees_keys_t ((s0) (s0))))

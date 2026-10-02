@@ -130,6 +130,7 @@ else
 	cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/linux/"
 	cp "$root/packaging/server/linux/filees.conf" "$tmp/share/filees/linux/"
 	cp "$root/packaging/server/linux/filees-tunnel.pam" "$tmp/share/filees/linux/"
+	cp "$root/packaging/server/linux/filees.cil" "$tmp/share/filees/linux/"
 	cp "$root/packaging/server/linux/install-ssh.sh" "$tmp/linux/"
 	chmod +x "$tmp/linux/install-ssh.sh"
 	# The example names OpenBSD's ports prefix; Debian and Fedora ship

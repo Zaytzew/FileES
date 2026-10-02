@@ -66,6 +66,7 @@ if ! sshd -T 2>/dev/null | grep -qi '^usepam yes$'; then
 fi
 
 for required in "$bundle/lib/pam_filees_tunnel.so" "$bundle/share/filees/linux/filees.conf" \
+	"$bundle/share/filees/linux/filees.cil" \
 	"$bundle/share/filees/linux/filees-tunnel.pam" "$bundle/share/filees/linux/bootstrap_authorized_keys" \
 	/etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519 /var/filees/onboarding; do
 	[ -e "$required" ] || { echo "install-ssh.sh: $required is missing; run install-server.sh from a Linux bundle first" >&2; exit 1; }
@@ -148,6 +149,9 @@ install -d -o "$state_user" -g root -m 700 /var/filees-mobile /var/filees-mobile
 install -d -o "$state_user" -g root -m 700 "$mobile_temp_root"
 echo "Set mobile.temp_root=$mobile_temp_root in server.json; existing config is preserved."
 install -d -o "$state_user" -g root -m 700 /var/filees/repository-operations/public-shares
+# Created here, not on first use: under SELinux a directory made later would
+# take the generic /var type and sshd could not read recovery keys from it.
+install -d -o "$state_user" -g root -m 700 /var/filees/repository-operations/recovery-keys
 install -d -o root -g root -m 755 "$public_downloads_dir"
 install -d -o "$state_user" -g root -m 700 "$public_authority_staging_root"
 install -d -o _filees-links -g root -m 700 "$public_links_cache_root"
@@ -172,6 +176,19 @@ authz-db = /var/filees/activation/service.authz
 EOF
 chown -R "$state_user":root /var/filees/service-repo /var/filees/service-wc /var/filees/activation
 chmod 700 /var/filees/service-repo /var/filees/service-wc /var/filees/activation
+
+# SELinux (Fedora and relatives). sshd is confined, and three things run inside
+# its domain before any login exists: the tunnel helper, the reader of
+# authorized_keys and the recovery key lookup. The module gives the two state
+# directories they use a type of their own and nothing more; see filees.cil.
+# Paths moved in server.json need the same labels set by the administrator.
+if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+	need semodule "SELinux policy tools"
+	need restorecon "SELinux policy tools"
+	semodule -i "$bundle/share/filees/linux/filees.cil"
+	restorecon -R /var/filees/onboarding /var/filees/activation /var/filees/repository-operations/recovery-keys
+	echo "SELinux is enabled: FileES policy module installed and state directories labelled."
+fi
 
 # An Include appended after somebody's Match block would become conditional;
 # "Match all" closes any such block first.

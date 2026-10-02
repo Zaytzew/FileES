@@ -8,6 +8,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'repair-mt-coff.ps1')
 if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') {
     throw 'Version must be a four-part numeric MSIX version'
 }
@@ -114,8 +115,12 @@ foreach ($name in @('filees-store-launcher.exe', 'filees-store-startup.exe', 'fi
         'filees.exe' { 'filees-daemon.exe.manifest' }
         default { 'filees-store-launcher.exe.manifest' }
     }
+    $beforeManifest = [IO.File]::ReadAllBytes($exe)
     & $mt -nologo -manifest (Join-Path $PSScriptRoot $win32Manifest) "-outputresource:$exe;#1"
     if ($LASTEXITCODE -ne 0) { throw "Win32 manifest embedding failed: $name" }
+    Repair-FileesMtCoffPointer $beforeManifest $exe
+    & go version -m $exe
+    if ($LASTEXITCODE -ne 0) { throw "Go metadata is unreadable after resource embedding: $name" }
     $extracted = Join-Path $output "$name.manifest"
     & $mt -nologo "-inputresource:$exe;#1" "-out:$extracted"
     if ($LASTEXITCODE -ne 0) { throw "Win32 manifest extraction failed: $name" }

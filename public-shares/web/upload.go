@@ -324,7 +324,7 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
 		ownerInk = branding.LeadingColor
 	}
-	css := passwordCSS + uploadCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	css := passwordCSS + uploadCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	csp := "default-src 'none'; style-src 'sha256-" + cssHash + "'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -359,7 +359,7 @@ func (h Handler) renderUploadOTP(w http.ResponseWriter, projection channel.Uploa
 	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
 		ownerInk = branding.LeadingColor
 	}
-	css := passwordCSS + recipientCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	css := passwordCSS + recipientCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")

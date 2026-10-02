@@ -166,10 +166,10 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .server-header:focus-visible { outline:3px solid color-mix(in srgb,var(--focus) 70%,transparent); outline-offset:2px; }
 .server-panel.has-attention { border-color:rgba(255,123,132,.38); }
 .server-identity { min-width:0; display:flex; align-items:center; gap:13px; }
-.server-mark { width:9px; height:42px; flex:0 0 auto; border-radius:999px; background:var(--amber); box-shadow:0 0 19px rgba(244,199,109,.3); }
+.server-mark { width:9px; height:42px; flex:0 0 auto; border-radius:999px; background:var(--amber); box-shadow:0 0 19px rgba(244,199,109,.3); animation:server-beacon 2.2s ease-in-out infinite; }
 .server-mark.health-current { background:var(--teal); box-shadow:0 0 19px rgba(99,217,189,.34); }
 .server-mark.health-refreshing,.server-mark.health-unverified { background:var(--amber); box-shadow:0 0 19px rgba(244,199,109,.3); }
-.server-mark.health-unavailable { background:var(--red); box-shadow:0 0 19px rgba(255,123,132,.38); animation:server-alert 1.6s ease-in-out infinite; }
+.server-mark.health-unavailable { background:var(--red); box-shadow:0 0 19px rgba(255,123,132,.38); }
 .server-title-line { min-width:0; display:flex; align-items:center; gap:9px; }
 .demo-badge { flex:0 0 auto; padding:3px 8px; border:1px solid color-mix(in srgb,var(--realm-accent) 45%,transparent); border-radius:999px; color:color-mix(in srgb,var(--realm-accent) 80%,white); background:color-mix(in srgb,var(--realm-accent) 12%,transparent); font-size:11px; font-weight:800; letter-spacing:.02em; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .demo-badge.is-ended { border-color:rgba(154,167,232,.3); color:var(--muted); background:transparent; }
@@ -376,7 +376,7 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 
 @keyframes spin { to { transform:rotate(360deg); } } @keyframes toast-in { from { opacity:0; transform:translateY(9px) scale(.98); } }
 @keyframes alarm-pulse { 50% { transform:scale(1.22); box-shadow:0 0 0 12px rgba(255,123,132,.03),0 0 38px rgba(255,123,132,.58); } }
-@keyframes server-alert { 50% { opacity:.62; box-shadow:0 0 13px rgba(255,123,132,.6); } }
+@keyframes server-beacon { 50% { opacity:.38; } }
 @keyframes announcement-panel-alert {
   0%,100% { background:color-mix(in srgb,var(--panel-solid) 83%,#8f0714); box-shadow:0 0 0 rgba(255,54,68,0); }
   50% { background:color-mix(in srgb,var(--panel-solid) 61%,#d91727); box-shadow:0 0 36px rgba(255,54,68,.34); }

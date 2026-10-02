@@ -868,7 +868,7 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
 		ownerInk = branding.LeadingColor
 	}
-	css := listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	css := listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	// The countdown is a CSS animation, not a script. The listing runs under
 	// default-src 'none' with no script-src, and it is the most exposed page in
 	// the product, so a live counter must not be the reason to start executing
@@ -886,6 +886,7 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 		Alias:           projection.Alias,
 		Slug:            projection.Slug,
 		PublishedDate:   formatListingDate(publishedAt(projection)),
+		DateLabel:       listingDateLabel(projection),
 		LatestURL:       latestURL(projection.Alias, projection.Slug, invitation),
 		Count:           len(projection.Objects),
 		TotalSize:       formatListingTotalSize(projection.Objects),
@@ -910,11 +911,11 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 }
 
 type listingPage struct {
-	Alias, Slug                                    string
-	Count                                          int
-	PublishedDate, TotalSize, BundleURL, LatestURL string
-	Tree                                           listingDirectory
-	Bundles, SelectionNotice                       bool
+	Alias, Slug                                               string
+	Count                                                     int
+	PublishedDate, DateLabel, TotalSize, BundleURL, LatestURL string
+	Tree                                                      listingDirectory
+	Bundles, SelectionNotice                                  bool
 	// ChangeNotice explains, in one sentence, why the listing the visitor is
 	// looking at is not the one they clicked from. Empty for an ordinary render.
 	ChangeNotice string
@@ -1147,6 +1148,13 @@ func publishedAt(projection channel.Projection) time.Time {
 	return projection.UpdatedAt
 }
 
+func listingDateLabel(projection channel.Projection) string {
+	if projection.DoNotFollow != nil {
+		return "opublikowano"
+	}
+	return "ostatnia wersja:"
+}
+
 func formatListingDate(value time.Time) string {
 	if value.IsZero() {
 		return "data nieznana"
@@ -1185,7 +1193,7 @@ func (h Handler) renderPassword(w http.ResponseWriter, projection channel.Projec
 	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
 		ownerInk = branding.LeadingColor
 	}
-	css := passwordCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	css := passwordCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
@@ -1208,7 +1216,7 @@ func (h Handler) renderRecipient(w http.ResponseWriter, projection channel.Proje
 	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
 		ownerInk = branding.LeadingColor
 	}
-	css := passwordCSS + recipientCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	css := passwordCSS + recipientCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
@@ -1325,14 +1333,15 @@ func (h Handler) demoRefusal(w http.ResponseWriter) {
 func renderNotFound(w http.ResponseWriter, page *template.Template) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	digest := sha256.Sum256([]byte(notFoundCSS))
+	css := notFoundCSS + publicDarkCSS
+	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	w.WriteHeader(http.StatusNotFound)
 	_ = page.Execute(w, struct {
 		BrandSymbol template.HTML
 		CSS         template.CSS
-	}{BrandSymbol: brandSymbol, CSS: template.CSS(notFoundCSS)})
+	}{BrandSymbol: brandSymbol, CSS: template.CSS(css)})
 }
 func (h Handler) now() time.Time {
 	if h.Now != nil {
@@ -1398,8 +1407,12 @@ const brandCSSOverrides = `:root{--ink:#0B1D3A;--muted:#667085;--line:#D9DEE7;--
 
 const iconColorCSS = `.button-icon svg,.mime-icon svg,.folder-icon svg{fill:currentColor}.bundle-button,.folder-download{border-color:var(--ink)}.empty-icon{background:var(--accent);border-color:var(--ink);border-radius:2px}`
 
+// All public pages use the visitor's system preference. Keep the rules in the
+// hash-pinned stylesheet: no script, cookie, or server-side preference is needed.
+const publicDarkCSS = `@media(prefers-color-scheme:dark){:root{color-scheme:dark;--ink:#e9f1fb;--owner-ink:#e9f1fb;--muted:#aebbd0;--line:#34465d;--soft:#0c1828;--paper:#142338;--focus:#70c8ff}html,body{background:var(--soft);color:var(--ink)}.topbar,.card,.toolbar{background:var(--paper);border-color:var(--line)}.card{box-shadow:0 18px 50px rgba(0,0,0,.3)}.heading{border-bottom-color:var(--line)}.columns{background:#1a2a40;color:var(--muted)}.directory,.file-row{border-color:var(--line)}.branch{border-left-color:var(--line)}.directory summary:before{border-color:var(--muted)}.file-row:hover{background:#20334c}.file-size,.unknown,.footer{color:var(--muted)}.download,.bundle-button,.folder-download,.home{background:var(--paper);color:var(--ink);border-color:var(--line)}.download:hover,.bundle-button:hover,.folder-download:hover,.home:hover{background:#29415e;color:#fff;border-color:var(--focus)}.bundle-button.primary{background:var(--accent);color:#0c1828;border-color:var(--accent)}.notice,.status{background:#293041;color:var(--ink)}.status.error{color:#ffaaa5}.password-input{background:#0c1828;color:var(--ink);border-color:var(--line)}.resend .submit{background:var(--paper);color:var(--ink)}.drop{background:var(--soft);border-color:var(--line)}.drop:hover,.drop:focus-within,.drop[data-over="1"]{background:#20334c}.error-code{color:var(--ink)}.brand-wordmark svg path,.brand-wordmark svg polygon{fill:var(--ink)!important}}`
+
 var listingCSSHash = func() string {
-	digest := sha256.Sum256([]byte(listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS))
+	digest := sha256.Sum256([]byte(listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS + publicDarkCSS))
 	return base64.StdEncoding.EncodeToString(digest[:])
 }()
 
@@ -1415,7 +1428,7 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 <main class="shell">
 <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span class="brand-wordmark" aria-label="filees:space">{{.BrandWordmark}}</span></div><div class="realm">udostępnione przez {{.Alias}}</div></header>
 <section class="card" aria-labelledby="share-title">
-<div class="heading"><div><h1 id="share-title">{{.Slug}}</h1><div class="meta"><span>{{.TotalSize}}</span><span>opublikowano {{.PublishedDate}}</span><span><a class="latest-link" href="{{.LatestURL}}">Sprawdź najnowsze wydanie</a></span></div></div>{{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}</div>
+<div class="heading"><div><h1 id="share-title">{{.Slug}}</h1><div class="meta"><span>{{.TotalSize}}</span><span>{{.DateLabel}} {{.PublishedDate}}</span><span><a class="latest-link" href="{{.LatestURL}}">Sprawdź najnowsze wydanie</a></span></div></div>{{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}</div>
 <div class="browser">
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>

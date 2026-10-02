@@ -87,3 +87,43 @@ func TestServerPolicyGeneratesAnAcceptableManifest(t *testing.T) {
 		t.Fatal("filees-install(8) is not in the generated manifest")
 	}
 }
+
+// The installed rc.d scripts must advance with the binary release. An older
+// authority script left /var/run/filees absent after a reboot, preventing
+// both public services from starting even though their binaries were current.
+func TestSignedOpenBSDReleaseCarriesPublicServiceScripts(t *testing.T) {
+	spec, err := releasepublish.LoadSpec("server/openbsd-binary-policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepare, err := os.ReadFile("../tools/prepare-server-release.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range []string{"filees_public_authority", "filees_links"} {
+		source := "share/filees/openbsd/" + service
+		target := "/etc/rc.d/" + service
+		found := false
+		for _, file := range spec.Files {
+			if file.Source == source {
+				found = true
+				if file.Target != target || file.Kind != "file" || file.Mode != "0555" || file.Owner != "root" || file.Group != "wheel" {
+					t.Errorf("%s has unsafe target or metadata: %+v", source, file)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("signed policy omits %s", target)
+		}
+		if !strings.Contains(string(prepare), `"$bundle/share/filees/openbsd/`+service+`"`) {
+			t.Errorf("release preparation does not stage %s", source)
+		}
+		script, err := os.ReadFile(filepath.Join("server", "openbsd", service))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(script), "rc_pre()") || !strings.Contains(string(script), "/var/run/filees") {
+			t.Errorf("%s cannot recreate the volatile socket directory", service)
+		}
+	}
+}

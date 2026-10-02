@@ -97,6 +97,14 @@ for platform in $PLATFORMS; do
 			cp "$bundle/share/filees/linux/$kit_file" "$release_root/share/filees/linux/"
 		done
 		cp "$bundle"/share/filees/linux/systemd/* "$release_root/share/filees/linux/systemd/"
+	else
+		# rc.d scripts are executable installation targets, not merely examples.
+		# Without them an upgrade replaces the daemons but leaves old startup
+		# logic behind; /var/run/filees then disappears at the next reboot.
+		mkdir -p "$release_root/share/filees/openbsd"
+		cp "$bundle/share/filees/openbsd/filees_public_authority" \
+			"$bundle/share/filees/openbsd/filees_links" \
+			"$release_root/share/filees/openbsd/"
 	fi
 	# Manual pages are part of the signed release, so filees-install upgrades them
 	# with the binaries they describe. Their targets are absolute /usr/local/man

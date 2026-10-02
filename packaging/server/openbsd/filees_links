@@ -7,4 +7,11 @@ rc_bg=YES
 
 . /etc/rc.d/rc.subr
 
+# /var/run is cleared at boot. Either public service may be started first;
+# both can recreate the authority socket directory before dropping privilege.
+rc_pre() {
+	install -d -o _filees-state -g _filees-public -m 750 /var/run/filees
+	install -d -o _filees-links -g www -m 750 /var/www/run/filees
+}
+
 rc_cmd $1

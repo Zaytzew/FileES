@@ -188,6 +188,13 @@ Public Shares are installed disabled. The OpenBSD step creates `_filees-links`
 and `_filees-public`, installs disabled `filees_public_authority` and
 `filees_links` rc.d scripts, and assigns the shared-topology paths as follows:
 
+Both rc.d scripts are also signed release targets under `/etc/rc.d`, so
+`filees-install --apply` updates startup behavior together with the daemons.
+Each service recreates the volatile socket directory on start; starting
+`filees_links` alone also recreates its FastCGI directory. A previously
+installed script without this pre-start step is not repaired by replacing
+the daemon binary alone.
+
 - canonical channel state: `_filees-state`, mode `0700`;
 - authority socket directory: `_filees-state:_filees-public`, mode `0750`,
   socket mode `0660`;

@@ -150,6 +150,22 @@
       "group": "wheel"
     },
     {
+      "source": "share/filees/openbsd/filees_public_authority",
+      "target": "/etc/rc.d/filees_public_authority",
+      "kind": "file",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "share/filees/openbsd/filees_links",
+      "target": "/etc/rc.d/filees_links",
+      "kind": "file",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
       "source": "bin/filees-serving-state",
       "target": "{libexec_dir}/filees/filees-serving-state",
       "kind": "binary",

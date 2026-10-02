@@ -3,9 +3,7 @@ package net.filees.mobile
 import android.content.Context
 import android.os.Build
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkInfo
@@ -94,7 +92,9 @@ object FileesWatchScheduler {
             .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
             .setBackoffCriteria(BackoffPolicy.LINEAR, 30, TimeUnit.SECONDS)
             .setInputData(workDataOf("reschedule" to reschedule))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            // No network constraint: seeing a new file and writing the local
+            // queue must not wait until Android reports a connection. The dial
+            // happens later, and only when that queue has something to send.
             .build()
 
     private fun enqueue(context: Context, delayMinutes: Long, name: String, policy: ExistingWorkPolicy, reschedule: Boolean) {

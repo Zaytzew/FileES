@@ -15,6 +15,10 @@ import androidbind.Androidbind
  * UPLOAD_TREE; smaller bursts drain one object per session. Used by the
  * 5-minute WorkManager tick and by the foreground activity when it comes
  * back.
+ *
+ * The look itself is local: the folder walk and the upload queue do not
+ * resolve a name or open SSH. A dial happens only when a file is new or a
+ * queued item is still allowed to send. A conflict waits for the person.
  */
 object FileesWatchTick {
     const val NOTIFICATION_CHANNEL_ID = "filees-watch-uploads"
@@ -39,16 +43,18 @@ object FileesWatchTick {
         val trees = watched.uris()
         val token = status.begin(scope, trees)
         try {
-            val client = Androidbind.newClient(context.filesDir.absolutePath, DialAddress.resolve(address), FileesSession.MOBILE_USER, hostKey)
-            cancel.attach(client)
-            val before = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).associateBy { it.id }
+            // Store handle only. Passing the paired host:port does not dial:
+            // list, enqueue and the seen-receipt live under filesDir.
+            val local = Androidbind.newClient(context.filesDir.absolutePath, address, FileesSession.MOBILE_USER, hostKey)
+            cancel.attach(local)
+            val before = PendingUpload.listFromJson(local.listUploadsJSON(repoId)).associateBy { it.id }
             // Recover an existing queue before a potentially slow SAF scan eats
             // the temporary permission to start a foreground service.
             val pendingCount = before.values.filter { it.state == "pending-create" || it.state == "uploading" }.sumOf { it.fileCount }
             status.updateQueue(scope,trees,before.values.toList())
             if (pendingCount > 0) onWork(context.getString(R.string.watch_queue_count,pendingCount))
             val ownedSources = before.values.flatMap { it.sources }.toSet()
-            before.values.filter { it.delivered }.forEach { CaptureTransfers.acknowledge(client, repoId, it, watched) }
+            before.values.filter { it.delivered }.forEach { CaptureTransfers.acknowledge(local, repoId, it, watched) }
             for (tree in trees) {
                 cancel.check()
                 try {
@@ -59,14 +65,14 @@ object FileesWatchTick {
                     if (unseen.isEmpty()) continue
                     if (unseen.any { CaptureTransfers.source(it) !in ownedSources }) onWork(context.getString(R.string.watch_state_preparing))
                     status.phase(scope,tree,"preparing")
-                    val part = CaptureTransfers.send(context, client, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true, progress = {
+                    val part = CaptureTransfers.send(context, local, repoId, unseen, FolderPreflight.of(unseen).pack, cancel, watched, queueOnly = true, progress = {
                         status.phase(scope,tree,"preparing")
-                        status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)))
+                        status.updateQueue(scope,trees,PendingUpload.listFromJson(local.listUploadsJSON(repoId)))
                     })
                     result.sent += part.sent
                     result.errors += part.errors
                     part.errors.forEach { status.problem(scope,tree,it) }
-                    status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)))
+                    status.updateQueue(scope,trees,PendingUpload.listFromJson(local.listUploadsJSON(repoId)))
                 } catch (e: Exception) {
                     if (FileesWatchWorker.backgroundStartDenied(e)) throw e
                     cancel.check()
@@ -74,32 +80,53 @@ object FileesWatchTick {
                     result.errors += "${tree.lastPathSegment}: ${e.message}"
                 }
             }
-            val queued = PendingUpload.listFromJson(client.listUploadsJSON(repoId))
+            val queued = PendingUpload.listFromJson(local.listUploadsJSON(repoId))
                 .filter { it.state == "pending-create" || it.state == "uploading" }
                 .sortedBy { it.lastAttemptAt }
-            status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)),finish = true)
-            for (item in queued) {
-                cancel.check()
-                val remaining = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).filter { !it.delivered && it.state != "discarded" }.sumOf { it.fileCount }
-                onWork(context.getString(R.string.watch_queue_count,remaining))
-                trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
-                    .forEach { status.phase(scope,it,"sending") }
-                client.sendUploadJSON(repoId,item.id)
-                status.updateQueue(scope,trees,PendingUpload.listFromJson(client.listUploadsJSON(repoId)),finish = true)
-            }
-            val drained = PendingUpload.listFromJson(client.listUploadsJSON(repoId)).filter { it.state != "discarded" }
-            status.updateQueue(scope,trees,drained,finish = true)
-            for (item in drained) {
-                if (item.delivered) {
-                    CaptureTransfers.acknowledge(client, repoId, item, watched)
-                    if (before[item.id]?.delivered != true) result.sent += item.fileCount
-                } else {
-                    result.waiting += item.fileCount
-                    if (item.lastError.isNotBlank()) result.errors += item.lastError
+            if (queued.isEmpty()) {
+                val resting = PendingUpload.listFromJson(local.listUploadsJSON(repoId)).filter { it.state != "discarded" }
+                status.updateQueue(scope,trees,resting,finish = true)
+                local.pruneDeliveredUploads(repoId)
+            } else {
+                // Android's answer wins. The saved address is only for a miss,
+                // and it is replaced only after a handshake accepts the pinned key.
+                val dial = try {
+                    DialAddress.resolve(address)
+                } catch (e: java.net.UnknownHostException) {
+                    DialAddress.cached(context, server.id, address) ?: throw e
                 }
+                val sender = Androidbind.newClient(context.filesDir.absolutePath, dial, FileesSession.MOBILE_USER, hostKey)
+                cancel.attach(sender)
+                var connected = false
+                try {
+                    for (item in queued) {
+                        cancel.check()
+                        val remaining = PendingUpload.listFromJson(sender.listUploadsJSON(repoId)).filter { !it.delivered && it.state != "discarded" }.sumOf { it.fileCount }
+                        onWork(context.getString(R.string.watch_queue_count,remaining))
+                        trees.filter { tree -> item.sources.any { WatchStatusStore.belongs(it,tree) } }
+                            .forEach { status.phase(scope,it,"sending") }
+                        sender.sendUploadJSON(repoId,item.id)
+                        connected = true
+                        status.updateQueue(scope,trees,PendingUpload.listFromJson(sender.listUploadsJSON(repoId)),finish = true)
+                    }
+                } catch (e: Exception) {
+                    if (FileesWatchWorker.backgroundStartDenied(e) || cancel.isCancelled) throw e
+                    result.errors += e.message ?: context.getString(R.string.error_send)
+                }
+                if (connected) DialAddress.remember(context, server.id, address, dial)
+                val drained = PendingUpload.listFromJson(sender.listUploadsJSON(repoId)).filter { it.state != "discarded" }
+                status.updateQueue(scope,trees,drained,finish = true)
+                for (item in drained) {
+                    if (item.delivered) {
+                        CaptureTransfers.acknowledge(sender, repoId, item, watched)
+                        if (before[item.id]?.delivered != true) result.sent += item.fileCount
+                    } else if (queued.any { it.id == item.id }) {
+                        result.waiting += item.fileCount
+                        if (item.lastError.isNotBlank()) result.errors += item.lastError
+                    }
+                }
+                sender.pruneDeliveredUploads(repoId)
             }
-
-            client.pruneDeliveredUploads(repoId)
         } catch (e: Exception) {
             if (FileesWatchWorker.backgroundStartDenied(e)) {
                 trees.forEach { status.paused(scope,it,WatchStatusStore.START_NOT_ALLOWED) }
@@ -120,9 +147,9 @@ object FileesWatchTick {
             result.errors += e.message ?: context.getString(R.string.error_send)
         } finally { status.end(token) }
         val failure = result.errors.distinct().take(5).joinToString("\n").ifBlank { null }
-        recordJournal(context, result.sent, result.waiting, repoName, failure)
-        if (failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)
-        else if (result.waiting > 0) notifyMessage(context, context.getString(R.string.notification_watch_waiting),
+        val announce = recordJournal(context, scope, result.sent, result.waiting, repoName, failure)
+        if (announce && failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)
+        else if (failure == null && result.waiting > 0) notifyMessage(context, context.getString(R.string.notification_watch_waiting),
             context.getString(R.string.notification_watch_waiting_text, result.waiting), NOTIFICATION_WAIT_ID)
         // Receipt and journal are the success record; successful background work is silent.
         result.sent
@@ -137,28 +164,46 @@ object FileesWatchTick {
     }
 
     // Real outcomes only. A tick that found nothing does not touch the journal.
-    private fun recordJournal(context: Context, sent: Int, waiting: Int, repoName: String, failure: String?) {
-        if (sent <= 0 && waiting <= 0 && failure == null) return
+    // The same standing failure is one line, not a new one every five minutes.
+    // Returns whether this failure should also raise a notification.
+    private fun recordJournal(context: Context, scope: String, sent: Int, waiting: Int, repoName: String, failure: String?): Boolean {
+        val standing = context.getSharedPreferences("filees_watch_scheduler", Context.MODE_PRIVATE)
+        val key = "standing:$scope"
+        if (sent <= 0 && waiting <= 0 && failure == null) {
+            if (standing.contains(key)) standing.edit().remove(key).apply()
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_FAIL_ID)
+            return false
+        }
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
+        val archive = FileesSession.journalArchive(context)
+        var announce = false
+        if (failure != null) {
+            if (standing.getString(key, null) != failure) {
+                standing.edit().putString(key, failure).apply()
+                announce = true
+                FileesSession.pushJournal(prefs, repoName, failureSentence(context, failure), archive = archive)
+            }
+        } else if (standing.contains(key)) {
+            standing.edit().remove(key).apply()
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_FAIL_ID)
+        }
         if (sent > 0) {
             FileesSession.pushJournal(
                 prefs,
                 repoName,
                 context.resources.getQuantityString(R.plurals.journal_watch_sent, sent, sent),
-                archive = FileesSession.journalArchive(context),
+                archive = archive,
             )
         }
-        if (waiting > 0) {
+        if (waiting > 0 && (failure == null || announce)) {
             FileesSession.pushJournal(
                 prefs,
                 repoName,
                 context.resources.getQuantityString(R.plurals.journal_watch_waiting, waiting, waiting),
-                archive = FileesSession.journalArchive(context),
+                archive = archive,
             )
         }
-        if (failure != null) {
-            FileesSession.pushJournal(prefs, repoName, failureSentence(context, failure), archive = FileesSession.journalArchive(context))
-        }
+        return announce
     }
 
     // The catalog sentence alone hid the real cause live, 2026-09-26: a

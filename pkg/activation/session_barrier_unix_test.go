@@ -140,3 +140,104 @@ func TestRealmSessionBarrierPropagatesPublicationFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAllSessionBarrierWaitsForEveryRealmAndBlocksNewClaims(t *testing.T) {
+	m, _ := newActivationTestManager(t)
+	g := testActivationGrant(t, time.Now().Add(time.Hour))
+	if err := m.Stage(g); err != nil {
+		t.Fatal(err)
+	}
+	first, err := m.ClaimSession(g.OperationID, g.ClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := newTestSessionLeaseAt(t, m.sessionRoot(), time.Now())
+	t.Cleanup(func() { _ = first.Close(); _ = second.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	published, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- m.WithAllSessionsStopped(ctx, func() error {
+			close(published)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	for _, lease := range []*SessionLease{first, second} {
+		for {
+			revoked, err := lease.Revoked()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if revoked {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(time.Millisecond):
+			}
+		}
+	}
+	claim := make(chan error, 1)
+	go func() {
+		lease, err := m.ClaimSession(g.OperationID, g.ClientID)
+		if lease != nil {
+			_ = lease.Close()
+		}
+		claim <- err
+	}()
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-published:
+		t.Fatal("policy changed while another realm still had a session")
+	case <-claim:
+		t.Fatal("new session bypassed global barrier")
+	case <-time.After(40 * time.Millisecond):
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-published:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-claim:
+		t.Fatal("new session entered while policy was being published")
+	default:
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-claim:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestAllSessionBarrierNoAcknowledgementNeverPublishes(t *testing.T) {
+	m, _ := newActivationTestManager(t)
+	lease := newTestSessionLeaseAt(t, m.sessionRoot(), time.Now())
+	t.Cleanup(func() { _ = lease.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 70*time.Millisecond)
+	defer cancel()
+	published := false
+	err := m.WithAllSessionsStopped(ctx, func() error { published = true; return nil })
+	if !errors.Is(err, context.DeadlineExceeded) || published {
+		t.Fatalf("err=%v published=%v", err, published)
+	}
+}

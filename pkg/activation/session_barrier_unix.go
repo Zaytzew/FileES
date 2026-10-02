@@ -25,6 +25,21 @@ func (m *Manager) WithRealmSessionsStopped(ctx context.Context, realmID string, 
 	if _, err := uuid.Parse(realmID); err != nil || publish == nil {
 		return errors.New("session barrier requires realm and publication")
 	}
+	return m.withSessionsStopped(ctx, realmID, publish)
+}
+
+// WithAllSessionsStopped uses the existing activation admission lock and
+// acknowledged FIFO shutdown for a server-wide write stop. The caller must
+// hold the service-WC lock and publish the persistent policy before releasing
+// this barrier. It does not change grants and never kills processes by PID.
+func (m *Manager) WithAllSessionsStopped(ctx context.Context, publish func() error) error {
+	if publish == nil {
+		return errors.New("session barrier requires publication")
+	}
+	return m.withSessionsStopped(ctx, "", publish)
+}
+
+func (m *Manager) withSessionsStopped(ctx context.Context, realmID string, publish func() error) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
@@ -51,7 +66,7 @@ func (m *Manager) WithRealmSessionsStopped(ctx context.Context, realmID string, 
 			}
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("grant unchanged: session shutdown not acknowledged: %w", ctx.Err())
+				return fmt.Errorf("policy unchanged: session shutdown not acknowledged: %w", ctx.Err())
 			case <-tick.C:
 			}
 		}
@@ -83,7 +98,7 @@ func realmSessionExists(root, realmID string) (bool, error) {
 			}
 			return false, err
 		}
-		if metadata.RealmID == realmID {
+		if realmID == "" || metadata.RealmID == realmID {
 			return true, nil
 		}
 	}

@@ -20,6 +20,7 @@ type Mail struct {
 }
 type State struct {
 	Observation *Observation          `json:"observation,omitempty"`
+	WriteHolds  []WriteHold           `json:"write_holds,omitempty"`
 	Schema      string                `json:"schema"`
 	Realm       string                `json:"realm"`
 	Recipient   string                `json:"recipient"`
@@ -62,16 +63,38 @@ func Load(path, realm, email string) (State, error) {
 	if err := s.Observation.validate(); err != nil {
 		return initial, err
 	}
+	s.WriteHolds = migrateObservationHolds(s.WriteHolds, s.Observation)
+	if err := validateWriteHolds(s.WriteHolds); err != nil {
+		return initial, err
+	}
 	return s, nil
 }
 func (s *State) Observe(v []Volume, p Policy, now time.Time) error {
+	if err := s.Observation.validate(); err != nil {
+		return err
+	}
+	if s.Observation != nil && now.Before(s.Observation.MeasuredAt) {
+		return errors.New("capacity observation clock moved backwards")
+	}
 	next, _, err := Apply(s.Snapshot, s.Realm, v, p, now)
+	if err != nil {
+		return err
+	}
+	holds, err := nextWriteHolds(s.WriteHolds, s.Observation, v, p, now)
 	if err != nil {
 		return err
 	}
 	observation, err := newObservation(v, next, now)
 	if err != nil {
 		return err
+	}
+	for i := range observation.Devices {
+		for _, hold := range holds {
+			if observation.Devices[i].Device == hold.Device {
+				observation.Devices[i].State = "blocked"
+				break
+			}
+		}
 	}
 	old := map[string]alertchannel.Incident{}
 	for _, i := range s.Snapshot.Incidents {
@@ -106,11 +129,15 @@ func (s *State) Observe(v []Volume, p Policy, now time.Time) error {
 	}
 	s.Snapshot = next
 	s.Observation = observation
+	s.WriteHolds = holds
 	s.Pending = pending
 	return nil
 }
 func (s State) Save(path string) error {
 	if err := s.Observation.validate(); err != nil {
+		return err
+	}
+	if err := validateWriteHolds(s.WriteHolds); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(s)

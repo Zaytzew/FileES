@@ -67,6 +67,12 @@ func TestStorageWriteRealBroker(t *testing.T) {
 		age  time.Duration
 		want string
 	}{{1, 0, "blocked"}, {800, 0, "available"}, {800, 4 * time.Minute, "unknown"}} {
+		// Independent broker snapshots, not a monitor whose clock runs back.
+		// Hysteresis/restart/recovery sequences are covered in storagewatch.
+		s, err = storagewatch.Load(filepath.Join(root, "never-written-initial.json"), settings.Realm, settings.Email)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.Observe([]storagewatch.Volume{{Device: device, Sample: storagewatch.Sample{Total: 1000, Available: tc.free}}}, p, time.Now().Add(-tc.age)); err != nil {
 			t.Fatal(err)
 		}

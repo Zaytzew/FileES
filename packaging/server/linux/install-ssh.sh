@@ -198,15 +198,21 @@ chown root:root /etc/filees/worker_ed25519.pub
 chmod 644 /etc/filees/worker_ed25519.pub
 
 sshd -t
-# The unit is "ssh" on Debian and "sshd" on Fedora.
+# The unit is "ssh" on Debian and "sshd" on Fedora. A server that is not
+# running is left alone: starting OpenSSH is the administrator's decision.
+sshd_unit=
 if command -v systemctl >/dev/null 2>&1; then
-	if systemctl cat ssh.service >/dev/null 2>&1; then
-		systemctl reload ssh
-	elif systemctl cat sshd.service >/dev/null 2>&1; then
-		systemctl reload sshd
-	else
-		echo "sshd configuration is valid; reload your OpenSSH server to apply it."
-	fi
+	for candidate in ssh sshd; do
+		if systemctl cat "$candidate.service" >/dev/null 2>&1; then
+			sshd_unit=$candidate
+			break
+		fi
+	done
+fi
+if [ -n "$sshd_unit" ] && systemctl is-active --quiet "$sshd_unit"; then
+	systemctl reload "$sshd_unit"
+elif [ -n "$sshd_unit" ]; then
+	echo "sshd configuration is valid, but $sshd_unit is not running; start it to accept FileES clients."
 else
 	echo "sshd configuration is valid; reload your OpenSSH server to apply it."
 fi

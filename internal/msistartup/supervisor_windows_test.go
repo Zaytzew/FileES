@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -44,6 +45,13 @@ func TestMain(m *testing.M) {
 					var req contract.Request
 					if json.NewDecoder(conn).Decode(&req) == nil {
 						json.NewEncoder(conn).Encode(contract.Response{Protocol: contract.Protocol, RequestID: req.RequestID, Status: contract.StatusOK, Result: json.RawMessage(`{"version":"fixture"}`)})
+						if req.Command == contract.CmdSystemShutdown {
+							delay, _ := strconv.Atoi(os.Getenv("FILEES_MSI_TEST_STOP_DELAY_MS"))
+							go func() {
+								time.Sleep(time.Duration(delay) * time.Millisecond)
+								_ = os.WriteFile(filepath.Join(root, "quit"), []byte("yes"), 0600)
+							}()
+						}
 					}
 				}()
 			}

@@ -150,6 +150,7 @@ func TestWindowsMSIReplacesSelfUpdatedFilesAndRestartsThePair(t *testing.T) {
 				ID      string `xml:"Id,attr"`
 				Command string `xml:"ExeCommand,attr"`
 				Return  string `xml:"Return,attr"`
+				Binary  string `xml:"BinaryRef,attr"`
 			} `xml:"CustomAction"`
 		} `xml:"Package"`
 	}
@@ -168,8 +169,11 @@ func TestWindowsMSIReplacesSelfUpdatedFilesAndRestartsThePair(t *testing.T) {
 	commands := map[string]string{}
 	for _, action := range document.Package.Actions {
 		commands[action.ID] = action.Command + " return=" + action.Return
+		if action.ID == "StopFileESPair" && action.Binary != "FileESUpgradeStop" {
+			t.Fatal("upgrade stop must come from the new MSI's embedded executable")
+		}
 	}
-	if commands["StopFileESPair"] != `"[INSTALLFOLDER]filees.exe" shutdown return=ignore` {
+	if commands["StopFileESPair"] != `--prepare-upgrade "[INSTALLFOLDER]." return=check` {
 		t.Fatalf("stop action: %q", commands["StopFileESPair"])
 	}
 	if commands["StartFileESPair"] != `"[INSTALLFOLDER]filees-launch.exe" return=asyncNoWait` {

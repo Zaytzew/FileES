@@ -47,14 +47,14 @@
          binaries in place; msiexec /fa was the repair. -->
     <Property Id="REINSTALLMODE" Value="amus" />
 
-    <!-- The running pair is stopped before Windows Installer checks for files
-         in use: the daemon's open log stopped the same upgrade with error 1306
-         and left the daemon down. `filees shutdown` is the clean stop (last
-         scan, then exit); the supervisor exits with it. A missing or older
-         binary that cannot answer is not a reason to fail the install. -->
-    <CustomAction Id="StopFileESPair" Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]filees.exe&quot; shutdown"
-                  Execute="immediate" Return="ignore" />
+    <!-- Use the NEW launcher from the Binary table even for an old MSI.
+         Stop only verified supervisors of this user's installation, then
+         wait for the daemon's clean exit. Never replace files after a mere
+         shutdown ACK or a failed/uncertain stop. -->
+    <Binary Id="FileESUpgradeStop" SourceFile="$(var.SourceDir)\filees-launch.exe" />
+    <CustomAction Id="StopFileESPair" BinaryRef="FileESUpgradeStop"
+                  ExeCommand="--prepare-upgrade &quot;[INSTALLFOLDER].&quot;"
+                  Execute="immediate" Return="check" />
     <!-- And started again once the new files are in place, as the Startup
          shortcut would at the next logon. -->
     <CustomAction Id="StartFileESPair" Directory="INSTALLFOLDER"

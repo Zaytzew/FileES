@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -24,6 +25,16 @@ func run(args []string) int {
 	mode, ok := launchMode(args)
 	if !ok {
 		return 2
+	}
+	if mode == "prepare-upgrade" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		paths := msistartup.Paths(args[1])
+		if err := msistartup.PrepareUpgrade(ctx, paths); err != nil {
+			msistartup.Note(paths, fmt.Sprintf("upgrade stop: %v", err))
+			return 1
+		}
+		return 0
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -64,6 +75,9 @@ func startSupervisor(exe, root string, interactive bool) error {
 func launchMode(args []string) (string, bool) {
 	if len(args) == 0 {
 		return "startup", true
+	}
+	if len(args) == 2 && args[0] == "--prepare-upgrade" && filepath.IsAbs(args[1]) && filepath.Clean(args[1]) != filepath.VolumeName(args[1])+string(os.PathSeparator) {
+		return "prepare-upgrade", true
 	}
 	if len(args) == 2 && args[0] == "--supervise" && args[1] == "--interactive" {
 		return "interactive-supervise", true

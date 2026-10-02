@@ -141,7 +141,7 @@ func TestUploadPostStoresPayloadWithoutServingIt(t *testing.T) {
 	if strings.Contains(recorder.Body.String(), "<script>") || strings.Contains(recorder.Header().Get("Content-Security-Policy"), "script-src") {
 		t.Fatalf("accepted page kept the busy script: csp=%s", recorder.Header().Get("Content-Security-Policy"))
 	}
-	entries, err := os.ReadDir(store.Root)
+	entries, err := quarantineJobs(store.Root)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("quarantine entries=%v err=%v", entries, err)
 	}
@@ -325,7 +325,7 @@ func TestUploadOTPExchangesTypedAddressThenAcceptsFile(t *testing.T) {
 	if accepted.Code != http.StatusAccepted || !strings.Contains(accepted.Body.String(), "Plik został przyjęty") {
 		t.Fatalf("accept status=%d body=%s", accepted.Code, accepted.Body.String())
 	}
-	entries, err := os.ReadDir(f.intake.Root)
+	entries, err := quarantineJobs(f.intake.Root)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("quarantine entries=%v err=%v", entries, err)
 	}
@@ -367,4 +367,17 @@ func TestUploadPostToFullChannelSaysTryLater(t *testing.T) {
 	if denied := post(); denied.Code != http.StatusNotFound {
 		t.Fatalf("full channel disclosed to wrong invitation: status=%d", denied.Code)
 	}
+}
+
+// quarantineJobs lists the upload jobs in the quarantine. The root also holds
+// the cross-process budget lock file, which is not a job.
+func quarantineJobs(root string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(root)
+	jobs := entries[:0]
+	for _, entry := range entries {
+		if entry.IsDir() {
+			jobs = append(jobs, entry)
+		}
+	}
+	return jobs, err
 }

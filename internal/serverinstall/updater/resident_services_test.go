@@ -4,6 +4,7 @@ package updater
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,9 @@ func TestInstallSaysWhichServicesStillRunTheOldRelease(t *testing.T) {
 	if strings.Contains(report, "filees-worker") {
 		t.Fatalf("a binary exec'd per request needs no restart and must not be listed: %s", report)
 	}
-	if !strings.Contains(report, "rcctl restart") {
+	if !strings.Contains(report, residentRestartHint(runtime.GOOS, []string{"filees_public_authority", "filees_links"})) &&
+		!strings.Contains(report, residentRestartHint(runtime.GOOS, []string{"filees_links"})) &&
+		!strings.Contains(report, residentRestartHint(runtime.GOOS, []string{"filees_public_authority"})) {
 		t.Fatalf("finishing must cost a paste, not a search through documentation: %s", report)
 	}
 }
@@ -92,7 +95,7 @@ func TestStorageMigrationReportsRestartEvenWithUnchangedImages(t *testing.T) {
 	var out bytes.Buffer
 	reportResidentServices(&out, []FilePlan{{Target: "/usr/local/libexec/filees/filees-links", Action: "UNCHANGED"}},
 		ConfigMigration{Directories: []storageDirectory{{Owner: "_filees-links"}, {Owner: "_filees-state"}}})
-	if !strings.Contains(out.String(), "rcctl restart filees_public_authority filees_links") {
+	if !strings.Contains(out.String(), residentRestartHint(runtime.GOOS, []string{"filees_public_authority", "filees_links"})) {
 		t.Fatalf("missing ordered config-only restart: %s", out.String())
 	}
 }

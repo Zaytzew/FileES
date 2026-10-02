@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -94,5 +95,16 @@ func reportResidentServices(out io.Writer, files []FilePlan, migrations ...Confi
 	}
 	fmt.Fprintf(out, "[UP] resident services still running the previous image or configuration: %s\n", strings.Join(services, " "))
 	fmt.Fprintf(out, "[UP] they keep their startup image, paths and sandbox; restart to finish the upgrade:\n")
-	fmt.Fprintf(out, "[UP]     rcctl restart %s\n", strings.Join(services, " "))
+	fmt.Fprintf(out, "[UP]     %s\n", residentRestartHint(runtime.GOOS, services))
+}
+
+// residentRestartHint is the line an operator can act on. Only OpenBSD
+// installs rc.d scripts for these services; elsewhere FileES installs no
+// service units, so naming rcctl would send the reader to a tool that does
+// not exist there.
+func residentRestartHint(goos string, services []string) string {
+	if goos == "openbsd" {
+		return "rcctl restart " + strings.Join(services, " ")
+	}
+	return "restart with your service manager: " + strings.Join(services, " ")
 }

@@ -17,6 +17,7 @@ const stateOwnerDefault = "_filees-state"
 
 type linuxBackend struct {
 	useradd   string
+	usermod   string
 	userdel   string
 	sshd      string
 	systemctl string
@@ -29,6 +30,7 @@ func New() (Backend, error) {
 	var err error
 	for dst, src := range map[*string]string{
 		&b.useradd:   "useradd",
+		&b.usermod:   "usermod",
 		&b.userdel:   "userdel",
 		&b.sshd:      "sshd",
 		&b.systemctl: "systemctl",
@@ -48,14 +50,35 @@ func (b *linuxBackend) EnsureUsers(names []string) ([]string, error) {
 		if userExists(name) {
 			continue
 		}
-		args := []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin",
-			"--comment", "FileES " + name, name}
-		if out, err := exec.Command(b.useradd, args...).CombinedOutput(); err != nil {
+		if out, err := exec.Command(b.useradd, linuxUseraddArgs(name)...).CombinedOutput(); err != nil {
 			return created, fmt.Errorf("useradd %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 		}
 		created = append(created, name)
+		if !linuxServiceAccount(name) {
+			// '*' can never match a password, but is not "locked": sshd
+			// refuses a locked ('!') account even for a valid key.
+			if out, err := exec.Command(b.usermod, "-p", "*", name).CombinedOutput(); err != nil {
+				return created, fmt.Errorf("usermod -p %s: %w: %s", name, err, strings.TrimSpace(string(out)))
+			}
+		}
 	}
 	return created, nil
+}
+
+// linuxServiceAccount reports the accounts nobody logs in to. Every other
+// FileES account is an sshd entry whose ForceCommand runs through its shell.
+// Same rule as packaging/server/linux/install-ssh.sh.
+func linuxServiceAccount(name string) bool {
+	return name == "_filees-state" || name == "_filees-links"
+}
+
+func linuxUseraddArgs(name string) []string {
+	shell := "/bin/sh"
+	if linuxServiceAccount(name) {
+		shell = "/usr/sbin/nologin"
+	}
+	return []string{"--system", "--user-group", "--no-create-home", "--home-dir", "/var/empty",
+		"--shell", shell, "--comment", "FileES " + name, name}
 }
 
 // RegisterLoginConf is a no-op on Linux (no login.conf capability database).
@@ -86,7 +109,9 @@ func ensureSSHDInclude(sshdConfig, include string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, writeErr := fmt.Fprintf(f, "\n%s\n", include)
+	// "Match all" first: an Include appended after somebody's Match block
+	// would otherwise apply only inside that block.
+	_, writeErr := fmt.Fprintf(f, "\nMatch all\n%s\n", include)
 	closeErr := f.Close()
 	if writeErr != nil {
 		return "", writeErr
@@ -98,10 +123,29 @@ func (b *linuxBackend) ReloadSSHD() error {
 	if out, err := exec.Command(b.sshd, "-t").CombinedOutput(); err != nil {
 		return fmt.Errorf("sshd -t: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if out, err := exec.Command(b.systemctl, "reload", "ssh").CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl reload ssh: %w: %s", err, strings.TrimSpace(string(out)))
+	unit, active := linuxSSHDUnit(func(args ...string) error {
+		return exec.Command(b.systemctl, args...).Run()
+	})
+	if unit == "" || !active {
+		// No unit, or OpenSSH installed but not running: starting it is the
+		// administrator's decision, and there is nothing to reload.
+		return nil
+	}
+	if out, err := exec.Command(b.systemctl, "reload", unit).CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl reload %s: %w: %s", unit, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// linuxSSHDUnit finds the OpenSSH unit, which is "ssh" on Debian and "sshd"
+// on Fedora, and reports whether it is running.
+func linuxSSHDUnit(systemctl func(args ...string) error) (unit string, active bool) {
+	for _, candidate := range []string{"ssh", "sshd"} {
+		if systemctl("cat", candidate+".service") == nil {
+			return candidate, systemctl("is-active", "--quiet", candidate) == nil
+		}
+	}
+	return "", false
 }
 
 func (b *linuxBackend) ApplyStateDirs(stateOwner string) error {
@@ -110,23 +154,12 @@ func (b *linuxBackend) ApplyStateDirs(stateOwner string) error {
 		return fmt.Errorf("lookup %s: %w", stateOwner, err)
 	}
 
-	dirs := []struct {
-		path string
-		mode os.FileMode
-		uid  int
-		gid  int
-	}{
-		{"/var/filees", 0o700, uid, gid},
-		{"/var/filees/onboarding", 0o700, uid, gid},
-		{"/var/filees/onboarding/tickets", 0o700, uid, gid},
-		{"/var/filees/onboarding/operations", 0o700, uid, gid},
-		{"/var/filees/onboarding/audit", 0o700, uid, gid},
-		{"/var/filees/activation", 0o700, uid, gid},
-		{"/var/filees/activation/records", 0o700, uid, gid},
-		{"/var/filees/activation/proofs", 0o700, uid, gid},
-		{"/var/filees/sessions", 0o700, uid, gid},
-		{"/etc/filees", 0o700, uid, gid},
+	publicGID, err := lookupGID("_filees-public")
+	if err != nil {
+		return fmt.Errorf("lookup _filees-public: %w", err)
 	}
+	dirs := linuxStateDirs(uid, publicGID)
+	gid = 0 // root group, as install-ssh.sh creates them
 	for _, d := range dirs {
 		if err := mkdirChown(d.path, d.mode, d.uid, d.gid); err != nil {
 			return fmt.Errorf("setup %s: %w", d.path, err)
@@ -145,6 +178,35 @@ func (b *linuxBackend) ApplyStateDirs(stateOwner string) error {
 		}
 	}
 	return nil
+}
+
+type linuxStateDir struct {
+	path string
+	mode os.FileMode
+	uid  int
+	gid  int
+}
+
+// linuxStateDirs is what packaging/server/linux/install-ssh.sh creates, so an
+// update reasserts the installed layout instead of drifting from it. The
+// socket directories of the public-share services are absent on purpose:
+// Linux installs configure no public shares and no web server.
+func linuxStateDirs(stateUID, publicGID int) []linuxStateDir {
+	const rootGID = 0
+	return []linuxStateDir{
+		{"/var/filees", 0o700, stateUID, rootGID},
+		{"/var/filees/onboarding", 0o700, stateUID, rootGID},
+		{"/var/filees/onboarding/tickets", 0o700, stateUID, rootGID},
+		{"/var/filees/onboarding/operations", 0o700, stateUID, rootGID},
+		{"/var/filees/onboarding/audit", 0o700, stateUID, rootGID},
+		{"/var/filees/activation", 0o700, stateUID, rootGID},
+		{"/var/filees/activation/records", 0o700, stateUID, rootGID},
+		{"/var/filees/activation/proofs", 0o700, stateUID, rootGID},
+		{"/var/filees/sessions", 0o700, stateUID, rootGID},
+		// The public-links account must be able to traverse the directory
+		// to its own 0600 configuration and visit key.
+		{"/etc/filees", 0o750, stateUID, publicGID},
+	}
 }
 
 func (b *linuxBackend) GenerateSecrets(confDir string) error {

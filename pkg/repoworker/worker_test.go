@@ -544,6 +544,20 @@ func TestWorkerMobilePairingUsesSessionRealmNotPayloadAndIsIdempotent(t *testing
 	if err != nil || minter.calls != 1 || replay.CompletedAt != result.CompletedAt {
 		t.Fatalf("replay=%+v minter calls=%d err=%v", replay, minter.calls, err)
 	}
+	stolen := tk
+	stolen.ClientID = "client-b"
+	attacker := Session{ClientID: stolen.ClientID, RealmID: uuid.NewString()}
+	if leaked, err := (&Worker{Store: store, MobilePairing: minter}).Handle(context.Background(), attacker, stolen); err == nil || leaked.Result != nil {
+		t.Fatalf("another actor replayed pairing result: %+v, %v", leaked, err)
+	}
+	if minter.calls != 1 {
+		t.Fatalf("cross-actor replay minted another token: %d", minter.calls)
+	}
+	otherRealm := session
+	otherRealm.RealmID = uuid.NewString()
+	if leaked, err := (&Worker{Store: store, MobilePairing: minter}).Handle(context.Background(), otherRealm, tk); err == nil || leaked.Result != nil {
+		t.Fatalf("same client ID in another realm replayed pairing: %+v, %v", leaked, err)
+	}
 }
 
 func TestWorkerMobilePairingFailsClosedWithoutMinterOrOnMinterError(t *testing.T) {

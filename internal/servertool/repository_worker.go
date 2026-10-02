@@ -43,7 +43,13 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	}
 	runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
 	pathOwners := repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy}
+	activationManager, err := activation.NewUnderServiceWorkingCopyLock(config.Activation, nil)
+	if err != nil {
+		report(stderr, "repository worker activation", err)
+		return ExitConfig
+	}
 	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, PublicShareStateRoot: config.PublicShares.EffectiveStateRoot(r.ResultsRoot), Runner: runner, RepositoryHead: pathOwners.Head}
+	publisher.WithRealmSessionsStopped = activationManager.WithRealmSessionsStopped
 	publisher.EnsureLockGuards = func(repoID string) error {
 		if _, err := uuid.Parse(repoID); err != nil {
 			return err
@@ -68,11 +74,6 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		return ExitConfig
 	}
 	aliases := repoworker.RealmAliases{ServiceWC: config.Activation.ServiceWorkingCopy, Runner: runner}
-	activationManager, err := activation.NewUnderServiceWorkingCopyLock(config.Activation, nil)
-	if err != nil {
-		report(stderr, "repository worker activation", err)
-		return ExitConfig
-	}
 	realmRemovalStore := repoworker.RealmRemovalStore{Root: filepath.Join(r.ResultsRoot, "realm-removals"), OTPPepper: config.Onboarding.OTPPepper, TTL: config.Onboarding.OperationTTL, Attempts: config.Onboarding.OTPAttempts}
 	recoveryPublisher := realmRecoveryPublisher{
 		ArchiveRoot: archiveRoot,

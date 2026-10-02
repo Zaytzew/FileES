@@ -127,6 +127,7 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 	f.publisher = repoworker.ServicePublisher{
 		ServiceWC: serviceWC, DataAuthzFile: f.activationConfig.DataAuthzFile,
 		Runner: repoworker.SVNPublishRunner{SVN: f.svn, WorkingCopy: serviceWC}, Now: func() time.Time { return f.now },
+		WithRealmSessionsStopped: manager.WithRealmSessionsStopped,
 	}
 	effects := repoworker.ServerEffects{
 		SVNAdmin: f.svnadmin, RepositoriesRoot: f.repositoriesRoot, DataAuthzFile: f.publisher.DataAuthzFile,

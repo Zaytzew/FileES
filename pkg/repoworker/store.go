@@ -1,8 +1,13 @@
 package repoworker
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +21,100 @@ import (
 type FileStore struct {
 	root string
 	mu   sync.Mutex
+}
+
+const operationBindingSchema = "filees.repository-operation-binding/v1"
+
+type operationBinding struct {
+	Schema        string             `json:"schema"`
+	OperationID   string             `json:"operation_id"`
+	RequestID     string             `json:"request_id"`
+	Type          control.TicketType `json:"type"`
+	ClientID      string             `json:"client_id"`
+	RealmID       string             `json:"realm_id"`
+	PayloadSHA256 string             `json:"payload_sha256"`
+}
+
+// Bind is persisted before the domain action. It prevents another authenticated
+// actor from replaying a result, including a pairing token. A result left by an
+// older build without a binding is refused, never adopted or re-executed.
+func (s *FileStore) Bind(ticket control.Ticket, session Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	resultPath, err := s.path(ticket.OperationID, ticket.Type)
+	if err != nil {
+		return err
+	}
+	canonical, err := canonicalPayload(ticket.Payload)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(canonical)
+	want := operationBinding{
+		Schema: operationBindingSchema, OperationID: ticket.OperationID,
+		RequestID: ticket.RequestID, Type: ticket.Type,
+		ClientID: session.ClientID, RealmID: session.RealmID,
+		PayloadSHA256: hex.EncodeToString(digest[:]),
+	}
+	path := resultPath + ".binding"
+	raw, err := os.ReadFile(path)
+	if err == nil {
+		var have operationBinding
+		if json.Unmarshal(raw, &have) != nil || have != want {
+			return errors.New("operation is bound to another authenticated request")
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := os.Stat(resultPath); err == nil {
+		return errors.New("legacy operation result has no authenticated binding")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	raw, err = json.MarshalIndent(want, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(s.root, ".binding-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(append(raw, '\n'))
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if err := syncDirectory(s.root); err != nil {
+		return fmt.Errorf("persist operation binding: %w", err)
+	}
+	return nil
+}
+
+func canonicalPayload(raw json.RawMessage) ([]byte, error) {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("operation payload contains trailing data")
+	}
+	return json.Marshal(value)
 }
 
 func NewFileStore(root string) (*FileStore, error) {
@@ -153,6 +252,9 @@ func (s *FileStore) PurgeExpiredMobilePairings(now time.Time) (int, error) {
 			continue
 		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return purged, err
+		}
+		if err := os.Remove(path + ".binding"); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return purged, err
 		}
 		purged++

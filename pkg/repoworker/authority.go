@@ -77,6 +77,11 @@ type ServicePublisher struct {
 	// repository, never overwriting a foreign hook. Nil in tools that do not
 	// switch editing policies.
 	EnsureLockGuards func(repoID string) error
+	// WithRealmSessionsStopped closes the realm's existing SVN/Whale sessions
+	// and excludes new claims until publish returns. Reducing a grant must
+	// never publish or acknowledge success without this barrier. Sessions are
+	// realm-scoped (a raw SVN tunnel can reach more than one repository).
+	WithRealmSessionsStopped func(context.Context, string, func() error) error
 }
 
 // SnapshotRealmScope derives repository scope only from the canonical service

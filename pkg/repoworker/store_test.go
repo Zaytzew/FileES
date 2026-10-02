@@ -1,12 +1,63 @@
 package repoworker
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
 )
+
+func TestOperationBindingRejectsLegacyResultAndChangedRequest(t *testing.T) {
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ClientID: "client-a", RealmID: uuid.NewString()}
+	operationID, requestID := uuid.NewString(), uuid.NewString()
+	ticket, err := control.NewTicket(operationID, requestID, control.TicketCreateRepository, session.ClientID, control.CreateRepositoryPayload{Name: "One"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(createRepositoryResult(t, operationID, requestID)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Bind(ticket, session); err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("legacy result adopted: %v", err)
+	}
+
+	newTicket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketCreateRepository, session.ClientID, control.CreateRepositoryPayload{Name: "One"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Bind(newTicket, session); err != nil {
+		t.Fatal(err)
+	}
+	changed := newTicket
+	changed.Payload = []byte(`{"name":"Two"}`)
+	if err := store.Bind(changed, session); err == nil {
+		t.Fatal("changed payload reused operation binding")
+	}
+	changed = newTicket
+	changed.RequestID = uuid.NewString()
+	if err := store.Bind(changed, session); err == nil {
+		t.Fatal("changed request reused operation binding")
+	}
+	numbered := newTicket
+	numbered.OperationID = uuid.NewString()
+	numbered.Payload = []byte(`{"count":9007199254740992}`)
+	if err := store.Bind(numbered, session); err != nil {
+		t.Fatal(err)
+	}
+	numbered.Payload = []byte(`{"count":9007199254740993}`)
+	if err := store.Bind(numbered, session); err == nil {
+		t.Fatal("distinct 64-bit JSON numbers collapsed into one binding")
+	}
+	if err := store.Bind(newTicket, session); err != nil {
+		t.Fatalf("original retry refused: %v", err)
+	}
+}
 
 func mobilePairingResult(t *testing.T, operationID, requestID string, expiresAt time.Time) control.Result {
 	t.Helper()

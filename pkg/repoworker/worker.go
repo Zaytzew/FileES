@@ -52,6 +52,7 @@ type GenericDeletionAuthorizer interface {
 }
 
 type ResultStore interface {
+	Bind(control.Ticket, Session) error
 	Load(operationID string, typ control.TicketType) (control.Result, bool, error)
 	Save(control.Result) error
 }
@@ -250,6 +251,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if w.Store == nil {
 		return control.Result{}, errors.New("repository result store is required")
+	}
+	if err := w.Store.Bind(ticket, session); err != nil {
+		return control.Result{}, err
 	}
 	if result, ok, err := w.Store.Load(ticket.OperationID, ticket.Type); err != nil {
 		return control.Result{}, err

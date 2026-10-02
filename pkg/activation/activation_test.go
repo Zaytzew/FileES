@@ -113,6 +113,75 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	}
 }
 
+func TestParseSVNRevisionOutputWithSandboxNotice(t *testing.T) {
+	for _, output := range []string{
+		"58\n",
+		"[SECURITY] pledge reduced promises=\"stdio rpath\"\n58\n",
+		"58\n[SECURITY] pledge reduced promises=\"stdio rpath\"\n",
+	} {
+		if got, err := parseSVNRevisionOutput([]byte(output)); err != nil || got != 58 {
+			t.Fatalf("output %q: revision=%d err=%v", output, got, err)
+		}
+	}
+	for _, output := range []string{"", "[SECURITY] pledge\n", "58\n59\n", "0\n"} {
+		if got, err := parseSVNRevisionOutput([]byte(output)); err == nil || got != 0 {
+			t.Fatalf("accepted invalid revision %q: %d, %v", output, got, err)
+		}
+	}
+}
+
+type interruptedRevokeRunner struct{ failNextInfo bool }
+
+func (r *interruptedRevokeRunner) Output(ctx context.Context, command string, args ...string) ([]byte, error) {
+	output, err := (ExecRunner{}).Output(ctx, command, args...)
+	if err != nil {
+		return output, err
+	}
+	if len(args) > 0 && args[0] == "info" {
+		if r.failNextInfo {
+			r.failNextInfo = false
+			return []byte("[SECURITY] interrupted revision query\n"), nil
+		}
+		return append([]byte("[SECURITY] pledge reduced promises\n"), output...), nil
+	}
+	return output, nil
+}
+
+func TestRevokeResumesAfterPublicCommitAndRevisionQueryFailure(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	grant := testActivationGrant(t, time.Now().Add(time.Hour))
+	if err := manager.Stage(grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Publish(context.Background(), grant); err != nil {
+		t.Fatal(err)
+	}
+	runner := &interruptedRevokeRunner{failNextInfo: true}
+	manager.runner = runner
+	const reason = "administrator requested revoke"
+	if _, err := manager.Revoke(context.Background(), grant.ClientID, reason); err == nil {
+		t.Fatal("revision query failure was reported as success")
+	}
+	interrupted, err := readRecord(manager.recordPath(grant.OperationID))
+	if err != nil || interrupted.State != "revoking" {
+		t.Fatalf("canonical state after interrupted revoke: %+v, %v", interrupted, err)
+	}
+	revision, err := manager.Revoke(context.Background(), grant.ClientID, reason)
+	if err != nil || revision <= 0 {
+		t.Fatalf("resumed revoke: revision=%d err=%v", revision, err)
+	}
+	completed, err := readRecord(manager.recordPath(grant.OperationID))
+	if err != nil || completed.State != "revoked" || completed.ServiceRevision != revision {
+		t.Fatalf("canonical state after recovery: %+v, %v", completed, err)
+	}
+	if _, err := os.Stat(filepath.Join(config.ServiceWorkingCopy, "admin", "audit", grant.OperationID+"-revoke.json")); err != nil {
+		t.Fatalf("revoke audit absent: %v", err)
+	}
+}
+
 func TestReconcileServerDisplayNameCutsLegacyViewsOverInOnePass(t *testing.T) {
 	manager, config := newActivationTestManager(t)
 	grants := []onboarding.ActivationGrant{

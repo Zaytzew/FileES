@@ -796,12 +796,42 @@ func (m *Manager) publishRevocation(ctx context.Context, record Record) (int64, 
 		m.rollbackServicePaths(clientPath, auditPath)
 		return 0, fmt.Errorf("svn commit service revoke: %w: %s", err, sanitizeOutput(output))
 	}
-	output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", clientPath)
-	if err != nil {
-		return 0, fmt.Errorf("svn info service revoke: %w: %s", err, sanitizeOutput(output))
+	// The command runner captures stderr as well as stdout. Sandbox/security
+	// notices may accompany an otherwise valid numeric --show-item response.
+	// Read both published paths: a revision is accepted only if the client
+	// record and the audit were committed together, including on retry after
+	// a crash between publication and the canonical state transition.
+	var revision int64
+	for _, path := range []string{clientPath, auditPath} {
+		output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", path)
+		if err != nil {
+			return 0, fmt.Errorf("svn info service revoke: %w: %s", err, sanitizeOutput(output))
+		}
+		current, err := parseSVNRevisionOutput(output)
+		if err != nil || (revision != 0 && revision != current) {
+			return 0, fmt.Errorf("svn returned inconsistent revoke revision for %s: %q", filepath.Base(path), sanitizeOutput(output))
+		}
+		revision = current
 	}
-	revision, err := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64)
-	if err != nil || revision <= 0 {
+	return revision, nil
+}
+
+func parseSVNRevisionOutput(output []byte) (int64, error) {
+	var revision int64
+	for _, line := range strings.Split(string(output), "\n") {
+		candidate := strings.TrimSpace(line)
+		if candidate == "" {
+			continue
+		}
+		value, err := strconv.ParseInt(candidate, 10, 64)
+		if err == nil && value > 0 {
+			if revision != 0 {
+				return 0, errors.New("ambiguous svn revision output")
+			}
+			revision = value
+		}
+	}
+	if revision == 0 {
 		return 0, errors.New("svn returned invalid revoke revision")
 	}
 	return revision, nil

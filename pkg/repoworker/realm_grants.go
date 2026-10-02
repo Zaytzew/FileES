@@ -94,6 +94,7 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 		return RealmGrantRecord{}, err
 	}
 	now := p.now()
+	reducing := false
 	record := RealmGrantRecord{Schema: RealmGrantSchema, RepoID: repoID, OwnerRealmID: ownerRealmID, RecipientRealmID: recipientRealmID, Access: access, State: "active", CreatedAt: now, UpdatedAt: now}
 	if access == "rw" {
 		record.PathOwnerPolicy = "first_committer"
@@ -104,10 +105,19 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 			return RealmGrantRecord{}, errors.New("canonical realm grant conflicts")
 		}
 		record.CreatedAt = old.CreatedAt
+		// Even a canonical revoked record can be the residue of a failed
+		// publication while the old rw authz is still live. An r regrant must
+		// therefore drain sessions whenever a prior record exists.
+		reducing = access == "r"
 		record.PathOwnerCutoffRevision = old.PathOwnerCutoffRevision
 		record.PathOwnerRepositoryUUID = old.PathOwnerRepositoryUUID
 		if old.State == record.State && old.Access == record.Access && old.PathOwnerPolicy == record.PathOwnerPolicy {
-			return old, nil
+			if access != "r" {
+				return old, nil
+			}
+			// A previous attempt may have written the canonical r record but
+			// failed before publication. Reconcile instead of returning success.
+			record = old
 		}
 		if access == "rw" && (old.State != "active" || old.Access != "rw") {
 			if p.RepositoryHead == nil {
@@ -141,15 +151,25 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 		record.PathOwnerCutoffRevision = &head.Number
 		record.PathOwnerRepositoryUUID = head.UUID
 	}
-	if err := atomicJSON(path, record); err != nil {
-		return RealmGrantRecord{}, err
+	publish := func() error {
+		if err := atomicJSON(path, record); err != nil {
+			return err
+		}
+		changed, err := p.rebuildGrantAuthority()
+		if err != nil {
+			return err
+		}
+		return p.Runner.Publish(ctx, append([]string{path}, changed...), "filees: grant "+access+" "+repoID+" to realm "+recipientRealmID)
 	}
-	changed, err := p.rebuildGrantAuthority()
+	if reducing {
+		if p.WithRealmSessionsStopped == nil {
+			return RealmGrantRecord{}, errors.New("grant reduction requires session barrier")
+		}
+		err = p.WithRealmSessionsStopped(ctx, recipientRealmID, publish)
+	} else {
+		err = publish()
+	}
 	if err != nil {
-		return RealmGrantRecord{}, err
-	}
-	changed = append([]string{path}, changed...)
-	if err := p.Runner.Publish(ctx, changed, "filees: grant "+access+" "+repoID+" to realm "+recipientRealmID); err != nil {
 		return RealmGrantRecord{}, err
 	}
 	return record, nil
@@ -178,19 +198,25 @@ func (p ServicePublisher) RevokeGrant(ctx context.Context, ownerRealmID, recipie
 	if json.Unmarshal(raw, &record) != nil || validateRealmGrantRecord(record) != nil || record.OwnerRealmID != ownerRealmID || record.RecipientRealmID != recipientRealmID {
 		return RealmGrantRecord{}, errors.New("canonical realm grant is invalid")
 	}
-	if record.State == "revoked" {
-		return record, nil
+	if p.WithRealmSessionsStopped == nil {
+		return RealmGrantRecord{}, errors.New("grant revocation requires session barrier")
 	}
-	record.State, record.Access, record.PathOwnerPolicy, record.UpdatedAt = "revoked", "", "", p.now()
-	if err := atomicJSON(path, record); err != nil {
-		return RealmGrantRecord{}, err
+	// Reconcile even a previously written revoked record: a failed publication
+	// must not turn the retry into a false success with stale authz/views.
+	if record.State != "revoked" {
+		record.State, record.Access, record.PathOwnerPolicy, record.UpdatedAt = "revoked", "", "", p.now()
 	}
-	changed, err := p.rebuildGrantAuthority()
+	err = p.WithRealmSessionsStopped(ctx, recipientRealmID, func() error {
+		if err := atomicJSON(path, record); err != nil {
+			return err
+		}
+		changed, err := p.rebuildGrantAuthority()
+		if err != nil {
+			return err
+		}
+		return p.Runner.Publish(ctx, append([]string{path}, changed...), "filees: revoke grant "+repoID+" from realm "+recipientRealmID)
+	})
 	if err != nil {
-		return RealmGrantRecord{}, err
-	}
-	changed = append([]string{path}, changed...)
-	if err := p.Runner.Publish(ctx, changed, "filees: revoke grant "+repoID+" from realm "+recipientRealmID); err != nil {
 		return RealmGrantRecord{}, err
 	}
 	return record, nil

@@ -49,6 +49,7 @@ func TestSVNPathOwnersRenameForkRevokeAndRegrant(t *testing.T) {
 		}
 	}
 	publisher := ServicePublisher{ServiceWC: source.ServiceWC, DataAuthzFile: filepath.Join(t.TempDir(), "data.authz"), Runner: &publishRunner{}, RepositoryHead: source.Head}
+	publisher.WithRealmSessionsStopped = func(_ context.Context, _ string, publish func() error) error { return publish() }
 	grant, err := publisher.Grant(t.Context(), f.owner, f.guest, f.req.RepoID, "rw")
 	if err != nil {
 		t.Fatal(err)

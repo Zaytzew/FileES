@@ -469,6 +469,43 @@ func TestNativeRenameQuietPeriodCollapsesRenameThenMove(t *testing.T) {
 	f.verify(t, dst)
 }
 
+// Renamed, then removed before the rename was published (owner's stress case,
+// 2026-10-02): the removal of the original is all that is left. It must not
+// become an uncertain intent, which no resolution could ever accept.
+func TestNativeRenameThenRemoveIsARemovalOfTheOriginal(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		t.Run(map[bool]string{false: "event", true: "queue from an older build"}[stale], func(t *testing.T) {
+			f := newNativeFixture(t)
+			s := f.service(f.cli)
+			ev := f.move(t, "middle.txt")
+			s.acceptEvent(ev)
+			if err := os.Remove(ev.Path); err != nil {
+				t.Fatal(err)
+			}
+			if stale {
+				// What the previous rule left behind, as found on disk.
+				s.staging["middle.txt"].Op = watcher.RenameUncertain
+				s.saveCache()
+			} else {
+				s.acceptEvent(watcher.Event{Path: ev.Path, Rel: "middle.txt", Type: watcher.EntryFile, Op: watcher.Deleted})
+				if len(s.staging) != 1 || s.staging["old.txt"] == nil || s.staging["old.txt"].Op != watcher.Deleted {
+					t.Fatalf("queue=%+v", s.staging)
+				}
+			}
+			if err := s.tryCommitMode(context.Background(), f.wc, true); err != nil {
+				t.Fatal(err)
+			}
+			if len(s.staging) != 0 {
+				t.Fatalf("queue not drained: %+v", s.staging)
+			}
+			listing := string(nativeRun(t, f.wc, "svn", "list", f.repoURL))
+			if strings.Contains(listing, "old.txt") || strings.Contains(listing, "middle.txt") || !strings.Contains(listing, "duplicate.txt") {
+				t.Fatalf("repository after rename+remove: %q", listing)
+			}
+		})
+	}
+}
+
 func TestNativeMoveDefersOldDirectoryDeletion(t *testing.T) {
 	f := newNativeFixture(t)
 	nativeRun(t, f.wc, "svn", "mkdir", "old-dir")

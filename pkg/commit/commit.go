@@ -898,6 +898,9 @@ func (s *Service) addEventLocked(ev watcher.Event) {
 		return
 	}
 	// merge ops: Added+Modified -> Added, Modified+Added -> Added, Delete overrides, Renamed wins
+	if s.nativeMover() != nil && ev.Op == watcher.Deleted && s.foldRemovedRenameLocked(key, it) {
+		return
+	}
 	if s.nativeMover() != nil && (it.Op == watcher.Renamed || it.Op == watcher.RenameUncertain) && (ev.Op == watcher.Added || ev.Op == watcher.Deleted) {
 		it.Op = watcher.RenameUncertain
 		it.LastSeen = time.Now()
@@ -1118,6 +1121,11 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	}
 	if err := s.repairOrphanedScheduledMoves(ctx, wc); err != nil {
 		return err
+	}
+	if s.nativeMover() != nil {
+		if err := s.foldStaleRemovedRenames(); err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	for _, it := range s.staging {
@@ -2297,6 +2305,65 @@ func (s *Service) saveCacheChecked() error {
 		err = atomicWriteJSONSlice(s.cachePath, value)
 	}
 	return err
+}
+
+// foldRemovedRenameLocked handles a file that was renamed and then removed
+// before the rename was published. Nothing about that is uncertain: what is
+// left to publish is the removal of the original path, and a path that never
+// reached SVN is dropped by the ordinary delete handling. Holding it as an
+// uncertain intent blocked the queue for good, because intent resolution
+// refuses any entry that carries a rename source. A move already scheduled in
+// SVN metadata is not folded here - repairOrphanedScheduledMoves unschedules
+// it first. Caller holds mu. Reports whether the entry was folded.
+func (s *Service) foldRemovedRenameLocked(key string, it *stageItem) bool {
+	if (it.Op != watcher.Renamed && it.Op != watcher.RenameUncertain) || it.MoveScheduled || it.OldRel == "" || it.IsDir {
+		return false
+	}
+	for _, other := range s.staging {
+		if other != it && other.OldRel == it.Rel {
+			return false // moved on, not removed: the chain rules decide
+		}
+	}
+	old := it.OldRel
+	delete(s.staging, key)
+	if _, exists := s.staging[old]; !exists {
+		now := time.Now()
+		s.staging[old] = &stageItem{Rel: old, Abs: filepath.Join(s.wc, filepath.FromSlash(old)), Op: watcher.Deleted, FirstSeen: now, LastSeen: now}
+	}
+	return true
+}
+
+// foldStaleRemovedRenames repairs a queue written before
+// foldRemovedRenameLocked existed: an uncertain entry whose rename source and
+// destination are both gone from disk is the removal of the original.
+func (s *Service) foldStaleRemovedRenames() error {
+	s.mu.Lock()
+	folded := 0
+	for key, it := range s.staging {
+		if it.Op != watcher.RenameUncertain || it.MoveScheduled || it.OldRel == "" {
+			continue
+		}
+		if _, err := os.Lstat(it.Abs); !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(s.wc, filepath.FromSlash(it.OldRel))); !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if s.foldRemovedRenameLocked(key, it) {
+			folded++
+		}
+	}
+	s.mu.Unlock()
+	if folded == 0 {
+		return nil
+	}
+	s.Logger.Infof("%d renamed-then-removed entries folded into removals of the original paths", folded)
+	if s.cachePath != "" {
+		if err := s.saveCacheChecked(); err != nil {
+			return fmt.Errorf("persist folded removals: %w", err)
+		}
+	}
+	return nil
 }
 
 // repairOrphanedScheduledMoves closes the race the rename quiet period cannot:

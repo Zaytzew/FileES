@@ -114,6 +114,9 @@ data class ManifestEntry(
     val path: String,
     val kind: String,
     val size: Long,
+    // SVN revision of the last change to this node. Newer revisions are later
+    // commits, so this is the listing's mtime. 0 when the server omitted it.
+    val changed: Long = 0,
 )
 
 data class BrowseRow(
@@ -137,6 +140,7 @@ data class BrowseRow(
     val journalScope: String = "",
     val journalTime: String = "",
     val journalEntry: String = "",
+    val changed: Long = 0,
     val journalToggle: Boolean = false,
     val heroCopy: String = "",
     val serverMeta: String = "",
@@ -170,6 +174,7 @@ object ManifestBrowse {
                     path = item.optString("path"),
                     kind = item.optString("kind"),
                     size = item.optLong("size"),
+                    changed = item.optLong("last_changed_revision"),
                 )
             )
         }
@@ -178,21 +183,42 @@ object ManifestBrowse {
 
     fun children(entries: List<ManifestEntry>, prefix: String): List<BrowseRow> {
         val pfx = if (prefix.isEmpty()) "" else "$prefix/"
-        val seen = LinkedHashSet<String>()
-        val rows = mutableListOf<BrowseRow>()
+        val rows = LinkedHashMap<String, BrowseRow>()
         for (entry in entries) {
             if (prefix.isNotEmpty() && entry.path == prefix) continue
             if (prefix.isNotEmpty() && !entry.path.startsWith(pfx)) continue
             val rest = if (prefix.isEmpty()) entry.path else entry.path.removePrefix(pfx)
             if (rest.isEmpty()) continue
             val name = rest.substringBefore('/')
-            if (!seen.add(name)) continue
             val nested = rest.contains('/')
             val directory = nested || entry.kind == "directory"
             val path = if (prefix.isEmpty()) name else "$prefix/$name"
-            rows.add(BrowseRow(name, path, directory, if (directory) 0 else entry.size))
+            // A nested path only introduces the folder. Its own revision is the
+            // folder mtime, and must not be replaced by a file inside it.
+            val changed = if (nested) 0L else entry.changed
+            val existing = rows[name]
+            if (existing == null) {
+                rows[name] = BrowseRow(name, path, directory, if (directory) 0L else entry.size, changed = changed)
+                continue
+            }
+            val ownDirectory = !nested && entry.kind == "directory"
+            rows[name] = existing.copy(
+                directory = existing.directory || directory,
+                size = if (!directory && !nested) entry.size else existing.size,
+                changed = when {
+                    ownDirectory -> entry.changed
+                    existing.changed == 0L -> changed
+                    else -> existing.changed
+                },
+            )
         }
-        return rows.sortedWith(compareBy({ !it.directory }, { it.name.lowercase() }))
+        // Newest commit first. The same commit keeps directories together and
+        // then the name, so a tied set does not fall back to svn list order.
+        return rows.values.sortedWith(
+            compareByDescending<BrowseRow> { it.changed }
+                .thenBy { !it.directory }
+                .thenBy { it.name.lowercase() },
+        )
     }
 
     fun filesUnder(entries: List<ManifestEntry>, prefix: String): List<ManifestEntry> {

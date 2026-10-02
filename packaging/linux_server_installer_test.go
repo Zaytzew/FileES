@@ -146,7 +146,7 @@ func TestLinuxReleasePolicyMatchesWhatTheInstallerInstalls(t *testing.T) {
 	}
 	installer := readLinuxServerFile(t, "server/linux/install-ssh.sh")
 	expand := strings.NewReplacer(`"$state_user"`, "_filees-state", `"$client_access_group"`, "_filees-access",
-		`"$libexec/`, `"/usr/local/libexec/filees/`)
+		`"$libexec/`, `"/usr/local/libexec/filees/`, `"$pam_module"`, `"$bundle/lib/pam_filees_tunnel.module"`)
 	type installed struct{ owner, group, mode string }
 	byTarget := map[string]installed{}
 	line := regexp.MustCompile(`^install -o (\S+) -g (\S+) -m (\d+) "\$bundle/(\S+)" "?(/[^"\s]+)"?$`)
@@ -163,6 +163,20 @@ func TestLinuxReleasePolicyMatchesWhatTheInstallerInstalls(t *testing.T) {
 	for _, file := range spec.Files {
 		if file.Group == "wheel" || strings.Contains(file.Target, "/usr/libexec/auth/") {
 			t.Errorf("%s carries an OpenBSD-only group or path: %+v", file.Source, file)
+		}
+		if strings.HasPrefix(file.Source, "share/filees/linux/") || file.Source == "share/filees/server.example.json" ||
+			file.Source == "share/filees/public-links.example.json" || file.Source == "share/filees/install.example.conf" {
+			// Installation kit: the installer copies these in loops, so check
+			// that each is named there and lands under the kit directory.
+			name := strings.TrimPrefix(file.Source, "share/filees/")
+			if strings.HasPrefix(name, "linux/systemd/") {
+				name = "linux/systemd/*" + filepath.Ext(name)
+			}
+			if !strings.Contains(installer, name) || file.Target != "/usr/local/share/filees/install-kit/"+file.Source ||
+				file.Owner != "root" || file.Group != "root" || file.Mode != "0644" {
+				t.Errorf("installation kit file %s is not installed as the policy says: %+v", file.Source, file)
+			}
+			continue
 		}
 		if strings.HasPrefix(file.Source, "share/") {
 			continue // examples and manual pages come from install-server.sh

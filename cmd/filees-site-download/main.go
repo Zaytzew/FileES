@@ -188,6 +188,9 @@ func loadConfig(configPath string) (Config, error) {
 	if config.Server != nil && (!identifier.MatchString(config.Server.Channel) || config.Server.Platform != "openbsd-amd64") {
 		return Config{}, errors.New("server needs a channel and platform openbsd-amd64")
 	}
+	if config.ServerLinux != nil && (!identifier.MatchString(config.ServerLinux.Channel) || config.ServerLinux.Platform != "linux-amd64") {
+		return Config{}, errors.New("server_linux needs a channel and platform linux-amd64")
+	}
 	platforms := config.platforms()
 	if len(platforms) == 0 {
 		return Config{}, fmt.Errorf("%s: name a platform or a list of platforms", configPath)

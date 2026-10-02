@@ -344,6 +344,150 @@
       "mode": "0444",
       "owner": "root",
       "group": "root"
+    },
+    {
+      "source": "install-server.sh",
+      "target": "/usr/local/share/filees/install-kit/install-server.sh",
+      "kind": "file",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "linux/install-ssh.sh",
+      "target": "/usr/local/share/filees/install-kit/linux/install-ssh.sh",
+      "kind": "file",
+      "mode": "0555",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/server.example.json",
+      "target": "/usr/local/share/filees/install-kit/share/filees/server.example.json",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/public-links.example.json",
+      "target": "/usr/local/share/filees/install-kit/share/filees/public-links.example.json",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/install.example.conf",
+      "target": "/usr/local/share/filees/install-kit/share/filees/install.example.conf",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/filees.conf",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/filees.conf",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/filees-tunnel.pam",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/filees-tunnel.pam",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/filees.cil",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/filees.cil",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/bootstrap_authorized_keys",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/bootstrap_authorized_keys",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/public-links.nginx.conf.example",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/public-links.nginx.conf.example",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-capacity.service",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-capacity.service",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-capacity.timer",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-capacity.timer",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-lock-requests-reap.service",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-lock-requests-reap.service",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-lock-requests-reap.timer",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-lock-requests-reap.timer",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-passport-reap-check.service",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-passport-reap-check.service",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-passport-reap-check.timer",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-passport-reap-check.timer",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-passport-reap.service",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-passport-reap.service",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "share/filees/linux/systemd/filees-passport-reap.timer",
+      "target": "/usr/local/share/filees/install-kit/share/filees/linux/systemd/filees-passport-reap.timer",
+      "kind": "file",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
     }
   ]
 }

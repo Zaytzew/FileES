@@ -65,7 +65,11 @@ if ! sshd -T 2>/dev/null | grep -qi '^usepam yes$'; then
 	exit 1
 fi
 
-for required in "$bundle/lib/pam_filees_tunnel.so" "$bundle/share/filees/linux/filees.conf" \
+# In a signed release the module travels as .module: "*.so" is in Subversion's
+# default ignore list and would never reach the release repository.
+pam_module="$bundle/lib/pam_filees_tunnel.so"
+[ -e "$pam_module" ] || pam_module="$bundle/lib/pam_filees_tunnel.module"
+for required in "$pam_module" "$bundle/share/filees/linux/filees.conf" \
 	"$bundle/share/filees/linux/filees.cil" \
 	"$bundle/share/filees/linux/filees-tunnel.pam" "$bundle/share/filees/linux/bootstrap_authorized_keys" \
 	/etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519 /var/filees/onboarding; do
@@ -119,7 +123,21 @@ install -o root -g root -m 0555 "$bundle/bin/filees-rotate" /usr/local/sbin/file
 # The PAM module switches to the state user before it starts the helper, so
 # the helper needs no set-id bit here (OpenBSD runs it as a BSD Auth style).
 install -o root -g root -m 0555 "$bundle/bin/filees-ssh-auth" "$libexec/filees-ssh-auth"
-install -o root -g root -m 0644 "$bundle/lib/pam_filees_tunnel.so" "$libexec/pam_filees_tunnel.so"
+install -o root -g root -m 0644 "$pam_module" "$libexec/pam_filees_tunnel.so"
+# A reference copy of the installation kit, kept current by filees-install
+# (the signed manifest lists it). To run an installer again, use the bundle.
+kit=/usr/local/share/filees/install-kit
+install -d -o root -g root -m 0755 "$kit/linux" "$kit/share/filees/linux/systemd"
+install -o root -g root -m 0555 "$bundle/install-server.sh" /usr/local/share/filees/install-kit/install-server.sh
+install -o root -g root -m 0555 "$bundle/linux/install-ssh.sh" /usr/local/share/filees/install-kit/linux/install-ssh.sh
+for kit_file in server.example.json public-links.example.json install.example.conf \
+	linux/filees.conf linux/filees-tunnel.pam linux/filees.cil linux/bootstrap_authorized_keys \
+	linux/public-links.nginx.conf.example; do
+	install -o root -g root -m 0644 "$bundle/share/filees/$kit_file" "$kit/share/filees/$kit_file"
+done
+for kit_file in "$bundle"/share/filees/linux/systemd/*.service "$bundle"/share/filees/linux/systemd/*.timer; do
+	install -o root -g root -m 0644 "$kit_file" "$kit/share/filees/linux/systemd/"
+done
 install -o root -g root -m 0644 "$bundle/share/filees/linux/filees-tunnel.pam" /etc/pam.d/filees-tunnel
 install -o root -g root -m 0555 "$bundle/bin/filees-onboard" "$libexec/filees-onboard"
 # The dispatchers are the set-id boundaries; their ordinary child images

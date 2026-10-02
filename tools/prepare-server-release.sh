@@ -83,6 +83,20 @@ for platform in $PLATFORMS; do
 		# out of FILEES-BIN and every Linux update would fail on fetching it.
 		mkdir -p "$release_root/lib"
 		cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/pam_filees_tunnel.module"
+		# The installation kit is signed payload too: the download page builds
+		# its archive from the manifest alone, and without the two installers,
+		# the sshd and PAM fragments, the SELinux module and the timer units
+		# that archive could not install a server. Same layout as the bundle,
+		# so the unpacked archive is the bundle.
+		mkdir -p "$release_root/linux" "$release_root/share/filees/linux/systemd"
+		cp "$bundle/install-server.sh" "$release_root/"
+		cp "$bundle/linux/install-ssh.sh" "$release_root/linux/"
+		cp "$bundle/share/filees/server.example.json" "$bundle/share/filees/public-links.example.json" \
+			"$bundle/share/filees/install.example.conf" "$release_root/share/filees/"
+		for kit_file in filees.conf filees-tunnel.pam filees.cil bootstrap_authorized_keys public-links.nginx.conf.example; do
+			cp "$bundle/share/filees/linux/$kit_file" "$release_root/share/filees/linux/"
+		done
+		cp "$bundle"/share/filees/linux/systemd/* "$release_root/share/filees/linux/systemd/"
 	fi
 	# Manual pages are part of the signed release, so filees-install upgrades them
 	# with the binaries they describe. Their targets are absolute /usr/local/man

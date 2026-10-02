@@ -41,6 +41,9 @@ type Config struct {
 	Notes        map[string]ReleaseNotes `json:"notes"`
 	VersionNotes map[string]ReleaseNotes `json:"version_notes,omitempty"`
 	Server       *ServerConfig           `json:"server,omitempty"`
+	// ServerLinux is the Linux server's own track (alpha-linux). Its card is
+	// the template block between <!--SERVER_LINUX--> markers.
+	ServerLinux *ServerConfig `json:"server_linux,omitempty"`
 }
 
 // ReleaseNotes is the optional highlighted sentence for one release.
@@ -85,6 +88,7 @@ type State struct {
 	SecurityEpoch uint64                    `json:"security_epoch"`
 	Installers    map[string]StateInstaller `json:"installers,omitempty"`
 	Server        *ServerState              `json:"server,omitempty"`
+	ServerLinux   *ServerState              `json:"server_linux,omitempty"`
 	// NotesSince is the sequence of the release published before this one;
 	// the "what's new" list counts from there.
 	NotesSince uint64 `json:"notes_since,omitempty"`
@@ -203,7 +207,15 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 				previous.ReleaseID, previous.Sequence, previous.SecurityEpoch)
 		}
 	}
-	server, err := p.serverDownload(ctx, previous)
+	var oldServer, oldServerLinux *ServerState
+	if previous != nil {
+		oldServer, oldServerLinux = previous.Server, previous.ServerLinux
+	}
+	server, err := p.serverDownload(ctx, p.Config.Server, oldServer, false)
+	if err != nil {
+		return Result{}, err
+	}
+	serverLinux, err := p.serverDownload(ctx, p.Config.ServerLinux, oldServerLinux, true)
 	if err != nil {
 		return Result{}, err
 	}
@@ -236,11 +248,23 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 		cards["SERVER_WHATS_NEW_EN"] = whatsNewHTML(server.whatsNew, "en")
 		lists = append(lists, server.whatsNew)
 	}
+	if serverLinux != nil {
+		cards["SERVER_LINUX_WHATS_NEW_PL"] = whatsNewHTML(serverLinux.whatsNew, "pl")
+		cards["SERVER_LINUX_WHATS_NEW_EN"] = whatsNewHTML(serverLinux.whatsNew, "en")
+		cards["SERVER_LINUX_CHANNEL"] = html.EscapeString(p.Config.ServerLinux.Channel)
+		lists = append(lists, serverLinux.whatsNew)
+	}
 	// Each invocation publishes one independently verified channel. The label
 	// follows that configuration, never the revision or another channel's state.
 	template := []byte(strings.ReplaceAll(string(p.Template), "{{CHANNEL}}", html.EscapeString(p.Config.Channel)))
+	// Linux first: its placeholders start with the OpenBSD card's prefix.
+	if serverLinux != nil {
+		template = serverLinux.render(template, "SERVER_LINUX_")
+	} else {
+		template = linuxServerBlock.ReplaceAll(template, nil)
+	}
 	if server != nil {
-		template = server.render(template)
+		template = server.render(template, "SERVER_")
 	}
 	// The hand-written sentence from the configuration is for releases
 	// without signed notes. With notes it would stand as a second, older
@@ -257,6 +281,9 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	allDownloads := append([]platformDownload(nil), downloads...)
 	if server != nil {
 		allDownloads = append(allDownloads, server.download)
+	}
+	if serverLinux != nil {
+		allDownloads = append(allDownloads, serverLinux.download)
 	}
 	sums := checksumFile(allDownloads)
 	result := Result{ReleaseID: envelope.ReleaseID, Version: downloads[0].Version}
@@ -276,7 +303,7 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	}
 
 	if upToDate(p.OutDir, allDownloads, page, sums, metadata) {
-		return result, p.saveState(envelope, downloads, server, since)
+		return result, p.saveState(envelope, downloads, server, serverLinux, since)
 	}
 
 	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page, "release.json": metadata}
@@ -297,11 +324,14 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if server != nil {
 		files[server.download.Installer.Source] = server.data
 	}
+	if serverLinux != nil {
+		files[serverLinux.download.Installer.Source] = serverLinux.data
+	}
 	if err := replaceDirectory(p.OutDir, files); err != nil {
 		return Result{}, err
 	}
 	result.Changed = true
-	return result, p.saveState(envelope, downloads, server, since)
+	return result, p.saveState(envelope, downloads, server, serverLinux, since)
 }
 
 // checksumFile lists every offered installer, in the order the page shows them.
@@ -501,13 +531,20 @@ func loadState(statePath string) (*State, error) {
 	return &state, nil
 }
 
-func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server *serverBundle, since uint64) error {
+// linuxServerBlock is the Linux server card; it leaves the page whole when
+// that track has no signed release yet.
+var linuxServerBlock = regexp.MustCompile(`(?s)[ \t]*<!--SERVER_LINUX-->.*?<!--/SERVER_LINUX-->\n?`)
+
+func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server, serverLinux *serverBundle, since uint64) error {
 	state := State{ReleaseID: envelope.ReleaseID, Sequence: envelope.Sequence, SecurityEpoch: envelope.SecurityEpoch, Installers: map[string]StateInstaller{}, NotesSince: since}
 	for _, download := range downloads {
 		state.Installers[download.Platform] = StateInstaller{Source: download.Installer.Source, SHA256: download.Installer.SHA256}
 	}
 	if server != nil {
 		state.Server = &server.state
+	}
+	if serverLinux != nil {
+		state.ServerLinux = &serverLinux.state
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

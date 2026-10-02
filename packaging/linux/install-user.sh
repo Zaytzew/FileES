@@ -35,6 +35,19 @@ escape_sed_replacement() {
 	printf '%s' "$1" | sed 's/[\\&|]/\\&/g; s/"/\\"/g; s/%/%%/g'
 }
 
+# Never copy over an executable that a running daemon may invoke. install(1)
+# can truncate the destination and only set its final mode after copying it;
+# the native SVN entrypoint may then see a transient EACCES during recovery.
+# A stage in the destination directory keeps the final rename on one filesystem.
+install_executable() (
+	source_file=$1
+	target_file=$2
+	stage=$(mktemp "$(dirname -- "$target_file")/.filees-install.XXXXXXXX")
+	trap 'rm -f "$stage"' EXIT
+	install -m 0755 "$source_file" "$stage"
+	mv -f "$stage" "$target_file"
+)
+
 mkdir -p "$config_dir"
 if [ ! -f "$config" ]; then
 	provisional=$(mktemp "$config_dir/.filees-setup.XXXXXX")
@@ -62,15 +75,15 @@ fi
 "$bundle/bin/filees" config-check --config "$config"
 
 mkdir -p "$(dirname -- "$daemon_bin")" "$(dirname -- "$desktop")" "$(dirname -- "$icon")" "$unit_dir"
-install -m 0755 "$bundle/bin/filees" "$daemon_bin"
-install -m 0755 "$bundle/bin/filees-gui" "$gui_bin"
+install_executable "$bundle/bin/filees" "$daemon_bin"
+install_executable "$bundle/bin/filees-gui" "$gui_bin"
 # filees-pair-gui belongs to a companion-secret realm auto-join flow that is
 # not built by any producer yet; installed only when a bundle happens to
 # carry it, so this script does not fail on a feature that does not exist.
 if [ -f "$bundle/bin/filees-pair-gui" ]; then
-	install -m 0755 "$bundle/bin/filees-pair-gui" "$pair_gui_bin"
+	install_executable "$bundle/bin/filees-pair-gui" "$pair_gui_bin"
 fi
-install -m 0755 "$bundle/bin/filees-svn" "$native_svn_bin"
+install_executable "$bundle/bin/filees-svn" "$native_svn_bin"
 install -m 0644 "$bundle/share/icons/hicolor/scalable/apps/filees-gui.svg" "$icon"
 
 escaped_gui=$(escape_sed_replacement "$gui_bin")

@@ -249,13 +249,14 @@ func TestLinuxReleasePolicyGeneratesAnAcceptableManifest(t *testing.T) {
 		}
 	}
 	script := readLinuxServerFile(t, "../tools/prepare-server-release.sh")
-	for _, need := range []string{`"packaging/server/${platform%-amd64}-binary-policy.json"`, `cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/pam_filees_tunnel.module"`, `openbsd-amd64|linux-amd64) ;;`, `svn would ignore these payload files`} {
+	for _, need := range []string{`"packaging/server/${platform%-amd64}-binary-policy.json"`, `cp "$bundle/lib/pam_filees_tunnel.so" "$release_root/lib/pam_filees_tunnel.module"`, `candidate_name=channel-linux.json`, `previous_channel=alpha-linux.json`, `*-server-linux) ;;`, `PLATFORMS is gone`, `svn would ignore these payload files`} {
 		if !strings.Contains(script, need) {
 			t.Errorf("prepare-server-release.sh lacks %s", need)
 		}
 	}
-	if !strings.Contains(readLinuxServerFile(t, "build-server.sh"), `platform=linux-amd64`) {
-		t.Error("Linux bundle must ship an install.conf example that follows the linux-amd64 manifest")
+	builder := readLinuxServerFile(t, "build-server.sh")
+	if !strings.Contains(builder, `platform=linux-amd64`) || !strings.Contains(builder, `channel=alpha-linux`) {
+		t.Error("Linux bundle must ship an install.conf example that follows the linux-amd64 manifest on the Linux channel")
 	}
 }
 

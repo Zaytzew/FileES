@@ -32,9 +32,14 @@ case "$RELEASE_ID" in
 esac
 case "$CHANNEL" in
 	alpha|beta|stable|android) ;;
-	'') die "missing CHANNEL (choose alpha, beta, stable or android)" ;;
-	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta, stable or android)" ;;
+	alpha-linux|beta-linux|stable-linux) ;;
+	'') die "missing CHANNEL (choose alpha, beta, stable, android, or alpha-linux, beta-linux, stable-linux)" ;;
+	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta, stable, android, or alpha-linux, beta-linux, stable-linux)" ;;
 esac
+# The Linux server has channels of its own (owner, 2026-10-02): it differs
+# from the OpenBSD server and must neither wait for it nor move it. Maturity
+# rules below apply to the stage, whatever the track.
+stage=${CHANNEL%-linux}
 
 command -v "$SIGNIFY_BIN" >/dev/null 2>&1 || die "signify not found: $SIGNIFY_BIN"
 [ -f "$SIGNIFY_SEC_KEY" ] || die "release secret key not found: $SIGNIFY_SEC_KEY"
@@ -52,13 +57,23 @@ release_root="releases/$RELEASE_ID"
 # the server's channel.json rule, and a desktop envelope must never be
 # promoted as the phone channel.
 if [ "$CHANNEL" = android ]; then
-	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] \
+	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] && [ ! -f "$release_root/channel-linux.json" ] \
 		|| die "android release $RELEASE_ID also carries a server or desktop channel candidate"
 	candidate="$release_root/channel-android.json"
 	channel_path="channels/android.json"
+elif [ "$CHANNEL" != "$stage" ]; then
+	# Same isolation as Android: channel-linux.json is promoted only to a
+	# *-linux channel, and nothing else is promoted there.
+	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] && [ ! -f "$release_root/channel-android.json" ] \
+		|| die "linux server release $RELEASE_ID also carries another track's channel candidate"
+	candidate="$release_root/channel-linux.json"
+	channel_path="channels/${CHANNEL}.json"
+	[ -f "$candidate" ] || die "release $RELEASE_ID is not a linux server release; $CHANNEL takes only releases with channel-linux.json"
 else
 	[ ! -f "$release_root/channel-android.json" ] \
 		|| die "release $RELEASE_ID is an android release; sign it with CHANNEL=android"
+	[ ! -f "$release_root/channel-linux.json" ] \
+		|| die "release $RELEASE_ID is a linux server release; sign it with CHANNEL=${CHANNEL}-linux"
 	candidate="$release_root/channel.v2.json"
 	channel_path="channels/${CHANNEL}.v2.json"
 fi
@@ -124,14 +139,14 @@ fi
 built_for=""
 if [ -f "$release_root/built-for-channel" ]; then
 	built_for=$(tr -d ' \r\n' <"$release_root/built-for-channel")
-	[ "$built_for" = "$CHANNEL" ] || die "release $RELEASE_ID was built for channel $built_for, not $CHANNEL; build a separate release for $CHANNEL"
+	[ "$built_for" = "$stage" ] || [ "$built_for" = "$CHANNEL" ] || die "release $RELEASE_ID was built for channel $built_for, not $CHANNEL; build a separate release for $CHANNEL"
 fi
 
 # Alpha is where a new payload is signed. Beta/stable otherwise only promote an
 # already signed, reviewed artifact: never turn a mistyped CHANNEL into a first
 # release of untested binaries. A release built for this very channel is the
 # exception - it cannot be anything else. Keep existing signatures byte-for-byte.
-if [ "$CHANNEL" != alpha ] && [ "$all_manifests_signed" != true ] && [ "$built_for" != "$CHANNEL" ]; then
+if [ "$stage" != alpha ] && [ "$all_manifests_signed" != true ] && [ "$built_for" != "$CHANNEL" ] && [ "$built_for" != "$stage" ]; then
 	die "$CHANNEL promotion requires existing valid signatures for every manifest; publish and accept the release on alpha first"
 fi
 

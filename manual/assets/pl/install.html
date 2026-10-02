@@ -176,7 +176,7 @@ FILEES_SCHEDULER=systemd ./linux/install-ssh.sh</code></pre>
 <li><strong>OpenSSH nie jest uruchamiany.</strong> Instalator sprawdza konfigurację (<code>sshd -t</code>) i przeładowuje sshd tylko wtedy, gdy już działa.</li>
 <li><strong>Udziały publiczne nie są konfigurowane.</strong> Wymagają domeny i serwera WWW, których instalator nie zakłada. Paczka zawiera przykład <code>share/filees/linux/public-links.nginx.conf.example</code> z zastrzeżeniem, że jest to wzór do przejrzenia, a nie gotowa konfiguracja.</li>
 </ul>
-<p>Przykładowe pliki w paczce linuksowej mają ścieżki <code>/usr/bin</code> dla Subversion oraz <code>platform=linux-amd64</code> w <code>install.conf</code>. Aktualizacje z podpisanego kanału działają jak na OpenBSD (<a href="#ch3-managed">§3.6</a>): <code>filees-install --adopt</code> po instalacji, potem <code>--apply</code>.</p>
+<p>Przykładowe pliki w paczce linuksowej mają ścieżki <code>/usr/bin</code> dla Subversion oraz <code>platform=linux-amd64</code> i <code>channel=alpha-linux</code> w <code>install.conf</code>. Serwer Linux ma własny kanał wydań, <code>alpha-linux</code>, niezależny od kanałów serwera OpenBSD. Aktualizacje z podpisanego kanału działają jak na OpenBSD (<a href="#ch3-managed">§3.6</a>): <code>filees-install --adopt</code> po instalacji, potem <code>--apply</code>.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architektura</a><a href="operations.html">Eksploatacja →</a></nav>
 </div>

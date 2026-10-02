@@ -108,6 +108,18 @@ RELEASE_ID=r178 SEQUENCE=178 SECURITY_EPOCH=1 \
 ./tools/prepare-server-release.sh
 ```
 
+Serwer dla Linuksa to osobne wydanie i osobny kanał (decyzja 2026-10-02):
+
+```sh
+PLATFORM=linux-amd64 RELEASE_ID=r1840-server-linux SEQUENCE=1 SECURITY_EPOCH=1 \
+./tools/prepare-server-release.sh
+# podpis: RELEASE_ID=r1840-server-linux CHANNEL=alpha-linux ./tools/release-sign-and-publish.sh
+```
+
+Kandydatem jest wtedy `releases/<id>/channel-linux.json`, a szkic notatek
+porównuje z `channels/alpha-linux.json`. Budowa wymaga Linuksa (moduł PAM)
+albo `FILEES_PAM_MODULE`.
+
 Skrypt wymaga czystej WC źródeł i czystej WC `FILEES-BIN`, aktualizuje obie do
 HEAD, buduje binaria z kluczem publicznym, generuje manifest schema v2 oraz
 `releases/<id>/channel.json`. Kandydat jest neutralny względem kanału. Następnie
@@ -170,7 +182,8 @@ każdy manifest, natychmiast weryfikuje podpisy kluczem publicznym, a następnie
 kopiuje kandydat do `channels/` i podpisuje go. Nowe podpisy manifestów, kanał
 i jego podpis trafiają do **jednego commita SVN**. HEAD nie ma więc okna, w
 którym wybrany kanał wskazuje na niepodpisany release. `CHANNEL` nie ma wartości
-domyślnej i musi być jawnie ustawiony na `alpha`, `beta` albo `stable`. Ten sam
+domyślnej i musi być jawnie ustawiony na `alpha`, `beta` albo `stable`
+(serwer Linux: `alpha-linux`, `beta-linux`, `stable-linux`; Android: `android`). Ten sam
 release można później promować do kolejnego kanału bez przebudowy payloadu.
 Pierwsze podpisanie nowych manifestów odbywa się wyłącznie dla alpha.
 Beta i stable wymagają istniejących poprawnych podpisów wszystkich manifestów;

@@ -179,7 +179,7 @@ FILEES_SCHEDULER=systemd ./linux/install-ssh.sh</code></pre>
 <li><strong>OpenSSH is not started.</strong> The installer validates the configuration (<code>sshd -t</code>) and reloads sshd only if it is already running.</li>
 <li><strong>Public shares are not configured.</strong> They need a domain and a web server, which the installer does not assume. The bundle carries the example <code>share/filees/linux/public-links.nginx.conf.example</code>, with the caveat that it is a pattern to review, not a ready configuration.</li>
 </ul>
-<p>The example files in the Linux bundle use <code>/usr/bin</code> paths for Subversion and <code>platform=linux-amd64</code> in <code>install.conf</code>. Updates from the signed channel work as on OpenBSD (<a href="#ch3-managed">§3.6</a>): <code>filees-install --adopt</code> after installation, then <code>--apply</code>.</p>
+<p>The example files in the Linux bundle use <code>/usr/bin</code> paths for Subversion and <code>platform=linux-amd64</code> and <code>channel=alpha-linux</code> in <code>install.conf</code>. The Linux server has a release channel of its own, <code>alpha-linux</code>, independent of the OpenBSD server channels. Updates from the signed channel work as on OpenBSD (<a href="#ch3-managed">§3.6</a>): <code>filees-install --adopt</code> after installation, then <code>--apply</code>.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architecture</a><a href="operations.html">Operations →</a></nav>
 </div>

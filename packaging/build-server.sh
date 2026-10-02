@@ -151,9 +151,10 @@ else
 	# The updater's own configuration: which manifest to follow and where
 	# Subversion lives. login_conf_dir stays; it is unused on Linux.
 	sed -e 's|^platform=openbsd-amd64$|platform=linux-amd64|' \
+		-e 's|^channel=.*$|channel=alpha-linux|' \
 		-e 's|^svn=/usr/local/bin/svn$|svn=/usr/bin/svn|' \
 		"$root/packaging/server/install.example.conf" >"$tmp/share/filees/install.example.conf"
-	grep -qx 'platform=linux-amd64' "$tmp/share/filees/install.example.conf" && grep -qx 'svn=/usr/bin/svn' "$tmp/share/filees/install.example.conf" || {
+	grep -qx 'platform=linux-amd64' "$tmp/share/filees/install.example.conf" && grep -qx 'channel=alpha-linux' "$tmp/share/filees/install.example.conf" && grep -qx 'svn=/usr/bin/svn' "$tmp/share/filees/install.example.conf" || {
 		echo "linux install.example.conf was not rewritten" >&2
 		exit 2
 	}

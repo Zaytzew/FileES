@@ -21,6 +21,15 @@ Kanał jest podpisanym wskaźnikiem do niezmiennego katalogu releases/.
 Ewentualna gałąź poprawek starszej bety wymaga osobnej decyzji, gdy zaistnieje
 taka potrzeba; nigdy nie nadpisujemy opublikowanego katalogu wydania.
 
+## Serwer Linux: własne kanały (decyzja 2026-10-02)
+
+Serwer dla Linuksa ma osobny tor: `alpha-linux`, później `beta-linux` i
+`stable-linux`. Wydania nazywają się `r<N>-server-linux`, mają własną
+sekwencję i epokę bezpieczeństwa, a kandydat kanału to `channel-linux.json`.
+Kanały `alpha`/`beta`/`stable` (plik `.json`) pozostają torem serwera
+OpenBSD. Skrypt podpisujący odmawia przeniesienia wydania między torami.
+Reguły dojrzałości powyżej obowiązują w każdym torze osobno.
+
 ## Desktop: dwa buildy z jednej rewizji (decyzja 2026-09-24)
 
 Od 2026-09-24 **beta desktopu to osobny build, nie awans alfy**. Alfa niesie

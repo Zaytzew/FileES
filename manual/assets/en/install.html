@@ -59,13 +59,14 @@
 <li><a href="#ch3-keys">Key generation</a></li>
 <li><a href="#ch3-managed">filees-install / FILEES-BIN</a></li>
 <li><a href="#ch3-upload">Upload shelves</a></li>
+<li><a href="#ch3-linux">Server on Linux</a></li>
 </ol>
 </nav>
 <div class="manual-content">
 <h1 id="ch3">Chapter 3: Server Installation and Deploy</h1><div class="chapter-content">
 <p>This chapter is the Tech walkthrough: what you need, the two installer scripts, and <code>filees-install</code>. sshd fragments, the <code>server.json</code> field table, key regeneration and the htdocs tree are in <a href="operations.html">Operations</a>.</p>
 <h2 id="ch3-prereq">3.1 Prerequisites</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Production OpenBSD 7.9 hosts run from the signed release channel <code>alpha</code>; upgrades recorded on 2026-09-09 and 2026-09-13.</span></div>
-<p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle is also buildable; distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only control and data endpoint. Public Shares, when enabled, are served by the host's existing <code>httpd</code> (or an equivalent TLS terminator) through FastCGI — FileES still does not terminate TLS itself.</p>
+<p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle (<a href="#ch3-linux">§3.8</a>) is the build without a sandbox: distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only control and data endpoint. Public Shares, when enabled, are served by the host's existing <code>httpd</code> (or an equivalent TLS terminator) through FastCGI — FileES still does not terminate TLS itself.</p>
 <p>External dependencies:</p>
 <ul>
 <li><strong>SVN server</strong> — <code>svnserve</code>, independently installed and configured. This is the only supported access path: FileES reaches it as tunnel-mode <code>svnserve</code> over SSH. Apache/<code>mod_dav_svn</code> is not a FileES target and has never been tested.</li>
@@ -159,6 +160,26 @@ filees-install -purge -wipe-state</code></pre>
 <pre><code>* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
 <div class="warn"><strong>Recreating the directory is not a repair.</strong> On OpenBSD <code>filees-links</code> keeps access to the intake directory it found at start: <code>unveil</code> follows the directory itself, not its name. If the directory is removed and created again — by the daily cleanup of a temporary directory, or by hand — the running service stays blind to it and the upload page answers 404. Restart <code>filees_links</code> after any change of the intake path or directory.</div>
 <p>The bootstrap scripts keep existing JSON files and do not move an existing queue. On an upgraded host set both paths, schedule the reaper and restart the service yourself.</p>
+<h2 id="ch3-linux">3.8 Server on Linux</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Accepted on 2026-10-02 on Debian 13 and Fedora 44 in a test environment; the bundle is not yet in a signed release channel.</span></div>
+<div class="warn"><strong>Linux is the build without a sandbox.</strong> OpenBSD confines every server program with <code>pledge</code> and <code>unveil</code>; Linux has no equivalent, and the installer does not add service isolation, a firewall or a web server instead. The same programs run here with the rights of their accounts and nothing more. If you need the full protection, choose OpenBSD.</div>
+<p>The recommended distributions are <strong>Debian 13</strong> and <strong>Fedora</strong>. Requirements that do not depend on the distribution:</p>
+<ul>
+<li>OpenSSH <strong>9.8 or newer</strong> with <code>UsePAM yes</code> (Debian 12 ships an older one and is not enough);</li>
+<li>Subversion (<code>svn</code>, <code>svnadmin</code>, <code>svnserve</code>) and <code>openssl</code>;</li>
+<li>systemd or cron for scheduled maintenance.</li>
+</ul>
+<p>Installation has the same two stages as on OpenBSD, run as root from the unpacked <code>filees-server-linux-amd64</code> bundle:</p>
+<pre><code>./install-server.sh
+FILEES_SCHEDULER=systemd ./linux/install-ssh.sh</code></pre>
+<p>What <code>linux/install-ssh.sh</code> does differently from the OpenBSD version:</p>
+<ul>
+<li><strong>Tunnel account through PAM.</strong> Linux has no BSD Authentication, so <code>_filees-tunnel</code> authenticates with <code>keyboard-interactive:pam</code> and its own <code>/etc/pam.d/filees-tunnel</code> service using <code>pam_filees_tunnel.so</code>. The module relays the challenge and the answer to the same <code>filees-ssh-auth</code> OpenBSD runs. The system's PAM configuration for sshd is not changed.</li>
+<li><strong>SELinux.</strong> Where SELinux is enabled, the installer loads the <code>filees</code> policy module, which gives <code>/var/filees/onboarding</code>, <code>/var/filees/activation</code> and <code>/var/filees/repository-operations/recovery-keys</code> labels of their own. Without it sshd can neither authenticate the tunnel nor read client keys. If you move these paths in <code>server.json</code>, give the new ones the same labels.</li>
+<li><strong>Scheduled maintenance is your choice.</strong> <code>FILEES_SCHEDULER=systemd</code> installs timers, <code>FILEES_SCHEDULER=cron</code> writes the jobs to the <code>_filees-state</code> crontab and installs cron if it is missing, <code>FILEES_SCHEDULER=none</code> changes nothing. Without the variable the installer asks on a terminal. Running it again with another value switches the scheduler.</li>
+<li><strong>OpenSSH is not started.</strong> The installer validates the configuration (<code>sshd -t</code>) and reloads sshd only if it is already running.</li>
+<li><strong>Public shares are not configured.</strong> They need a domain and a web server, which the installer does not assume. The bundle carries the example <code>share/filees/linux/public-links.nginx.conf.example</code>, with the caveat that it is a pattern to review, not a ready configuration.</li>
+</ul>
+<p>The example files in the Linux bundle use <code>/usr/bin</code> paths for Subversion and <code>platform=linux-amd64</code> in <code>install.conf</code>. Updates from the signed channel work as on OpenBSD (<a href="#ch3-managed">§3.6</a>): <code>filees-install --adopt</code> after installation, then <code>--apply</code>.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architecture</a><a href="operations.html">Operations →</a></nav>
 </div>

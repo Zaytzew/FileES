@@ -305,4 +305,17 @@ func TestLinuxScheduledMaintenanceHasTwoEquivalentSchedulers(t *testing.T) {
 	if !strings.Contains(builder, `packaging/server/linux/systemd/*.timer "$tmp/share/filees/linux/systemd/"`) {
 		t.Error("builder does not stage the systemd units")
 	}
+	// Public shares are not configured on Linux; the bundle carries one
+	// reviewed-by-the-reader example instead, and the manual names it.
+	if !strings.Contains(builder, `packaging/server/linux/public-links.nginx.conf.example" "$tmp/share/filees/linux/"`) {
+		t.Error("builder does not stage the nginx example")
+	}
+	for _, page := range []string{"../manual/assets/pl/install.html", "../manual/assets/en/install.html"} {
+		manual := readLinuxServerFile(t, page)
+		for _, need := range []string{`id="ch3-linux"`, `href="#ch3-linux"`, "FILEES_SCHEDULER=systemd", "public-links.nginx.conf.example", "pam_filees_tunnel.so"} {
+			if !strings.Contains(manual, need) {
+				t.Errorf("%s: Linux section lacks %s", page, need)
+			}
+		}
+	}
 }

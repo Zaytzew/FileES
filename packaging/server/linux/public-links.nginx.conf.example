@@ -1,0 +1,46 @@
+# Example only, for nginx. FileES installs no web server on Linux and does not
+# enable public shares; this file shows the shape of the one integration
+# point. It was written from the OpenBSD httpd example and has not been run
+# against a production nginx - review it before use.
+#
+# Public shares additionally need, set up by the administrator:
+#   - "public_shares.enabled": true and a real base_url in /etc/filees/server.json,
+#   - filees-public-authority (as _filees-state) and filees-links (as
+#     _filees-links) started by a service manager of your choice,
+#   - /run/filees for their sockets, recreated at boot (tmpfiles.d or the unit),
+#   - the nginx worker user allowed to connect to the FastCGI socket
+#     ("socket_group" in /etc/filees/public-links.json).
+# On SELinux systems nginx also needs to be allowed to reach that socket.
+#
+# filees-links counts wrong passwords per client address. With nginx on the
+# same host it sees the real client through REMOTE_ADDR and needs no
+# "trusted_proxies". Behind another proxy, list that proxy's exact address in
+# public-links.json and make it send exactly one X-Forwarded-For.
+server {
+	listen 443 ssl;
+	server_name files.example.net;
+	ssl_certificate     /etc/ssl/files.example.net.fullchain.pem;
+	ssl_certificate_key /etc/ssl/private/files.example.net.key;
+
+	root /var/www/files.example.net;
+
+	# Static files are an explicit allowlist and come before FileES.
+	location = / { index index.html; }
+	location = /index.html { }
+	location = /favicon.ico { }
+	location = /robots.txt { }
+	location /assets/ { }
+	location /.well-known/acme-challenge/ { }
+
+	# Every other path is a virtual FileES path: /<realm alias>/<share name>.
+	# A directory on disk must never shadow one, hence no try_files here.
+	location / {
+		include fastcgi_params;
+		fastcgi_pass unix:/run/filees/filees-links.sock;
+		# Downloads and uploads are streamed; nginx must not spool them.
+		fastcgi_buffering off;
+		fastcgi_request_buffering off;
+		# Match max_upload_size in public-links.json (1 GiB in the example).
+		client_max_body_size 1g;
+	}
+}

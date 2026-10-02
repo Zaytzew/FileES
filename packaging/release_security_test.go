@@ -59,7 +59,7 @@ func TestServerReleasePreparationHasNoPrivateKeyAndDoesNotMoveChannel(t *testing
 		"FILEES_RELEASE_PUBKEY", `svn status -q`, `svn update --quiet`,
 		`source_revision=$(svn info --show-item revision | tr -d '\r\n')`,
 		`SVN returned an invalid source revision`,
-		`openbsd-binary-policy.json`, `channel.json`,
+		`"packaging/server/${platform%-amd64}-binary-policy.json"`, `channel.json`,
 		`review, then svn add/commit only releases/$RELEASE_ID`,
 	} {
 		if !strings.Contains(script, required) {
@@ -69,6 +69,16 @@ func TestServerReleasePreparationHasNoPrivateKeyAndDoesNotMoveChannel(t *testing
 	for _, forbidden := range []string{"SIGNIFY_SEC", "release.sec", "channels/stable.json", "channel-stable.json"} {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("build-host release preparation contains forbidden %q", forbidden)
+		}
+	}
+	// The policy name is derived from the platform, so every platform the
+	// script accepts must have its policy file.
+	for _, platform := range []string{"openbsd", "linux"} {
+		if !strings.Contains(script, platform+"-amd64") {
+			t.Errorf("server release preparation no longer accepts %s-amd64", platform)
+		}
+		if _, err := os.Stat("server/" + platform + "-binary-policy.json"); err != nil {
+			t.Errorf("no binary policy for %s-amd64: %v", platform, err)
 		}
 	}
 }

@@ -106,5 +106,5 @@ func residentRestartHint(goos string, services []string) string {
 	if goos == "openbsd" {
 		return "rcctl restart " + strings.Join(services, " ")
 	}
-	return "restart with your service manager: " + strings.Join(services, " ")
+	return "if you run them, restart with your service manager: " + strings.Join(services, " ")
 }

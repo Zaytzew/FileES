@@ -25,8 +25,10 @@ import androidbind.Androidbind
  */
 object FileesWatchTick {
     const val NOTIFICATION_CHANNEL_ID = "filees-watch-uploads"
+    private const val NOTIFICATION_PROGRESS_ID = 1001
     private const val NOTIFICATION_FAIL_ID = 1002
     private const val NOTIFICATION_WAIT_ID = 1003
+    private const val NOTIFICATION_SENT_ID = 1005
 
     fun run(context: Context, cancel: CaptureCancellation = CaptureCancellation(), onWork: (String) -> Unit = {}): Int = CaptureCoordinator.run(cancel) {
         val prefs = context.getSharedPreferences(FileesSession.PREFS, Context.MODE_PRIVATE)
@@ -45,6 +47,11 @@ object FileesWatchTick {
         val scope = "${server.id}:$repoId"
         val trees = watched.uris()
         val token = status.begin(scope, trees)
+        // A foreground window may promote this worker to a foreground service,
+        // which is the "Wysyłanie" notification. Android refuses that start
+        // from the background; the send still runs, and the same text is
+        // posted as an ordinary notification instead.
+        var foregroundRefused = false
         try {
             // Store handle only. Passing the paired host:port does not dial:
             // list, enqueue and the seen-receipt live under filesDir.
@@ -55,14 +62,17 @@ object FileesWatchTick {
             status.updateQueue(scope,trees,before.values.toList())
             // Promotion keeps a long send alive. A refusal must not skip the
             // walk or the dial: the new file is the trigger, in every tree.
-            var foregroundRefused = false
             fun promote(text: String) {
-                if (foregroundRefused) return
+                if (foregroundRefused) {
+                    notifyProgress(context, text)
+                    return
+                }
                 try {
                     onWork(text)
                 } catch (e: Exception) {
                     if (cancel.isCancelled || !FileesWatchWorker.backgroundStartDenied(e)) throw e
                     foregroundRefused = true
+                    notifyProgress(context, text)
                 }
             }
             if (pendingCount > 0) promote(context.getString(R.string.watch_queue_count, pendingCount))
@@ -144,6 +154,7 @@ object FileesWatchTick {
             }
         } catch (e: Exception) {
             if (FileesWatchWorker.backgroundStartDenied(e)) {
+                NotificationManagerCompat.from(context).cancel(NOTIFICATION_PROGRESS_ID)
                 trees.forEach { status.paused(scope,it,WatchStatusStore.START_NOT_ALLOWED) }
                 val notice = context.getSharedPreferences("filees_watch_scheduler",Context.MODE_PRIVATE)
                 if (!notice.getBoolean("start_deferred_notice",false)) {
@@ -154,6 +165,7 @@ object FileesWatchTick {
                 throw e
             }
             if (cancel.isCancelled) {
+                NotificationManagerCompat.from(context).cancel(NOTIFICATION_PROGRESS_ID)
                 trees.forEach { status.paused(scope,it,cancel.stopReason) }
                 throw e
             }
@@ -166,7 +178,17 @@ object FileesWatchTick {
         if (announce && failure != null) notifyMessage(context, context.getString(R.string.notification_watch_failed), failure, NOTIFICATION_FAIL_ID)
         else if (failure == null && result.waiting > 0) notifyMessage(context, context.getString(R.string.notification_watch_waiting),
             context.getString(R.string.notification_watch_waiting_text, result.waiting), NOTIFICATION_WAIT_ID)
-        // Receipt and journal are the success record; successful background work is silent.
+        if (result.sent > 0) {
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_PROGRESS_ID)
+            notifyMessage(
+                context,
+                context.getString(R.string.notification_watch_sent),
+                context.getString(R.string.notification_watch_sent_text, result.sent, repoName),
+                NOTIFICATION_SENT_ID,
+            )
+        } else if (foregroundRefused) {
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_PROGRESS_ID)
+        }
         result.sent
     }
 
@@ -246,7 +268,11 @@ object FileesWatchTick {
         return "$sentence\n$text"
     }
 
-    private fun notifyMessage(context: Context, title: String, text: String, id: Int) {
+    private fun notifyProgress(context: Context, text: String) {
+        notifyMessage(context, context.getString(R.string.watch_state_sending), text, NOTIFICATION_PROGRESS_ID, onlyAlertOnce = true)
+    }
+
+    private fun notifyMessage(context: Context, title: String, text: String, id: Int, onlyAlertOnce: Boolean = false) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -266,6 +292,7 @@ object FileesWatchTick {
             .setContentIntent(android.app.PendingIntent.getActivity(context,0,android.content.Intent(context,MainActivity::class.java),
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(onlyAlertOnce)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
         NotificationManagerCompat.from(context).notify(id, notification)

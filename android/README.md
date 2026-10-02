@@ -130,7 +130,7 @@ ZIP data stream into the durable Go queue before network I/O. Sources + ID
 survive lost ACKs/restarts. Delivered/deduplicated are the only success states;
 conflict/parked/uncertain remain queued. A process-wide coordinator and the
 Go store lock serialize work; cancellation closes active I/O. WorkManager
-appends the next tick, and successful background sends stay silent.
+appends the next tick. A background send posts the same outcome notification as a send started with the window open; an empty tick stays silent.
 
 The frame protocol does not resume at byte offsets: retry sends the same
 whole pack under the same ID. The client batches at 32 MiB / 1000 files and

@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 3, 2026
 .Dt FILEES-WORKER 8
 .Os
 .Sh NAME
@@ -56,7 +56,12 @@ Busy locks are not queued; errors are reported
 and the next scheduled invocation resumes durable state without force.
 The optional --check reads the last maintenance status and fails for
 missing, running, failed, corrupt or stale (over five minutes) state.
-The package provides an example crontab but does not enable it.
+The
+.Ox
+package provides an example crontab but does not enable this
+passport job.
+The Linux installer can schedule it through systemd or cron, according to
+FILEES_SCHEDULER; none leaves scheduling to the operator.
 Expiry is operational, at the next successful pass, not a strict SVN deadline.
 .It Cm upload-seed-reject
 plants one harmless EICAR reject in the waiting room of
@@ -129,7 +134,9 @@ never as root:
 .Bd -literal -offset indent
 * * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json >/dev/null
 .Ed
-The installer does not install that crontab.
+Neither platform installer schedules this upload job.
+The automatically maintained capacity monitor is a separate job and does
+not process upload intake.
 Intake job directories are
 .Cm 0770
 .Sy _filees-links : _filees-public

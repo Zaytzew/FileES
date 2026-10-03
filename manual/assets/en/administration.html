@@ -55,6 +55,7 @@
 <li><a href="#ch4-admin">Invite and revoke</a></li>
 <li><a href="#ch4-operation">After a crash</a></li>
 <li><a href="#ch4-audit">Where to look</a></li>
+<li><a href="#ch4-capacity">Capacity alerts</a></li>
 <li><a href="#ch4-mail">When mail does not arrive</a></li>
 <li><a href="#ch4-recovery">Recover and move storage</a></li>
 <li><a href="#ch4-monitoring">Daily checks</a></li>
@@ -120,6 +121,16 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 <p>On the user's computer: <strong>Dziennik</strong> in the tray, or <code>filees log 50</code>. That is the structured error list for this installation.</p>
 <p>On the server the onboarding audit is one JSON file per event under <code>/var/filees/onboarding/audit/</code>. The schema and event names are in <a href="operations.html#ops-audit">Operations</a>.</p>
 
+<h3 id="ch4-capacity">Capacity measurement and two alert routes</h3>
+<p>Prepare <code>/etc/filees/capacity-alerts.json</code> from the installed example. Set <code>schema: filees.capacity-alerts/v1</code>, <code>realm_id</code> to an existing operator realm, <code>admin_email</code> to its mailbox and <code>state_dir</code> to an absolute private directory. Configuration and state must be accessible to <code>_filees-state</code>. Optional <code>paths</code> entries have a <code>label</code> and absolute <code>path</code>; add the public frontend cache there if needed.</p>
+<p><code>admin_email</code> belongs to the separate alert configuration, not <code>repositories.recovery_admin_contact</code> in server.json. The latter receives data-erasure notices. No operator mailbox is a universal value imposed on every installation.</p>
+<pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json \
+  alert capacity --dry-run
+# After checking measurements and configuration:
+doas -u _filees-state filees-admin -config /etc/filees/server.json \
+  alert capacity</code></pre>
+<p><code>--dry-run</code> prints measurement JSON without state changes, email or publication. The scheduled job quietly does nothing when the settings file is absent. The OpenBSD installer repairs the per-minute cron entry; on Linux a selected systemd timer replaces cron. Verify that the chosen scheduler is running. <code>upload-reap</code> is separate.</p>
+<p>The monitor groups paths by filesystem and uses thresholds with hysteresis. Desktop reads the alert channel; email is an independent fallback. An ordinary successful measurement is silent. Current server code adds durable write admission and a session barrier for critical conditions. Full OpenBSD interruption and disk-full acceptance of this new integration is still outstanding. An alert neither reserves space nor guarantees action before ENOSPC. Do not remove held records merely because a parent process is absent: missing writer-completion evidence requires operator inspection.</p>
 <h2 id="ch4-mail">4.4 When mail does not arrive</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span></div>
 <p>Invitation, OTP and realm-removal mail go through the server outbox. If the first letter never arrived:</p>

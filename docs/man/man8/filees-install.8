@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 3, 2026
 .Dt FILEES-INSTALL 8
 .Os
 .Sh NAME
@@ -19,9 +19,11 @@
 .Op Fl -allow-rollback
 .Op Fl -yes
 .Op Fl -talkative
+.Nm
+.Fl -ensure-capacity-cron Ar sbin-dir server-config
 .Sh DESCRIPTION
 .Nm
-updates installed FileES server binaries from a separate binary release
+updates installed FileES server files from a separate binary release
 repository.
 It is not a package manager and does not create a local Subversion working
 copy.
@@ -32,6 +34,9 @@ verifies the
 signify signature against a public key embedded at
 build time, checks SHA-256 hashes, records a durable pre-image journal,
 and replaces targets atomically.
+The signed manifest can include man pages, integration scripts and
+configuration examples as well as programs.
+Atomic target replacement is not an atomic whole-release switch.
 .Pp
 Manifest schema v2 signs owner, group and full mode, including set-id bits.
 Install and rollback restore content, UID, GID and mode.
@@ -60,6 +65,19 @@ configuration contracts may trigger journalled, selective migrations of
 and
 .Pa /etc/filees/public-links.json .
 Unknown fields and custom storage paths are preserved.
+.Pp
+After a successful apply the installer attempts to retain four recent
+pre-image history entries and removes older backup directories.
+A failed removal keeps the entry and emits a warning for a later retry.
+Staging is cleaned after use and before the next staging attempt under the
+exclusive installer lock; do not store unrelated files there.
+Rollback restores managed files, not repository data.
+.Pp
+Releases carrying the capacity-monitor example maintain the marked
+per-minute job in the _filees-state crontab, preserving unrelated entries.
+On Linux an existing filees-capacity.timer avoids a duplicate cron entry.
+The job remains dormant until the operator prepares capacity-alerts.json.
+This scheduling does not enable upload-reap.
 .Pp
 The
 .Ic public_downloads_dir
@@ -123,6 +141,14 @@ Answer yes to interactive prompts.
 Print
 .Sq Li [SECURITY]
 unveil and pledge diagnostics.
+.It Fl -ensure-capacity-cron Ar sbin-dir server-config
+Bootstrap-only scheduling repair, without reading the release repository
+or downloading files.
+Run as root after protocol accounts and programs have been installed.
+Uses filees-admin from the specified directory and the supplied server
+configuration path.
+It preserves unrelated crontab entries and does not duplicate an existing
+Linux capacity timer.
 .El
 .Sh CONFIGURATION
 .Pa /etc/filees/install.conf

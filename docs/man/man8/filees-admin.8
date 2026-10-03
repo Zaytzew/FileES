@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 3, 2026
 .Dt FILEES-ADMIN 8
 .Os
 .Sh NAME
@@ -68,6 +68,12 @@
 .Nm
 .Op Fl config Ar path
 .Cm share delete Fl -channel-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm alert capacity
+.Op Fl -settings Ar path
+.Op Fl -scheduled
+.Op Fl -dry-run
 .Nm
 .Op Fl config Ar path
 .Cm erasure complete Fl -operation-id Ar uuid
@@ -222,8 +228,10 @@ rotates regardless of both triggers and
 evaluates them and prints the decision without rotating.
 The standalone
 .Xr filees-rotate 8
-takes its paths from the command line and applies no sandbox; prefer this
-command.
+also has an
+.Ox
+sandbox, but takes its paths from the command line;
+prefer the configured command for ordinary operation.
 .It Cm repo lock-guards
 Report, and with
 .Fl -apply
@@ -250,6 +258,49 @@ Delete one Public Shares channel, addressed by
 .Fl -channel-id
 as printed by
 .Cm share list .
+.It Cm alert capacity
+Measure configured storage locations, group them by filesystem and update
+the durable capacity state.
+Threshold transitions publish to the operator realm's read-only desktop
+alert channel and queue independent SMTP notifications.
+An ordinary successful sample is silent.
+The default settings file is
+.Pa /etc/filees/capacity-alerts.json
+beside the selected server configuration;
+.Fl -settings
+selects another file.
+.Fl -dry-run
+prints measurement JSON without state writes, email or publication.
+.Fl -scheduled
+quietly succeeds when the settings file is absent, allowing an installed
+job to remain dormant until the operator configures it.
+The settings schema is
+.Ic filees.capacity-alerts/v1 .
+Required fields are
+.Ic realm_id
+for an existing operator realm,
+.Ic admin_email
+for its mailbox, and an absolute private
+.Ic state_dir .
+Optional
+.Ic paths
+entries contain a
+.Ic label
+and an absolute
+.Ic path .
+The mailbox is distinct from
+.Ic repositories.recovery_admin_contact
+in the server configuration.
+Critical capacity invokes durable write admission, session draining and
+repository read-only policy.
+An unfinished writer prevents acknowledgement and reopening; absence of a
+parent PID is not proof that its children finished.
+Measurements are not disk-space reservations and cannot guarantee action
+before storage exhaustion.
+Native
+.Ox
+interruption and disk-full acceptance of the new admission
+integration remains outstanding.
 .It Cm erasure complete
 Close a data-erasure request after the operator has verified backup
 retention.

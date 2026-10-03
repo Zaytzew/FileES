@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man8/filees-install.8 sha256:2db8f29c922eec68178fbd2af1b13f85a83d58a2e685bb82c712c179e706bf2b">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-install.8 sha256:6bd228834d96d6ea5533c5ec7b9d5a2ad67c92fffbd8d87dd3cedb3f76638325">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-install(8) — FileES manual pages</title>
@@ -31,19 +31,22 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<div class="head" role="doc-pageheader" aria-label="Manual header
-  line"><span class="head-ltitle">FILEES-INSTALL(8)</span>
-  <span class="head-vol">System Manager's Manual</span>
-  <span class="head-rtitle">FILEES-INSTALL(8)</span></div>
-<main class="manual-text">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES-INSTALL(8)</td>
+    <td class="head-vol">System Manager's Manual</td>
+    <td class="head-rtitle">FILEES-INSTALL(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
 <section class="Sh">
-<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
 <p class="Pp"><code class="Nm">filees-install</code> &#x2014;
-    <span class="Nd" role="doc-subtitle">update FileES server binaries from a
-    signed FILEES-BIN repository</span></p>
+    <span class="Nd">update FileES server binaries from a signed FILEES-BIN
+    repository</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
 <table class="Nm">
   <tr>
     <td><code class="Nm">filees-install</code></td>
@@ -59,16 +62,27 @@
       [<code class="Fl">--talkative</code>]</td>
   </tr>
 </table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-install</code></td>
+    <td><code class="Fl">--ensure-capacity-cron</code> <var class="Ar">sbin-dir
+      server-config</var></td>
+  </tr>
+</table>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp"><code class="Nm">filees-install</code> updates installed FileES
-    server binaries from a separate binary release repository. It is not a
-    package manager and does not create a local Subversion working copy. It
-    fetches channel and manifest documents with <code class="Cm">svn cat</code>,
+    server files from a separate binary release repository. It is not a package
+    manager and does not create a local Subversion working copy. It fetches
+    channel and manifest documents with <code class="Cm">svn cat</code>,
     verifies the <span class="Ux">OpenBSD</span> signify signature against a
     public key embedded at build time, checks SHA-256 hashes, records a durable
-    pre-image journal, and replaces targets atomically.</p>
+    pre-image journal, and replaces targets atomically. The signed manifest can
+    include man pages, integration scripts and configuration examples as well as
+    programs. Atomic target replacement is not an atomic whole-release
+  switch.</p>
 <p class="Pp">Manifest schema v2 signs owner, group and full mode, including
     set-id bits. Install and rollback restore content, UID, GID and mode. The
     apply lock is exclusive; a <code class="Dv">SIGSTOP</code> then
@@ -85,6 +99,17 @@
     of <span class="Pa">/etc/filees/server.json</span> and
     <span class="Pa">/etc/filees/public-links.json</span>. Unknown fields and
     custom storage paths are preserved.</p>
+<p class="Pp">After a successful apply the installer attempts to retain four
+    recent pre-image history entries and removes older backup directories. A
+    failed removal keeps the entry and emits a warning for a later retry.
+    Staging is cleaned after use and before the next staging attempt under the
+    exclusive installer lock; do not store unrelated files there. Rollback
+    restores managed files, not repository data.</p>
+<p class="Pp">Releases carrying the capacity-monitor example maintain the marked
+    per-minute job in the _filees-state crontab, preserving unrelated entries.
+    On Linux an existing filees-capacity.timer avoids a duplicate cron entry.
+    The job remains dormant until the operator prepares capacity-alerts.json.
+    This scheduling does not enable upload-reap.</p>
 <p class="Pp">The <code class="Ic">public_downloads_dir</code> key in the
     <code class="Ic">install</code> section chooses the base for migrating
     legacy Public Shares temporary roots. Default:
@@ -100,7 +125,7 @@
     bridge.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h2>
+<h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h1>
 <dl class="Bl-tag">
   <dt id="c"><a class="permalink" href="#c"><code class="Fl">-c</code></a>
     <var class="Ar">file</var></dt>
@@ -139,10 +164,17 @@
   <dt id="talkative"><a class="permalink" href="#talkative"><code class="Fl">--talkative</code></a></dt>
   <dd>Print &#x2018;<code class="Li">[SECURITY]</code>&#x2019; unveil and pledge
       diagnostics.</dd>
+  <dt id="ensure-capacity-cron"><a class="permalink" href="#ensure-capacity-cron"><code class="Fl">--ensure-capacity-cron</code></a>
+    <var class="Ar">sbin-dir server-config</var></dt>
+  <dd>Bootstrap-only scheduling repair, without reading the release repository
+      or downloading files. Run as root after protocol accounts and programs
+      have been installed. Uses filees-admin from the specified directory and
+      the supplied server configuration path. It preserves unrelated crontab
+      entries and does not duplicate an existing Linux capacity timer.</dd>
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h2>
+<h1 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h1>
 <p class="Pp"><span class="Pa">/etc/filees/install.conf</span> is a plain
     <code class="Ic">section.key = value</code> file. Blank lines and lines
     beginning with &#x2018;<code class="Li">#</code>&#x2019; are ignored. An
@@ -162,9 +194,8 @@
   <dd>Target triple, default the host's own
     <code class="Ic">GOOS-GOARCH</code>.</dd>
   <dt id="repo.svn"><a class="permalink" href="#repo.svn"><code class="Ic">repo.svn</code></a></dt>
-  <dd><span class="Xr">svn(1)</span>
-      binary, default <code class="Cm">svn</code> from
-      <code class="Ev">PATH</code>.</dd>
+  <dd><span class="Xr">svn(1)</span> binary, default
+      <code class="Cm">svn</code> from <code class="Ev">PATH</code>.</dd>
   <dt id="local.state_dir"><a class="permalink" href="#local.state_dir"><code class="Ic">local.state_dir</code></a></dt>
   <dd>Recorded release, high-water mark and journal. Default
       <span class="Pa">/var/filees/install-state</span>.</dd>
@@ -228,7 +259,7 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
 <dl class="Bl-tag">
   <dt><span class="Pa">/etc/filees/install.conf</span></dt>
   <dd>Updater configuration.</dd>
@@ -239,13 +270,13 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
-  STATUS</a></h2>
+<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h1>
 <p class="Pp">The <code class="Nm">filees-install</code> utility exits&#x00A0;0
     on success, and&#x00A0;&gt;0 if an error occurs.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
 <p class="Pp">Adopt a host whose files already match a signed baseline
   release:</p>
 <div class="Bd Pp Bd-indent Li">
@@ -258,16 +289,19 @@ $ doas filees-install --apply</pre>
 </div>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h2>
-<p class="Pp"><span class="Xr">signify(1)</span>, <span class="Xr">svn(1)</span>, <a class="Xr" href="filees.7.html" aria-label="filees,
-    section 7">filees(7)</a></p>
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><span class="Xr">signify(1)</span>,
+    <span class="Xr">svn(1)</span>,
+    <a class="Xr" href="filees.7.html">filees(7)</a></p>
 </section>
-</main>
-<div class="foot" role="doc-pagefooter" aria-label="Manual footer
-  line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
-  <span class="foot-right">FILEES-INSTALL(8)</span></div>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 3, 2026</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
+  </tr>
+</table>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

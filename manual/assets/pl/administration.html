@@ -55,6 +55,7 @@
 <li><a href="#ch4-admin">Zaproszenie i odwołanie</a></li>
 <li><a href="#ch4-operation">Po awarii</a></li>
 <li><a href="#ch4-audit">Gdzie patrzeć</a></li>
+<li><a href="#ch4-capacity">Alarmy pojemności</a></li>
 <li><a href="#ch4-mail">Gdy poczta nie dochodzi</a></li>
 <li><a href="#ch4-recovery">Odtwarzanie i przeniesienie składowania</a></li>
 <li><a href="#ch4-monitoring">Codzienne sprawdzenia</a></li>
@@ -113,6 +114,16 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 <h2 id="ch4-audit">4.3 Gdzie patrzeć</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Na komputerze użytkownika: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
 <p>Na serwerze dziennik aktywacji klienta to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
+<h3 id="ch4-capacity">Pomiar pojemności i dwa kanały alarmów</h3>
+<p>Przygotuj <code>/etc/filees/capacity-alerts.json</code> na podstawie instalowanego przykładu. Ustaw <code>schema: filees.capacity-alerts/v1</code>, <code>realm_id</code> istniejącej strefy operatora, <code>admin_email</code> jego skrzynki i bezwzględny prywatny <code>state_dir</code>. Konfiguracja i stan muszą być dostępne dla <code>_filees-state</code>. Opcjonalne <code>paths</code> zawierają etykietę <code>label</code> i bezwzględną ścieżkę <code>path</code>; dodaj tam np. cache publicznego frontendu.</p>
+<p><code>admin_email</code> jest polem osobnej konfiguracji alarmów, nie <code>repositories.recovery_admin_contact</code> w server.json. Ten drugi adres służy powiadomieniom o usuwaniu danych. Żaden adres operatora nie jest uniwersalną wartością narzuconą wszystkim instalacjom.</p>
+<pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json \
+  alert capacity --dry-run
+# Po sprawdzeniu pomiaru i konfiguracji:
+doas -u _filees-state filees-admin -config /etc/filees/server.json \
+  alert capacity</code></pre>
+<p><code>--dry-run</code> mierzy i wypisuje JSON, bez zapisu stanu, poczty i publikacji. Zadanie <code>--scheduled</code> jest ciche przy braku pliku ustawień. Instalator OpenBSD uzupełnia minutowy wpis crona; na Linuksie wybrany timer systemd zastępuje cron. Sprawdź, że wybrany harmonogram faktycznie działa. Zadanie <code>upload-reap</code> pozostaje osobne.</p>
+<p>Monitor grupuje ścieżki według systemu plików i alarmuje zgodnie z progami oraz histerezą. Komunikat trafia do kanału odczytywanego przez pulpit, a poczta jest niezależnym kanałem awaryjnym; zwykły udany pomiar nie wysyła powiadomień. W kodzie bieżącego serwera krytyczny stan uruchamia trwałe wstrzymanie zapisów i barierę sesji. Odbiór tej nowej integracji na OpenBSD przy przerwaniu i pełnym dysku nadal pozostaje otwarty. Alarm nie jest rezerwacją miejsca ani gwarancją zdążenia przed ENOSPC. Nie usuwaj rekordów wstrzymania tylko dlatego, że nie widać procesu rodzica: brak potwierdzenia końca zapisu wymaga inspekcji administratora.</p>
 <h2 id="ch4-mail">4.4 Gdy poczta nie dochodzi</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <p>Zaproszenia, kody OTP i wiadomości związane z usuwaniem strefy przechodzą przez trwałą kolejkę poczty wychodzącej serwera. Jeżeli pierwsza wiadomość nie dotarła:</p>
 <pre><code>doas -u _filees-state filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;</code></pre>

@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:6865642678251aec196e4417a40f0c0747bb2e1288ff6363e94006f22aee0af0">
+<meta name="filees-mandoc-source" content="docs/man/man5/filees.conf.5 sha256:3cc8367e89c10ebfe8f230e82d91b437dceba2177bead7e409d0af20ad4175ae">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees.conf(5) — FileES manual pages</title>
@@ -31,19 +31,22 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<div class="head" role="doc-pageheader" aria-label="Manual header
-  line"><span class="head-ltitle">FILEES.CONF(5)</span>
-  <span class="head-vol">File Formats Manual</span>
-  <span class="head-rtitle">FILEES.CONF(5)</span></div>
-<main class="manual-text">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES.CONF(5)</td>
+    <td class="head-vol">File Formats Manual</td>
+    <td class="head-rtitle">FILEES.CONF(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
 <section class="Sh">
-<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
 <p class="Pp"><code class="Nm">filees.conf</code> &#x2014;
-    <span class="Nd" role="doc-subtitle">FileES server toolchain configuration
+    <span class="Nd">FileES server toolchain configuration
     (<span class="Pa">/etc/filees/server.json</span>)</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp">The FileES server tools read a single JSON document, by default
     <span class="Pa">/etc/filees/server.json</span>. The schema name is
     <code class="Cm">filees.server-toolchain/v2</code>. The file must be a
@@ -53,17 +56,16 @@
     does not need SMTP does not open the SMTP password file.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="KEYS"><a class="permalink" href="#KEYS">KEYS</a></h2>
+<h1 class="Sh" id="KEYS"><a class="permalink" href="#KEYS">KEYS</a></h1>
 <dl class="Bl-tag">
   <dt id="schema"><a class="permalink" href="#schema"><code class="Ic">schema</code></a></dt>
   <dd>Must be <code class="Cm">filees.server-toolchain/v2</code>.</dd>
   <dt id="display_name"><a class="permalink" href="#display_name"><code class="Ic">display_name</code></a></dt>
   <dd>Required human-facing server name, at most 80 Unicode characters. Changing
       it does not change immutable <code class="Ic">invitation.server_id</code>.
-      Run
-      <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
-      section 8">filees-operation(8)</a> <code class="Cm">recover</code> to
-      publish the new name to all active client projections.</dd>
+      Run <a class="Xr" href="filees-operation.8.html">filees-operation(8)</a>
+      <code class="Cm">recover</code> to publish the new name to all active
+      client projections.</dd>
   <dt id="root"><a class="permalink" href="#root"><code class="Ic">root</code></a></dt>
   <dd>Private onboarding directory. Default layout is
       <span class="Pa">/var/filees/onboarding</span>.</dd>
@@ -73,8 +75,8 @@
   <dt id="worker_private_key_file"><a class="permalink" href="#worker_private_key_file"><code class="Ic">worker_private_key_file</code></a>,
     <code class="Ic">worker_public_key_file</code></dt>
   <dd>Ed25519 key used by
-      <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker,
-      section 8">filees-worker(8)</a> when it pins the client helper.</dd>
+      <a class="Xr" href="filees-worker.8.html">filees-worker(8)</a> when it
+      pins the client helper.</dd>
   <dt id="activation"><a class="permalink" href="#activation"><code class="Ic">activation</code></a></dt>
   <dd>Absolute runtime paths: activation root, session root, authorized_keys,
       service authz, service working copy, service repository, client and mobile
@@ -107,12 +109,25 @@
       <code class="Ic">repositories.results_root</code>. Optional; a
       non-absolute value is rejected. Omitted defaults to
       <span class="Pa">results_root</span><a class="permalink" href="#/whale"><b class="Sy" id="/whale">/whale</b></a>.</dd>
+  <dt id="repositories.rotation_archive_root"><a class="permalink" href="#repositories.rotation_archive_root"><code class="Ic">repositories.rotation_archive_root</code></a></dt>
+  <dd>Absolute directory for frozen generations. It must share the
+      data-repository filesystem because the generation swap uses rename.</dd>
+  <dt id="repositories.load_spool_root"><a class="permalink" href="#repositories.load_spool_root"><code class="Ic">repositories.load_spool_root</code></a></dt>
+  <dd>Absolute directory for intermediate SVN import streams, default
+      <span class="Pa">results_root</span><a class="permalink" href="#/load-spool"><b class="Sy" id="/load-spool">/load-spool</b></a>.
+      A custom directory must exist and be writable by the service account
+      before <span class="Ux">OpenBSD</span> establishes its unveil profile.
+      Capacity checks estimate needs but do not reserve space.</dd>
+  <dt id="repositories.max_dump_size"><a class="permalink" href="#repositories.max_dump_size"><code class="Ic">repositories.max_dump_size</code></a></dt>
+  <dd>Byte limit for the SVN carrier and each intermediate dump stream,
+      including filtered and redump output; enforced while writing. Zero or
+      omission disables the limit; negative values are invalid. It does not cap
+      FSFS storage or aggregate temporary-space use.</dd>
   <dt id="public_shares"><a class="permalink" href="#public_shares"><code class="Ic">public_shares</code></a></dt>
   <dd>Optional distribution channel. Disabled by default. See
-      <a class="Xr" href="filees-public-authority.8.html" aria-label="filees-public-authority,
-      section 8">filees-public-authority(8)</a> and
-      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
-      section 5">filees-public-links(5)</a>.</dd>
+      <a class="Xr" href="filees-public-authority.8.html">filees-public-authority(8)</a>
+      and
+      <a class="Xr" href="filees-public-links.5.html">filees-public-links(5)</a>.</dd>
   <dt id="public_shares.authority_staging_root"><a class="permalink" href="#public_shares.authority_staging_root"><code class="Ic">public_shares.authority_staging_root</code></a></dt>
   <dd>Absolute private staging directory, independently configurable from the
       frontend cache. Omitted defaults to
@@ -124,6 +139,15 @@
   <dt id="public_shares.max_size"><a class="permalink" href="#public_shares.max_size"><code class="Ic">public_shares.max_size</code></a></dt>
   <dd>Maximum leaf size in bytes, default 1 GiB. At most two authority fetches
       run concurrently; reserve staging capacity accordingly.</dd>
+  <dt id="public_shares.recipient_otp_sends_per_invitation"><a class="permalink" href="#public_shares.recipient_otp_sends_per_invitation"><code class="Ic">public_shares.recipient_otp_sends_per_invitation</code></a></dt>
+  <dd>Recipient OTP delivery budget per invitation in any 24 hours, from 0 to
+      1000. The default is 5 queued attempts. Zero or omission selects the safe
+      default, not unlimited sending.</dd>
+  <dt id="public_shares.recipient_otp_sends_per_channel"><a class="permalink" href="#public_shares.recipient_otp_sends_per_channel"><code class="Ic">public_shares.recipient_otp_sends_per_channel</code></a></dt>
+  <dd>Recipient OTP delivery budget per channel in any 24 hours, from 0 to
+      100000. The default is 50 queued attempts; counts persist across code
+      epochs and restarts. Zero or omission selects the safe default, not
+      unlimited sending.</dd>
   <dt id="public_shares.max_channels_per_realm"><a class="permalink" href="#public_shares.max_channels_per_realm"><code class="Ic">public_shares.max_channels_per_realm</code></a></dt>
   <dd>Upper bound on live channels one realm may hold. Omitted defaults to
     128.</dd>
@@ -155,23 +179,23 @@
   <dd>Maximum sum of reserved bytes of simultaneous mobile downloads using the
       same temporary root. Zero or omission disables this quota; the example
       uses 4294967296 bytes (4 GiB). All workers sharing the root must use the
-      same limit and new version. Linux/OpenBSD workers keep a kernel lock for
-      each download until sending finishes. Admission and cleanup share a second
-      lock. A later admission or normal close removes abandoned buffers only
-      after acquiring their locks, never based on their age. Unknown files and
-      symlinks cause refusal. The private subdirectory is
-      <span class="Pa">filees-mobile-reads-v1</span> under the effective mobile
-      temporary root. Older temporary files outside it are not removed. Cleanup
-      is opportunistic, not a scheduled deadline. The quota covers reserved
-      payload bytes, not metadata, uploads or imports. Free-space checks
-      conservatively include all active reservations; other applications can
-      still exhaust the filesystem after admission.</dd>
+      same limit and new version. Linux and <span class="Ux">OpenBSD</span>
+      workers keep a kernel lock for each download until sending finishes.
+      Admission and cleanup share a second lock. A later admission or normal
+      close removes abandoned buffers only after acquiring their locks, never
+      based on their age. Unknown files and symlinks cause refusal. The private
+      subdirectory is <span class="Pa">filees-mobile-reads-v1</span> under the
+      effective mobile temporary root. Older temporary files outside it are not
+      removed. Cleanup is opportunistic, not a scheduled deadline. The quota
+      covers reserved payload bytes, not metadata, uploads or imports.
+      Free-space checks conservatively include all active reservations; other
+      applications can still exhaust the filesystem after admission.</dd>
   <dt id="upload"><a class="permalink" href="#upload"><code class="Ic">upload</code></a></dt>
   <dd>Optional closed upload-shelf intake. <code class="Ic">intake_root</code>
       must be absolute and shared with
-      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
-      section 5">filees-public-links(5)</a>. The <span class="Ux">OpenBSD</span>
-      layout is <span class="Pa">/var/filees-downloads/intake</span>, owned
+      <a class="Xr" href="filees-public-links.5.html">filees-public-links(5)</a>.
+      The <span class="Ux">OpenBSD</span> layout is
+      <span class="Pa">/var/filees-downloads/intake</span>, owned
       <a class="permalink" href="#_filees-links"><b class="Sy" id="_filees-links">_filees-links</b></a>:
       <a class="permalink" href="#_filees-public"><b class="Sy" id="_filees-public">_filees-public</b></a>
       mode 0770. <code class="Ic">trash_root</code> holds AV rejects in a
@@ -182,12 +206,11 @@
       and filesystem allocation overhead are not included. When full, the worker
       retains the incoming job and reports an error; it does not shorten the
       48-hour retention to make room. Configure the separate intake budget in
-      <a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
-      section 5">filees-public-links(5)</a> as well.
-      <code class="Ic">av_command</code> is required once intake is configured
-      and runs as <b class="Sy">_filees-state</b> from
-      <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker,
-      section 8">filees-worker(8)</a> <code class="Cm">upload-reap</code>.</dd>
+      <a class="Xr" href="filees-public-links.5.html">filees-public-links(5)</a>
+      as well. <code class="Ic">av_command</code> is required once intake is
+      configured and runs as <b class="Sy">_filees-state</b> from
+      <a class="Xr" href="filees-worker.8.html">filees-worker(8)</a>
+      <code class="Cm">upload-reap</code>.</dd>
   <dt id="invitation"><a class="permalink" href="#invitation"><code class="Ic">invitation</code></a></dt>
   <dd>Stable <code class="Ic">server_id</code>, public SSH
       <code class="Ic">server_address</code> and the verified Ed25519
@@ -208,7 +231,7 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
 <dl class="Bl-tag">
   <dt><span class="Pa">/etc/filees/server.json</span></dt>
   <dd>Installed configuration.</dd>
@@ -222,27 +245,26 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
 <p class="Pp">Validate the non-secret path after editing:</p>
 <div class="Bd Pp Bd-indent Li">
 <pre>$ doas -u _filees-state filees-admin ticket list</pre>
 </div>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h2>
-<p class="Pp"><a class="Xr" href="filees-public-links.5.html" aria-label="filees-public-links,
-    section 5">filees-public-links(5)</a>,
-    <a class="Xr" href="filees.7.html" aria-label="filees, section
-    7">filees(7)</a>,
-    <a class="Xr" href="filees-admin.8.html" aria-label="filees-admin, section
-    8">filees-admin(8)</a></p>
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><a class="Xr" href="filees-public-links.5.html">filees-public-links(5)</a>,
+    <a class="Xr" href="filees.7.html">filees(7)</a>,
+    <a class="Xr" href="filees-admin.8.html">filees-admin(8)</a></p>
 </section>
-</main>
-<div class="foot" role="doc-pagefooter" aria-label="Manual footer
-  line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 30, 2026</span>
-  <span class="foot-right">FILEES.CONF(5)</span></div>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 3, 2026</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
+  </tr>
+</table>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

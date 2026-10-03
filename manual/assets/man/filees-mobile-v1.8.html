@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man8/filees-mobile-v1.8 sha256:71855eaa0be255a5efd60b82c410888d953a9d3fc3a3bb8819bef16018c3f0ff">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-mobile-v1.8 sha256:9d368843e6b981fe0ba075f9e6a98acb49f3d7af178477a7a56d23a5c30fc256">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-mobile-v1(8) — FileES manual pages</title>
@@ -31,18 +31,21 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<div class="head" role="doc-pageheader" aria-label="Manual header
-  line"><span class="head-ltitle">FILEES-MOBILE-V1(8)</span>
-  <span class="head-vol">System Manager's Manual</span>
-  <span class="head-rtitle">FILEES-MOBILE-V1(8)</span></div>
-<main class="manual-text">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES-MOBILE-V1(8)</td>
+    <td class="head-vol">System Manager's Manual</td>
+    <td class="head-rtitle">FILEES-MOBILE-V1(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
 <section class="Sh">
-<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
 <p class="Pp"><code class="Nm">filees-mobile-v1</code> &#x2014;
-    <span class="Nd" role="doc-subtitle">FileES mobile protocol entry</span></p>
+    <span class="Nd">FileES mobile protocol entry</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
 <table class="Nm">
   <tr>
     <td><code class="Nm">filees-mobile-v1</code></td>
@@ -51,14 +54,13 @@
 </table>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp"><code class="Nm">filees-mobile-v1</code> is the set-id entry for
     <b class="Sy">_filees-mobile</b>. The installed image is
     <b class="Sy">_filees-state</b>:
     <a class="permalink" href="#_filees-access"><b class="Sy" id="_filees-access">_filees-access</b></a>
     mode 4550, the same class as
-    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
-    section 8">filees-client-entry(8)</a>.</p>
+    <a class="Xr" href="filees-client-entry.8.html">filees-client-entry(8)</a>.</p>
 <p class="Pp">The mobile client is paired from an already activated desktop. It
     inherits that desktop's repository list once. The phone may read a granted
     share and write only under <span class="Pa">mobile-uploads/</span>. A new
@@ -94,25 +96,25 @@
       worker, so an inactive repository is indistinguishable from an active
     one</dd>
   <dt id="POLICY_REJECTED"><a class="permalink" href="#POLICY_REJECTED"><code class="Ic">POLICY_REJECTED</code></a></dt>
-  <dd>reserved, not implemented yet: the mobile policy check named by the
-      protocol has no implementation in the worker</dd>
+  <dd>the requested parent is outside the permitted mobile-uploads subtree</dd>
 </dl>
-<p class="Pp">The two reserved outcomes are part of the wire contract and a
-    client may receive them from a future server; no current code path produces
-    either.</p>
+<p class="Pp">REPO_INACTIVE is reserved in the wire contract; no current append
+    path produces it. POLICY_REJECTED is implemented and covered by
+    outcome-reachability tests.</p>
 <p class="Pp">Missing parent directories are created only under
     <span class="Pa">mobile-uploads/</span>, which is the phone's own album
     tree. Everywhere else the destination directory must already exist.</p>
 <p class="Pp">The mobile projection does not receive
     <code class="Ic">editing_policy</code>.</p>
-<p class="Pp"><span class="Xr">sshd(8)</span> uses the shared <span class="Pa">authorized_keys</span> file.
-    The per-key <code class="Ic">command=</code> line selects this image. There
-    is no <code class="Ic">ForceCommand</code> on the
-    <b class="Sy">_filees-mobile</b> match block.</p>
+<p class="Pp"><span class="Xr">sshd(8)</span> uses the shared
+    <span class="Pa">authorized_keys</span> file. The per-key
+    <code class="Ic">command=</code> line selects this image. There is no
+    <code class="Ic">ForceCommand</code> on the <b class="Sy">_filees-mobile</b>
+    match block.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="TEMPORARY_STORAGE"><a class="permalink" href="#TEMPORARY_STORAGE">TEMPORARY
-  STORAGE</a></h2>
+<h1 class="Sh" id="TEMPORARY_STORAGE"><a class="permalink" href="#TEMPORARY_STORAGE">TEMPORARY
+  STORAGE</a></h1>
 <p class="Pp">The optional <code class="Cm">mobile.temp_root</code> in
     <span class="Pa">/etc/filees/server.json</span> selects a dedicated
     temporary directory. It must exist, be private (mode 0700), and be writable
@@ -130,27 +132,26 @@
     the server binary before adding the field to an old configuration.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
 <dl class="Bl-tag">
   <dt><span class="Pa">/var/filees-mobile/ledger</span></dt>
   <dd>Append ledger, owner <b class="Sy">_filees-state</b>.</dd>
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h2>
-<p class="Pp"><a class="Xr" href="filees.7.html" aria-label="filees, section
-    7">filees(7)</a>,
-    <a class="Xr" href="filees-client-entry.8.html" aria-label="filees-client-entry,
-    section 8">filees-client-entry(8)</a>,
-    <a class="Xr" href="filees-worker.8.html" aria-label="filees-worker, section
-    8">filees-worker(8)</a></p>
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><a class="Xr" href="filees.7.html">filees(7)</a>,
+    <a class="Xr" href="filees-client-entry.8.html">filees-client-entry(8)</a>,
+    <a class="Xr" href="filees-worker.8.html">filees-worker(8)</a></p>
 </section>
-</main>
-<div class="foot" role="doc-pagefooter" aria-label="Manual footer
-  line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
-  <span class="foot-right">FILEES-MOBILE-V1(8)</span></div>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 3, 2026</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
+  </tr>
+</table>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

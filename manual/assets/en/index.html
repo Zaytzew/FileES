@@ -50,9 +50,9 @@
 <h1>FileES Manual: User and Tech</h1>
 <p class="hero-copy">FileES synchronises folders with a remote repository and lets you share files with someone who will never install the client. This HTML set is the public manual for the system, split into two parts: <strong>User</strong> covers everyday use — what to click and why, <strong>Tech</strong> covers the architecture and contracts of the system. Administration mostly uses the User part. The OpenBSD manual pages (<code>mandoc</code>) belong to Tech.</p>
 <div class="meta-strip">
-<span><strong>Version</strong> 0.1.16</span>
-<span><strong>Date</strong> 2026-09-14</span>
-<span><strong>Server</strong> OpenBSD 7.9 · signed release channel</span>
+<span><strong>Version</strong> 0.1.18</span>
+<span><strong>Date</strong> 2026-10-03</span>
+<span><strong>Server</strong> OpenBSD 7.9 and Linux · signed channels</span>
 <span><strong>Client</strong> Linux and Windows desktop · Android</span>
 <span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
 </div>
@@ -60,8 +60,8 @@
 </section>
 <section aria-label="Maturity status legend" class="maturity-legend">
 <div class="legend-item"><span class="status status-verified">Verified</span><p>Behaviour is implemented and covered by relevant native, integration, regression or chaos tests, or by a live production acceptance. A badge often carries a scope after the word &mdash; <em>Verified on OpenBSD</em>, <em>Verified live</em>, <em>Verified cross-client</em> &mdash; and that scope is the point: it says where the evidence comes from, not merely that some exists.</p></div>
-<div class="legend-item"><span class="status status-implemented">Implemented</span><p>Code exists, but some target-platform packaging or later integration remains incomplete.</p></div>
-<div class="legend-item"><span class="status status-designed">Designed</span><p>The contract and boundaries are approved; implementation is incomplete or intentionally deferred. No section currently carries this level &mdash; it is kept because the distinction is real, not because something is marked with it.</p></div>
+<div class="legend-item"><span class="status status-implemented">Implemented</span><p>Code exists; the description names remaining acceptance, platform or integration limits. Shipping a package does not verify every scenario.</p></div>
+<div class="legend-item"><span class="status status-designed">Designed</span><p>The contract and boundaries are recorded; implementation is incomplete or intentionally deferred.</p></div>
 <div class="legend-item"><span class="status status-planned">Planned</span><p>Direction is recorded, but it is not part of the current operational contract.</p></div>
 </section>
 <div class="manual-layout">
@@ -117,24 +117,26 @@
 <li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
 <li><a href="man-pages.html">Man pages / CLI extract</a> — role, invocation, flags and examples for every server command.</li>
 </ul>
-<h2>What is current as of 2026-09-14</h2>
-<p>Each row names its evidence. <em>Verified</em> means someone watched it work on a real system; <em>Implemented</em> means the code and its tests exist, and the row says what has not yet been watched.</p>
+<h2>What is current as of 2026-10-03</h2>
+<p>Reviewed against source and signed channels on 2026-10-03. <em>Verified</em> applies to the named test or acceptance scope, not the whole product. Desktop has alpha and beta channels, Android its own channel, OpenBSD server alpha and beta, and Linux server a separate alpha-linux. Channels may carry different versions; stable is not published yet.</p>
 <div class="table-wrap"><table>
 <tr><th>Surface</th><th>State</th></tr>
 <tr><td>Desktop daemon + tray</td><td><span class="status status-verified">Verified</span> Linux and Windows; GUI is a thin IPC client</td></tr>
 <tr><td>Desktop GUI languages</td><td><span class="status status-verified">Verified</span> 2026-09-11 in a real Wails window: Polish, English, French, German and Spanish, chosen from the window header or following the system; plural forms and relative times follow the chosen language without restarting the GUI</td></tr>
-<tr><td>Android client</td><td><span class="status status-verified">Verified live</span> 2026-09-09 on <code>spot</code>: QR, listing, download, 198 files in one commit. Later builds with a redesigned home screen and an interface that follows the phone&rsquo;s language (PL, EN, DE, FR, ES) are built but <em>not yet accepted on a device</em></td></tr>
-<tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> including Windows named-pipe OTP and resume of an accepted attempt</td></tr>
+<tr><td>Android client</td><td><span class="status status-verified">Verified live</span> Pairing, browsing and download were accepted earlier; on 2026-09-27 the owner confirmed the new upload indicators and completion of a large queue after correcting server temporary storage. Phone-specific background limits remain. See <a href="android.html">Android</a>.</td></tr>
+<tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> The client generates its key locally, supplies OTP through embedded SSH with host-key pinning, and resumes an accepted attempt.</td></tr>
 <tr><td>Selective attach, locate, detach, load-dump</td><td><span class="status status-verified">Verified</span></td></tr>
 <tr><td>Realm grants and visibility</td><td><span class="status status-verified">Verified</span> owner-only; no transitive re-delegation</td></tr>
 <tr><td>Repository editing policy</td><td><span class="status status-verified">Verified</span> live 6/6 on two Windows clients</td></tr>
 <tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; each fresh visit freezes one revision and lists the shared folder as it stands at that revision</td></tr>
-<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> on production OpenBSD: hosts install and upgrade from the signed channel <code>alpha</code>; the latest recorded upgrade, 2026-09-13, carried the upload shelf server release</td></tr>
-<tr><td>Windows MSI / self-update</td><td><span class="status status-implemented">Implemented</span> one MSI installs the daemon, the GUI and the start scripts together; signed self-update of the pair was accepted on earlier releases. The MSI carries no Authenticode signature, and an MSI upgrade over an installed pair has not been exercised</td></tr>
-<tr><td>Linux server</td><td><span class="status status-implemented">Implemented</span> the server code builds and its test suite runs on Linux — first measured natively on Debian 13, 2026-09-09, after which the only failures left were defects that had nothing to do with the platform. Installation, service supervision, privilege drop and packaging are <em>not implemented yet</em>: there is no Linux installer, and <code>pledge</code>/<code>unveil</code> confinement does not exist outside OpenBSD, so on Linux that is the administrator&rsquo;s job</td></tr>
+<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified on OpenBSD</span> Installation and updates from a signed channel. The manifest includes programs, man pages and integration files. The installer bounds rollback history and cleans staging. Interruption acceptance for each new update path remains separate.</td></tr>
+<tr><td>Windows MSI / self-update</td><td><span class="status status-implemented">Implemented</span> MSI installs the daemon/GUI pair and a native startup supervisor. Stopping the old supervisor and replacing programs have regression coverage. Full acceptance of a legacy upgrade, repair and interrupted uninstall remains necessary.</td></tr>
+<tr><td>Linux server</td><td><span class="status status-verified">Verified in the laboratory</span> Installer, PAM, systemd/cron scheduling and updater; acceptance on Debian 13 and Fedora 44. A signed alpha-linux channel exists. Fedora receives an SELinux policy; Linux does not provide the OpenBSD pledge/unveil contract. See <a href="install.html#ch3-linux">installation</a>.</td></tr>
 <tr><td>Upload Channel — sender side</td><td><span class="status status-verified">Verified</span> 2026-09-12 on a production host: public upload, antivirus scan and commit into the delivery repository. It needed three fixes to package defaults first; the installer still does not schedule the <code>upload-reap</code> job, and without it uploads are accepted and never processed (see <a href="install.html">Install</a>). <code>slots</code>/DROPPER remain deliberately off</td></tr>
-<tr><td>Upload Channel — recipient side</td><td><span class="status status-implemented">Implemented</span> an upload shelf appears under its parent repository, lists what arrived, fetches chosen files on demand and read-only into a new folder you name, and places a file into the parent working copy without overwriting anything. Tested including a real sparse fetch on Windows; <em>not yet accepted by hand in a released GUI</em>, and not yet shipped in a desktop release</td></tr>
-<tr><td>Daemon memory safety</td><td><span class="status status-implemented">Implemented</span> IPC frames are read with small initial buffers and bounded time; under sustained memory pressure the daemon stops taking new work, saves its queue and asks to be restarted instead of being killed. No long-run observation of this code has been completed yet</td></tr>
+<tr><td>Upload Channel — recipient side</td><td><span class="status status-implemented">Implemented and shipped</span> Shelf listing, read-only fetch on demand and placement in the parent folder without replacement. Real sparse download was tested on Windows; this does not replace manual acceptance of every GUI action.</td></tr>
+<tr><td>Daemon memory safety</td><td><span class="status status-implemented">Implemented</span> Bounded IPC frames and controlled shutdown under memory pressure. An initial measurement exists; long-term observation is a separate weekly task. There is no proof ruling out a memory leak yet.</td></tr>
+<tr><td>Server capacity alerts</td><td><span class="status status-implemented">Implemented</span> GUI and email notifications passed live acceptance. The newer write gate and session barrier still need full OpenBSD, interruption and disk-full acceptance. See <a href="administration.html#ch4-capacity">configuration</a>.</td></tr>
+<tr><td>Encryption, Backstage, user administration console</td><td><span class="status status-planned">Planned</span> Crypto has an isolated prototype; it does not protect officially released repositories. Backstage and the console remain concepts.</td></tr>
 </table></div>
 <p>On the server host the Tech pages pair with:</p>
 <pre><code>man filees
@@ -148,7 +150,7 @@ man filees-install</code></pre>
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · 2026-09-14</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · 2026-10-03</span></footer>
 </main>
 </body>
 </html>

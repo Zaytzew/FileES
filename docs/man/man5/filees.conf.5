@@ -1,4 +1,4 @@
-.Dd September 30, 2026
+.Dd October 3, 2026
 .Dt FILEES.CONF 5
 .Os
 .Sh NAME
@@ -80,6 +80,23 @@ kept separate from the small repository-control journal under
 Optional; a non-absolute value is rejected.
 Omitted defaults to
 .Pa results_root Ns Sy /whale .
+.It Ic repositories.rotation_archive_root
+Absolute directory for frozen generations.
+It must share the data-repository filesystem because the generation swap
+uses rename.
+.It Ic repositories.load_spool_root
+Absolute directory for intermediate SVN import streams, default
+.Pa results_root Ns Sy /load-spool .
+A custom directory must exist and be writable by the service account
+before
+.Ox
+establishes its unveil profile.
+Capacity checks estimate needs but do not reserve space.
+.It Ic repositories.max_dump_size
+Byte limit for the SVN carrier and each intermediate dump stream,
+including filtered and redump output; enforced while writing.
+Zero or omission disables the limit; negative values are invalid.
+It does not cap FSFS storage or aggregate temporary-space use.
 .It Ic public_shares
 Optional distribution channel.
 Disabled by default.
@@ -103,6 +120,15 @@ unveil profile.
 Maximum leaf size in bytes, default 1 GiB.
 At most two authority fetches run
 concurrently; reserve staging capacity accordingly.
+.It Ic public_shares.recipient_otp_sends_per_invitation
+Recipient OTP delivery budget per invitation in any 24 hours, from 0 to 1000.
+The default is 5 queued attempts.
+Zero or omission selects the safe default, not unlimited sending.
+.It Ic public_shares.recipient_otp_sends_per_channel
+Recipient OTP delivery budget per channel in any 24 hours, from 0 to 100000.
+The default is 50 queued attempts; counts persist across code epochs
+and restarts.
+Zero or omission selects the safe default, not unlimited sending.
 .It Ic public_shares.max_channels_per_realm
 Upper bound on live channels one realm may hold.
 Omitted defaults to 128.
@@ -137,17 +163,25 @@ and refuses writes beyond the measured size.
 The shared reservation policy is described below.
 .It Ic mobile.max_read_spool_size
 Maximum sum of reserved bytes of simultaneous mobile downloads using the
-same temporary root. Zero or omission disables this quota; the example
+same temporary root.
+Zero or omission disables this quota; the example
 uses 4294967296 bytes (4 GiB).
 All workers sharing the root must use the same limit and new version.
-Linux/OpenBSD workers keep a kernel lock for each download until sending
-finishes. Admission and cleanup share a second lock. A later admission or
+Linux and
+.Ox
+workers keep a kernel lock for each download until sending
+finishes.
+Admission and cleanup share a second lock.
+A later admission or
 normal close removes abandoned buffers only after acquiring their locks,
-never based on their age. Unknown files and symlinks cause refusal.
+never based on their age.
+Unknown files and symlinks cause refusal.
 The private subdirectory is
 .Pa filees-mobile-reads-v1
-under the effective mobile temporary root. Older temporary files outside
-it are not removed. Cleanup is opportunistic, not a scheduled deadline.
+under the effective mobile temporary root.
+Older temporary files outside
+it are not removed.
+Cleanup is opportunistic, not a scheduled deadline.
 The quota covers reserved payload bytes, not metadata, uploads or imports.
 Free-space checks conservatively include all active reservations; other
 applications can still exhaust the filesystem after admission.

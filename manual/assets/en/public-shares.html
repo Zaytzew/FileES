@@ -101,6 +101,7 @@
 <h2 id="ps-ops">5.6 Turning it on</h2>
 <p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>
 
+<p>Recipient code delivery has a rolling 24-hour budget: by default 5 sends per invitation and 50 per channel. Exhaustion requires waiting for budget to become available; expiry of a code does not reset the count. Reopening the page does not bypass it. Intake and rejected-file budgets are separate from the single-file size limit; see <a href="install.html#ch3-upload">intake configuration</a>.</p>
 <h2 id="ps-upload">5.7 Upload shelves: receiving files</h2>
 <div class="section-meta"><span class="status status-verified">Verified live</span><span>Sender side on a production host, 2026-09-12: upload, antivirus scan, delivery into the shelf. Taking the files on the desktop is implemented and not yet accepted by hand (<a href="user-guide.html#ch2-gui">§2.6</a>).</span></div>
 <p>A public share gives files out; an upload shelf takes them in. A shelf is always closed: there is no anonymous upload and no public form that anyone could find.</p>
@@ -118,7 +119,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-10-03</span></footer>
 </main>
 </body>
 </html>

@@ -73,9 +73,9 @@
 <p>The system is designed around the following principles:</p>
 <ul>
 <li><strong>Convergence, not journalling.</strong> The periodic scanner captures end-state between ticks. Several filesystem operations between two scans may collapse into a single SVN commit.</li>
-<li><strong>No data loss.</strong> The commit staging map is written atomically to disk after every event. If the daemon dies between a commit being accepted by the server and the working-copy metadata being updated, the next restart reconciles by querying SVN status and skipping already-accepted entries.</li>
+<li><strong>Durable publication intent.</strong> The queue and attempt record support reconciliation after restart. A commit requires its receipt and evidence that the writer finished; SVN status alone is insufficient. Uncertainty preserves the queue and blocks retry. Durability depends on successful writes and disk synchronisation.</li>
 <li><strong>HEAD wins.</strong> Conflicts are resolved by keeping the server version. The local conflicting version is preserved in a timestamped <code>!kolizje/</code> directory before <code>svn resolve --accept theirs-full</code> is called.</li>
-<li><strong>Push deploy.</strong> Client identity (an Ed25519 key pair) is provisioned by the server through a reverse SSH tunnel initiated by the client. The server never holds a private key.</li>
+<li><strong>Client-initiated activation.</strong> The server requests Ed25519 generation through a reverse SSH tunnel, but the pair is generated locally on the client. The server receives only the public key and possession proof; it does not hold the installation private key.</li>
 </ul><div class="decision">
 <div class="decision-head">Design rationale / convergence instead of event journalling</div>
 <div class="decision-grid">
@@ -337,7 +337,7 @@
 <tr><td>Desktop presentation</td><td><code>cmd/filees-gui-wails</code>, <code>internal/gui/*</code></td><td>Wails window and tray, view model, actions, native dialogs, notifications and the five-language presentation catalogue; no SVN or engine ownership.</td></tr>
 <tr><td>Local boundary</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Capability-gated GUI/CLI to daemon protocol over a local Unix-domain socket (AF_UNIX, including Windows).</td></tr>
 <tr><td>Client lifecycle</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projection, durable attachment state, create/attach/import operations and dynamic repository runtimes.</td></tr>
-<tr><td>Repository engine</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Scanning, update/publish, edit leases and the only Subversion boundary: the <code>svn</code> CLI, or on Windows the native <code>filees-svn</code> helper.</td></tr>
+<tr><td>Repository engine</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Scanning, update, publication and edit passports. Released Windows and Linux clients use the supplied <code>filees-svn</code>; system <code>svn</code> remains a tooling or compatibility path, not an AppImage dependency.</td></tr>
 <tr><td>Error vocabulary and releases</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Shared code/message catalogue, diagnostic classification, and a release marker in <code>svn:log</code> with a local inbox.</td></tr>
 <tr><td>Server authority</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Authenticated tickets, canonical repository/grant/policy records and forced-command workers. There is no resident FileES server daemon.</td></tr>
 <tr><td>Activation and service view</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Installation identity, authorised realm join and client-specific service-repository projection.</td></tr>
@@ -392,7 +392,7 @@
 </div>
 </div>
 <h4>IPC Server (<code>pkg/ipcserver</code>) and Client (<code>pkg/ipcclient</code>)</h4>
-<p>The daemon exposes a Unix domain socket at <code>\$XDG_RUNTIME_DIR/filees.sock</code> (fallback: <code>~/.filees/daemon.sock</code>). The protocol is <code>filees.contract/v1</code> — versioned JSON Lines, one object per line. Normal requests are request/response; <code>events.subscribe</code> switches the connection to a server-push stream. Currently implemented commands include <code>system.hello</code>, <code>system.status</code>, <code>system.restart</code>, <code>system.shutdown</code>, signed-update commands, activation and mobile pairing, repository lifecycle commands (<code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.locate</code>, <code>repo.load_dump</code>, detach and delete, <code>repo.lifecycle_status</code>), realm-grant commands (<code>repo.grant_access</code>, <code>repo.revoke_access</code>, <code>realm.alias_claim</code>, <code>realm.grant_recipients</code>, <code>realm.set_visibility</code>, <code>realm.remove_begin</code>, <code>realm.remove_confirm</code>), <code>repo.activity</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>repo.reservation_list</code>, <code>repo.reservation_release</code>, <code>repo.publish</code>, <code>notice.list</code>, <code>notice.ack</code>, <code>error.list</code> and <code>events.subscribe</code>. Commands are advertised individually as capabilities; a client must not infer availability from this list. <code>repo.pause</code>, <code>repo.sync_now</code> and conflict decisions remain declared in the contract but unwired.</p><div class="decision">
+<p>GUI and CLI talk to the daemon over local <code>AF_UNIX</code> using <code>filees.contract/v1</code>, including on Windows. Availability comes from each command’s capability, not a static list. General pause uses <code>sync.pause</code>, the announcement editor uses <code>shout.draft</code>, and unconfirmed publication has separate recovery planning and acceptance. Legacy <code>repo.pause</code> and <code>repo.sync_now</code> are not substitutes for those working paths. See <a href="user-guide.html#ch2-commit-recovery">publication recovery</a>.</p><div class="decision">
 <div class="decision-head">Design rationale / events invalidate snapshots</div>
 <div class="decision-grid">
 <div class="decision-label">Decision</div><div class="decision-value">GUI events are signals to refetch daemon-owned snapshots, not a second state machine.</div>
@@ -608,7 +608,7 @@
 <nav class="page-nav"><a href="administration.html">← User: Administration</a><a href="install.html">Install →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-14</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-10-03</span></footer>
 </main>
 </body>
 </html>

@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 3, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
@@ -57,12 +57,12 @@ the installation no longer holds
 reserved, not implemented yet: repository state does not reach the append
 worker, so an inactive repository is indistinguishable from an active one
 .It Ic POLICY_REJECTED
-reserved, not implemented yet: the mobile policy check named by the protocol
-has no implementation in the worker
+the requested parent is outside the permitted mobile-uploads subtree
 .El
 .Pp
-The two reserved outcomes are part of the wire contract and a client may
-receive them from a future server; no current code path produces either.
+REPO_INACTIVE is reserved in the wire contract; no current append path
+produces it.
+POLICY_REJECTED is implemented and covered by outcome-reachability tests.
 .Pp
 Missing parent directories are created only under
 .Pa mobile-uploads/ ,

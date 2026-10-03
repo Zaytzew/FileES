@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man8/filees-admin.8 sha256:0158457d613e43d1a291f255ff994094760e7e69de4521aa8e02a162753b500b">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-admin.8 sha256:ed872cc8d38e7df3e8eea61df1949f7c527a297f0300ca386bfecb4aea218aa1">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-admin(8) — FileES manual pages</title>
@@ -31,19 +31,22 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<div class="head" role="doc-pageheader" aria-label="Manual header
-  line"><span class="head-ltitle">FILEES-ADMIN(8)</span>
-  <span class="head-vol">System Manager's Manual</span>
-  <span class="head-rtitle">FILEES-ADMIN(8)</span></div>
-<main class="manual-text">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES-ADMIN(8)</td>
+    <td class="head-vol">System Manager's Manual</td>
+    <td class="head-rtitle">FILEES-ADMIN(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
 <section class="Sh">
-<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
 <p class="Pp"><code class="Nm">filees-admin</code> &#x2014;
-    <span class="Nd" role="doc-subtitle">FileES administrative tickets,
-    revocation, repository repair and erasure closure</span></p>
+    <span class="Nd">FileES administrative tickets, revocation, repository
+    repair and erasure closure</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
 <table class="Nm">
   <tr>
     <td><code class="Nm">filees-admin</code></td>
@@ -203,6 +206,16 @@
   <tr>
     <td><code class="Nm">filees-admin</code></td>
     <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
+      <code class="Cm">alert capacity</code> [<code class="Fl">--settings</code>
+      <var class="Ar">path</var>] [<code class="Fl">--scheduled</code>]
+      [<code class="Fl">--dry-run</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-admin</code></td>
+    <td>[<code class="Fl">-config</code> <var class="Ar">path</var>]
       <code class="Cm">erasure complete</code>
       <code class="Fl">--operation-id</code> <var class="Ar">uuid</var>
       [<code class="Fl">--partially-retained</code>]</td>
@@ -218,7 +231,7 @@
 </table>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp"><code class="Nm">filees-admin</code> is the operator command for
     onboarding tickets and a small set of fail-closed administrative actions. It
     writes structured JSON to standard output and diagnostics to standard error.
@@ -249,7 +262,7 @@
     not an alternate repository-management interface.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="COMMANDS"><a class="permalink" href="#COMMANDS">COMMANDS</a></h2>
+<h1 class="Sh" id="COMMANDS"><a class="permalink" href="#COMMANDS">COMMANDS</a></h1>
 <dl class="Bl-tag">
   <dt id="ticket"><a class="permalink" href="#ticket"><code class="Cm">ticket
     create</code></a></dt>
@@ -291,9 +304,10 @@
     check-state</code></a></dt>
   <dd>Read repository-creation backend records and correlate them with canonical
       authority, FSFS/staging presence and, for a possible abandoned initial
-      creation, <span class="Xr">svnlook(1)</span> youngest revision. Normal active repositories are
-      omitted. The optional <code class="Fl">--realm-id</code> limits the JSON
-      report to one realm. This command does not remove repositories.</dd>
+      creation, <span class="Xr">svnlook(1)</span> youngest
+      revision. Normal active repositories are omitted. The optional
+      <code class="Fl">--realm-id</code> limits the JSON report to one realm.
+      This command does not remove repositories.</dd>
   <dt id="repo~3"><a class="permalink" href="#repo~3"><code class="Cm">repo
     prune</code></a></dt>
   <dd>Report the same abandoned-creation candidates as <code class="Cm">repo
@@ -333,9 +347,9 @@
       <code class="Fl">--force</code> rotates regardless of both triggers and
       <code class="Fl">--dry-run</code> evaluates them and prints the decision
       without rotating. The standalone
-      <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate,
-      section 8">filees-rotate(8)</a> takes its paths from the command line and
-      applies no sandbox; prefer this command.</dd>
+      <a class="Xr" href="filees-rotate.8.html">filees-rotate(8)</a> also has an
+      <span class="Ux">OpenBSD</span> sandbox, but takes its paths from the
+      command line; prefer the configured command for ordinary operation.</dd>
   <dt id="repo~6"><a class="permalink" href="#repo~6"><code class="Cm">repo
     lock-guards</code></a></dt>
   <dd>Report, and with <code class="Fl">--apply</code> install, the repository
@@ -357,6 +371,34 @@
   <dd>Delete one Public Shares channel, addressed by
       <code class="Fl">--channel-id</code> as printed by <code class="Cm">share
       list</code>.</dd>
+  <dt id="alert"><a class="permalink" href="#alert"><code class="Cm">alert
+    capacity</code></a></dt>
+  <dd>Measure configured storage locations, group them by filesystem and update
+      the durable capacity state. Threshold transitions publish to the operator
+      realm's read-only desktop alert channel and queue independent SMTP
+      notifications. An ordinary successful sample is silent. The default
+      settings file is <span class="Pa">/etc/filees/capacity-alerts.json</span>
+      beside the selected server configuration;
+      <code class="Fl">--settings</code> selects another file.
+      <code class="Fl">--dry-run</code> prints measurement JSON without state
+      writes, email or publication. <code class="Fl">--scheduled</code> quietly
+      succeeds when the settings file is absent, allowing an installed job to
+      remain dormant until the operator configures it. The settings schema is
+      <code class="Ic">filees.capacity-alerts/v1</code>. Required fields are
+      <code class="Ic">realm_id</code> for an existing operator realm,
+      <code class="Ic">admin_email</code> for its mailbox, and an absolute
+      private <code class="Ic">state_dir</code>. Optional
+      <code class="Ic">paths</code> entries contain a
+      <code class="Ic">label</code> and an absolute
+      <code class="Ic">path</code>. The mailbox is distinct from
+      <code class="Ic">repositories.recovery_admin_contact</code> in the server
+      configuration. Critical capacity invokes durable write admission, session
+      draining and repository read-only policy. An unfinished writer prevents
+      acknowledgement and reopening; absence of a parent PID is not proof that
+      its children finished. Measurements are not disk-space reservations and
+      cannot guarantee action before storage exhaustion. Native
+      <span class="Ux">OpenBSD</span> interruption and disk-full acceptance of
+      the new admission integration remains outstanding.</dd>
   <dt id="erasure"><a class="permalink" href="#erasure"><code class="Cm">erasure
     complete</code></a></dt>
   <dd>Close a data-erasure request after the operator has verified backup
@@ -365,8 +407,8 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
-  STATUS</a></h2>
+<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h1>
 <p class="Pp"><code class="Nm">filees-admin</code> uses
     <span class="Xr">sysexits(3)</span> values:</p>
 <dl class="Bl-tag Bl-compact">
@@ -387,7 +429,7 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
 <p class="Pp">Create a new-realm invitation:</p>
 <div class="Bd Pp Bd-indent Li">
 <pre>$ doas -u _filees-state filees-admin ticket create user@example.com</pre>
@@ -408,22 +450,17 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID \
 </div>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h2>
-<p class="Pp"><a class="Xr" href="filees.conf.5.html" aria-label="filees.conf,
-    section 5">filees.conf(5)</a>,
-    <a class="Xr" href="filees.7.html" aria-label="filees, section
-    7">filees(7)</a>,
-    <a class="Xr" href="filees-mail.8.html" aria-label="filees-mail, section
-    8">filees-mail(8)</a>,
-    <a class="Xr" href="filees-operation.8.html" aria-label="filees-operation,
-    section 8">filees-operation(8)</a>,
-    <a class="Xr" href="filees-rotate.8.html" aria-label="filees-rotate, section
-    8">filees-rotate(8)</a></p>
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><a class="Xr" href="filees.conf.5.html">filees.conf(5)</a>,
+    <a class="Xr" href="filees.7.html">filees(7)</a>,
+    <a class="Xr" href="filees-mail.8.html">filees-mail(8)</a>,
+    <a class="Xr" href="filees-operation.8.html">filees-operation(8)</a>,
+    <a class="Xr" href="filees-rotate.8.html">filees-rotate(8)</a></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="MOBILE_RECOVERY"><a class="permalink" href="#MOBILE_RECOVERY">MOBILE
-  RECOVERY</a></h2>
+<h1 class="Sh" id="MOBILE_RECOVERY"><a class="permalink" href="#MOBILE_RECOVERY">MOBILE
+  RECOVERY</a></h1>
 <p class="Pp">Run <code class="Cm">mobile recover --request-id UUID</code> as
     the owner of the mobile ledger directory, normally
     &#x2018;<code class="Li">doas -u _filees-state filees-admin</code>&#x2019;.
@@ -441,11 +478,13 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID \
     selects a private ledger owned by the effective user. Do not edit or remove
     pending records manually.</p>
 </section>
-</main>
-<div class="foot" role="doc-pagefooter" aria-label="Manual footer
-  line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">September 29, 2026</span>
-  <span class="foot-right">FILEES-ADMIN(8)</span></div>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 3, 2026</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
+  </tr>
+</table>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

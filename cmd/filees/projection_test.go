@@ -442,3 +442,61 @@ func TestAttachedProjectionLeavesUnprojectedRepositoriesOnTheDefaultPolicy(t *te
 		t.Fatalf("unprojected repository invented a policy: %+v", got[0])
 	}
 }
+
+func TestAttachedShelfProjectionTracksTransferInsteadOfStayingInitializing(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "lifecycle.json")
+	local, err := localrepo.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "11111111-1111-4111-8111-111111111111"
+	url := "svn+ssh://example/shelf"
+	record, err := local.BeginShelfAttach("office", id, url, filepath.Join(t.TempDir(), "shelf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkAttached(record.OperationID, id); err != nil {
+		t.Fatal(err)
+	}
+	view := clientview.View{Repositories: []clientview.Repository{{RepoID: id, URL: url, Access: "r", State: "active", Purpose: clientview.PurposeUploadShelf}}}
+	server := ipcserver.New(shortDaemonSocket(t))
+	check := func(want string) {
+		t.Helper()
+		syncProjectionKnowledge(server, "office", view, nil, local)
+		summary := server.RepoState("office", id).Summary()
+		if !summary.Attached || summary.State != want || server.RepoState("office", id).ProjectedState() != view.Repositories[0].State {
+			t.Fatalf("presentation=%+v want=%s", summary, want)
+		}
+		if desired := attachedProjection("office", view, nil); len(desired) != 0 {
+			t.Fatal("shelf entered supervisor")
+		}
+	}
+	check(contract.StateActive)
+	for _, ending := range []string{"complete", "failed", "complete"} {
+		record, err = local.QueueShelfFetch(record.OperationID, "upload", "photo.jpg", "dd17d21153a6b382d6c0ae25ed86128182e67fa7b53c9ea70868057f60a7cf45", 12)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(contract.StateInitializing)
+		if _, err := local.SetShelfFetchState(record.OperationID, record.ShelfFetch.ID, "running", nil); err != nil {
+			t.Fatal(err)
+		}
+		check(contract.StateInitializing)
+		if _, err := local.SetShelfFetchState(record.OperationID, record.ShelfFetch.ID, ending, errors.New("test failure")); err != nil {
+			t.Fatal(err)
+		}
+		want := contract.StateActive
+		if ending == "failed" {
+			want = contract.StateInteractionRequired
+		}
+		check(want)
+		// Reload the durable receipt as on a daemon restart.
+		local, err = localrepo.Open(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(want)
+	}
+	view.Repositories[0].State = contract.StateRevoked
+	check(contract.StateRevoked)
+}

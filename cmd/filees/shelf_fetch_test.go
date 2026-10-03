@@ -126,3 +126,78 @@ func TestShelfDownloadFromFreshAttachmentAndRestartReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestShelfImportRecoveredNameAndDestinationGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name, original, repoPath, destination, existing, want string
+	}{
+		{name: "recovered", repoPath: "incoming/20260929_191648-1.jpg", want: "20260929_191648-1.jpg"},
+		{name: "original Unicode", original: "Zdjęcie.jpg", repoPath: "incoming/server-name.jpg", want: "Zdjęcie.jpg"},
+		{name: "unsafe original", original: "../bad.jpg", repoPath: "incoming/safe.jpg"},
+		{name: "unsafe recovered path", repoPath: "incoming/../safe.jpg"},
+		{name: "missing names"},
+		{name: "reserved name", repoPath: "incoming/CON.jpg"},
+		{name: "existing file", repoPath: "incoming/photo.jpg", existing: "photo.jpg"},
+		{name: "case collision", repoPath: "incoming/photo.jpg", existing: "Photo.jpg"},
+		{name: "outside parent", repoPath: "incoming/photo.jpg", destination: "outside"},
+		{name: "nested WC", repoPath: "incoming/photo.jpg", destination: "nested"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			parentRoot := filepath.Join(root, "parent")
+			if err := os.Mkdir(parentRoot, 0700); err != nil {
+				t.Fatal(err)
+			}
+			store, err := localrepo.Open(filepath.Join(root, "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			started := 0
+			service := repositoryLifecycleService{store: store, onCreate: func(string) { started++ }}
+			parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: parentRoot}
+			item := contract.ShelfItem{UploadID: "recovered-upload", OriginalName: tc.original, RepoPath: tc.repoPath, SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+			destination := parentRoot
+			if tc.existing != "" {
+				if err := os.WriteFile(filepath.Join(parentRoot, tc.existing), []byte("user data"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.destination == "outside" {
+				destination = root
+			}
+			if tc.destination == "nested" {
+				destination = filepath.Join(parentRoot, "nested")
+				if err := os.MkdirAll(filepath.Join(destination, ".svn"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			shelfPath := filepath.Join(root, "shelf")
+			result, err := service.BeginShelfImport("office", uuid.NewString(), "svn+ssh://example/shelf", shelfPath, item, parent, destination)
+			if tc.want == "" {
+				if err == nil || started != 0 || len(store.List()) != 0 {
+					t.Fatalf("rejected import had effects: %v starts=%d", err, started)
+				}
+				if _, err := os.Stat(shelfPath); !os.IsNotExist(err) {
+					t.Fatal("rejected import created a shelf")
+				}
+				if tc.existing != "" {
+					data, err := os.ReadFile(filepath.Join(parentRoot, tc.existing))
+					if err != nil || string(data) != "user data" {
+						t.Fatal("existing file changed")
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, ok := store.Get(result.OperationID)
+			if !ok || started != 1 || got.ShelfFetch.State != "queued" || got.ShelfFetch.Placement.RelativePath != tc.want || got.ShelfFetch.RepoPath != tc.repoPath {
+				t.Fatalf("wrong durable import: %+v starts=%d", got, started)
+			}
+			if item.OriginalName != tc.original {
+				t.Fatal("receipt original name changed")
+			}
+		})
+	}
+}

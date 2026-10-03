@@ -65,7 +65,7 @@ func TestShelfDesktopAcceptance(t *testing.T) {
 	p := newDaemonProvisioner(store, provisioningStore, nil)
 	p.AddProfile(clientprofile.Profile{ServerID: "shelf-lab"})
 	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN {
-		return shelfDesktopSVN{client.New(client.Options{SvnPath: "svn", NativeSVNPath: os.Getenv("FILEES_TEST_NATIVE_SPARSE")}), url}
+		return shelfDesktopSVN{Client: client.New(client.Options{SvnPath: "svn", NativeSVNPath: os.Getenv("FILEES_TEST_NATIVE_SPARSE")}), url: url}
 	}
 	s := ipcserver.New(filepath.Join(root, "ipc.sock"))
 	s.RegisterActivation(contract.ActivationStatus{ServerID: "shelf-lab", DisplayName: "TEST PÓŁKI — bez Twoich repozytoriów", RealmID: "owner", RealmAlias: "test", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true, ViewSyncedAt: time.Now().UTC().Format(time.RFC3339), ViewGeneration: 1})
@@ -138,7 +138,8 @@ func (s shelfDesktopAuthority) ListShelf(context.Context, string, string) (contr
 
 type shelfDesktopSVN struct {
 	client.Client
-	url string
+	url                   string
+	parentURL, parentRoot string
 }
 
 func (s shelfDesktopSVN) CheckoutDepthEmpty(ctx context.Context, _ string, path string) (string, error) {
@@ -153,5 +154,106 @@ func (s shelfDesktopSVN) FetchSparsePath(ctx context.Context, root, path string)
 }
 func (s shelfDesktopSVN) GetInfo(ctx context.Context, path string) (string, error) {
 	out, err := s.Client.GetInfo(ctx, path)
+	if s.parentURL != "" && (path == s.parentRoot || strings.HasPrefix(path, s.parentRoot+string(filepath.Separator))) {
+		return strings.ReplaceAll(out, s.parentURL, "svn+ssh://synthetic/parent"), err
+	}
 	return strings.ReplaceAll(out, s.url, "svn+ssh://synthetic/shelf"), err
+}
+
+// Exercise recovered metadata through actual IPC, native sparse fetch and
+// verified no-replace placement in an isolated real parent working copy.
+func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
+	helper := os.Getenv("FILEES_TEST_NATIVE_SPARSE")
+	if helper == "" {
+		t.Skip("native helper required")
+	}
+	root := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(args ...string) {
+		t.Helper()
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v %s", args[0], err, out)
+		}
+	}
+	shelfURL := svnurl.File(filepath.Join(root, "shelf-repo"))
+	parentURL := svnurl.File(filepath.Join(root, "parent-repo"))
+	run("svnadmin", "create", filepath.Join(root, "shelf-repo"))
+	run("svnadmin", "create", filepath.Join(root, "parent-repo"))
+	seed := filepath.Join(root, "seed", "incoming")
+	must(os.MkdirAll(seed, 0700))
+	data := []byte("recovered upload contents\n")
+	must(os.WriteFile(filepath.Join(seed, "photo-1.jpg"), data, 0600))
+	must(os.WriteFile(filepath.Join(seed, "not-selected.jpg"), []byte("remote only"), 0600))
+	run("svn", "import", "-q", "-m", "isolated upload", filepath.Dir(seed), shelfURL)
+	parentRoot := filepath.Join(root, "parent")
+	run("svn", "checkout", "-q", parentURL, parentRoot)
+	store, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	must(err)
+	provisioningStore, err := provisioning.NewStore(filepath.Join(root, "provisioning"))
+	must(err)
+	p := newDaemonProvisioner(store, provisioningStore, nil)
+	p.AddProfile(clientprofile.Profile{ServerID: "shelf-lab"})
+	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN {
+		return shelfDesktopSVN{Client: client.New(client.Options{SvnPath: "svn", NativeSVNPath: helper}), url: shelfURL, parentURL: parentURL, parentRoot: parentRoot}
+	}
+	socketPath := shortDaemonSocket(t)
+	server := ipcserver.New(socketPath)
+	server.RegisterActivation(contract.ActivationStatus{ServerID: "shelf-lab", RealmID: "owner", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true})
+	parent := server.RegisterRepoAccess("parent", "svn+ssh://synthetic/parent", parentRoot, "shelf-lab", "rw")
+	parent.SetState(contract.StateActive)
+	server.RegisterProjectedRepoPolicy("parent", "Parent", "svn+ssh://synthetic/parent", "shelf-lab", "rw", "active", "owner", "optional", true)
+	server.RegisterProjectedRepoPolicy("shelf", "Shelf", "svn+ssh://synthetic/shelf", "shelf-lab", "r", "active", "owner", "optional", false).SetPurpose(contract.RepoPurposeUploadShelf)
+	item := contract.ShelfItem{UploadID: "recovered-upload", RepoPath: "incoming/photo-1.jpg", SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), Size: int64(len(data)), Revision: 1}
+	server.SetUploadChannelService(shelfDesktopAuthority{item: item})
+	server.SetRepositoryLifecycleService(repositoryLifecycleService{store: store, onCreate: p.Enqueue})
+	must(server.Start(t.Context()))
+	go p.Run(t.Context())
+	consumer := ipcclient.New(socketPath, "shelf-import-acceptance")
+	payload := contract.ShelfFetchPayload{ServerID: "shelf-lab", RepoID: "parent", ChannelID: "channel", UploadID: item.UploadID, LocalPath: filepath.Join(root, "received"), DestinationFolder: parentRoot}
+	result, err := consumer.ShelfFetch(t.Context(), payload)
+	must(err)
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		got, ok := store.Get(result.OperationID)
+		if ok && got.ShelfFetch.State == "failed" {
+			t.Fatalf("import failed: %s", got.ShelfFetch.Error)
+		}
+		if ok && got.ShelfFetch.State == "complete" {
+			actual, err := os.ReadFile(filepath.Join(parentRoot, "photo-1.jpg"))
+			must(err)
+			if string(actual) != string(data) {
+				t.Fatal("wrong placed bytes")
+			}
+			if _, err := os.Stat(filepath.Join(root, "received", "incoming", "not-selected.jpg")); !os.IsNotExist(err) {
+				t.Fatal("unselected sibling fetched")
+			}
+			if _, err := os.Stat(filepath.Join(parentRoot, "not-selected.jpg")); !os.IsNotExist(err) {
+				t.Fatal("unselected sibling placed")
+			}
+			// The authoritative receipt retains its unknown original name.
+			listed, err := consumer.ShelfList(t.Context(), "shelf-lab", "channel")
+			must(err)
+			if len(listed.Items) != 1 || listed.Items[0].OriginalName != "" {
+				t.Fatal("receipt original name invented")
+			}
+			payload.LocalPath = ""
+			if _, err := consumer.ShelfFetch(t.Context(), payload); err == nil {
+				t.Fatal("repeat import overwrote destination")
+			}
+			actual, err = os.ReadFile(filepath.Join(parentRoot, "photo-1.jpg"))
+			must(err)
+			if string(actual) != string(data) {
+				t.Fatal("repeat changed destination")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("import did not complete")
 }

@@ -132,7 +132,7 @@ function quarantineCard(item) {
 // hide the recognition or hide the handle.
 function shelfCard(item) {
 	return `<article class="share-row">
-		<div class="share-main"><span class="share-dot active" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${labelHTML("shelf.path")}: ${escapeHTML(item.repo_path || "")}</small></div></div>
+		<div class="share-main"><span class="share-dot active" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.repo_path || item.upload_id)}</strong><small>${labelHTML("shelf.path")}: ${escapeHTML(item.repo_path || "")}</small></div></div>
 		<div class="share-fact"><small>${labelHTML("field.size")}</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
 		<div class="share-fact"><small>${labelHTML("shelf.delivered")}</small><span data-shelf-time="${escapeHTML(item.accepted_at || "")}">${escapeHTML(shelfTime(item.accepted_at))}</span></div>
 		<div class="share-fact"><small>${labelHTML("shelf.revision")}</small><span>${item.revision ? "r" + escapeHTML(String(item.revision)) : labelHTML("field.unknown")}</span></div>

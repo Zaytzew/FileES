@@ -200,6 +200,26 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 		}
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
+	// Shelves have no supervised sync runtime to advance RegisterRepoAccess's
+	// initial state. Their durable selected-file transfer drives presentation.
+	for repoID, shelf := range attachedShelves {
+		state := ipc.RepoState(serverID, repoID)
+		if state == nil {
+			continue
+		}
+		summary := state.Summary()
+		if !summary.Attached || summary.Purpose != contract.RepoPurposeUploadShelf || summary.Access != "r" || summary.URL != shelf.RepoURL || state.ProjectedState() != contract.StateActive {
+			continue
+		}
+		switch shelf.ShelfFetch.State {
+		case "queued", "running":
+			state.SetState(contract.StateInitializing)
+		case "failed":
+			state.SetState(contract.StateInteractionRequired)
+		default:
+			state.SetState(contract.StateActive)
+		}
+	}
 	ready, pending := repositoryReadiness(serverID, view, attachments)
 	ipc.SetActivationRepositoryReadiness(serverID, ready, pending)
 }

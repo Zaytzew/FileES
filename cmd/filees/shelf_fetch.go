@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -25,10 +26,16 @@ func (service repositoryLifecycleService) BeginShelfFetch(serverID, repoID, repo
 }
 
 func (service repositoryLifecycleService) BeginShelfImport(serverID, repoID, repoURL, localPath string, item contract.ShelfItem, parent contract.RepoSummary, destination string) (contract.RepoLifecycleResult, error) {
-	if !filepath.IsAbs(destination) || !filepath.IsAbs(parent.LocalPath) || !localrepo.ValidShelfPath(item.OriginalName) || strings.Contains(item.OriginalName, "/") {
+	name := item.OriginalName
+	// A recovered receipt may only retain the verified SVN name. Use it for
+	// local placement without claiming to know the lost original name.
+	if name == "" && localrepo.ValidShelfPath(item.RepoPath) {
+		name = path.Base(item.RepoPath)
+	}
+	if !filepath.IsAbs(destination) || !filepath.IsAbs(parent.LocalPath) || !localrepo.ValidShelfPath(name) || strings.Contains(name, "/") {
 		return contract.RepoLifecycleResult{}, errors.New("invalid placement path")
 	}
-	rel, err := filepath.Rel(parent.LocalPath, filepath.Join(destination, item.OriginalName))
+	rel, err := filepath.Rel(parent.LocalPath, filepath.Join(destination, name))
 	if err != nil || !localrepo.ValidShelfPath(filepath.ToSlash(rel)) {
 		return contract.RepoLifecycleResult{}, errors.New("destination must be inside parent working copy")
 	}

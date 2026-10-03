@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -60,7 +61,11 @@ func TestGlobalCapacityBarrierWaitsForRealSupervisorAndKeepsGrant(t *testing.T) 
 func TestSVNChildReadOnlyModeUsesPersistentCapacityPolicy(t *testing.T) {
 	_, config, grant, lease := newSupervisorTestSession(t)
 	defer lease.Close()
-	config.Activation.ClientEntryPath = "/bin/true"
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Activation.ClientEntryPath = truePath
 	gate := storagewatch.Gate{Root: config.Activation.Root}
 	for _, held := range []bool{false, true, false} {
 		if held {

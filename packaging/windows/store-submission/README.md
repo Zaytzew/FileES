@@ -39,11 +39,22 @@ dla niepakowanych MSI/EXE do tego produktu.
 1. W Partner Center sprawdź stan produktu `9P0J1BRL5K77`, w tym wersję
    opublikowaną, ewentualny szkic i certyfikację. Jeśli r1882 jest już
    zgłoszone, nie twórz kolejnego zgłoszenia.
-2. Sprawdź, czy konto jest już powiązane z Microsoft Entra ID i czy istnieje
-   aplikacja z uprawnieniem **Manager** do API zgłoszeń. Utworzenie lub
-   powiązanie katalogu, aplikacji, roli i sekretu wymaga osobnej decyzji
-   właściciela. Nie wykonuj ich w ramach samego przygotowania narzędzia.
-3. Po zatwierdzeniu konfiguracji zapisz identyfikator dzierżawy w
+2. Najpierw sprawdź **typ konta**: ikona koła zębatego w Partner Center →
+   **Account settings / Ustawienia konta** → **Organization profile / Profil
+   organizacji** → **Legal profile / Profil prawny** → karta **Developer** →
+   **Account type** (`Company` albo `Individual`). Microsoft podaje, że
+   `Individual` nie obsługuje wielu użytkowników; brak sekcji zarządzania
+   aplikacjami Entra może wynikać z typu konta lub uprawnień. Nie zakładaj,
+   że menu opisane poniżej jest dostępne dla każdego konta.
+3. Jeśli konto i uprawnienia udostępniają tę ścieżkę, sprawdź **Account
+   settings → Tenants** oraz **Account settings → User management → Microsoft
+   Entra applications**. Dla zarządzania aplikacjami Microsoft wymaga roli
+   Manager w Partner Center i odpowiednich uprawnień w dzierżawie Entra.
+   Sprawdź, czy powiązanie i aplikacja już istnieją. Jeżeli brak menu,
+   ustal typ konta i rolę przed dalszym krokiem; do tego czasu używaj
+   ręcznego procesu zgłoszeń w portalu. Utworzenie lub powiązanie katalogu,
+   aplikacji, roli i sekretu wymaga osobnej decyzji właściciela.
+4. Dopiero po zatwierdzeniu konfiguracji zapisz identyfikator dzierżawy w
    `%LOCALAPPDATA%\FileES\StoreSubmission\account.json`, np.
    `{"tenantId":"<GUID>"}`. Klient ID i sekret przechowuj w lokalnym,
    związanym z użytkownikiem i komputerem magazynie DPAPI:
@@ -110,4 +121,6 @@ Po certyfikacji właściciel publikuje ręcznie i wykonuje odbiór aktualizacji.
 Oficjalna dokumentacja: [API procesu](https://learn.microsoft.com/en-us/windows/uwp/monetize/manage-app-submissions),
 [warunki i uwierzytelnienie](https://learn.microsoft.com/en-us/windows/uwp/monetize/create-and-manage-submissions-using-windows-store-services),
 [zasób produktu](https://learn.microsoft.com/en-us/windows/uwp/monetize/get-an-app),
+[ścieżka ustawień i typ konta](https://learn.microsoft.com/en-us/partner-center/account-settings/manage-account),
+[zarządzanie aplikacjami Entra](https://learn.microsoft.com/en-us/windows/apps/publish/partner-center/manage-azure-ad-applications-in-partner-center),
 [ostrzeżenie o `msstore publish`](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/commands).

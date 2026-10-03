@@ -59,6 +59,12 @@ func runPreparedUploadReap(config serverconfig.Config, stdout, stderr io.Writer)
 		report(stderr, "upload-reap trash", err)
 		return ExitConfig
 	}
+	// Unveil must see an existing directory to allow writes to descendants,
+	// including the first channel's receipt. Do this before any commit.
+	if err := os.MkdirAll(uploadAcceptedRoot(config), 0700); err != nil {
+		report(stderr, "upload-reap arrival index", err)
+		return ExitConfig
+	}
 	if err := sandboxApplyForExec(uploadMaintenanceProfile(config, false), uploadMaintenancePromises+" prot_exec unveil"); err != nil {
 		report(stderr, "upload maintenance sandbox", err)
 		return ExitSoftware

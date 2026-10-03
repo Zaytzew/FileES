@@ -16,8 +16,33 @@ import (
 
 	"filees/internal/obsandbox"
 	"filees/internal/uploadworker"
+	"filees/pkg/avscan"
+	"filees/pkg/realmbranding"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
+	"filees/public-shares/channel"
+	"filees/public-shares/intake"
+	"filees/public-shares/manifest"
+	"github.com/google/uuid"
 )
+
+type uploadSandboxAuthority struct{ owner, repo string }
+
+func (a uploadSandboxAuthority) OwnsActiveRepository(owner, repo string) error {
+	if owner != a.owner || repo != a.repo {
+		return errors.New("not owner")
+	}
+	return nil
+}
+func (a uploadSandboxAuthority) ActiveRealmAlias(owner string) (string, error) {
+	if owner != a.owner {
+		return "", errors.New("not owner")
+	}
+	return "sandbox-test", nil
+}
+func (uploadSandboxAuthority) ActiveRealmBranding(string) (realmbranding.Branding, error) {
+	return realmbranding.Default(), nil
+}
 
 func TestUploadMaintenanceProfilesSeparateSeedFromReaper(t *testing.T) {
 	var config serverconfig.Config
@@ -69,16 +94,40 @@ func TestUploadMaintenanceNativeConfinement(t *testing.T) {
 	}
 	root := sandboxedTestRoot(t)
 	var config serverconfig.Config
+	config.Activation.Root = filepath.Join(root, "activation")
 	config.Repositories.Root = filepath.Join(root, "repos")
 	config.Repositories.SVNAdminBinary = "/usr/local/bin/svnadmin"
 	config.Repositories.ResultsRoot = filepath.Join(root, "results")
 	config.Upload.IntakeRoot = filepath.Join(root, "intake")
 	config.Upload.TrashRoot = filepath.Join(root, "trash")
 	config.Upload.AVCommand = []string{"/usr/bin/true"}
-	for _, dir := range []string{config.Repositories.Root, config.Repositories.ResultsRoot, config.Upload.IntakeRoot, config.Upload.TrashRoot, config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)} {
+	for _, dir := range []string{config.Activation.Root, config.Repositories.Root, config.Repositories.ResultsRoot, config.Upload.IntakeRoot, config.Upload.TrashRoot, uploadAcceptedRoot(config), config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	stateRoot := config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)
+	protected := filepath.Join(stateRoot, "channel-record.json")
+	if err := os.WriteFile(protected, []byte("unchanged"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	owner, parent, uploadRepo := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	store := channel.Store{Root: stateRoot, TokenKey: []byte(strings.Repeat("t", 32)), Authority: uploadSandboxAuthority{owner, parent}}
+	upload, _, err := store.CreateUpload(uuid.NewString(), owner, manifest.Upload{
+		OwnerRealm: owner, AuthorityRepoID: parent, UploadRepoID: uploadRepo,
+		Slug: "arrival", Recipients: []string{"test@example.com"}, CollisionPolicy: manifest.CollisionDeny,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(config.Repositories.Root, uploadRepo)
+	if out, err := exec.Command(config.Repositories.SVNAdminBinary, "create", repo).CombinedOutput(); err != nil {
+		t.Fatalf("create delivery repository: %v %s", err, out)
+	}
+	spool := intake.Store{Root: config.Upload.IntakeRoot, MaxBytes: 1024}
+	job, err := spool.Accept(upload.ChannelID, upload.Alias, upload.Slug, strings.Repeat("ab", 32), "received.pdf", strings.NewReader("received payload"))
+	if err != nil {
+		t.Fatal(err)
 	}
 	forbidden := "/etc/passwd"
 	if _, err := os.Stat(forbidden); err != nil {
@@ -98,6 +147,43 @@ func TestUploadMaintenanceNativeConfinement(t *testing.T) {
 	}
 	if err := (uploadworker.Reaper{TrashRoot: config.Upload.TrashRoot}).PurgeExpired(context.Background(), time.Now()); err != nil {
 		t.Fatalf("trash lock/sweep under sandbox: %v", err)
+	}
+	// A real arrival record, including creation of its initially absent
+	// directory and atomic rename/fsync, must survive the cron sandbox.
+	entry := channel.Accepted{ChannelID: "test-channel", UploadID: "test-upload", RepoPath: "received.pdf", Revision: 1}
+	if err := store.RecordAccepted(entry); err != nil {
+		t.Fatalf("arrival index under sandbox: %v", err)
+	}
+	if err := store.RecordAccepted(entry); err != nil {
+		t.Fatalf("replacement of arrival index under sandbox: %v", err)
+	}
+	items, err := store.ListAccepted(entry.ChannelID)
+	if err != nil || len(items) != 1 || items[0].RepoPath != entry.RepoPath {
+		t.Fatalf("arrival listing under sandbox: %+v, %v", items, err)
+	}
+	if err := os.WriteFile(protected, []byte("changed"), 0600); err == nil {
+		t.Fatal("reaper can overwrite channel configuration")
+	}
+	if err := os.WriteFile(filepath.Join(stateRoot, "unexpected.json"), nil, 0600); err == nil {
+		t.Fatal("reaper can create unrelated channel configuration")
+	}
+	reaper := uploadworker.Reaper{Intake: spool, Channels: &store, ReposRoot: config.Repositories.Root, TrashRoot: config.Upload.TrashRoot,
+		Scanner: avscan.Static{Verdict: avscan.Clean}, Publisher: uploadworker.Publisher{
+			SVNMucc: config.Repositories.EffectiveSVNMuccBinary(), SVNLook: config.Repositories.EffectiveSVNLookBinary(),
+		}}
+	summary, err := reaper.Reap(context.Background())
+	if err != nil || summary.Accepted != 1 || summary.Unindexed != 0 || summary.Failed != 0 {
+		t.Fatalf("native commit and index: %+v, %v", summary, err)
+	}
+	listed, err := (repoworker.ChannelUploadService{Channels: &store}).ListShelf(context.Background(), owner, upload.ChannelID)
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].UploadID != job.UploadID || listed.Items[0].Revision != 1 || listed.Items[0].SHA256 != job.SHA256 {
+		t.Fatalf("shelf after native commit: %+v, %v", listed, err)
+	}
+	if out, err := exec.Command(config.Repositories.EffectiveSVNLookBinary(), "cat", repo, "received.pdf").CombinedOutput(); err != nil || string(out) != "received payload" {
+		t.Fatalf("committed payload: %v %s", err, out)
+	}
+	if summary, err := reaper.Reap(context.Background()); err != nil || summary.Accepted != 0 {
+		t.Fatalf("completed upload was retried: %+v, %v", summary, err)
 	}
 	for _, tool := range []string{config.Repositories.EffectiveSVNMuccBinary(), config.Repositories.EffectiveSVNLookBinary(), config.Upload.AVCommand[0]} {
 		if out, err := exec.Command(tool, "--version").CombinedOutput(); err != nil {

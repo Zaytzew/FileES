@@ -9,6 +9,10 @@ import (
 
 const uploadMaintenancePromises = "stdio rpath wpath cpath fattr flock proc exec unix inet dns"
 
+func uploadAcceptedRoot(config serverconfig.Config) string {
+	return filepath.Join(config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot), "upload-accepted")
+}
+
 // Cron has no forced-command parent: it must install its own sandbox before
 // reading intake/channel data or invoking SVN and the configured AV scanner.
 func uploadMaintenanceProfile(config serverconfig.Config, seed bool) obsandbox.Profile {
@@ -23,6 +27,9 @@ func uploadMaintenanceProfile(config serverconfig.Config, seed bool) obsandbox.P
 	p.Paths = append(p.Paths, capacityGatePaths(config)...)
 	p.Promises = uploadMaintenancePromises
 	p.Paths = append(p.Paths,
+		// Arrival records are written after the SVN commit. Keep channel
+		// manifests and invitation secrets read-only; only the index is writable.
+		obsandbox.Path{Label: "upload-accepted", Name: uploadAcceptedRoot(config), Perms: "rwc"},
 		obsandbox.Path{Label: "intake", Name: config.Upload.IntakeRoot, Perms: "rwc"},
 		obsandbox.Path{Label: "repositories-parent", Name: filepath.Dir(r.Root), Perms: "r"},
 		obsandbox.Path{Label: "repositories", Name: r.Root, Perms: "rwc"},

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"filees/internal/svnurl"
 	"io"
 	"os"
@@ -19,6 +20,8 @@ import (
 	"time"
 
 	"filees/pkg/activation"
+	"filees/pkg/errcat"
+	"filees/pkg/errmap"
 	"filees/pkg/onboarding"
 	"filees/pkg/serverconfig"
 
@@ -114,8 +117,10 @@ func TestSessionSupervisorReportsRevokeOnStderr(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("supervisor did not end after revoke")
 	}
-	if !strings.Contains(stderr.String(), "FILEES-SESSION-ENDED: revoked") {
-		t.Fatalf("stderr = %q, want it to contain the FILEES-SESSION-ENDED marker", stderr.String())
+	// The poll may observe the removed permission before the revoke FIFO:
+	// both existing reasons must reach the client as the same domain notice.
+	if got := errmap.Classify(errors.New(stderr.String())); got.Key != errcat.KeySessionEnded {
+		t.Fatalf("stderr = %q, classified as %s, want %s", stderr.String(), got.Key, errcat.KeySessionEnded)
 	}
 }
 

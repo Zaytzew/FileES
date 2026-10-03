@@ -39,21 +39,22 @@ dla niepakowanych MSI/EXE do tego produktu.
 1. W Partner Center sprawdź stan produktu `9P0J1BRL5K77`, w tym wersję
    opublikowaną, ewentualny szkic i certyfikację. Jeśli r1882 jest już
    zgłoszone, nie twórz kolejnego zgłoszenia.
-2. Najpierw sprawdź **typ konta**: ikona koła zębatego w Partner Center →
-   **Account settings / Ustawienia konta** → **Organization profile / Profil
-   organizacji** → **Legal profile / Profil prawny** → karta **Developer** →
-   **Account type** (`Company` albo `Individual`). Microsoft podaje, że
-   `Individual` nie obsługuje wielu użytkowników; brak sekcji zarządzania
-   aplikacjami Entra może wynikać z typu konta lub uprawnień. Nie zakładaj,
-   że menu opisane poniżej jest dostępne dla każdego konta.
-3. Jeśli konto i uprawnienia udostępniają tę ścieżkę, sprawdź **Account
-   settings → Tenants** oraz **Account settings → User management → Microsoft
-   Entra applications**. Dla zarządzania aplikacjami Microsoft wymaga roli
-   Manager w Partner Center i odpowiednich uprawnień w dzierżawie Entra.
-   Sprawdź, czy powiązanie i aplikacja już istnieją. Jeżeli brak menu,
-   ustal typ konta i rolę przed dalszym krokiem; do tego czasu używaj
-   ręcznego procesu zgłoszeń w portalu. Utworzenie lub powiązanie katalogu,
-   aplikacji, roli i sekretu wymaga osobnej decyzji właściciela.
+2. Właściciel potwierdził typ konta **Company**. Logowanie osobistym kontem
+   Microsoft nie zastępuje tożsamości aplikacji wymaganej przez API. Sprawdź
+   przypisaną rolę **Manager** w Partner Center.
+3. W Partner Center sprawdź **Settings → Account settings → Organization
+   profile → Tenants → Developer**. Tu Microsoft pokazuje powiązane dzierżawy
+   i umożliwia powiązanie istniejącej lub utworzenie nowej. Następnie sprawdź
+   **Account settings → User management → Microsoft Entra applications**.
+   Zarządzanie aplikacją wymaga roli Manager w Partner Center oraz uprawnień
+   Global administrator w dzierżawie. Jedną aplikację z rolą Manager można
+   wykorzystywać do kolejnych zgłoszeń produktów na tym koncie. Jeśli sekcja
+   Tenants nie jest widoczna także pod Organization profile, ustal dostępne
+   role i stan konta; nie zgaduj identyfikatora dzierżawy. Microsoft podaje,
+   że Entra ID Free jest bezpłatne i może być użyte do API zgłoszeń; na stronie
+   cennika dla wersji Free wskazuje wymóg subskrypcji Azure. Utworzenie lub
+   powiązanie dzierżawy, aplikacji, roli i sekretu wymaga osobnej decyzji
+   właściciela. Po konfiguracji kolejne aktualizacje wysyłaj przez API.
 4. Dopiero po zatwierdzeniu konfiguracji zapisz identyfikator dzierżawy w
    `%LOCALAPPDATA%\FileES\StoreSubmission\account.json`, np.
    `{"tenantId":"<GUID>"}`. Klient ID i sekret przechowuj w lokalnym,
@@ -122,5 +123,7 @@ Oficjalna dokumentacja: [API procesu](https://learn.microsoft.com/en-us/windows/
 [warunki i uwierzytelnienie](https://learn.microsoft.com/en-us/windows/uwp/monetize/create-and-manage-submissions-using-windows-store-services),
 [zasób produktu](https://learn.microsoft.com/en-us/windows/uwp/monetize/get-an-app),
 [ścieżka ustawień i typ konta](https://learn.microsoft.com/en-us/partner-center/account-settings/manage-account),
+[powiązanie dzierżawy](https://learn.microsoft.com/en-us/partner-center/account-settings/manage-tenants),
 [zarządzanie aplikacjami Entra](https://learn.microsoft.com/en-us/windows/apps/publish/partner-center/manage-azure-ad-applications-in-partner-center),
+[cennik Entra ID Free](https://www.microsoft.com/pl-pl/security/microsoft-entra-pricing),
 [ostrzeżenie o `msstore publish`](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/commands).

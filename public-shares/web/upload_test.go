@@ -91,10 +91,10 @@ func TestUploadGetRequiresInvitationAndHidesIdentity(t *testing.T) {
 		t.Fatalf("status=%d", ok.Code)
 	}
 	body := ok.Body.String()
-	if !strings.Contains(body, `type="file"`) || !strings.Contains(body, `name="file"`) || !strings.Contains(body, "Wyślij") {
+	if !strings.Contains(body, `type="file"`) || !strings.Contains(body, `name="file"`) || !strings.Contains(body, "Potwierdź i wyślij") {
 		t.Fatalf("form missing:\n%s", body)
 	}
-	if !strings.Contains(body, `id="upload-form"`) || !strings.Contains(body, `id="upload-drop"`) || !strings.Contains(body, "Upuść plik") || !strings.Contains(body, "Wysyłanie pliku") || !strings.Contains(body, "Nie zamykaj karty") {
+	if !strings.Contains(body, `id="upload-form"`) || !strings.Contains(body, `id="upload-drop"`) || !strings.Contains(body, "Upuść pliki") || !strings.Contains(body, "Wysyłanie plików") || !strings.Contains(body, "Nie zamykaj karty") {
 		t.Fatalf("drop field missing:\n%s", body)
 	}
 	csp := ok.Header().Get("Content-Security-Policy")

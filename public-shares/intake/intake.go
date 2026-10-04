@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"filees/internal/durable"
+	"filees/pkg/namingpolicy"
 	"github.com/google/uuid"
 )
 
@@ -52,6 +53,7 @@ type Store struct {
 	Now                  func() time.Time
 	CheckWrite           func() error    // authoritative admission and bounded body checks
 	ReceiveContext       context.Context // request lifetime while waiting for admission
+	RelativePath         string          // optional browser selection metadata; never a payload path
 }
 
 type Record struct {
@@ -61,6 +63,7 @@ type Record struct {
 	Alias        string    `json:"alias"`
 	Slug         string    `json:"slug"`
 	OriginalName string    `json:"original_name"`
+	RelativePath string    `json:"relative_path,omitempty"`
 	Size         int64     `json:"size"`
 	SHA256       string    `json:"sha256"`
 	TokenSHA256  string    `json:"token_sha256"`
@@ -77,6 +80,11 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	// Reject an invalid contributor name before creating any lock or job.
 	if _, err := boundedOriginalName(originalName); err != nil {
 		return record, err
+	}
+	if s.RelativePath != "" {
+		if _, err := namingpolicy.TargetPath(strings.TrimSpace(originalName), s.RelativePath); err != nil {
+			return record, ErrName
+		}
 	}
 	ctx := s.ReceiveContext
 	if ctx == nil {
@@ -121,6 +129,11 @@ func (s Store) accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	name, err := boundedOriginalName(originalName)
 	if err != nil {
 		return Record{}, err
+	}
+	if s.RelativePath != "" {
+		if _, err := namingpolicy.TargetPath(name, s.RelativePath); err != nil {
+			return Record{}, ErrName
+		}
 	}
 	uploadID := uuid.NewString()
 	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
@@ -178,7 +191,8 @@ func (s Store) accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	record := Record{
 		Schema: Schema, UploadID: uploadID, ChannelID: channelID, Alias: alias, Slug: slug,
 		OriginalName: name, Size: written, SHA256: hex.EncodeToString(hash.Sum(nil)),
-		TokenSHA256: tokenSHA256, ReceivedAt: s.now(), State: StateReady,
+		RelativePath: s.RelativePath,
+		TokenSHA256:  tokenSHA256, ReceivedAt: s.now(), State: StateReady,
 	}
 	tmpMeta := filepath.Join(dir, "."+metaName+".tmp")
 	raw, err := json.MarshalIndent(record, "", "  ")

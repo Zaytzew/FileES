@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -50,6 +51,39 @@ func TargetName(source string) (string, error) {
 		return "", err
 	}
 	return base + "." + ext, nil
+}
+
+// TargetPath derives a shelf path from a browser's relative file selection.
+// It is never a filesystem payload path. Empty relative keeps legacy uploads.
+func TargetPath(original, relative string) (string, error) {
+	name, err := TargetName(original)
+	if err != nil || relative == "" {
+		return name, err
+	}
+	if !utf8.ValidString(relative) || len(relative) > 4096 || strings.ContainsAny(relative, "\\:\x00") {
+		return "", ErrPath
+	}
+	for _, r := range relative {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return "", ErrPath
+		}
+	}
+	parts := strings.Split(relative, "/")
+	if len(parts) > 32 || parts[len(parts)-1] != original {
+		return "", ErrPath
+	}
+	for i := range parts[:len(parts)-1] {
+		part := parts[i]
+		if part == "" || len(part) > 512 || strings.Contains(part, "..") || strings.HasPrefix(part, ".") {
+			return "", ErrPath
+		}
+		parts[i], err = normalizeBase(part)
+		if err != nil {
+			return "", err
+		}
+	}
+	parts[len(parts)-1] = name
+	return strings.Join(parts, "/"), nil
 }
 
 func split(filename string) (string, string, error) {

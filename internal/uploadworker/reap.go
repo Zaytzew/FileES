@@ -31,7 +31,8 @@ var (
 	// It is internal: the file is committed and the acceptance is real, so it
 	// must not reach a caller as a failure. Reap counts it as accepted and
 	// separately as unindexed.
-	errUnindexed = errors.New("upload accepted but not indexed")
+	errUnindexed         = errors.New("upload accepted but not indexed")
+	errCommitUnconfirmed = errors.New("upload commit not confirmed")
 )
 
 type Publisher struct {
@@ -55,8 +56,8 @@ type Result struct {
 	Accepted int
 	Rejected int
 	Failed   int
-	// Unindexed counts files that were committed but whose arrival record
-	// could not be written. The file is safe and the acceptance is real, so
+	// Unindexed counts files that were committed but whose arrival record or
+	// durable contributor receipt could not be written. Acceptance is real, so
 	// it is not a failure; what is missing is the shelf entry a browser reads.
 	// Counted apart because calling it either "accepted" alone or "failed"
 	// would be a lie in one direction or the other.
@@ -66,6 +67,9 @@ type Result struct {
 func (r Reaper) Reap(ctx context.Context) (Result, error) {
 	if !filepath.IsAbs(r.Intake.Root) || r.Channels == nil || !filepath.IsAbs(r.ReposRoot) || !filepath.IsAbs(r.TrashRoot) || r.Scanner == nil || !filepath.IsAbs(r.Publisher.SVNMucc) || !filepath.IsAbs(r.Publisher.SVNLook) {
 		return Result{}, ErrIncomplete
+	}
+	if err := r.Channels.PurgeUploadOutcomes(); err != nil {
+		return Result{}, err
 	}
 	if err := r.PurgeExpired(ctx, r.now()); err != nil {
 		return Result{}, err
@@ -106,45 +110,49 @@ func (r Reaper) Reap(ctx context.Context) (Result, error) {
 func (r Reaper) process(ctx context.Context, job intake.Record) error {
 	payload := r.Intake.PayloadPath(job.UploadID)
 	if err := verifyPayload(payload, job); err != nil {
-		return r.fail(job.UploadID, err)
+		return r.fail(job, err)
 	}
 	record, err := r.Channels.GetUpload(job.ChannelID)
 	if err != nil {
-		return r.fail(job.UploadID, err)
+		return r.fail(job, err)
 	}
 	if record.Manifest == nil || record.State != channel.StateActive {
-		return r.fail(job.UploadID, errors.New("upload channel is not active"))
+		return r.fail(job, errors.New("upload channel is not active"))
 	}
 	verdict, detail, err := r.Scanner.Scan(ctx, payload)
 	if err != nil || verdict == avscan.Unavailable {
-		return r.fail(job.UploadID, avscan.ErrUnavailable)
+		return r.fail(job, avscan.ErrUnavailable)
 	}
 	if verdict == avscan.Infected {
 		if err := r.reject(ctx, job, record, payload, detail); err != nil {
-			return r.fail(job.UploadID, err)
+			return r.fail(job, err)
+		}
+		if err := r.Channels.RecordUploadOutcome(job.ChannelID, job.TokenSHA256,
+			channel.UploadStatus{UploadID: job.UploadID, State: "rejected", Reason: "antivirus"}); err != nil {
+			return r.fail(job, err)
 		}
 		if err := r.Intake.Remove(job.UploadID); err != nil {
 			return err
 		}
 		return ErrRejected
 	}
-	name, err := namingpolicy.TargetName(job.OriginalName)
+	name, err := namingpolicy.TargetPath(job.OriginalName, job.RelativePath)
 	if err != nil {
-		return r.fail(job.UploadID, err)
+		return r.fail(job, err)
 	}
 	repo := filepath.Join(r.ReposRoot, record.Manifest.UploadRepoID)
 	exists, err := r.exists(ctx, repo, name)
 	if err != nil {
-		return r.fail(job.UploadID, err)
+		return r.fail(job, err)
 	}
 	if exists {
-		return r.fail(job.UploadID, ErrCollision)
+		return r.fail(job, ErrCollision)
 	}
 	revision, err := r.putFile(ctx, repo, payload, name, "filees: accept upload "+job.UploadID, map[string]string{
 		"filees:upload-id": job.UploadID, "filees:upload-sha256": job.SHA256, "filees:upload-channel": job.ChannelID,
 	})
 	if err != nil {
-		return r.fail(job.UploadID, err)
+		return r.fail(job, err)
 	}
 	// The commit is the point of no return: the file is in the delivery
 	// repository, so the job leaves intake whatever happens next. Retrying
@@ -152,22 +160,37 @@ func (r Reaper) process(ctx context.Context, job intake.Record) error {
 	// A missing arrival record costs the browser an entry, never the file.
 	recordErr := r.Channels.RecordAccepted(channel.Accepted{
 		ChannelID: job.ChannelID, UploadID: job.UploadID,
-		RepoPath: name, OriginalName: job.OriginalName,
+		RepoPath: name, OriginalName: job.OriginalName, TokenSHA256: job.TokenSHA256,
 		Size: job.Size, SHA256: job.SHA256,
 		Revision: revision, AcceptedAt: r.now(),
 	})
+	outcomeErr := r.Channels.RecordUploadOutcome(job.ChannelID, job.TokenSHA256,
+		channel.UploadStatus{UploadID: job.UploadID, State: "accepted", RepoPath: name, Size: job.Size, SHA256: job.SHA256, Revision: revision})
 	if err := r.Intake.Remove(job.UploadID); err != nil {
 		return err
 	}
-	if recordErr != nil {
+	if recordErr != nil || outcomeErr != nil {
 		return errUnindexed
 	}
 	return nil
 }
 
-func (r Reaper) fail(uploadID string, err error) error {
-	_ = r.Intake.Release(uploadID)
-	return err
+func (r Reaper) fail(job intake.Record, err error) error {
+	reason := "operation"
+	switch {
+	case errors.Is(err, ErrCollision):
+		reason = "collision"
+	case errors.Is(err, avscan.ErrUnavailable):
+		reason = "scanner"
+	case errors.Is(err, ErrTrashFull), errors.Is(err, ErrTrashState):
+		reason = "storage"
+	case errors.Is(err, errCommitUnconfirmed):
+		reason = "confirmation"
+	}
+	receiptErr := r.Channels.RecordUploadOutcome(job.ChannelID, job.TokenSHA256,
+		channel.UploadStatus{UploadID: job.UploadID, State: "attention", Reason: reason})
+	releaseErr := r.Intake.Release(job.UploadID)
+	return errors.Join(err, receiptErr, releaseErr)
 }
 
 func (r Reaper) reject(ctx context.Context, job intake.Record, record channel.UploadRecord, payload, detail string) error {
@@ -233,10 +256,23 @@ func (r Reaper) putFile(ctx context.Context, repository, payload, repoPath, mess
 	for key, value := range revprops {
 		args = append(args, "--with-revprop", key+"="+value)
 	}
+	// The browser sends individual leaves; create their missing parent folders
+	// in the same SVN transaction as the leaf, using canonical derived paths.
+	parts := strings.Split(repoPath, "/")
+	for i := 1; i < len(parts); i++ {
+		prefix := strings.Join(parts[:i], "/")
+		exists, err := r.exists(ctx, repository, prefix)
+		if err != nil {
+			return 0, err
+		}
+		if !exists {
+			args = append(args, "mkdir", appendURL(fileURL(repository), prefix))
+		}
+	}
 	args = append(args, "put", payload, appendURL(fileURL(repository), repoPath))
 	out, err := r.Publisher.run(ctx, r.Publisher.SVNMucc, args...)
 	if err != nil {
-		return 0, err
+		return 0, errors.Join(errCommitUnconfirmed, err)
 	}
 	return committedRevision(out), nil
 }

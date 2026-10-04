@@ -36,6 +36,7 @@ type Accepted struct {
 	// stored rather than recomputed from OriginalName.
 	RepoPath     string `json:"repo_path"`
 	OriginalName string `json:"original_name"`
+	TokenSHA256  string `json:"token_sha256,omitempty"` // binds contributor receipts; never projected to desktop
 	Size         int64  `json:"size,omitempty"`
 	SHA256       string `json:"sha256,omitempty"`
 

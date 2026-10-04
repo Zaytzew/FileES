@@ -126,6 +126,24 @@ func (s Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		writeJSON(w, result)
+	case "/v1/upload/status":
+		var input struct {
+			Protocol string                        `json:"protocol"`
+			Request  authority.UploadStatusRequest `json:"request"`
+		}
+		reader, ok := s.Authority.(interface {
+			UploadStatus(context.Context, authority.UploadStatusRequest) (channel.UploadStatus, error)
+		})
+		if !ok || decode(request, &input) != nil || input.Protocol != Protocol {
+			notFound(w)
+			return
+		}
+		result, err := reader.UploadStatus(request.Context(), input.Request)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, result)
 	case "/v1/check":
 		var input objectRequest
 		if decode(request, &input) != nil || input.Protocol != Protocol {
@@ -233,6 +251,19 @@ func (c Client) InspectUpload(alias, slug string) (channel.UploadProjection, err
 	err := c.callJSON(context.Background(), "/v1/upload/inspect", addressRequest{Protocol: Protocol, Alias: alias, Slug: slug}, &result)
 	if err == nil && (result.Validate() != nil || result.Alias != alias || result.Slug != slug) {
 		err = errors.New("upload channel backchannel projection is invalid")
+	}
+	return result, err
+}
+
+func (c Client) UploadStatus(ctx context.Context, request authority.UploadStatusRequest) (channel.UploadStatus, error) {
+	var result channel.UploadStatus
+	input := struct {
+		Protocol string                        `json:"protocol"`
+		Request  authority.UploadStatusRequest `json:"request"`
+	}{Protocol, request}
+	err := c.callJSON(ctx, "/v1/upload/status", input, &result)
+	if err == nil && (result.UploadID != request.UploadID || !result.Valid()) {
+		err = errors.New("invalid upload status response")
 	}
 	return result, err
 }

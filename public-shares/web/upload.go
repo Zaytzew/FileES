@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -49,6 +50,10 @@ func (h Handler) uploadEntry(w http.ResponseWriter, request *http.Request, alias
 		invitation = request.URL.Query().Get("token")
 	}
 	if request.Method == http.MethodGet {
+		if uploadID := request.URL.Query().Get("upload_status"); uploadID != "" {
+			h.uploadStatus(w, request, projection, invitation, uploadID)
+			return
+		}
 		h.uploadGet(w, projection, invitation, request.URL.Query().Get("g"))
 		return
 	}
@@ -149,6 +154,8 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 	}
 	reader := multipart.NewReader(request.Body, boundary)
 	accepted := false
+	var receipt intake.Record
+	relativePath := ""
 	for {
 		part, err := reader.NextPart()
 		if err == io.EOF {
@@ -159,6 +166,14 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 			return
 		}
 		switch part.FormName() {
+		case "relative_path":
+			raw, readErr := io.ReadAll(io.LimitReader(part, 4097))
+			part.Close()
+			if readErr != nil || len(raw) > 4096 || relativePath != "" || accepted {
+				h.notFound(w)
+				return
+			}
+			relativePath = string(raw)
 		case "invite", "token":
 			raw, readErr := io.ReadAll(io.LimitReader(part, 8<<10))
 			part.Close()
@@ -198,6 +213,7 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 			}
 			original := disposition["filename"]
 			store := *h.Intake
+			store.RelativePath = relativePath
 			store.ReceiveContext = request.Context()
 			store.CheckWrite = func() error {
 				current, err := h.Backend.InspectUpload(projection.Alias, projection.Slug)
@@ -215,7 +231,7 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 			if store.MaxBytes < 1 {
 				store.MaxBytes = max
 			}
-			_, err = store.Accept(projection.ChannelID, projection.Alias, projection.Slug, gate.TokenHash(invitation), original, part)
+			receipt, err = store.Accept(projection.ChannelID, projection.Alias, projection.Slug, gate.TokenHash(invitation), original, part)
 			if errors.Is(err, storagewatch.ErrWriteHeld) || errors.Is(err, intake.ErrChannelFull) || errors.Is(err, intake.ErrQuarantineFull) || errors.Is(err, intake.ErrBudgetState) {
 				// The contributor is authorized; capacity is full or unknown.
 				// Do not drain the rejected body or pretend the link is dead.
@@ -238,7 +254,14 @@ func (h Handler) uploadFilePost(w http.ResponseWriter, request *http.Request, pr
 		h.notFound(w)
 		return
 	}
-	h.renderUpload(w, projection, true, "")
+	if request.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(channel.UploadStatus{UploadID: receipt.UploadID, State: "pending", Size: receipt.Size, SHA256: receipt.SHA256})
+		return
+	}
+	h.renderUploadReceipt(w, projection, true, "", receipt)
 }
 
 const uploadGrantKind = "upload"
@@ -329,6 +352,10 @@ func (h Handler) maxUploadBytes() int64 {
 }
 
 func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadProjection, accepted bool, grant string) {
+	h.renderUploadReceipt(w, projection, accepted, grant, intake.Record{})
+}
+
+func (h Handler) renderUploadReceipt(w http.ResponseWriter, projection channel.UploadProjection, accepted bool, grant string, receipt intake.Record) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	branding, err := realmbranding.Normalize(projection.Branding)
@@ -342,12 +369,14 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 	css := passwordCSS + uploadCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}" + publicDarkCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
-	csp := "default-src 'none'; style-src 'sha256-" + cssHash + "'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	csp := "default-src 'none'; style-src 'sha256-" + cssHash + "'; img-src data: blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 	if !accepted {
 		csp += "; script-src 'sha256-" + uploadFormScriptHash() + "'"
 	}
 	w.Header().Set("Content-Security-Policy", csp)
 	data := uploadPage{BrandSymbol: brandSymbol, CSS: template.CSS(css), Accepted: accepted, Grant: grant}
+	data.AcceptedName = receipt.OriginalName
+	data.MaxUploadBytes = h.maxUploadBytes()
 	if !accepted {
 		data.FormScript = template.JS(uploadFormJS)
 	}
@@ -387,13 +416,15 @@ func (h Handler) renderUploadOTP(w http.ResponseWriter, projection channel.Uploa
 }
 
 type uploadPage struct {
-	BrandSymbol  template.HTML
-	CSS          template.CSS
-	FormScript   template.JS
-	OwnerLogo    template.URL
-	HasOwnerLogo bool
-	Accepted     bool
-	Grant        string
+	BrandSymbol    template.HTML
+	CSS            template.CSS
+	FormScript     template.JS
+	OwnerLogo      template.URL
+	HasOwnerLogo   bool
+	Accepted       bool
+	Grant          string
+	AcceptedName   string
+	MaxUploadBytes int64
 }
 
 type uploadOTPPage struct {
@@ -406,11 +437,13 @@ type uploadOTPPage struct {
 	Email        string
 }
 
-const uploadCSS = `.drop{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:148px;margin:0 0 14px;padding:22px 18px;border:2px dashed #aeb7c5;border-radius:2px;background:var(--soft);color:var(--owner-ink);text-align:center;cursor:pointer}.drop:hover,.drop:focus-within,.drop[data-over="1"]{border-color:var(--owner-accent);background:#fff}.drop-title{font-family:var(--mono);font-size:13px;font-weight:650;line-height:1.45}.drop-name{max-width:100%;color:var(--muted);font-size:13px;line-height:1.4;word-break:break-all}.drop-name:empty{display:none}.file-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.file-sr:focus-visible+ .drop-title{outline:3px solid var(--focus);outline-offset:4px}.hint{margin:12px 0 0;color:var(--muted);font-size:14px;line-height:1.55}.status{margin:0 0 18px;color:var(--owner-ink);font-family:var(--mono);font-size:14px}.pending{display:none;align-items:center;gap:12px;margin:0;color:var(--owner-ink);font-family:var(--mono);font-size:14px;line-height:1.45}.spinner{flex:0 0 auto;width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--owner-accent);border-radius:50%;animation:filees-spin .8s linear infinite}@keyframes filees-spin{to{transform:rotate(360deg)}}form[data-busy="1"] .field-label,form[data-busy="1"] .drop,form[data-busy="1"] .password-row,form[data-busy="1"] .hint{display:none}form[data-busy="1"] .pending{display:flex}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-color:var(--owner-accent)}}`
+const uploadCSS = `.upload-heading{font-size:26px;margin:0 0 12px}.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:130px;margin:18px 0 10px;padding:22px 18px;border:2px dashed var(--line);background:var(--soft);text-align:center;cursor:pointer}.drop:hover,.drop:focus-within,.drop[data-over="1"]{border-color:var(--owner-accent)}.drop-title{font-family:var(--mono);font-size:13px;font-weight:650;line-height:1.5}.drop-name:empty{display:none}.file-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.file-sr:focus-visible+.drop-title{outline:3px solid var(--focus);outline-offset:4px}.hint{margin:12px 0;color:var(--muted);font-size:14px;line-height:1.55}.folder-pick{display:inline-block;margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);cursor:pointer;font-size:13px}.folder-pick[hidden],[hidden]{display:none!important}.folder-pick:focus-within,.upload-action:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.upload-list{margin:16px 0;border-top:1px solid var(--line)}.upload-row{display:flex;align-items:start;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.upload-row-info{display:flex;flex-direction:column;gap:5px;min-width:0}.upload-action{border:1px solid var(--line);background:var(--paper);color:var(--owner-ink);padding:6px 9px;cursor:pointer;font:inherit;font-size:12px}.upload-action:hover{border-color:var(--owner-accent)}.upload-name{text-align:left;overflow-wrap:anywhere;padding:0;border:0;font-weight:600;font-size:14px}.upload-size,.upload-state,.upload-reason,.upload-destination{font-size:12px;overflow-wrap:anywhere}.upload-size{color:var(--muted)}.upload-row[data-state="accepted"] .upload-state{color:var(--owner-ink);font-weight:650}.upload-row[data-state="rejected"] .upload-state,.upload-row[data-state="attention"] .upload-state,.upload-row[data-state="uncertain"] .upload-state,.upload-row[data-state="invalid"] .upload-state{color:var(--owner-accent)}.upload-directory{border-bottom:1px solid var(--line);padding:10px 0}.upload-directory summary{cursor:pointer;overflow-wrap:anywhere;font-weight:600}.upload-directory summary button{margin-left:12px}.upload-branch{margin-left:14px;border-left:1px solid var(--line);padding-left:12px}.pending{display:none;align-items:center;gap:12px;color:var(--owner-ink);font-size:14px}.spinner{width:20px;height:20px;border:3px solid var(--line);border-top-color:var(--owner-accent);border-radius:50%;animation:filees-spin .8s linear infinite}@keyframes filees-spin{to{transform:rotate(360deg)}}form[data-busy="1"] .pending{display:flex}button:disabled{opacity:.55;cursor:default}dialog{width:min(850px,calc(100% - 24px));max-height:85vh;overflow:auto;background:var(--paper);color:var(--ink);border:1px solid var(--line);padding:20px}dialog::backdrop{background:rgba(0,0,0,.55)}dialog h2{font-size:18px;overflow-wrap:anywhere}.upload-preview-image{display:block;max-width:100%;max-height:65vh;object-fit:contain}.upload-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}`
 
 // uploadFormJS is the only script on the public intake form. It is hashed into
 // CSP (no unsafe-inline). It must stay ASCII and must not contain "</".
-const uploadFormJS = `(function(){var f=document.getElementById("upload-form");var input=document.getElementById("upload-file");var drop=document.getElementById("upload-drop");var name=document.getElementById("upload-name");if(!f||!input||!drop)return;function busy(e){if(f.getAttribute("data-busy")==="1"){if(e)e.preventDefault();return false}f.setAttribute("data-busy","1");f.setAttribute("aria-busy","true");return true}function showName(){if(!name)return;name.textContent=(input.files&&input.files[0]&&input.files[0].name)?input.files[0].name:""}function takeFile(file){if(!file)return false;try{var dt=new DataTransfer();dt.items.add(file);input.files=dt.files}catch(err){return false}showName();return !!(input.files&&input.files[0])}function firstFile(dt){if(!dt)return null;if(dt.items&&dt.items.length){for(var i=0;i<dt.items.length;i++){var it=dt.items[i];if(it.kind!=="file")continue;if(it.webkitGetAsEntry){var ent=it.webkitGetAsEntry();if(ent&&ent.isDirectory)continue}var file=it.getAsFile();if(file)return file}}if(dt.files&&dt.files.length)return dt.files[0];return null}var depth=0;f.addEventListener("submit",function(e){busy(e)});input.addEventListener("change",showName);drop.addEventListener("dragenter",function(e){e.preventDefault();depth++;drop.setAttribute("data-over","1")});drop.addEventListener("dragover",function(e){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect="copy"});drop.addEventListener("dragleave",function(){depth--;if(depth<=0){depth=0;drop.removeAttribute("data-over")}});drop.addEventListener("drop",function(e){e.preventDefault();depth=0;drop.removeAttribute("data-over");if(f.getAttribute("data-busy")==="1")return;if(!takeFile(firstFile(e.dataTransfer)))return;if(f.requestSubmit)f.requestSubmit();else{busy();f.submit()}})})();`
+//
+//go:embed upload-form.js
+var uploadFormJS string
 
 func uploadFormScriptHash() string {
 	digest := sha256.Sum256([]byte(uploadFormJS))
@@ -431,9 +464,13 @@ var uploadTemplate = template.Must(template.New("upload").Parse(`<!doctype html>
 <section class="card" aria-label="Przesyłka">
 <div class="content">
 {{if .Accepted}}
-<p class="status">Plik został przyjęty.</p>
+<p class="status">Plik został przyjęty do sprawdzenia. Oczekuje na zapis na półce.</p>
+{{if .AcceptedName}}<ul class="upload-list"><li>{{.AcceptedName}} — oczekuje na przyjęcie</li></ul>{{end}}
 {{else}}
-<form id="upload-form" method="post" enctype="multipart/form-data">{{if .Grant}}<input type="hidden" name="g" value="{{.Grant}}">{{end}}<span class="field-label" id="upload-label">Plik</span><label class="drop" id="upload-drop" for="upload-file"><input class="file-sr" id="upload-file" type="file" name="file" required autofocus aria-labelledby="upload-label"><span class="drop-title">Upuść plik albo kliknij, żeby wybrać</span><span class="drop-name" id="upload-name"></span></label><div class="password-row"><button class="submit" type="submit">Wyślij</button></div><p class="hint">Przy większym pliku wysyłka może potrwać. Nie zamykaj karty.</p><p class="pending" role="status" aria-live="assertive"><span class="spinner" aria-hidden="true"></span><span>Wysyłanie pliku… Czekaj na potwierdzenie przyjęcia.</span></p></form>
+<h1 class="upload-heading">Przygotuj przesyłkę</h1>
+<p class="hint">Sprawdź listę i wycofaj omyłkowo wybrane pliki. Wysyłka rozpocznie się dopiero po potwierdzeniu.</p>
+<form id="upload-form" method="post" enctype="multipart/form-data" data-max-bytes="{{.MaxUploadBytes}}">{{if .Grant}}<input type="hidden" name="g" value="{{.Grant}}">{{end}}<span class="field-label" id="upload-label">Pliki</span><label class="drop" id="upload-drop" for="upload-file"><input class="file-sr" id="upload-file" type="file" name="file" required autofocus aria-labelledby="upload-label"><span class="drop-title">Upuść pliki lub folder albo kliknij, żeby wybrać pliki</span><span class="drop-name" id="upload-name"></span></label><label class="folder-pick" id="upload-folder-label" hidden for="upload-folder">Wybierz folder<input class="file-sr" id="upload-folder" type="file" webkitdirectory multiple></label><section id="upload-review" aria-label="Lista przesyłki" hidden><p class="hint" id="upload-summary" role="status" aria-live="polite"></p><div class="upload-list" id="upload-list"></div></section><div class="password-row"><button class="submit" id="upload-confirm" type="submit">Potwierdź i wyślij</button></div><p class="hint">Przy większym pliku wysyłka może potrwać. Nie zamykaj karty. Po rozpoczęciu wysyłki wycofanie nie będzie dostępne.</p><p class="pending" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span>Wysyłanie plików… Czekaj na potwierdzenie przyjęcia.</span></p><p id="upload-notice" class="hint" role="status" aria-live="polite"></p></form>
+<dialog id="upload-preview"><button type="button" id="upload-preview-close" class="upload-action">Zamknij podgląd</button><h2 id="upload-preview-name"></h2><div id="upload-preview-body"></div></dialog>
 <script>{{.FormScript}}</script>
 {{end}}
 </div>

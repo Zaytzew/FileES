@@ -30,8 +30,8 @@ func TestDemoEndedPanelOffersTheWayOn(t *testing.T) {
 			t.Errorf("app.js lacks %q", required)
 		}
 	}
-	if strings.Count(app, "Browser.OpenURL(") != 1 {
-		t.Fatal("the panel opens the system browser from somewhere other than the fixed filees.space link")
+	if strings.Count(app, "Browser.OpenURL(") != 2 {
+		t.Fatal("the panel opens the system browser outside the fixed website and Store links")
 	}
 	for _, locale := range []string{"pl", "en", "de", "fr", "es"} {
 		catalogue, err := os.ReadFile(filepath.Join("frontend", "locales", locale+".js"))

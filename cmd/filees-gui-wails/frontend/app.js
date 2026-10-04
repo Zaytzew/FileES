@@ -710,8 +710,9 @@ function demoEndedHTML() {
   </div>`;
 }
 
-// The only address the panel opens in the system browser.
+// Fixed product addresses; snapshots cannot choose an external destination.
 const FILEES_SITE = "https://filees.space/";
+const FILEES_STORE = "https://apps.microsoft.com/detail/9P0J1BRL5K77";
 
 function renderRepositories(snapshot) {
   const root = $("#repositories");
@@ -1222,14 +1223,17 @@ function renderVersionDialog(snapshot) {
 	$("#version-update-actions").querySelectorAll("button").forEach(button => { button.disabled = applying; });
   const clientVersion = String(snapshot?.client_version || "").trim();
   const update = snapshot?.update;
+  const store = update?.state === "store";
   const channel = String(update?.channel || "").trim();
   const currentRelease = String(update?.current_version || "").trim();
   const availableRelease = String(update?.available_version || "").trim();
   const available = Boolean(availableRelease) && update?.state !== "current";
   $("#version-client").textContent = clientVersion || t("version.unknownClient");
-  $("#version-channel").textContent = channel || t("version.unknownChannel");
+  $("#version-channel").textContent = store ? t("version.storeChannel") : channel || t("version.unknownChannel");
   $("#version-release").textContent = currentRelease || t("version.unknownRelease");
-  if (!update) {
+  if (store) {
+    $("#version-status").textContent = t("version.storeSummary");
+  } else if (!update) {
     $("#version-status").textContent = t("version.noUpdateInfo");
   } else if (update.state === "restart_required") {
     $("#version-status").textContent = update.summary || t("version.restartSummary");
@@ -1238,8 +1242,9 @@ function renderVersionDialog(snapshot) {
   } else {
     $("#version-status").textContent = update.summary || t("version.currentSummary");
   }
-  $("#version-update-actions").hidden = !available || update?.state === "restart_required";
+  $("#version-update-actions").hidden = store || !available || update?.state === "restart_required";
   $("#version-restart-actions").hidden = update?.state !== "restart_required";
+  $("#version-store-actions").hidden = !store;
 }
 
 function openVersionDialog() {
@@ -1256,15 +1261,17 @@ function closeVersionDialog() {
 function renderUpdate(snapshot) {
 	const card = $("#update-card");
 	const update = snapshot.update;
+	const store = update?.state === "store";
 	const restart = update?.state === "restart_required" && update.restart_required;
 	const available = Boolean(update?.available_version) && update.state !== "current";
-	card.hidden = !available && !restart;
+	card.hidden = !available && !restart && !store;
+	$("#update-store-actions").hidden = !store;
 	if (card.hidden) return;
-	$("#update-title").textContent = t(restart ? "version.restartTitle" : "version.availableTitle");
-	$("#update-actions").hidden = restart;
+	$("#update-title").textContent = t(store ? "version.storeTitle" : restart ? "version.restartTitle" : "version.availableTitle");
+	$("#update-actions").hidden = restart || store;
 	$("#update-restart-actions").hidden = !restart;
-	$("#update-version").textContent = update.available_version;
-	$("#update-summary").textContent = [update.summary || t("version.installedSummary", { current: update.current_version || t("version.unknownClient") }), restart ? "" : updateDownloadLine(update, t, bytes)].filter(Boolean).join(" ");
+	$("#update-version").textContent = store ? update.current_version : update.available_version;
+	$("#update-summary").textContent = store ? t("version.storeSummary") : [update.summary || t("version.installedSummary", { current: update.current_version || t("version.unknownClient") }), restart ? "" : updateDownloadLine(update, t, bytes)].filter(Boolean).join(" ");
 }
 
 window.setInterval(updateRetentionCountdowns, 1000);
@@ -1508,6 +1515,7 @@ $("#repositories").addEventListener("click", (event) => {
   const external = event.target.closest("[data-external-url]");
   if (external) {
     if (external.dataset.externalUrl === FILEES_SITE) Browser.OpenURL(FILEES_SITE).catch(() => {});
+    else if (external.dataset.externalUrl === FILEES_STORE) Browser.OpenURL(FILEES_STORE).catch(() => {});
     return;
   }
   const button = event.target.closest("[data-action]");

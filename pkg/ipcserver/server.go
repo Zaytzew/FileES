@@ -65,6 +65,7 @@ type Server struct {
 	sessionTimeout       SessionTimeoutService
 	realmRemoval         RealmRemovalService
 	updates              UpdateService
+	updateInfo           UpdateStatusSource
 	whales               WhaleService
 	activity             ActivitySource
 	detachments          DetachmentSource
@@ -231,8 +232,12 @@ type RealmRemovalService interface {
 	Download(context.Context, contract.RecoveryDownloadPayload) (contract.RecoveryDownloadResult, error)
 }
 
-type UpdateService interface {
+type UpdateStatusSource interface {
 	Status(context.Context) (contract.UpdateStatus, error)
+}
+
+type UpdateService interface {
+	UpdateStatusSource
 	Plan(context.Context) (contract.UpdatePlanResult, error)
 	Apply(context.Context) (contract.UpdateApplyResult, error)
 }
@@ -324,7 +329,22 @@ func (s *Server) activitySource() ActivitySource {
 func (s *Server) SetUpdateService(service UpdateService) {
 	s.mu.Lock()
 	s.updates = service
+	s.updateInfo = service
 	s.mu.Unlock()
+}
+
+// SetUpdateStatusSource supplies read-only distribution information and
+// explicitly disables file replacement, as required for Store installations.
+func (s *Server) SetUpdateStatusSource(source UpdateStatusSource) {
+	s.mu.Lock()
+	s.updateInfo, s.updates = source, nil
+	s.mu.Unlock()
+}
+
+func (s *Server) updateStatusSource() UpdateStatusSource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.updateInfo
 }
 
 func (s *Server) updateService() UpdateService {
@@ -365,8 +385,11 @@ func (s *Server) capabilities() []string {
 	if s.systemLifecycleService() != nil {
 		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
 	}
+	if s.updateStatusSource() != nil {
+		caps = append(caps, contract.CapUpdateStatus)
+	}
 	if s.updateService() != nil {
-		caps = append(caps, contract.CapUpdateStatus, contract.CapUpdatePlan, contract.CapUpdateApply)
+		caps = append(caps, contract.CapUpdatePlan, contract.CapUpdateApply)
 	}
 	if s.activitySource() != nil {
 		caps = append(caps, contract.CapRepoActivity)

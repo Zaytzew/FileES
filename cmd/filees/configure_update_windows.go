@@ -39,6 +39,7 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 		return err
 	}
 	if !selfUpdate {
+		ipc.SetUpdateStatusSource(clientupdate.StoreInfo{CurrentVersion: currentVersion})
 		return nil
 	}
 	if update == nil && !explicitlyConfigured {

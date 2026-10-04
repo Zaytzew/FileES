@@ -368,7 +368,7 @@ type RecoveryDownloadResult struct {
 }
 
 type UpdateStatus struct {
-	State            string `json:"state"` // current | available | planning | applying | restart_required | failed
+	State            string `json:"state"` // current | available | planning | applying | restart_required | failed | store (externally managed)
 	Channel          string `json:"channel,omitempty"`
 	CurrentVersion   string `json:"current_version"`
 	AvailableVersion string `json:"available_version,omitempty"`

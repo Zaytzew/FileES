@@ -105,3 +105,36 @@ func TestHelloReportsConfiguredDaemonBuild(t *testing.T) {
 		t.Fatalf("hello build: %q", hello.DaemonVersion)
 	}
 }
+
+type readOnlyUpdateStub struct{ status contract.UpdateStatus }
+
+func (stub readOnlyUpdateStub) Status(context.Context) (contract.UpdateStatus, error) {
+	return stub.status, nil
+}
+
+func TestReadOnlyDistributionInfoDisablesAnExistingInstaller(t *testing.T) {
+	server := New("")
+	server.SetUpdateService(updateStub{})
+	server.SetUpdateStatusSource(readOnlyUpdateStub{contract.UpdateStatus{State: "store", Channel: "store", CurrentVersion: "0.1.18.1882"}})
+	var hello contract.HelloResult
+	decodeIPCResult(t, server.dispatch(updateRequest(contract.CmdSystemHello)), &hello)
+	if !containsCapability(hello.Capabilities, contract.CapUpdateStatus) || containsCapability(hello.Capabilities, contract.CapUpdatePlan) || containsCapability(hello.Capabilities, contract.CapUpdateApply) {
+		t.Fatal(hello.Capabilities)
+	}
+	for _, cmd := range []string{contract.CmdUpdatePlan, contract.CmdUpdateApply} {
+		response := server.dispatch(updateRequest(cmd))
+		if response.Status != contract.StatusError || response.Error.Code != "UPDATE-0001" {
+			t.Fatal(response)
+		}
+	}
+	server.SetUpdateStatusSource(nil)
+	if response := server.dispatch(updateRequest(contract.CmdUpdateStatus)); response.Status != contract.StatusError {
+		t.Fatal(response)
+	}
+	server.SetUpdateService(updateStub{status: contract.UpdateStatus{State: "current", Channel: "beta", CurrentVersion: "2"}})
+	var info contract.UpdateStatus
+	decodeIPCResult(t, server.dispatch(updateRequest(contract.CmdUpdateStatus)), &info)
+	if info.State != "current" || info.Channel != "beta" {
+		t.Fatal(info)
+	}
+}

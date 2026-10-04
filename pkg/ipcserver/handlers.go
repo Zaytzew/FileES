@@ -1716,7 +1716,7 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 			result.Recoveries = recoveries
 		}
 	}
-	if service := s.updateService(); service != nil {
+	if service := s.updateStatusSource(); service != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if status, err := service.Status(ctx); err == nil {
@@ -1727,7 +1727,7 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 }
 
 func (s *Server) handleUpdateStatus(req contract.Request) contract.Response {
-	service := s.updateService()
+	service := s.updateStatusSource()
 	if service == nil {
 		return updateUnavailable(req.RequestID)
 	}

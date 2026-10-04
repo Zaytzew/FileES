@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"filees/pkg/config"
+	"filees/pkg/ipcserver"
 )
 
 func TestStoreRefusesChannelSelectionWithoutWritingConfig(t *testing.T) {
@@ -105,7 +106,7 @@ func TestStoreUpdateModeNeverConfiguresFileReplacement(t *testing.T) {
 	injectedClientUpdateMode = "store"
 	// Even an explicit legacy update configuration must not reach the
 	// DirectoryInstaller in a Store build.
-	if err := configureClientUpdate(nil, &config.UpdateConfig{Platform: "windows-amd64"}, true, "0.1.16", nil); err != nil {
+	if err := configureClientUpdate(ipcserver.New(""), &config.UpdateConfig{Platform: "windows-amd64"}, true, "0.1.16", nil); err != nil {
 		t.Fatalf("Store mode must ignore legacy file replacement: %v", err)
 	}
 	injectedClientUpdateMode = "typo"

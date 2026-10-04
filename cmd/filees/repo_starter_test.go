@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"errors"
@@ -760,5 +761,65 @@ func TestLegacyRawLocksStayReleasableAfterThePolicyIsEnabled(t *testing.T) {
 	}
 	if err := state.ReleaseReservation(t.Context(), "held.bin", "tok-held", true); err == nil {
 		t.Fatal("another client's passport lock was released")
+	}
+}
+
+// A restart interrupts startup recovery too, before the periodic poller owns it.
+// Only the error caused by our canceled context is silent; independent disk
+// errors remain synchronization faults even if shutdown happens concurrently.
+type canceledStartupClient struct {
+	client.Client
+	phase                   string
+	cancel                  context.CancelFunc
+	cause                   error
+	cleanup, status, update int
+}
+
+func (c *canceledStartupClient) fault(phase string) error {
+	if c.phase != phase {
+		return nil
+	}
+	c.cancel()
+	return &client.NativeFailure{Verb: phase, Exit: c.cause}
+}
+func (c *canceledStartupClient) Cleanup(context.Context, string) (string, error) {
+	c.cleanup++
+	return "", c.fault("cleanup")
+}
+func (c *canceledStartupClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
+	c.status++
+	return nil, c.fault("status")
+}
+func (c *canceledStartupClient) Update(context.Context, string) (string, error) {
+	c.update++
+	return "", c.fault("update")
+}
+func TestStartupRecoveryCancellationDoesNotJournalSyncFailure(t *testing.T) {
+	for _, phase := range []string{"cleanup", "status", "update", "independent update failure"} {
+		t.Run(phase, func(t *testing.T) {
+			wc := t.TempDir()
+			if err := os.Mkdir(filepath.Join(wc, ".svn"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			fake := &canceledStartupClient{phase: phase, cancel: cancel, cause: context.Canceled}
+			independent := phase == "independent update failure"
+			if independent {
+				fake.phase = "update"
+				fake.cause = errors.New("independent disk failure")
+			}
+			var journal bytes.Buffer
+			received := 0
+			if recoverReadWriteWorkingCopy(ctx, fake, wc, &commit.Service{}, errmap.NewSink(&journal, "test"), talk.With("startup-cancel-test"), func(string) { received++ }) {
+				t.Fatal("interrupted recovery authorized further reconciliation")
+			}
+			if (journal.Len() > 0) != independent {
+				t.Fatalf("journal=%s", journal.String())
+			}
+			if received != 0 || fake.cleanup != 1 || (phase == "cleanup" && fake.status != 0) || (phase == "status" && fake.update != 0) {
+				t.Fatalf("recovery continued after cancellation: %+v received=%d", fake, received)
+			}
+		})
 	}
 }

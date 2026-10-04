@@ -286,7 +286,11 @@ func (service *Service) checkChannel(ctx context.Context) (contract.UpdateStatus
 		State: "current", Channel: service.Channel, CurrentVersion: current, ReleaseID: resolved.Envelope.ReleaseID,
 		Summary: fmt.Sprintf("Podpisane wydanie %s, sequence %d", resolved.SigningKeyID, resolved.Envelope.Sequence),
 	}
-	if clientUpdateAvailable(resolved.Manifest.Version, current) {
+	available, err := service.installationNeeded(resolved, current)
+	if err != nil {
+		return contract.UpdateStatus{}, err
+	}
+	if available {
 		status.State = "available"
 		status.AvailableVersion = resolved.Manifest.Version
 		status.RestartRequired = true
@@ -331,7 +335,11 @@ func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, er
 		return contract.UpdatePlanResult{}, err
 	}
 	current := service.currentVersion(state)
-	if !clientUpdateAvailable(resolved.Manifest.Version, current) {
+	needed, err := service.installationNeeded(resolved, current)
+	if err != nil {
+		return contract.UpdatePlanResult{}, err
+	}
+	if !needed {
 		return contract.UpdatePlanResult{
 			CurrentVersion: current, AvailableVersion: resolved.Manifest.Version,
 			ReleaseID: resolved.Envelope.ReleaseID,
@@ -364,12 +372,22 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if service.appliedRestart {
 		return contract.UpdateApplyResult{InstalledVersion: service.appliedVersion, RestartRequired: true}, nil
 	}
+	// A direct IPC apply can arrive while Status is downloading the bundle.
+	// Do not start a second stager that removes the first download's .part.
+	if job, ok := service.currentDownload(); ok && job.running {
+		have, total, _ := service.Installer.(Downloader).DownloadProgress(job.resolved)
+		return contract.UpdateApplyResult{}, &DownloadingError{Have: have, Total: total}
+	}
 	resolved, state, err := service.resolve(ctx)
 	if err != nil {
 		return contract.UpdateApplyResult{}, err
 	}
 	current := service.currentVersion(state)
-	if !clientUpdateAvailable(resolved.Manifest.Version, current) {
+	needed, err := service.installationNeeded(resolved, current)
+	if err != nil {
+		return contract.UpdateApplyResult{}, err
+	}
+	if !needed {
 		return contract.UpdateApplyResult{InstalledVersion: current}, nil
 	}
 	_, restart, err := service.Installer.Plan(ctx, resolved)
@@ -412,6 +430,22 @@ func (service *Service) resolve(ctx context.Context) (*releaseenvelope.Resolved,
 		return nil, State{}, err
 	}
 	return resolved, state, nil
+}
+
+func (service *Service) installationNeeded(resolved *releaseenvelope.Resolved, current string) (bool, error) {
+	if clientUpdateAvailable(resolved.Manifest.Version, current) {
+		return true, nil
+	}
+	// A pending installation must never authorize a downgrade of a newer
+	// local build. Reinstall only the running version, after normal resolution.
+	if sameClientVersion(resolved.Manifest.Version, current) {
+		if pending, ok := service.Installer.(interface {
+			PendingInstallation(*releaseenvelope.Resolved) (bool, error)
+		}); ok {
+			return pending.PendingInstallation(resolved)
+		}
+	}
+	return false, nil
 }
 
 func (service *Service) currentVersion(state State) string {

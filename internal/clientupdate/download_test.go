@@ -142,8 +142,16 @@ func TestUpdateIsDownloadedInTheBackgroundAndThePlanDoesNotWaitForIt(t *testing.
 	if _, err := service.Plan(context.Background()); !errors.As(err, &downloading) || downloading.Have != 4 || downloading.Total != 10 {
 		t.Fatalf("plan during the download: %v", err)
 	}
-	if resolver.calls != 1 {
-		t.Fatalf("plan during the download read the channel (%d reads)", resolver.calls)
+	if resolver.calls.Load() != 1 {
+		t.Fatalf("plan during the download read the channel (%d reads)", resolver.calls.Load())
+	}
+	if _, err := service.Apply(context.Background()); !errors.As(err, &downloading) || downloading.Have != 4 || downloading.Total != 10 {
+		close(installer.release)
+		waitForDownload(t, service)
+		t.Fatalf("apply overlapped the unfinished download: %v", err)
+	}
+	if installer.planCalls != 0 || installer.applyCalls != 0 {
+		t.Fatalf("installer ran during download: plans=%d installs=%d", installer.planCalls, installer.applyCalls)
 	}
 	close(installer.release)
 	waitForDownload(t, service)
@@ -154,8 +162,8 @@ func TestUpdateIsDownloadedInTheBackgroundAndThePlanDoesNotWaitForIt(t *testing.
 	if err != nil || plan.AvailableVersion != "1.1" || installer.planCalls != 1 {
 		t.Fatalf("plan = %+v, %v (installer plans %d)", plan, err, installer.planCalls)
 	}
-	if resolver.calls != 1 || installer.downloads != 1 {
-		t.Fatalf("after the download: channel reads %d, downloads %d", resolver.calls, installer.downloads)
+	if resolver.calls.Load() != 1 || installer.downloads != 1 {
+		t.Fatalf("after the download: channel reads %d, downloads %d", resolver.calls.Load(), installer.downloads)
 	}
 }
 

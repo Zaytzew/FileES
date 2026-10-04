@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -206,11 +207,11 @@ func TestRestartLatchSurvivesOfflineReadsAndRepeatedApplyUntilNewProcess(t *test
 
 type countingResolver struct {
 	resolved *releaseenvelope.Resolved
-	calls    int
+	calls    atomic.Int32
 }
 
 func (r *countingResolver) Resolve(context.Context, string, string, string) (*releaseenvelope.Resolved, error) {
-	r.calls++
+	r.calls.Add(1)
 	return r.resolved, nil
 }
 
@@ -227,23 +228,24 @@ func TestStatusReusesTheVerifiedAnswerAndDoesNotQueueBehindTheChannel(t *testing
 			t.Fatalf("status %d = %+v, %v", i, status, err)
 		}
 	}
-	if resolver.calls != 1 {
-		t.Fatalf("channel read %d times within the cache period", resolver.calls)
+	if resolver.calls.Load() != 1 {
+		t.Fatalf("channel read %d times within the cache period", resolver.calls.Load())
 	}
 	now = now.Add(statusCacheTTL)
 	service.mu.Lock() // a plan or installation holds the channel
 	status, err := service.Status(context.Background())
+	service.refreshes.Wait() // finish the busy-channel check while the channel remains locked
 	service.mu.Unlock()
-	if err != nil || status.State != "available" || resolver.calls != 1 {
-		t.Fatalf("busy channel: status=%+v err=%v calls=%d", status, err, resolver.calls)
+	if err != nil || status.State != "available" || resolver.calls.Load() != 1 {
+		t.Fatalf("busy channel: status=%+v err=%v calls=%d", status, err, resolver.calls.Load())
 	}
 	// Expired: answered at once from memory, refreshed in the background.
 	if _, err := service.Status(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	service.refreshes.Wait()
-	if resolver.calls != 2 {
-		t.Fatalf("expired answer was not refreshed: calls=%d", resolver.calls)
+	if resolver.calls.Load() != 2 {
+		t.Fatalf("expired answer was not refreshed: calls=%d", resolver.calls.Load())
 	}
 }
 

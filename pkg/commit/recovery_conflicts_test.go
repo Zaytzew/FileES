@@ -14,6 +14,8 @@ import (
 
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/talk"
+	"filees/pkg/watcher"
 	"github.com/google/uuid"
 )
 
@@ -408,5 +410,33 @@ func conflictRecoveryRealSVN(t *testing.T, mismatch, numbered bool) {
 		if entry.Item == "missing" {
 			t.Fatalf("conflict left missing scheduled artifact: %+v", entry)
 		}
+	}
+
+	// Recovery itself publishes nothing. A subsequent explicit edit must
+	// pass through the real committer once and leave the preserved local copy.
+	write(filepath.Join(b, "plan.dwg"), "final edit after recovery")
+	s.Logger = talk.With("conflict-recovery-acceptance")
+	s.cachePath = filepath.Join(b, ".filees", "commit_cache", "cache.json")
+	s.Rules.MaxBatchFiles = 100
+	s.Rules.MaxBatchBytes = 1 << 20
+	s.Rules.ModifiedQuiet = time.Nanosecond
+	s.addEvent(watcher.Event{Op: watcher.Modified, Type: watcher.EntryFile, Rel: "plan.dwg", Path: filepath.Join(b, "plan.dwg")})
+	if err := s.tryCommit(t.Context(), b); err != nil {
+		t.Fatal("publication after recovery", err)
+	}
+	if err := s.tryCommit(t.Context(), b); err != nil {
+		t.Fatal("empty queue after publication", err)
+	}
+	head, err = cli.Revision(t.Context(), repoURL)
+	if err != nil || head != 3 {
+		t.Fatalf("post-recovery publication must occur exactly once: %d %v", head, err)
+	}
+	published, err := exec.CommandContext(t.Context(), "svnlook", "cat", repo, "plan.dwg").Output()
+	if err != nil || string(published) != "final edit after recovery" {
+		t.Fatalf("published contents %q %v", published, err)
+	}
+	saved, err = os.ReadFile(filepath.Join(b, filepath.FromSlash(plan.ConflictCopy), "plan.dwg"))
+	if err != nil || string(saved) != wantSaved {
+		t.Fatalf("publication damaged saved local copy: %q %v", saved, err)
 	}
 }

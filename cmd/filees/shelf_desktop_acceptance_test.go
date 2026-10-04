@@ -163,6 +163,14 @@ func (s shelfDesktopSVN) GetInfo(ctx context.Context, path string) (string, erro
 // Exercise recovered metadata through actual IPC, native sparse fetch and
 // verified no-replace placement in an isolated real parent working copy.
 func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
+	shelfNativeImportAcceptance(t, false)
+}
+
+func TestShelfNativeImportFreshHTTPUploadAcceptance(t *testing.T) {
+	shelfNativeImportAcceptance(t, true)
+}
+
+func shelfNativeImportAcceptance(t *testing.T, fresh bool) {
 	helper := os.Getenv("FILEES_TEST_NATIVE_SPARSE")
 	if helper == "" {
 		t.Skip("native helper required")
@@ -182,16 +190,23 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 			t.Fatalf("%s: %v %s", args[0], err, out)
 		}
 	}
-	shelfURL := svnurl.File(filepath.Join(root, "shelf-repo"))
+	shelfRepo := freshShelfRepoID()
+	shelfURL := svnurl.File(filepath.Join(root, shelfRepo))
 	parentURL := svnurl.File(filepath.Join(root, "parent-repo"))
-	run("svnadmin", "create", filepath.Join(root, "shelf-repo"))
+	run("svnadmin", "create", filepath.Join(root, shelfRepo))
 	run("svnadmin", "create", filepath.Join(root, "parent-repo"))
 	seed := filepath.Join(root, "seed", "incoming")
 	must(os.MkdirAll(seed, 0700))
 	data := []byte("recovered upload contents\n")
 	must(os.WriteFile(filepath.Join(seed, "photo-1.jpg"), data, 0600))
 	must(os.WriteFile(filepath.Join(seed, "not-selected.jpg"), []byte("remote only"), 0600))
-	run("svn", "import", "-q", "-m", "isolated upload", filepath.Dir(seed), shelfURL)
+	var freshAuthority ipcserver.UploadChannelService
+	var freshItem contract.ShelfItem
+	if fresh {
+		freshAuthority, freshItem = freshShelfHTTPUpload(t, root, shelfRepo, data)
+	} else {
+		run("svn", "import", "-q", "-m", "isolated upload", filepath.Dir(seed), shelfURL)
+	}
 	parentRoot := filepath.Join(root, "parent")
 	run("svn", "checkout", "-q", parentURL, parentRoot)
 	store, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
@@ -211,7 +226,12 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 	server.RegisterProjectedRepoPolicy("parent", "Parent", "svn+ssh://synthetic/parent", "shelf-lab", "rw", "active", "owner", "optional", true)
 	server.RegisterProjectedRepoPolicy("shelf", "Shelf", "svn+ssh://synthetic/shelf", "shelf-lab", "r", "active", "owner", "optional", false).SetPurpose(contract.RepoPurposeUploadShelf)
 	item := contract.ShelfItem{UploadID: "recovered-upload", RepoPath: "incoming/photo-1.jpg", SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), Size: int64(len(data)), Revision: 1}
-	server.SetUploadChannelService(shelfDesktopAuthority{item: item})
+	if fresh {
+		item = freshItem
+		server.SetUploadChannelService(freshAuthority)
+	} else {
+		server.SetUploadChannelService(shelfDesktopAuthority{item: item})
+	}
 	server.SetRepositoryLifecycleService(repositoryLifecycleService{store: store, onCreate: p.Enqueue})
 	must(server.Start(t.Context()))
 	go p.Run(t.Context())
@@ -240,7 +260,7 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 			// The authoritative receipt retains its unknown original name.
 			listed, err := consumer.ShelfList(t.Context(), "shelf-lab", "channel")
 			must(err)
-			if len(listed.Items) != 1 || listed.Items[0].OriginalName != "" {
+			if len(listed.Items) != 1 || (!fresh && listed.Items[0].OriginalName != "") || (fresh && listed.Items[0].OriginalName != "photo-1.jpg") {
 				t.Fatal("receipt original name invented")
 			}
 			payload.LocalPath = ""

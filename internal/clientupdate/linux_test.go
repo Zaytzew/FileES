@@ -39,7 +39,10 @@ func linuxBundle(t *testing.T) ([]byte, *releaseenvelope.Resolved) {
 		{name: "share/filees/config.example.json", typeflag: 0, mode: 0o644, data: "{}"},
 	}
 	bundle := makeBundle(t, entries...)
-	return bundle, stagedRelease(bundle)
+	resolved := stagedRelease(bundle)
+	resolved.Envelope = &releaseenvelope.Envelope{ReleaseID: "r1", Sequence: 1, SecurityEpoch: 1}
+	resolved.Manifest.Version = "1.1"
+	return bundle, resolved
 }
 
 func TestLinuxInstallerPlansExistingLifecycleAndPreservesConfig(t *testing.T) {

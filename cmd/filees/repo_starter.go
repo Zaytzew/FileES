@@ -265,10 +265,16 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		return false
 	}
 	if out, err := svn.Cleanup(ctx, wc); err != nil {
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return false
+		}
 		logger.Warnf("svn cleanup failed: %v %s", err, out)
 	}
 	status, err := svn.Status(ctx, wc, nil)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return false
+		}
 		logger.Warnf("svn status before update failed: %v — update deferred", err)
 		return false
 	}
@@ -277,6 +283,9 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		return false
 	}
 	out, err := svn.Update(ctx, wc)
+	if err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return false
+	}
 	service.ReconcileUpdateConflicts(ctx, wc, out)
 	if err != nil {
 		recordSyncFailure(sink, logger, "svn update failed (startup recovery)", err)

@@ -114,7 +114,35 @@ func (installer LinuxInstaller) Apply(ctx context.Context, resolved *releaseenve
 		"HOME=" + paths.Home, "PREFIX=" + paths.Prefix, "XDG_DATA_HOME=" + paths.DataHome,
 		"XDG_CONFIG_HOME=" + paths.ConfigHome, "ENABLE_DAEMON=0", "ENABLE_AUTOSTART=0", "RESTART_DAEMON=0",
 	}
-	return runner.Run(ctx, filepath.Join(staged.Root, "install-user.sh"), staged.Root, environment)
+	// The daemon is replaced before the GUI. A crash in between must not
+	// make the new daemon report a partially installed pair as current.
+	pending, err := (State{}).Advance(resolved.Envelope, resolved.Manifest.Version)
+	if err != nil {
+		return err
+	}
+	if err := installer.pendingStore().Save(pending); err != nil {
+		return fmt.Errorf("persist pending Linux installation: %w", err)
+	}
+	if err := runner.Run(ctx, filepath.Join(staged.Root, "install-user.sh"), staged.Root, environment); err != nil {
+		return err
+	}
+	return os.Remove(installer.pendingStore().Path)
+}
+
+// PendingInstallation allows a restarted daemon to finish the same signed
+// release even when its own executable already carries that release's version.
+// The anti-rollback checkpoint remains separate and is advanced on success.
+func (installer LinuxInstaller) PendingInstallation(resolved *releaseenvelope.Resolved) (bool, error) {
+	pending, err := installer.pendingStore().Load()
+	if err != nil {
+		return false, err
+	}
+	return pending.ReleaseID == resolved.Envelope.ReleaseID &&
+		sameClientVersion(pending.InstalledVersion, resolved.Manifest.Version), nil
+}
+
+func (installer LinuxInstaller) pendingStore() StateStore {
+	return StateStore{Path: filepath.Join(installer.Stager.root(), "linux-install-pending.json")}
 }
 
 func (installer LinuxInstaller) normalizedPaths() (LinuxPaths, error) {

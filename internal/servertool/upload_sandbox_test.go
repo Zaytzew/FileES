@@ -58,10 +58,20 @@ func TestUploadMaintenanceProfilesSeparateSeedFromReaper(t *testing.T) {
 		if err := obsandbox.Validate(profile); err != nil {
 			t.Fatal(err)
 		}
+		certificates := false
 		for _, path := range profile.Paths {
+			if path.Name == "/etc/clamav-certs" {
+				certificates = true
+				if seed || path.Perms != "r" {
+					t.Fatal("scanner certificates must only be readable by the reaper", path)
+				}
+			}
 			if path.Name == "/" || path.Name == config.Activation.ServiceWorkingCopy {
 				t.Fatal("overbroad path", path)
 			}
+		}
+		if !seed && !certificates {
+			t.Fatal("scanner signature certificates unavailable")
 		}
 		if seed && (len(profile.Paths) != 2 || strings.Contains(profile.Promises, "exec") || strings.Contains(profile.Promises, "inet")) {
 			t.Fatal(profile)
@@ -189,5 +199,72 @@ func TestUploadMaintenanceNativeConfinement(t *testing.T) {
 		if out, err := exec.Command(tool, "--version").CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v %s", tool, err, out)
 		}
+	}
+}
+
+// The opt-in database contains a laboratory signature for FILEES-LAB-REJECT.
+// Exercise the actual scanner after exec, rather than a Static AV verdict.
+func TestUploadScannerNativeConfinement(t *testing.T) {
+	if runtime.GOOS != "openbsd" {
+		t.Skip("requires pledge/unveil and an isolated ClamAV installation")
+	}
+	database := os.Getenv("FILEES_TEST_CLAMAV_DATABASE")
+	if database == "" {
+		t.Skip("requires the isolated laboratory ClamAV database")
+	}
+	if filepath.Dir(database) != "/var/db/clamav" || filepath.Clean(database) != database {
+		t.Fatal("laboratory database must be a file in the scanner database directory")
+	}
+	if isolateSandboxingTest(t, "TestUploadScannerNativeConfinement") {
+		return
+	}
+	scannerPath, err := exec.LookPath("clamscan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := sandboxedTestRoot(t)
+	var config serverconfig.Config
+	config.Activation.Root = filepath.Join(root, "activation")
+	config.Repositories.Root = filepath.Join(root, "repos")
+	config.Repositories.ResultsRoot = filepath.Join(root, "results")
+	config.Repositories.SVNAdminBinary = "/usr/local/bin/svnadmin"
+	config.Upload.IntakeRoot = filepath.Join(root, "intake")
+	config.Upload.TrashRoot = filepath.Join(root, "trash")
+	config.Upload.AVCommand = []string{scannerPath, "--database=" + database, "--no-summary", "--stdout"}
+	for _, dir := range []string{config.Activation.Root, config.Repositories.Root, config.Repositories.ResultsRoot, config.Upload.IntakeRoot, config.Upload.TrashRoot, uploadAcceptedRoot(config), config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scanner := avscan.Command{Path: scannerPath, Args: config.Upload.AVCommand[1:]}
+	clean := filepath.Join(config.Upload.IntakeRoot, "clean")
+	infected := filepath.Join(config.Upload.IntakeRoot, "scanner-test")
+	for path, payload := range map[string]string{clean: "FILEES-LAB-CLEAN\n", infected: "FILEES-LAB-REJECT\n"} {
+		if err := os.WriteFile(path, []byte(payload), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertScan := func() {
+		t.Helper()
+		for path, want := range map[string]avscan.Verdict{clean: avscan.Clean, infected: avscan.Infected} {
+			verdict, detail, err := scanner.Scan(context.Background(), path)
+			if err != nil || verdict != want {
+				t.Fatalf("real scanner: verdict=%v want=%v error=%v detail=%s", verdict, want, err, detail)
+			}
+		}
+	}
+	assertScan() // Do not mistake a broken database for a confinement failure.
+	if err := sandboxBegin(uploadMaintenancePromises); err != nil {
+		t.Fatal(err)
+	}
+	if err := sandboxApplyForExec(uploadMaintenanceProfile(config, false), uploadMaintenancePromises+" prot_exec unveil"); err != nil {
+		t.Fatal(err)
+	}
+	assertScan()
+	if _, err := os.ReadFile("/etc/passwd"); err == nil {
+		t.Fatal("unrelated configuration became visible")
+	}
+	if err := os.WriteFile("/etc/clamav-certs/filees-test-forbidden", nil, 0600); err == nil {
+		t.Fatal("scanner trust directory became writable")
 	}
 }

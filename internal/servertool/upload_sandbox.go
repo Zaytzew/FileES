@@ -48,6 +48,8 @@ func uploadMaintenanceProfile(config serverconfig.Config, seed bool) obsandbox.P
 		obsandbox.Path{Label: "svn-config", Name: "/etc/subversion", Perms: "r"},
 		obsandbox.Path{Label: "clam-config", Name: "/etc/clamd.conf", Perms: "r"},
 		obsandbox.Path{Label: "clam-config-directory", Name: "/etc/clamav", Perms: "r"},
+		// ClamAV 1.5 verifies database signatures using this trust directory.
+		obsandbox.Path{Label: "clam-signing-certificates", Name: "/etc/clamav-certs", Perms: "r"},
 		obsandbox.Path{Label: "clam-socket", Name: "/var/run/clamav", Perms: "rw"},
 		obsandbox.Path{Label: "clam-database", Name: "/var/db/clamav", Perms: "r"},
 		obsandbox.Path{Label: "clam-library", Name: "/usr/local/share/clamav", Perms: "r"},

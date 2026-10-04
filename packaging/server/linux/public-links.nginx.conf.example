@@ -10,6 +10,11 @@
 #   - /run/filees for their sockets, recreated at boot (tmpfiles.d or the unit),
 #   - the nginx worker user allowed to connect to the FastCGI socket
 #     ("socket_group" in /etc/filees/public-links.json).
+# Run filees-links with primary Group=_filees-public so newly created intake
+# jobs are accessible to the _filees-state reaper on Linux. Supplementary
+# membership alone does not make new files inherit their parent group.
+# For socket_group=www-data, also add _filees-links to www-data (or use the
+# actual nginx group); an unprivileged process can only assign its own groups.
 # On SELinux systems nginx also needs to be allowed to reach that socket.
 #
 # filees-links counts wrong passwords per client address. With nginx on the

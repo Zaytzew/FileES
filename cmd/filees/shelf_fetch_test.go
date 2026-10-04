@@ -174,6 +174,9 @@ func TestShelfImportRecoveredNameAndDestinationGuards(t *testing.T) {
 			shelfPath := filepath.Join(root, "shelf")
 			result, err := service.BeginShelfImport("office", uuid.NewString(), "svn+ssh://example/shelf", shelfPath, item, parent, destination)
 			if tc.want == "" {
+				if tc.name == "existing file" && !errors.Is(err, os.ErrExist) {
+					t.Fatalf("collision lost its error class: %v", err)
+				}
 				if err == nil || started != 0 || len(store.List()) != 0 {
 					t.Fatalf("rejected import had effects: %v starts=%d", err, started)
 				}
@@ -197,6 +200,110 @@ func TestShelfImportRecoveredNameAndDestinationGuards(t *testing.T) {
 			}
 			if item.OriginalName != tc.original {
 				t.Fatal("receipt original name changed")
+			}
+		})
+	}
+}
+
+func TestShelfImportPreparesPrivateCacheOnlyWhenNeeded(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataRoot)
+	store, err := localrepo.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: store, onCreate: func(string) {}}
+	parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: t.TempDir()}
+	item := contract.ShelfItem{UploadID: "upload", RepoPath: "photo.jpg", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+	repoID := uuid.NewString()
+	result, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _ := store.Get(result.OperationID)
+	cache := filepath.Join(dataRoot, "filees", "shelf-cache")
+	if filepath.Dir(record.LocalPath) != cache || record.ShelfFetch.Placement.ParentRoot != parent.LocalPath {
+		t.Fatalf("wrong cache or destination: %+v", record)
+	}
+	if info, err := os.Stat(record.LocalPath); err != nil || !info.IsDir() {
+		t.Fatalf("cache missing: %v", err)
+	}
+	if _, err := store.MarkAttached(record.OperationID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetShelfFetchState(record.OperationID, record.ShelfFetch.ID, "complete", nil); err != nil {
+		t.Fatal(err)
+	}
+	reused, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil || reused.OperationID != record.OperationID || reused.LocalPath != record.LocalPath {
+		t.Fatalf("cache not reused: %+v %v", reused, err)
+	}
+	other, err := service.BeginShelfImport("other-server", repoID, "svn+ssh://other/shelf", "", item, parent, parent.LocalPath)
+	if err != nil || other.LocalPath == record.LocalPath {
+		t.Fatalf("different servers share cache: %+v %v", other, err)
+	}
+}
+
+func TestShelfAutomaticCacheDoesNotAdoptUnrelatedFolder(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataRoot)
+	store, err := localrepo.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: store, onCreate: func(string) {}}
+	parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: t.TempDir()}
+	item := contract.ShelfItem{UploadID: "upload", RepoPath: "photo.jpg", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+	repoID := uuid.NewString()
+	id := sha256.Sum256([]byte("office\x00" + repoID))
+	path := filepath.Join(dataRoot, "filees", "shelf-cache", fmt.Sprintf("%x", id))
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	userFile := filepath.Join(path, "user.txt")
+	if err := os.WriteFile(userFile, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("existing folder accepted: %v", err)
+	}
+	if len(store.List()) != 0 {
+		t.Fatal("unrelated cache folder recorded as an attachment")
+	}
+	data, err := os.ReadFile(userFile)
+	if err != nil || string(data) != "preserve" {
+		t.Fatal("unrelated data changed")
+	}
+}
+
+func TestShelfAutomaticCacheRejectsInvalidSelectionAndWorkingCopyOverlap(t *testing.T) {
+	for _, overlap := range []bool{false, true} {
+		t.Run(fmt.Sprint(overlap), func(t *testing.T) {
+			dataRoot := t.TempDir()
+			t.Setenv("XDG_DATA_HOME", dataRoot)
+			store, err := localrepo.Open(filepath.Join(t.TempDir(), "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			roots := []string{}
+			if overlap {
+				roots = append(roots, dataRoot)
+			}
+			started := 0
+			service := repositoryLifecycleService{store: store, existingRoots: roots, onCreate: func(string) { started++ }}
+			parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: t.TempDir()}
+			item := contract.ShelfItem{UploadID: "upload", RepoPath: "photo.jpg", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+			if !overlap {
+				item.SHA256 = "not-a-checksum"
+			}
+			if _, err := service.BeginShelfImport("office", uuid.NewString(), "svn+ssh://example/shelf", "", item, parent, parent.LocalPath); err == nil {
+				t.Fatal("invalid automatic import accepted")
+			}
+			if len(store.List()) != 0 || started != 0 {
+				t.Fatal("rejected import queued work")
+			}
+			if _, err := os.Stat(filepath.Join(dataRoot, "filees", "shelf-cache")); !os.IsNotExist(err) {
+				t.Fatal("rejected import created cache under data root")
 			}
 		})
 	}

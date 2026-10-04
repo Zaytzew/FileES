@@ -17,6 +17,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localrepo"
 	"filees/pkg/portablepath"
+	"filees/pkg/privatefile"
 	"filees/pkg/provisioning"
 	"filees/pkg/talk"
 )
@@ -42,8 +43,38 @@ func (service repositoryLifecycleService) BeginShelfImport(serverID, repoID, rep
 	if err := validateShelfDestination(parent.LocalPath, filepath.ToSlash(rel)); err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
-	if _, err := os.Lstat(filepath.Join(parent.LocalPath, rel)); !errors.Is(err, os.ErrNotExist) {
-		return contract.RepoLifecycleResult{}, errors.New("destination already exists or cannot be inspected")
+	if _, err := os.Lstat(filepath.Join(parent.LocalPath, rel)); err == nil {
+		return contract.RepoLifecycleResult{}, fmt.Errorf("destination already exists: %w", os.ErrExist)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if localPath == "" {
+		localPath = service.InspectShelf(serverID, repoID).LocalPath
+		if localPath == "" {
+			if service.onCreate == nil || !localrepo.ValidShelfPath(item.RepoPath) || item.Size < 0 || item.UploadID == "" {
+				return contract.RepoLifecycleResult{}, errors.New("invalid shelf selection or unavailable executor")
+			}
+			if hash, err := hex.DecodeString(item.SHA256); err != nil || len(hash) != sha256.Size {
+				return contract.RepoLifecycleResult{}, errors.New("invalid shelf checksum")
+			}
+			cache := filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "shelf-cache")
+			if err := validateIdentityPath(cache); err != nil {
+				return contract.RepoLifecycleResult{}, err
+			}
+			identity := sha256.Sum256([]byte(serverID + "\x00" + repoID))
+			localPath = filepath.Join(cache, hex.EncodeToString(identity[:]))
+			if _, err := os.Lstat(localPath); err == nil {
+				return contract.RepoLifecycleResult{}, os.ErrExist
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return contract.RepoLifecycleResult{}, err
+			}
+			if _, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots()); err != nil {
+				return contract.RepoLifecycleResult{}, err
+			}
+			if err := privatefile.EnsureDir(cache); err != nil {
+				return contract.RepoLifecycleResult{}, err
+			}
+		}
 	}
 	return service.beginShelfFetch(serverID, repoID, repoURL, localPath, item, localrepo.ShelfPlacement{ParentRepoID: parent.ID, ParentRoot: parent.LocalPath, ParentURL: parent.URL, RelativePath: filepath.ToSlash(rel)})
 }

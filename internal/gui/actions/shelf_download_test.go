@@ -2,9 +2,12 @@ package actions_test
 
 import (
 	"context"
+	"errors"
 	"filees/internal/gui/actions"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -115,5 +118,107 @@ func TestShelfFolderCreationCancellationDoesNotStartDownload(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if shelf.started.Load() != 0 {
 		t.Fatal("cancelled creation started a download")
+	}
+}
+
+type automaticImportShelf struct {
+	downloadingShelf
+	parent  string
+	allowed bool
+	cause   error
+}
+
+func (s *automaticImportShelf) ShelfFetch(ctx context.Context, server, repo, channel, upload, path string, inspect bool) (actions.ShelfDownload, error) {
+	if inspect {
+		return actions.ShelfDownload{LocalPath: s.localPath, ParentPath: s.parent, CanImport: s.allowed}, nil
+	}
+	return actions.ShelfDownload{}, errors.New("import must not become a standalone download")
+}
+func (s *automaticImportShelf) ShelfImport(_ context.Context, server, repo, channel, upload, path, destination string) (actions.ShelfDownload, error) {
+	s.requested.Store([]string{path, destination})
+	s.started.Add(1)
+	if s.cause != nil {
+		return actions.ShelfDownload{}, s.cause
+	}
+	return actions.ShelfDownload{OperationID: "op", FetchID: "fetch", State: "queued"}, nil
+}
+func TestShelfImportUsesParentAutomaticallyWithoutAnyFolderDialog(t *testing.T) {
+	for _, tc := range []struct {
+		name                                       string
+		attached, denied, missingParent, collision bool
+	}{
+		{name: "first import"}, {name: "attached", attached: true}, {name: "collision", attached: true, collision: true},
+		{name: "not authorized", denied: true}, {name: "missing parent", missingParent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			shelf := &automaticImportShelf{parent: t.TempDir(), allowed: !tc.denied}
+			if tc.attached {
+				shelf.localPath = filepath.Join(t.TempDir(), "shelf")
+			}
+			if tc.missingParent {
+				shelf.parent = ""
+			}
+			if tc.collision {
+				shelf.cause = &ipcclient.ResponseError{Body: contract.ErrorBody{Code: "REPO-2020", MessageKey: "repo.rename_target_exists", Severity: "ERROR", Hint: "REQUIRE_ACTION"}}
+			}
+			shelf.list = actions.ShelfList{ChannelID: "channel-1", Items: []actions.ShelfItem{{UploadID: "upload"}}}
+			fake := listedShelf(t)
+			fake.PickFolderFunc = func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+				t.Error("unexpected folder dialog")
+				return platform.PickFolderResult{Cancelled: true}, nil
+			}
+			fake.PromptTextFunc = func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+				t.Error("unexpected cache name dialog")
+				return platform.PromptTextResult{Cancelled: true}, nil
+			}
+			fake.ShelfFunc = func(context.Context, platform.ShelfDialogRequest) (platform.ShelfDialogResult, error) {
+				return platform.ShelfDialogResult{Action: platform.ShelfDialogImport, UploadID: "upload"}, nil
+			}
+			closed := make(chan struct{})
+			base := fake.UploadChannelsFunc
+			var views int
+			fake.UploadChannelsFunc = func(ctx context.Context, r platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error) {
+				views++
+				if views == 2 {
+					close(closed)
+				}
+				return base(ctx, r)
+			}
+			intents, cancel := setup(actions.Config{ViewModel: viewCopy(lifecycleView(uploadChannelCaps()...)), SettingsBrowser: fake, UploadChannelBrowser: fake, Prompter: fake, Notifier: fake, UploadChannels: oneChannel{}, Shelf: shelf, ShelfBrowser: fake,
+				// No FolderPicker is wired at all. Import must not depend on it.
+				DomainText: func(_, key string, _ map[string]string) string {
+					if key == "repo.rename_target_exists" {
+						return "Obiekt o tej nazwie już istnieje w tym folderze"
+					}
+					return key
+				},
+			})
+			defer cancel()
+			send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+			select {
+			case <-closed:
+			case <-time.After(4 * time.Second):
+				t.Fatal("import flow did not finish")
+			}
+			if tc.denied || tc.missingParent {
+				if shelf.started.Load() != 0 {
+					t.Fatal("unavailable import started")
+				}
+				return
+			}
+			if shelf.started.Load() != 1 {
+				t.Fatal("automatic import did not start exactly once")
+			}
+			got := shelf.requested.Load().([]string)
+			if got[0] != shelf.localPath || got[1] != shelf.parent {
+				t.Fatalf("wrong import paths: %v", got)
+			}
+			if tc.collision {
+				notices := fake.Snapshot().Notifications
+				if len(notices) != 1 || notices[0].Body != "Obiekt o tej nazwie już istnieje w tym folderze" {
+					t.Fatalf("collision not localized: %+v", notices)
+				}
+			}
+		})
 	}
 }

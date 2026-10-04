@@ -29,7 +29,7 @@ type ShelfImporter interface {
 
 func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoID, channelID, uploadID, shelfName string, importing ...bool) {
 	downloads, ok := c.cfg.Shelf.(ShelfDownloader)
-	if !ok || c.cfg.FolderPicker == nil {
+	if !ok {
 		return
 	}
 	fail := func(err error) {
@@ -37,7 +37,7 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 		if len(importing) > 0 && importing[0] {
 			title = c.uiText("shelf.import.failed", "Nie udało się umieścić pliku")
 		}
-		c.reportActionError(ctx, key, title, err.Error())
+		c.reportActionError(ctx, key, title, c.actionErrorBody(err))
 	}
 	status, err := downloads.ShelfFetch(ctx, serverID, repoID, channelID, "", "", true)
 	if err != nil {
@@ -51,25 +51,22 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 	localPath := status.LocalPath
 	destination := ""
 	if len(importing) > 0 && importing[0] {
-		if !status.CanImport {
+		if !status.CanImport || !filepath.IsAbs(status.ParentPath) {
 			return
 		}
 		if _, ok := c.cfg.Shelf.(ShelfImporter); !ok {
 			return
 		}
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("shelf.import.destination", "Wybierz folder docelowy wewnątrz WC macierzystej"), InitialDir: status.ParentPath})
-		if err != nil {
-			fail(err)
-			return
-		}
-		if picked.Cancelled || picked.Path == "" {
-			return
-		}
-		destination = picked.Path
+		destination = status.ParentPath
 	}
-	newFolder := localPath == ""
+	// Import owns no folder choices. The daemon prepares its private sparse
+	// cache on first use; a standalone shelf download still asks for a folder.
+	newFolder := localPath == "" && destination == ""
 chooseLocalFolder:
 	if newFolder {
+		if c.cfg.FolderPicker == nil {
+			return
+		}
 		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("shelf.create.location", "Wybierz miejsce na nowy folder półki")})
 		if err != nil {
 			fail(err)

@@ -168,6 +168,7 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 		t.Skip("native helper required")
 	}
 	root := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -215,7 +216,7 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 	must(server.Start(t.Context()))
 	go p.Run(t.Context())
 	consumer := ipcclient.New(socketPath, "shelf-import-acceptance")
-	payload := contract.ShelfFetchPayload{ServerID: "shelf-lab", RepoID: "parent", ChannelID: "channel", UploadID: item.UploadID, LocalPath: filepath.Join(root, "received"), DestinationFolder: parentRoot}
+	payload := contract.ShelfFetchPayload{ServerID: "shelf-lab", RepoID: "parent", ChannelID: "channel", UploadID: item.UploadID, DestinationFolder: parentRoot}
 	result, err := consumer.ShelfFetch(t.Context(), payload)
 	must(err)
 	deadline := time.Now().Add(30 * time.Second)
@@ -230,7 +231,7 @@ func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
 			if string(actual) != string(data) {
 				t.Fatal("wrong placed bytes")
 			}
-			if _, err := os.Stat(filepath.Join(root, "received", "incoming", "not-selected.jpg")); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(got.LocalPath, "incoming", "not-selected.jpg")); !os.IsNotExist(err) {
 				t.Fatal("unselected sibling fetched")
 			}
 			if _, err := os.Stat(filepath.Join(parentRoot, "not-selected.jpg")); !os.IsNotExist(err) {

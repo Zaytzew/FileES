@@ -1,9 +1,11 @@
 package mobileworker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"filees/internal/fsdurable"
+	"filees/pkg/repoworker"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,8 +100,7 @@ func (l Ledger) Put(rec Record) error {
 	return fsdurable.SyncDir(l.Dir)
 }
 
-// maxLogFieldLen bounds every field LogError writes, so one adversarial or
-// pathological error string cannot grow the file unboundedly.
+// maxLogFieldLen bounds one diagnostic field, not the total log size.
 const maxLogFieldLen = 512
 
 // LogError appends one bounded, best-effort diagnostic line to
@@ -122,12 +123,13 @@ func (l Ledger) LogError(requestID, clientID, operation, cause string) {
 	if err := os.MkdirAll(l.Dir, 0o700); err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(l.Dir, "errors.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.WriteString(line)
+	// A permanent lock serializes rotation across short-lived worker processes.
+	// Logging remains best-effort and must not wait indefinitely behind a writer.
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	_ = repoworker.WithFileLockContext(ctx, filepath.Join(l.Dir, "errors.log.lock"), func() error {
+		return appendDiagnosticLog(l.Dir, line)
+	})
 }
 
 // sanitizeLogField folds control characters (the file is tab-delimited, one

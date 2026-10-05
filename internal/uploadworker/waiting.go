@@ -1,6 +1,7 @@
 package uploadworker
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"filees/internal/fsdurable"
 	"filees/pkg/avscan"
 	"github.com/google/uuid"
 )
@@ -148,6 +150,10 @@ func (r Reaper) PurgeExpired(ctx context.Context, now time.Time) error {
 }
 
 func (r Reaper) purgeExpired(ctx context.Context, now time.Time) error {
+	// The existing trash owner lock also serializes log retention and append.
+	if err := compactPurgedLog(r.TrashRoot, now); err != nil {
+		return err
+	}
 	return filepath.WalkDir(r.TrashRoot, func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -233,24 +239,83 @@ func appendPurgedLog(root string, item PurgedItem) error {
 }
 
 func readPurgedLog(root string, now time.Time) ([]PurgedItem, error) {
-	raw, err := os.ReadFile(filepath.Join(root, purgedLogName))
+	f, err := os.Open(filepath.Join(root, purgedLogName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer f.Close()
 	var out []PurgedItem
-	for _, line := range splitLines(raw) {
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
 		var item PurgedItem
-		if json.Unmarshal(line, &item) != nil {
+		if json.Unmarshal(scanner.Bytes(), &item) != nil {
 			continue
 		}
 		if now.Sub(item.PurgedAt) <= WaitingRoomTTL {
 			out = append(out, item)
 		}
 	}
-	return out, nil
+	return out, scanner.Err()
+}
+
+// compactPurgedLog retains the existing 48h notification window, not an audit
+// history. It streams the old log and promotes a synced replacement only after
+// every retained line was written; ENOSPC leaves the original intact.
+// Caller holds ownTrash, shared with every appendPurgedLog writer.
+func compactPurgedLog(root string, now time.Time) error {
+	path := filepath.Join(root, purgedLogName)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	tmp, err := os.CreateTemp(root, ".purged-log-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	changed := false
+	for scanner.Scan() {
+		var item PurgedItem
+		// A truncated historical append is not proof of age. Preserve it,
+		// just as listing skips malformed records, without blocking payload GC.
+		if json.Unmarshal(scanner.Bytes(), &item) == nil && !item.PurgedAt.IsZero() && now.Sub(item.PurgedAt) > WaitingRoomTTL {
+			changed = true
+			continue
+		}
+		if _, err := tmp.Write(append(scanner.Bytes(), '\n')); err != nil {
+			return err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	return fsdurable.SyncDir(root)
 }
 
 func splitLines(raw []byte) [][]byte {

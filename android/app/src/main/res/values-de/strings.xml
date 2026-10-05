@@ -37,6 +37,8 @@
     <string name="status_sent_count">%1$d Dateien gesendet.</string>
     <string name="status_downloading">Wird heruntergeladen…</string>
     <string name="status_preparing_share">Freigabe wird vorbereitet…</string>
+    <string name="status_cancelling_share">Download wird gestoppt und aufgeräumt…</string>
+    <string name="status_share_cancelled">Freigabe abgebrochen.</string>
     <string name="status_downloaded">Gespeichert: %1$s</string>
     <string name="action_add_watched">Ordner beobachten…</string>
     <string name="action_add_watched_folder">Beobachteten Ordner hinzufügen</string>

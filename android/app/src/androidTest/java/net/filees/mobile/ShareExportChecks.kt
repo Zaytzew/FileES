@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import java.io.File
+import java.io.InterruptedIOException
 import java.util.zip.ZipFile
 
 internal object ShareExportChecks {
@@ -45,6 +46,14 @@ internal object ShareExportChecks {
             }
             val emptyZip = TreeZip.packNamed(emptyList(), dir, "empty.zip")
             ZipFile(emptyZip).use { check(!it.entries().hasMoreElements()) }
+            val larger = File(dir, "cancel-source.bin").apply { writeBytes(ByteArray(192 * 1024)) }
+            var checks = 0
+            check(runCatching {
+                TreeZip.packNamed(listOf("cancel-source.bin" to larger), dir, "cancel.zip") {
+                    if (++checks == 3) throw InterruptedIOException("Cancelled by user")
+                }
+            }.isFailure)
+            check(checks >= 3 && !File(dir, "cancel.zip").exists())
         } finally {
             DownloadCache.removeAttempt(context.cacheDir, dir)
         }

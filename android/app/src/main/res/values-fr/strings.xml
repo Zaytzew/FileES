@@ -37,6 +37,8 @@
     <string name="status_sent_count">%1$d fichiers envoyés.</string>
     <string name="status_downloading">Téléchargement…</string>
     <string name="status_preparing_share">Préparation du partage…</string>
+    <string name="status_cancelling_share">Arrêt du téléchargement et nettoyage…</string>
+    <string name="status_share_cancelled">Partage annulé.</string>
     <string name="status_downloaded">Enregistré : %1$s</string>
     <string name="action_add_watched">Surveiller un dossier…</string>
     <string name="action_add_watched_folder">Ajouter un dossier suivi</string>

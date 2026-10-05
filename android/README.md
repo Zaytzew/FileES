@@ -28,6 +28,9 @@ built and verified.
   existing private download cache and `FileProvider` with a temporary read
   grant. The copy remains available to the chosen app until the cache sweep
   (24 hours) or server unpairing; Share does not save to public Downloads.
+  A modal preparation dialog blocks accidental navigation. Cancel interrupts
+  the share's own download handle and discards the private attempt; leaving
+  the app requests the same cancellation.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.

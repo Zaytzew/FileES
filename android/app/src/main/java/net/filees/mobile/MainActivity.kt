@@ -36,6 +36,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 import net.filees.mobile.databinding.ActivityMainBinding
 import org.json.JSONObject
 import java.io.File
+import java.io.InterruptedIOException
 import java.util.concurrent.Executors
 
 // Newest journal entries shown before "show all"; the cap itself is FileesSession.JOURNAL_CAP.
@@ -49,6 +50,26 @@ class MainActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val uiRequests = UiRequests(::sessionKey)
+    private class ShareTask(var ticket: UiRequests.Ticket) {
+        @Volatile var cancelled = false
+            private set
+        @Volatile var client: Client? = null
+            private set
+        fun attach(client: Client) {
+            this.client = client
+            if (cancelled) client.cancel()
+            check()
+        }
+        fun cancel() {
+            cancelled = true
+            close()
+        }
+        fun close() { client?.cancel() }
+        fun check() { if (cancelled) throw InterruptedIOException("Share cancelled") }
+    }
+    private var shareTask: ShareTask? = null
+    private var shareDialog: AlertDialog? = null
+    private var shareConfirmDialog: AlertDialog? = null
     private var pickerTarget: CaptureDestination<Client>? = null
     private var pendingDownloadPermission: Pair<UiRequests.Ticket, () -> Unit>? = null
 
@@ -225,7 +246,17 @@ class MainActivity : AppCompatActivity() {
         pulseAnimator?.pause()
     }
 
+    override fun onStop() {
+        cancelSharePreparation()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        cancelSharePreparation()
+        shareDialog?.dismiss()
+        shareDialog = null
+        shareConfirmDialog?.dismiss()
+        shareConfirmDialog = null
         uiRequests.invalidate()
         captureCancellation.cancel()
         super.onDestroy()
@@ -815,12 +846,23 @@ class MainActivity : AppCompatActivity() {
     private val captureCancellation = CaptureCancellation()
 
     private data class DownloadTarget(val client: Client, val server: String, val repo: String,
-                                      val revision: Long, val generation: Long)
+                                      val revision: Long, val generation: Long,
+                                      val address: String, val hostKey: String)
 
     private fun downloadTarget(): DownloadTarget? {
         if (activeSession != sessionKey()) return null
         return DownloadTarget(client ?: return null, FileesSession.current(prefs)?.id ?: return null,
-            selectedRepoId ?: return null, browseRevision, browseGeneration)
+            selectedRepoId ?: return null, browseRevision, browseGeneration,
+            activeSession?.second ?: return null, activeSession?.third ?: return null)
+    }
+
+    private fun shareTarget(task: ShareTask, target: DownloadTarget): DownloadTarget {
+        task.check()
+        val shareClient = task.client ?: Androidbind.newClient(
+            filesDir.absolutePath, DialAddress.resolve(target.address), FileesSession.MOBILE_USER, target.hostKey,
+        ).also { task.attach(it) }
+        task.check()
+        return target.copy(client = shareClient)
     }
 
     private fun sendCaptured(target: CaptureDestination<Client>, ticket: UiRequests.Ticket, files: List<WalkedFile>, packed: Boolean) {
@@ -879,24 +921,88 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun beginSharePreparation(ticket: UiRequests.Ticket, message: String): ShareTask {
+        val task = ShareTask(ticket)
+        shareTask = task
+        showSharePreparation(task, message)
+        return task
+    }
+
+    private fun showSharePreparation(task: ShareTask, message: String) {
+        if (shareTask !== task || isFinishing || isDestroyed) return
+        shareDialog?.dismiss()
+        val density = resources.displayMetrics.density
+        val padding = (20 * density).toInt()
+        val spinnerSize = (40 * density).toInt()
+        val progress = android.widget.FrameLayout(this).apply {
+            setPadding(padding, padding, padding, padding)
+            addView(android.widget.ProgressBar(this@MainActivity), android.widget.FrameLayout.LayoutParams(
+                spinnerSize, spinnerSize, android.view.Gravity.CENTER,
+            ))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.action_share)
+            .setMessage(message)
+            .setView(progress)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setCancelable(false)
+            .create()
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { cancelSharePreparation() }
+        shareDialog = dialog
+    }
+
+    private fun cancelSharePreparation() {
+        val task = shareTask ?: return
+        task.cancel()
+        val confirming = shareConfirmDialog != null
+        shareConfirmDialog?.dismiss()
+        shareConfirmDialog = null
+        shareDialog?.setMessage(getString(R.string.status_cancelling_share))
+        shareDialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.isEnabled = false
+        if (confirming) shareFailed(task, InterruptedIOException("Share cancelled"))
+    }
+
+    private fun clearSharePreparation(task: ShareTask) {
+        if (shareTask !== task) return
+        task.close()
+        shareDialog?.dismiss()
+        shareDialog = null
+        shareConfirmDialog?.dismiss()
+        shareConfirmDialog = null
+        shareTask = null
+    }
+
+    private fun shareFailed(task: ShareTask, error: Exception) {
+        postCurrent(task.ticket) {
+            if (shareTask !== task) return@postCurrent
+            clearSharePreparation(task)
+            if (task.cancelled) requestBusy(task.ticket, false, getString(R.string.status_share_cancelled))
+            else failRequest(task.ticket, getString(R.string.error_share), error)
+        }
+    }
+
     private fun shareRow(row: BrowseRow) {
         if (row.share) return
+        if (shareTask != null) return
         if (row.directory) {
             prepareFolder(row, share = true)
             return
         }
         val target = downloadTarget() ?: return
         val ticket = beginUiRequest("download", getString(R.string.status_preparing_share))
+        val task = beginSharePreparation(ticket, getString(R.string.status_preparing_share))
         io.execute {
             var dest: File? = null
             try {
-                val ready = cachedDownload(target, row)
+                val ready = cachedDownload(shareTarget(task, target), row)
                 dest = ready
+                task.check()
                 DownloadCache.checkActive(cacheDir, target.server)
                 dest = null // The chooser's recipient may read after this task ends.
-                showShareWhenReady(ticket, target.server, ready, row.name, folder = false)
+                showShareWhenReady(task, target.server, ready, row.name, folder = false)
             } catch (e: Exception) {
-                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_share), e) }
+                shareFailed(task, e)
             } finally {
                 dest?.parentFile?.let { DownloadCache.removeAttempt(cacheDir, it) }
             }
@@ -910,28 +1016,37 @@ class MainActivity : AppCompatActivity() {
     private fun prepareFolder(row: BrowseRow, share: Boolean) {
         val target = downloadTarget() ?: return
         val ticket = beginUiRequest("download", getString(if (share) R.string.status_preparing_share else R.string.status_scanning))
+        val task = if (share) beginSharePreparation(ticket, getString(R.string.status_scanning)) else null
         if (legacyFullTree) {
             confirmFolder(target, ticket, row, ManifestBrowse.filesUnder(manifestEntries, row.path), share)
             return
         }
         io.execute {
+            var readTarget = target
             try {
-                val json = target.client.listFilesUnderJSON(target.repo, row.path, target.revision, target.generation)
+                if (task != null) readTarget = shareTarget(task, target)
+                val json = readTarget.client.listFilesUnderJSON(readTarget.repo, row.path, readTarget.revision, readTarget.generation)
+                task?.check()
                 val files = ManifestBrowse.entriesFrom(json)
-                postCurrent(ticket) { confirmFolder(target, ticket, row, files, share) }
+                postCurrent(ticket) { confirmFolder(readTarget, ticket, row, files, share) }
             } catch (e: Exception) {
+                if (task != null && task.cancelled) { shareFailed(task, e); return@execute }
                 if (!isUnsupported(e)) {
-                    postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e) }
+                    if (task != null) shareFailed(task, e)
+                    else postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
                     return@execute
                 }
                 try {
+                    task?.check()
                     val files = ManifestBrowse.filesUnder(
-                        ManifestBrowse.entriesFrom(target.client.refreshJSON(target.repo)),
+                        ManifestBrowse.entriesFrom(readTarget.client.refreshJSON(readTarget.repo)),
                         row.path,
                     )
-                    postCurrent(ticket) { confirmFolder(target, ticket, row, files, share) }
+                    task?.check()
+                    postCurrent(ticket) { confirmFolder(readTarget, ticket, row, files, share) }
                 } catch (e2: Exception) {
-                    postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e2) }
+                    if (task != null) shareFailed(task, e2)
+                    else postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e2) }
                 }
             }
         }
@@ -939,6 +1054,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun confirmFolder(target: DownloadTarget, ticket: UiRequests.Ticket, row: BrowseRow, files: List<ManifestEntry>, share: Boolean) {
         if (!uiRequests.current(ticket)) return
+        val task = if (share) {
+            shareTask?.takeIf { it.ticket === ticket } ?: return
+        } else null
+        if (task?.cancelled == true) {
+            shareFailed(task, InterruptedIOException("Share cancelled"))
+            return
+        }
         requestBusy(ticket, false, "")
         if (files.isEmpty() && !share) {
             setBusy(false, getString(R.string.browse_empty))
@@ -951,6 +1073,7 @@ class MainActivity : AppCompatActivity() {
             bytes += file.size
         }
         if (files.size > 200 || bytes > limit) {
+            if (task != null) clearSharePreparation(task)
             setBusy(false, "")
             AlertDialog.Builder(this)
                 .setMessage(getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
@@ -962,28 +1085,48 @@ class MainActivity : AppCompatActivity() {
             if (uiRequests.current(ticket)) pullFolderZip(target, row, files, share)
         }
         if (files.size >= 40 || bytes >= 40L * 1024 * 1024) {
+            if (task != null) {
+                shareDialog?.dismiss()
+                shareDialog = null
+            }
             val summary = resources.getQuantityString(
                 R.plurals.status_preflight, files.size, files.size, HumanSize.format(bytes),
             )
-            AlertDialog.Builder(this)
+            val confirm = AlertDialog.Builder(this)
                 .setTitle(if (share) R.string.share_folder_confirm_title else R.string.download_folder_confirm_title)
                 .setMessage(getString(if (share) R.string.share_folder_confirm else R.string.download_folder_confirm, row.name, summary))
-                .setPositiveButton(if (share) R.string.action_share else R.string.action_download) { _, _ -> start() }
-                .setNegativeButton(R.string.action_cancel, null)
+                .setPositiveButton(if (share) R.string.action_share else R.string.action_download) { _, _ ->
+                    if (task != null) shareConfirmDialog = null
+                    start()
+                }
+                .setNegativeButton(R.string.action_cancel) { _, _ ->
+                    if (task != null) cancelSharePreparation()
+                }
                 .show()
+            if (task != null) {
+                shareConfirmDialog = confirm
+                confirm.setOnCancelListener { cancelSharePreparation() }
+            }
             return
         }
         start()
     }
 
     private fun pullFolderZip(target: DownloadTarget, row: BrowseRow, files: List<ManifestEntry>, share: Boolean) {
+        val task = if (share) shareTask ?: return else null
         val message = if (files.isEmpty()) getString(R.string.status_packing_download)
             else getString(R.string.status_downloading_folder, 1, files.size)
         val ticket = beginUiRequest("download", message)
+        if (task != null) {
+            task.ticket = ticket
+            if (shareDialog == null) showSharePreparation(task, message)
+        }
         val action = {
             val staged = ArrayList<Pair<String, File>>(files.size)
             var attempt: File? = null
             try {
+                task?.check()
+                val readTarget = if (task != null) shareTarget(task, target) else target
                 val dir = DownloadCache.create(cacheDir, target.server)
                 attempt = dir
                 DownloadPublication.requireName("${row.name}.zip")
@@ -991,19 +1134,31 @@ class MainActivity : AppCompatActivity() {
                 var downloadedBytes = 0L
                 val limit = 400L * 1024 * 1024
                 for ((index, pair) in entries.withIndex()) {
+                    task?.check()
                     val (entry, relative) = pair
                     postCurrent(ticket) {
-                        requestBusy(ticket, true, getString(R.string.status_downloading_folder, index + 1, files.size))
+                        if (task?.cancelled != true) {
+                            val progress = getString(R.string.status_downloading_folder, index + 1, files.size)
+                            requestBusy(ticket, true, progress)
+                            if (task != null) shareDialog?.setMessage(progress)
+                        }
                     }
                     val dest = File(dir, "part-$index")
                     DownloadCache.checkActive(cacheDir, target.server)
-                    target.client.downloadTo(target.repo, entry.path, dest.absolutePath)
+                    readTarget.client.downloadTo(readTarget.repo, entry.path, dest.absolutePath)
+                    task?.check()
                     if (dest.length() > limit - downloadedBytes) throw java.io.IOException("Folder exceeds download limit")
                     downloadedBytes += dest.length()
                     staged.add(relative to dest)
                 }
-                postCurrent(ticket) { requestBusy(ticket, true, getString(R.string.status_packing_download)) }
-                val zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
+                postCurrent(ticket) {
+                    if (task?.cancelled != true) {
+                        requestBusy(ticket, true, getString(R.string.status_packing_download))
+                        if (task != null) shareDialog?.setMessage(getString(R.string.status_packing_download))
+                    }
+                }
+                val zip = TreeZip.packNamed(staged, dir, "${row.name}.zip") { task?.check() }
+                task?.check()
                 DownloadCache.checkActive(cacheDir, target.server)
                 if (share) {
                     for ((_, part) in staged) {
@@ -1011,13 +1166,14 @@ class MainActivity : AppCompatActivity() {
                     }
                     dir.setLastModified(System.currentTimeMillis())
                     attempt = null // Keep the private file until the receiving app has read it.
-                    showShareWhenReady(ticket, target.server, zip, "${row.name}.zip", folder = true)
+                    showShareWhenReady(task!!, target.server, zip, "${row.name}.zip", folder = true)
                 } else {
                     publishDownload(zip, "${row.name}.zip")
                     postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, "${row.name}.zip")) }
                 }
             } catch (e: Exception) {
-                postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e) }
+                if (task != null) shareFailed(task, e)
+                else postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
             } finally {
                 attempt?.let { DownloadCache.removeAttempt(cacheDir, it) }
             }
@@ -1025,10 +1181,15 @@ class MainActivity : AppCompatActivity() {
         if (share) io.execute { action() } else executeDownload(ticket, action)
     }
 
-    private fun showShareWhenReady(ticket: UiRequests.Ticket, server: String, file: File, name: String, folder: Boolean) {
+    private fun showShareWhenReady(task: ShareTask, server: String, file: File, name: String, folder: Boolean) {
         main.post {
-            if (isDestroyed || isFinishing || !uiRequests.current(ticket)) {
+            val ticket = task.ticket
+            if (isDestroyed || isFinishing || task.cancelled || shareTask !== task || !uiRequests.current(ticket)) {
                 DownloadCache.removeAttempt(cacheDir, file.parentFile!!)
+                if (!isDestroyed && !isFinishing && shareTask === task) {
+                    clearSharePreparation(task)
+                    requestBusy(ticket, false, getString(R.string.status_share_cancelled))
+                }
                 return@post
             }
             try {
@@ -1039,9 +1200,11 @@ class MainActivity : AppCompatActivity() {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivity(chooser)
+                clearSharePreparation(task)
                 requestBusy(ticket, false, "")
             } catch (e: Exception) {
                 DownloadCache.removeAttempt(cacheDir, file.parentFile!!)
+                clearSharePreparation(task)
                 failRequest(ticket, getString(R.string.error_share), e)
             }
         }

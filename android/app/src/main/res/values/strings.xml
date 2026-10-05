@@ -41,6 +41,8 @@
     <string name="status_sent_count">Wysłano %1$d plików.</string>
     <string name="status_downloading">Pobieranie…</string>
     <string name="status_preparing_share">Przygotowuję do udostępnienia…</string>
+    <string name="status_cancelling_share">Przerywam pobieranie i sprzątam…</string>
+    <string name="status_share_cancelled">Udostępnianie anulowane.</string>
     <string name="status_downloaded">Zapisano: %1$s</string>
     <string name="action_add_watched">Śledź folder…</string>
     <string name="action_add_watched_folder">Dodaj folder śledzony</string>

@@ -37,6 +37,8 @@
     <string name="status_sent_count">Enviados %1$d archivos.</string>
     <string name="status_downloading">Descargando…</string>
     <string name="status_preparing_share">Preparando para compartir…</string>
+    <string name="status_cancelling_share">Deteniendo la descarga y limpiando…</string>
+    <string name="status_share_cancelled">Uso compartido cancelado.</string>
     <string name="status_downloaded">Guardado: %1$s</string>
     <string name="action_add_watched">Vigilar carpeta…</string>
     <string name="action_add_watched_folder">Añadir carpeta vigilada</string>

@@ -39,6 +39,8 @@
     <string name="status_sent_count">Sent %1$d files.</string>
     <string name="status_downloading">Downloading…</string>
     <string name="status_preparing_share">Preparing to share…</string>
+    <string name="status_cancelling_share">Stopping the download and cleaning up…</string>
+    <string name="status_share_cancelled">Sharing cancelled.</string>
     <string name="status_downloaded">Saved: %1$s</string>
     <string name="action_add_watched">Watch folder…</string>
     <string name="action_add_watched_folder">Add watched folder</string>

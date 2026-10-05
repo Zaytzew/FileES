@@ -34,25 +34,36 @@ object TreeZip {
         "pdf",
     )
 
-    fun packNamed(files: List<Pair<String, File>>, cacheDir: File, zipName: String): File {
+    fun packNamed(files: List<Pair<String, File>>, cacheDir: File, zipName: String,
+                  check: () -> Unit = {}): File {
         cacheDir.mkdirs()
         val out = File(cacheDir, zipName)
         try {
             ZipOutputStream(out.outputStream().buffered()).use { zip ->
                 for ((name, file) in files) {
+                    check()
                     val entry = ZipEntry(name)
                     if (stored(name.substringAfterLast('/'))) {
                         entry.method = ZipEntry.STORED
                         entry.size = file.length()
                         entry.compressedSize = file.length()
-                        entry.crc = file.inputStream().use { crcOf(it) }
+                        entry.crc = file.inputStream().use { crcOf(it, check) }
                     } else {
                         entry.method = ZipEntry.DEFLATED
                     }
                     zip.putNextEntry(entry)
-                    file.inputStream().use { it.copyTo(zip, BUFFER_SIZE) }
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) {
+                            check()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            zip.write(buffer, 0, n)
+                        }
+                    }
                     zip.closeEntry()
                 }
+                check()
             }
         } catch (e: Exception) {
             out.delete()
@@ -105,7 +116,16 @@ object TreeZip {
         return out
     }
 
-    private fun crcOf(input: InputStream): Long = crcAndSizeOf(input).first
+    private fun crcOf(input: InputStream, check: () -> Unit): Long {
+        val crc = CRC32()
+        val buffer = ByteArray(BUFFER_SIZE)
+        while (true) {
+            check()
+            val n = input.read(buffer)
+            if (n < 0) return crc.value
+            crc.update(buffer, 0, n)
+        }
+    }
 
     private fun crcAndSizeOf(input: InputStream, limit: Long = Long.MAX_VALUE, cancel: CaptureCancellation = CaptureCancellation()): Pair<Long, Long> {
         val crc = CRC32()

@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.unavailable.title": "Action unavailable",
+  "explorer.unavailable.text": "{path}\n\nChoose an ordinary folder to add, or the exact root of an attached folder to detach. Manage Explorer attachment points in FileES. The application needs current daemon state and appropriate permissions.",
+  "explorer.server.title": "Add to FileES",
+  "explorer.server.text": "{path}\n\nChoose the server where the repository will be created.",
+  "explorer.server.label": "Server",
+  "explorer.server.confirm": "Continue",
+  "explorer.server.cancel": "Cancel",
+  "explorer.detach.title": "Detach folder from FileES",
+  "explorer.detach.text": "{name}\n{path}\n\nSynchronization will stop. All files, including unpublished changes, will stay on disk. The repository and its history on the server will remain unchanged. Only local .svn and .filees metadata and the FileES icon will be removed.",
+  "explorer.detach.confirm": "Detach folder",
+  "explorer.detach.cancel": "Cancel",
   "details.canonicalRecovery.title": "Rebuild folder from server",
   "details.canonicalRecovery.confirm": "Keep local files and rebuild",
   "details.canonicalRecovery.cancel": "Cancel",

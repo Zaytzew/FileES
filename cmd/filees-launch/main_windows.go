@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"filees/internal/explorermenu"
 	"filees/internal/msistartup"
 	"fmt"
 	"os"
@@ -43,14 +44,17 @@ func run(args []string) int {
 	paths := msistartup.Paths(filepath.Dir(exe))
 	if mode == "supervise" || mode == "interactive-supervise" {
 		err = msistartup.Supervise(context.Background(), paths, mode == "interactive-supervise")
-	} else if mode == "show" {
+	} else if mode == "show" || mode == "explorer" {
 		err = msistartup.Open(context.Background(), paths, func() error { return startSupervisor(exe, paths.Root, true) })
+		if err == nil && mode == "explorer" {
+			err = launchExplorerGUI(paths, args)
+		}
 	} else {
 		err = startSupervisor(exe, paths.Root, false)
 	}
 	if err != nil {
 		msistartup.Note(paths, fmt.Sprintf("launcher: %v", err))
-		if mode == "show" && !errors.Is(err, msistartup.ErrCancelled) {
+		if (mode == "show" || mode == "explorer") && !errors.Is(err, msistartup.ErrCancelled) {
 			showError(err.Error())
 		}
 		return 1
@@ -73,6 +77,9 @@ func startSupervisor(exe, root string, interactive bool) error {
 }
 
 func launchMode(args []string) (string, bool) {
+	if _, err := explorermenu.Parse(args); err == nil {
+		return "explorer", true
+	}
 	if len(args) == 0 {
 		return "startup", true
 	}
@@ -93,6 +100,18 @@ func launchMode(args []string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// The supervisor owns the pair. Only after Open confirms it ready do we send
+// the gesture to the singleton GUI; no shell, scripts or arbitrary commands.
+func launchExplorerGUI(paths msistartup.InstallPaths, args []string) error {
+	command := exec.Command(paths.GUI, args...)
+	command.Dir = paths.Root
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	return command.Process.Release()
 }
 
 func showError(message string) {

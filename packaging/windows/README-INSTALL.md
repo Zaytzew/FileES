@@ -86,6 +86,22 @@ przyszła kanałem, a potem uruchomisz **Napraw** z listy programów, wrócisz d
 wersji z MSI. Klient rozpozna faktycznie uruchomioną starszą wersję i ponownie
 zaproponuje bieżące wydanie bez obniżania zabezpieczenia przed rollbackiem.
 
+## Klasyczne menu folderów — przygotowana zmiana 2026-10-05
+
+Nowy MSI zawiera podmenu **FileES** pod **Pokaż więcej opcji** w menu
+prawego przycisku myszy na pojedynczym folderze. „Dodaj do FileES…” otwiera
+wybór serwera i dotychczasowe potwierdzenie utworzenia repozytorium z tego
+folderu. „Odłącz folder” dotyczy dokładnego korzenia zwykłej kopii roboczej:
+po potwierdzeniu zachowuje wszystkie pliki oraz repozytorium na serwerze.
+Nie oferuje kasowania danych. Punkty zaczepienia obsługuj w samej aplikacji;
+nieobsługiwany folder otrzyma wyjaśnienie odmowy w GUI.
+
+Rejestrację dodaje nowy MSI, nie sama aktualizacja binariów kanałem.
+Naprawa starego MSI nie doda menu i może przywrócić jego stare binaria.
+Ta porcja nie obejmuje Microsoft Store. Kod i testowy MSI są gotowe,
+odbiór zainstalowanego menu i wydanie pozostają odrębne; patrz
+raport (implementation notes, not distributed).
+
 ## Odinstalowanie
 
 Standardowo, z listy zainstalowanych aplikacji. Zniknie: para binarek, skrypty

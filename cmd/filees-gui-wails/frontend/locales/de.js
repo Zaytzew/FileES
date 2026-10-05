@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.unavailable.title": "Aktion nicht verfügbar",
+  "explorer.unavailable.text": "{path}\n\nWählen Sie einen normalen Ordner zum Hinzufügen oder genau den Stamm eines verbundenen Ordners zum Trennen. Verwalten Sie Explorer-Anknüpfungspunkte in FileES. Die Anwendung benötigt den aktuellen Zustand des Dienstes und entsprechende Berechtigungen.",
+  "explorer.server.title": "Zu FileES hinzufügen",
+  "explorer.server.text": "{path}\n\nWählen Sie den Server, auf dem das Repository erstellt wird.",
+  "explorer.server.label": "Server",
+  "explorer.server.confirm": "Weiter",
+  "explorer.server.cancel": "Abbrechen",
+  "explorer.detach.title": "Ordner von FileES trennen",
+  "explorer.detach.text": "{name}\n{path}\n\nDie Synchronisierung wird beendet. Alle Dateien, auch unveröffentlichte Änderungen, bleiben auf dem Datenträger. Repository und Verlauf auf dem Server bleiben unverändert. Nur die lokalen Metadaten .svn und .filees sowie das FileES-Symbol werden entfernt.",
+  "explorer.detach.confirm": "Ordner trennen",
+  "explorer.detach.cancel": "Abbrechen",
   "details.canonicalRecovery.title": "Ordner vom Server neu aufbauen",
   "details.canonicalRecovery.confirm": "Lokale Dateien behalten und neu aufbauen",
   "details.canonicalRecovery.cancel": "Abbrechen",

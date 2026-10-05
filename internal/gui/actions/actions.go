@@ -581,6 +581,10 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
 		c.startCreateRepository(ctx, intent.ServerID)
+	case tray.IntentExplorerAdd:
+		c.startExplorerAdd(ctx, intent.Path)
+	case tray.IntentExplorerDetach:
+		c.startExplorerDetach(ctx, intent.Path)
 	case tray.IntentAttachRepository:
 		c.startConnectRepositories(ctx, intent.ServerID, []string{intent.RepoID}, false)
 	case tray.IntentCreateAnchor:
@@ -1771,6 +1775,10 @@ func serverDisplayName(vm app.ViewModel, serverID string) string {
 }
 
 func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) {
+	c.startDetachRepositoryMode(ctx, serverID, repoID, deleteRepository, false, "")
+}
+
+func (c *Controller) startDetachRepositoryMode(ctx context.Context, serverID, repoID string, deleteRepository, keepOnly bool, expectedPath string) {
 	key := "detach:" + serverID + ":" + repoID
 	if serverID == "" || repoID == "" || c.cfg.RepositoryDetacher == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
 		return
@@ -1785,6 +1793,9 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		if !ok || repo.ServerID != serverID || (!deleteRepository && !repo.Attached && !vm.CanDetachDeletedCopy(repo)) || (deleteRepository && orphan) || !vm.Connected || vm.Stale {
 			return
 		}
+		if keepOnly && (repo.Sparse || repo.Purpose != "" || repo.LocalPath != expectedPath) {
+			return
+		}
 		name := repo.DisplayName
 		if strings.TrimSpace(name) == "" {
 			name = repo.ID
@@ -1795,7 +1806,11 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 				return
 			}
 			var chosen bool
-			deleteLocal, chosen = c.chooseDetachMode(ctx, name, repo.LocalPath)
+			if keepOnly {
+				chosen = c.confirmExplorerDetach(ctx, name, repo.LocalPath)
+			} else {
+				deleteLocal, chosen = c.chooseDetachMode(ctx, name, repo.LocalPath)
+			}
 			if !chosen {
 				return
 			}
@@ -1854,6 +1869,9 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			return
 		}
 		if orphan != (current.ServerDeleted && current.LocalCopyPreserved) || current.LocalPath != repo.LocalPath {
+			return
+		}
+		if keepOnly && (current.Sparse || current.Purpose != "" || current.LocalPath != expectedPath) {
 			return
 		}
 		if deleteRepository {
@@ -3236,6 +3254,10 @@ func (c *Controller) startStackLifecycle(ctx context.Context, restart bool) {
 }
 
 func (c *Controller) startCreateRepository(ctx context.Context, serverID string) {
+	c.startCreateRepositoryAt(ctx, serverID, "")
+}
+
+func (c *Controller) startCreateRepositoryAt(ctx context.Context, serverID, selectedPath string) {
 	key := "create-repository:" + serverID
 	if serverID == "" || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || c.cfg.RepositoryCreator == nil || !c.beginOperation(key) {
 		return
@@ -3257,10 +3279,17 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 				break
 			}
 		}
-		if !vm.Connected || vm.Stale || server == nil || !server.CanOfferRepositoryCreation() {
+		if !vm.Connected || vm.Stale || server == nil || server.Detached || !server.CanOfferRepositoryCreation() {
 			return
 		}
-		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("picker.create", "Wybierz folder dla nowego repozytorium FileES")})
+		picked := platform.PickFolderResult{Path: selectedPath}
+		var err error
+		if selectedPath == "" {
+			picked, err = c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("picker.create", "Wybierz folder dla nowego repozytorium FileES")})
+		} else if !explorerAddAllowed(vm, selectedPath) {
+			c.explorerUnavailable(ctx, selectedPath)
+			return
+		}
 		if err != nil {
 			c.repositoryCreationFailure(ctx, err)
 			return
@@ -3295,11 +3324,11 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		for _, candidate := range latest.Servers {
 			if candidate.ID == serverID {
 				found = true
-				allowed = allowed && candidate.CanOfferRepositoryCreation()
+				allowed = allowed && !candidate.Detached && candidate.CanOfferRepositoryCreation()
 				break
 			}
 		}
-		if !allowed || !found {
+		if !allowed || !found || (selectedPath != "" && !explorerAddAllowed(latest, selectedPath)) {
 			return
 		}
 		// Shown before the request, not after: creating the repository on the

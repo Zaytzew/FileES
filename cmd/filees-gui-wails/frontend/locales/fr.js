@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.unavailable.title": "Action indisponible",
+  "explorer.unavailable.text": "{path}\n\nChoisissez un dossier ordinaire à ajouter ou exactement la racine d’un dossier connecté à détacher. Gérez les points d’ancrage de l’Explorateur dans FileES. L’application doit disposer de l’état actuel du service et des autorisations nécessaires.",
+  "explorer.server.title": "Ajouter à FileES",
+  "explorer.server.text": "{path}\n\nChoisissez le serveur sur lequel le dépôt sera créé.",
+  "explorer.server.label": "Serveur",
+  "explorer.server.confirm": "Continuer",
+  "explorer.server.cancel": "Annuler",
+  "explorer.detach.title": "Détacher le dossier de FileES",
+  "explorer.detach.text": "{name}\n{path}\n\nLa synchronisation s’arrêtera. Tous les fichiers, y compris les modifications non publiées, resteront sur le disque. Le dépôt et son historique sur le serveur resteront inchangés. Seuls les métadonnées locales .svn et .filees et l’icône FileES seront supprimés.",
+  "explorer.detach.confirm": "Détacher le dossier",
+  "explorer.detach.cancel": "Annuler",
   "details.canonicalRecovery.title": "Reconstruire le dossier depuis le serveur",
   "details.canonicalRecovery.confirm": "Conserver les fichiers locaux et reconstruire",
   "details.canonicalRecovery.cancel": "Annuler",

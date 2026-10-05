@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.unavailable.title": "Działanie jest niedostępne",
+  "explorer.unavailable.text": "{path}\n\nWybierz zwykły folder do dodania albo dokładny korzeń podłączonego folderu do odłączenia. Punkty zaczepienia obsługuj w FileES. Aplikacja musi mieć aktualny stan demona i odpowiednie uprawnienia.",
+  "explorer.server.title": "Dodaj do FileES",
+  "explorer.server.text": "{path}\n\nWybierz serwer, na którym powstanie repozytorium.",
+  "explorer.server.label": "Serwer",
+  "explorer.server.confirm": "Dalej",
+  "explorer.server.cancel": "Anuluj",
+  "explorer.detach.title": "Odłącz folder od FileES",
+  "explorer.detach.text": "{name}\n{path}\n\nSynchronizacja zostanie zatrzymana. Wszystkie pliki pozostaną na dysku, także nieopublikowane zmiany. Repozytorium i historia na serwerze pozostaną bez zmian. Usunięte zostaną tylko lokalne metadane .svn i .filees oraz ikona FileES.",
+  "explorer.detach.confirm": "Odłącz folder",
+  "explorer.detach.cancel": "Anuluj",
   "details.canonicalRecovery.title": "Odbuduj folder z serwera",
   "details.canonicalRecovery.confirm": "Zachowaj lokalne pliki i odbuduj",
   "details.canonicalRecovery.cancel": "Anuluj",

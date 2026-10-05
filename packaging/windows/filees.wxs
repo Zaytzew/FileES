@@ -159,6 +159,22 @@
           KeyPath="yes" />
     </Component>
 
+    <!-- Classic per-user menu (Windows 11: Show more options). Explorer only
+         sends a folder gesture to the supervisor/GUI; eligibility is checked
+         against current daemon state, never inferred from a .svn directory. -->
+    <Component Id="FileESExplorerMenu" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES" Name="MUIVerb" Type="string" Value="FileES" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES" Name="SubCommands" Type="string" Value="" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES" Name="Icon" Type="string" Value="[INSTALLFOLDER]filees-folder.ico" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\01Add" Name="MUIVerb" Type="string" Value="Dodaj do FileES…" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\01Add" Name="MultiSelectModel" Type="string" Value="Single" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\01Add\command" Type="string" Value="&quot;[INSTALLFOLDER]filees-launch.exe&quot; --explorer-add &quot;%1&quot;" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\02Detach" Name="MUIVerb" Type="string" Value="Odłącz folder" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\02Detach" Name="MultiSelectModel" Type="string" Value="Single" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\02Detach\command" Type="string" Value="&quot;[INSTALLFOLDER]filees-launch.exe&quot; --explorer-detach &quot;%1&quot;" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\FileES" Action="removeOnUninstall" />
+    </Component>
+
     <!-- Removed on uninstall because they are ours and nothing else writes
          them. The owner's working copies and his configuration are not listed
          anywhere here and are never touched. -->
@@ -188,6 +204,7 @@
       <?endif?>
       <ComponentRef Id="FileESFolderIcon" />
       <ComponentRef Id="FileESRegistry" />
+      <ComponentRef Id="FileESExplorerMenu" />
       <ComponentRef Id="FileESLogs" />
       <?if $(var.WithNativeFiles) = "1" ?>
       <ComponentGroupRef Id="NativeSVNFiles" />

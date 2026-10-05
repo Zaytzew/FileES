@@ -28,10 +28,13 @@ const (
 	IntentRetryLifecycle IntentKind = "retry_lifecycle"
 	// Makes a folder the Explorer anchor of a repository without a copy here
 	// (Windows builds with the Cloud Files API; owner, 2026-09-28).
-	IntentCreateAnchor       IntentKind = "create_anchor"
-	IntentJournal            IntentKind = "journal"
-	IntentReservations       IntentKind = "reservations"
-	IntentCreateRepository   IntentKind = "create_repository"
+	IntentCreateAnchor     IntentKind = "create_anchor"
+	IntentJournal          IntentKind = "journal"
+	IntentReservations     IntentKind = "reservations"
+	IntentCreateRepository IntentKind = "create_repository"
+	// Explorer gestures carry a selected folder, never a server-side command.
+	IntentExplorerAdd        IntentKind = "explorer_add"
+	IntentExplorerDetach     IntentKind = "explorer_detach"
 	IntentAttachRepository   IntentKind = "attach_repository"
 	IntentRenameUnportable   IntentKind = "rename_unportable"
 	IntentPairMobileDevice   IntentKind = "pair_mobile_device"

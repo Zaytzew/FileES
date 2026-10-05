@@ -15,6 +15,7 @@ import (
 	"time"
 
 	rootversion "filees"
+	"filees/internal/explorermenu"
 	"filees/internal/gui/clientactivation"
 	"filees/internal/gui/projectionmirror"
 	"filees/internal/gui/reponames"
@@ -70,12 +71,28 @@ func main() {
 	activationRoot := flags.String("activation-state", clientprofile.DefaultRoot(), "katalog stanu aktywacji klienta")
 	showVersion := flags.Bool("version", false, "pokaż wersję i zakończ")
 	devtools := flags.Bool("devtools", false, "włącz narzędzia deweloperskie WebView")
+	flags.String("explorer-add", "", "dodaj wskazany folder przez menu Eksploratora")
+	flags.String("explorer-detach", "", "odłącz wskazany folder, zachowując pliki")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	chooseChannel := flags.String("choose-update-channel", "", "choose initial update channel for this configuration file")
 	replaceFrom := flags.String("replace-predecessor", "", "ask to remove the other FileES variant (msi or store) before starting")
 	replaceConfig := flags.String("config", "", "this variant's configuration file; only with --replace-predecessor")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
+	}
+	explorerRequested := false
+	flags.Visit(func(value *flag.Flag) {
+		if value.Name == "explorer-add" || value.Name == "explorer-detach" {
+			explorerRequested = true
+		}
+	})
+	if explorerRequested {
+		request, err := explorermenu.Parse(os.Args[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		queueExplorerRequest(request)
 	}
 	if *showVersion {
 		fmt.Fprintln(os.Stdout, clientVersion())
@@ -406,6 +423,7 @@ func main() {
 
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 		go gui.run(host.Context())
+		go gui.runExplorerRequests(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())
 			go watchDisplayHealth(host.Context(), *activationRoot, gui, actionPlatform, func() bool {
@@ -477,7 +495,7 @@ func main() {
 	}
 	select {
 	case <-restartRequested:
-		if err := restartCurrentProcess(os.Args); err != nil {
+		if err := restartCurrentProcess(explorermenu.WithoutRequest(os.Args)); err != nil {
 			if dir, dirErr := opjournal.Dir(); dirErr == nil {
 				recordDisplayHealth(dir, "restart_failed", err.Error())
 			}

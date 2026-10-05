@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.unavailable.title": "Acción no disponible",
+  "explorer.unavailable.text": "{path}\n\nElija una carpeta normal para añadir o exactamente la raíz de una carpeta conectada para desvincular. Gestione los puntos de anclaje del Explorador en FileES. La aplicación necesita el estado actual del servicio y los permisos correspondientes.",
+  "explorer.server.title": "Añadir a FileES",
+  "explorer.server.text": "{path}\n\nElija el servidor en el que se creará el repositorio.",
+  "explorer.server.label": "Servidor",
+  "explorer.server.confirm": "Continuar",
+  "explorer.server.cancel": "Cancelar",
+  "explorer.detach.title": "Desvincular carpeta de FileES",
+  "explorer.detach.text": "{name}\n{path}\n\nLa sincronización se detendrá. Todos los archivos, incluidos los cambios no publicados, permanecerán en el disco. El repositorio y su historial en el servidor no cambiarán. Solo se eliminarán los metadatos locales .svn y .filees y el icono de FileES.",
+  "explorer.detach.confirm": "Desvincular carpeta",
+  "explorer.detach.cancel": "Cancelar",
   "details.canonicalRecovery.title": "Reconstruir carpeta desde el servidor",
   "details.canonicalRecovery.confirm": "Conservar archivos locales y reconstruir",
   "details.canonicalRecovery.cancel": "Cancelar",

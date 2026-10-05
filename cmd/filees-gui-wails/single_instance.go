@@ -1,6 +1,7 @@
 package main
 
 import (
+	"filees/internal/explorermenu"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -41,7 +42,12 @@ func setMainPanelRaiser(show func()) {
 func singleInstanceOptions() *application.SingleInstanceOptions {
 	return &application.SingleInstanceOptions{
 		UniqueID: singleInstanceID,
-		OnSecondInstanceLaunch: func(_ application.SecondInstanceData) {
+		OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+			if len(data.Args) > 1 {
+				if request, err := explorermenu.Parse(data.Args[1:]); err == nil {
+					queueExplorerRequest(request)
+				}
+			}
 			raiseMainPanel.Lock()
 			show := raiseMainPanel.show
 			raiseMainPanel.Unlock()

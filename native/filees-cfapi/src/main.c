@@ -6,6 +6,7 @@
  *   shell-register --root <anchor> --identity <text> --icon <absolute .ico>
  *   unregister --root <anchor>
  *   info       --root <anchor>
+ *   file-state --root <anchor> --rel <file>                (metadata only)
  *   placeholders --root <anchor> [--rel <subdirectory>]   (listing on stdin)
  *   connect    --root <anchor>                            (holds until EOF)
  *   revert     --root <materialized file>                 (placeholder -> ordinary file)
@@ -15,7 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "shell-register", "unregister", "info", "placeholders", "connect", "revert", NULL};
+static const char *const k_verbs[] = {"version", "register", "shell-register", "unregister", "info", "file-state", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -28,7 +29,7 @@ static void print_version(void)
     /* Features are how the daemon decides what this build can do, exactly as
      * with the native SVN helper: a name appears here only when the thing
      * behind it works. */
-    puts("],\"features\":[\"sync_root_v1\",\"shell_sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\"]}");
+    puts("],\"features\":[\"sync_root_v1\",\"shell_sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\",\"local_state_usn_v1\"]}");
     fflush(stdout);
 }
 
@@ -56,7 +57,7 @@ int main(int argc, char **argv)
 {
     WCHAR root[MAX_PATH * 2];
     WCHAR identity[FILEES_CFAPI_MAX_IDENTITY];
-    WCHAR relative[MAX_PATH];
+    WCHAR relative[FILEES_CFAPI_MAX_PATH];
     WCHAR icon[FILEES_CFAPI_MAX_PATH];
     const char *verb, *value;
 
@@ -95,6 +96,14 @@ int main(int argc, char **argv)
     if (!strcmp(verb, "unregister")) return filees_cfapi_unregister(root);
     if (!strcmp(verb, "info")) return filees_cfapi_info(root);
     if (!strcmp(verb, "revert")) return filees_cfapi_revert(root);
+    if (!strcmp(verb, "file-state")) {
+        value = option(argc, argv, "--rel");
+        if (!value || !*value || !filees_cfapi_widen(value, relative, FILEES_CFAPI_MAX_PATH)) {
+            filees_cfapi_fail("relative_invalid", E_INVALIDARG);
+            return 2;
+        }
+        return filees_cfapi_file_state(root, relative);
+    }
     if (!strcmp(verb, "placeholders")) {
         relative[0] = L'\0';
         value = option(argc, argv, "--rel");

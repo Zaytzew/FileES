@@ -34,6 +34,8 @@ import (
 //  3. revert: the helper, being the connected provider, turns the placeholder
 //     into an ordinary file of the working copy. An application holding the
 //     file makes Windows refuse; the daemon asks again later.
+//     Experimental Shell mode instead retains the adopted file locally;
+//     the observer confirms SVN status with a guarded USN metadata update.
 //
 // Two rules decide the shape of this file:
 //
@@ -43,6 +45,13 @@ import (
 //   - fetching, adopting and reverting take as long as they take; each runs in
 //     its own goroutine, so a slow one never delays the next request.
 type anchorBridge struct {
+	// Experimental Shell mode retains adopted files as fully local CFAPI
+	// placeholders. Only the daemon's SVN/USN observer may confirm clean.
+	retainLocal bool
+	observe     func(context.Context, *anchorBridge)
+	stateMu     sync.Mutex
+	stateID     uint64
+	stateWait   map[string]chan string
 	// root is the anchor folder; identities are paths below it.
 	root string
 	// materialize writes the file at identity to a temporary file and says at
@@ -117,6 +126,8 @@ func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperS
 // serve reads the helper's lines until it stops. It returns when the helper
 // ends, which is also how the daemon takes an anchor offline: close stdin.
 func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStreams) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	bridge.ready = sync.NewCond(&bridge.queueMu)
 	if bridge.revertRetry <= 0 {
 		bridge.revertRetry = 5 * time.Second
@@ -136,11 +147,26 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 			run()
 		}()
 	}
+	if bridge.observe != nil {
+		work(func() { bridge.observe(ctx, bridge) })
+	}
 	reader := bufio.NewScanner(streams.stdout)
 	reader.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		switch {
+		case strings.HasPrefix(line, "state-set\t"):
+			fields := strings.Split(line, "\t")
+			if len(fields) == 3 {
+				bridge.stateMu.Lock()
+				if reply := bridge.stateWait[fields[1]]; reply != nil {
+					select {
+					case reply <- fields[2]:
+					default:
+					}
+				}
+				bridge.stateMu.Unlock()
+			}
 		case strings.HasPrefix(line, "fetch\t"):
 			request, ok := parseAnchorFetch(line)
 			if !ok {
@@ -171,6 +197,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	// Answers still in flight are written to a stream that may already be
 	// closed; that is harmless, and waiting for them keeps the goroutines from
 	// outliving the anchor.
+	cancel()
 	pending.Wait()
 	bridge.queueMu.Lock()
 	bridge.closed = true
@@ -248,9 +275,58 @@ func (bridge *anchorBridge) hydrated(ctx context.Context, id string) {
 		// The file stays a hydrated placeholder: readable, not yet part of the
 		// copy. The next open of it is served from disk without asking.
 		bridge.log.Warnf("explorer anchor: adopting %s at r%d: %v", fetched.identity, fetched.revision, err)
+		bridge.fetchMu.Lock()
+		delete(bridge.revisions, id)
+		bridge.fetchMu.Unlock()
 		return
 	}
+	if bridge.retainLocal {
+		bridge.fetchMu.Lock()
+		delete(bridge.revisions, id)
+		bridge.fetchMu.Unlock()
+		return // Observer verifies SVN + unchanged bytes before changing Shell.
+	}
 	bridge.sendRevert(id, fetched.identity)
+}
+
+// Only the observer calls this, one bounded command at a time. Waiting does
+// not block stdout draining, hydration or cancellation; replies are retired
+// on completion/timeout instead of becoming a per-path lifetime cache.
+func (bridge *anchorBridge) setLocalState(ctx context.Context, rel, usn string, clean bool) error {
+	if _, ok := cleanAnchorIdentity(rel); !ok || strings.ContainsAny(rel, "\t\r\n") {
+		return errors.New("invalid local state path")
+	}
+	if token, err := strconv.ParseInt(usn, 10, 64); err != nil || token <= 0 {
+		return errors.New("invalid local state token")
+	}
+	bridge.stateMu.Lock()
+	bridge.stateID++
+	id := "state-" + strconv.FormatUint(bridge.stateID, 10)
+	if bridge.stateWait == nil {
+		bridge.stateWait = map[string]chan string{}
+	}
+	reply := make(chan string, 1)
+	bridge.stateWait[id] = reply
+	bridge.stateMu.Unlock()
+	defer func() { bridge.stateMu.Lock(); delete(bridge.stateWait, id); bridge.stateMu.Unlock() }()
+	flag := "0"
+	if clean {
+		flag = "1"
+	}
+	bridge.enqueue("state-set\t" + id + "\t" + rel + "\t" + usn + "\t" + flag)
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	select {
+	case hr := <-reply:
+		if hr != hresultOK {
+			return fmt.Errorf("local Shell state refused: %s", hr)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-deadline.C:
+		return errors.New("local Shell state response timed out")
+	}
 }
 
 func (bridge *anchorBridge) sendRevert(id, identity string) {

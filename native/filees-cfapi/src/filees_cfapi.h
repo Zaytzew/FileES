@@ -55,6 +55,7 @@ typedef int (*filees_bridge_waiting)(void *context);
 void filees_bridge_start(void);
 void filees_bridge_answer(char *line);
 void filees_bridge_say_reverted(const char *id, HRESULT hr);
+void filees_bridge_say_state_set(const char *id, HRESULT hr);
 int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG offset, LONGLONG length,
                           filees_bridge_waiting waiting, void *context, WCHAR *path, int *id_out);
 void filees_bridge_say_hydrated(int id, const WCHAR *identity);
@@ -72,6 +73,12 @@ int filees_cfapi_connect(const WCHAR *root);
 int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon);
 HRESULT filees_shell_unregister(const WCHAR *root);
 HRESULT filees_own_sync_root(const WCHAR *root);
+
+/* Availability does not prove publication. SVN is checked between a read-only
+ * USN probe and a compare-and-set sent to the connected provider. */
+int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative);
+HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
+int filees_local_identity(const void *identity, DWORD length);
 
 #ifdef __cplusplus
 }

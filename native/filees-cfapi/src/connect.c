@@ -50,6 +50,7 @@
 #define FILEES_FETCH_TIMEOUT_TICKS (20 * 60)
 
 static CF_CONNECTION_KEY g_connection;
+static const WCHAR *g_root;
 static int g_trace;
 
 /* Callbacks run where nobody can see them. FILEES_CFAPI_TRACE=1 makes them
@@ -212,9 +213,9 @@ static void CALLBACK on_cancel_fetch_data(const CF_CALLBACK_INFO *info, const CF
     trace("fetch cancelled", S_OK);
 }
 
-/* Deleting or renaming a placeholder would ask FileES to delete or rename in
- * the repository. That is a decision with consequences for other people, and
- * it belongs in FileES itself, not in a drag inside Explorer. */
+/* Unread/unadopted seeds cannot be deleted or renamed through Explorer.
+ * Retained ALWAYS_FULL local files are ordinary WC work: pass the operation
+ * to the existing watcher/publication policy, including replace-on-save. */
 static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
 {
     CF_OPERATION_INFO operation;
@@ -225,9 +226,10 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckDelete);
     answer.AckDelete.Flags = CF_OPERATION_ACK_DELETE_FLAG_NONE;
-    answer.AckDelete.CompletionStatus = STATUS_CLOUD_FILE_ACCESS_DENIED;
+    answer.AckDelete.CompletionStatus = filees_local_identity(info->FileIdentity, info->FileIdentityLength)
+        ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
-    trace("delete refused", hr);
+    trace("delete acknowledgement", hr);
 }
 
 static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
@@ -240,9 +242,10 @@ static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckRename);
     answer.AckRename.Flags = CF_OPERATION_ACK_RENAME_FLAG_NONE;
-    answer.AckRename.CompletionStatus = STATUS_CLOUD_FILE_ACCESS_DENIED;
+    answer.AckRename.CompletionStatus = filees_local_identity(info->FileIdentity, info->FileIdentityLength)
+        ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
-    trace("rename refused", hr);
+    trace("rename acknowledgement", hr);
 }
 
 static CF_CALLBACK_REGISTRATION k_callbacks[] = {
@@ -277,6 +280,7 @@ int filees_cfapi_connect(const WCHAR *root)
     char line[FILEES_CFAPI_MAX_LINE];
     HRESULT hr;
 
+    g_root = root;
     g_trace = GetEnvironmentVariableW(L"FILEES_CFAPI_TRACE", NULL, 0) > 0;
     filees_bridge_start();
     hr = CfConnectSyncRoot(root, k_callbacks, NULL,
@@ -308,7 +312,23 @@ int filees_cfapi_connect(const WCHAR *root)
         size_t length = strlen(line);
         while (length && (line[length - 1] == '\n' || line[length - 1] == '\r')) line[--length] = '\0';
         if (!length) continue;
-        if (!strncmp(line, "revert\t", 7)) revert_request(line + 7);
+        if (!strncmp(line, "state-set\t", 10)) {
+            char *id = line + 10, *rel = strchr(id, '\t'), *token = NULL, *clean = NULL, *end = NULL;
+            WCHAR wide[FILEES_CFAPI_MAX_PATH];
+            LONGLONG usn = 0;
+            hr = E_INVALIDARG;
+            if (rel) { *rel++ = '\0'; token = strchr(rel, '\t'); }
+            if (token) { *token++ = '\0'; clean = strchr(token, '\t'); }
+            if (clean) {
+                *clean++ = '\0'; usn = _strtoi64(token, &end, 10);
+                if (end && end != token && !*end && usn > 0 &&
+                    (!strcmp(clean, "0") || !strcmp(clean, "1")) &&
+                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH))
+                    hr = filees_set_local_state(g_root, wide, usn, *clean == '1');
+            }
+            filees_bridge_say_state_set(id, hr);
+        }
+        else if (!strncmp(line, "revert\t", 7)) revert_request(line + 7);
         else filees_bridge_answer(line);
     }
 

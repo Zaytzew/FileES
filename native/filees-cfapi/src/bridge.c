@@ -11,6 +11,8 @@
  *   helper -> daemon   hydrated <TAB> id <TAB> identity      (bytes handed over)
  *   daemon -> helper   revert   <TAB> id <TAB> absolute path (connect.c)
  *   helper -> daemon   reverted <TAB> id <TAB> HRESULT
+ *   daemon -> helper   state-set <TAB> id <TAB> relative path <TAB> USN <TAB> 0|1
+ *   helper -> daemon   state-set <TAB> id <TAB> HRESULT
  *
  * process is the image path of the program opening the file, so the daemon
  * can refuse a program that tries to download a whole anchor. hydrated tells
@@ -173,6 +175,14 @@ void filees_bridge_say_reverted(const char *id, HRESULT hr)
 {
     EnterCriticalSection(&g_lock);
     printf("reverted\t%s\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}
+
+void filees_bridge_say_state_set(const char *id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("state-set\t%s\t0x%08lx\n", id, (unsigned long)hr);
     fflush(stdout);
     LeaveCriticalSection(&g_lock);
 }

@@ -4,7 +4,7 @@ package main
 
 // The whole daemon side of an Explorer anchor against real helpers and a real
 // repository, without a server: seed, connect, open a placeholder, adopt it at
-// its revision, revert it into an ordinary file of the working copy.
+// its revision, retain it locally and mirror the confirmed SVN state to Shell.
 //
 //	FILEES_CFAPI=<filees-cfapi.exe> FILEES_SVN_PROBE=<filees-svn.exe with sparse_adopt_v1> \
 //	FILEES_PROBE_SVN=<svn.exe> FILEES_PROBE_SVNADMIN=<svnadmin.exe> \
@@ -185,9 +185,10 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	})
 	manager := &anchorManager{
 		helper: helper, nativeSVN: native,
-		repos:  func(string, string) *ipcserver.RepoState { return state },
-		newSVN: func(string) (client.Client, error) { return svn, nil },
-		log:    talk.With("anchor-probe"),
+		stateEvery: 50 * time.Millisecond,
+		repos:      func(string, string) *ipcserver.RepoState { return state },
+		newSVN:     func(string) (client.Client, error) { return svn, nil },
+		log:        talk.With("anchor-probe"),
 	}
 	record := localrepo.Record{ServerID: "lokalny", RepoID: "atlas", RepoURL: repoURL, LocalPath: anchor, Anchor: true, Sparse: true, State: localrepo.StateAttached}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -230,10 +231,14 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		t.Fatalf("opening a file in a subfolder: %v", err)
 	}
 
-	// Then it becomes an ordinary part of the working copy.
+	// Experimental Shell mode keeps the file local instead of stripping its
+	// CFAPI metadata. The observer verifies SVN before confirming it clean.
 	for _, rel := range []string{"sala.dwg", filepath.Join("art", "model.blend")} {
 		path := filepath.Join(anchor, rel)
-		waitFor(t, 30*time.Second, rel+" to become an ordinary file", func() bool { return !cloudfiles.IsPlaceholder(path) })
+		waitFor(t, 30*time.Second, rel+" to become a clean local file", func() bool {
+			local, clean := cloudfiles.LocalState(path)
+			return local && clean
+		})
 	}
 	statuses, err := svn.Status(context.Background(), anchor, []string{"sala.dwg", "art/model.blend"})
 	if err != nil {
@@ -249,6 +254,52 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	}
 	if len(adopted) < 2 {
 		t.Fatalf("adopted %d paths, want both opened files", len(adopted))
+	}
+	path := filepath.Join(anchor, "sala.dwg")
+	if err := os.WriteFile(path, []byte("edited synthetic drawing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "unpublished local state", func() bool {
+		local, clean := cloudfiles.LocalState(path)
+		return local && !clean
+	})
+	if _, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer publication"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "confirmed publication", func() bool {
+		local, clean := cloudfiles.LocalState(path)
+		return local && clean
+	})
+	if _, err := svn.PropSet(t.Context(), anchor, "filees:probe", "changed", []string{"sala.dwg"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "unpublished properties", func() bool {
+		local, clean := cloudfiles.LocalState(path)
+		return local && !clean
+	})
+	if _, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer properties"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "confirmed properties", func() bool {
+		local, clean := cloudfiles.LocalState(path)
+		return local && clean
+	})
+	// Reconnect the real provider using the persisted seed, without reseeding
+	// or downloading the files again. Both retained bytes and state survive.
+	cancel()
+	<-stopped
+	ctx, cancel = context.WithCancel(context.Background())
+	stopped = make(chan struct{})
+	go func() { manager.keep(ctx, record); close(stopped) }()
+	waitFor(t, 10*time.Second, "reconnected provider", func() bool {
+		info, err := manager.call(ctx, "", "info", "--root", anchor)
+		return err == nil && info.OK && info.Status == 1
+	})
+	if got, err := os.ReadFile(path); err != nil || string(got) != "edited synthetic drawing" {
+		t.Fatalf("reconnected bytes: %q %v", got, err)
+	}
+	if local, clean := cloudfiles.LocalState(path); !local || !clean {
+		t.Fatal("reconnect lost published local state")
 	}
 }
 

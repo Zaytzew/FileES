@@ -7,7 +7,7 @@ if(NOT WIN32)
   message(FATAL_ERROR "filees-cfapi builds on Windows only")
 endif()
 
-add_executable(filees-cfapi src/main.c src/common.c src/sync_root.c src/placeholders.c src/connect.c src/bridge.c src/shell_root.cpp)
+add_executable(filees-cfapi src/main.c src/common.c src/sync_root.c src/placeholders.c src/connect.c src/bridge.c src/file_state.c src/shell_root.cpp)
 set_target_properties(filees-cfapi PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
 set_target_properties(filees-cfapi PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
 # cfapi.h needs Windows 10 1709 (0x0A00 plus NTDDI); older targets compile the

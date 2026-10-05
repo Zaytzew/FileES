@@ -73,6 +73,7 @@ type anchorManager struct {
 	repos          func(serverID, repoID string) *ipcserver.RepoState
 	log            talk.Logger
 	reconcileEvery time.Duration
+	stateEvery     time.Duration
 	// newSVN builds the client for a server; nil means the activated
 	// profile's identity (profileSVN). Tests hand over a local client.
 	newSVN func(serverID string) (client.Client, error)
@@ -108,13 +109,18 @@ func anchorHelperPath() string {
 
 // cfapiAnswer is the helper's one JSON object.
 type cfapiAnswer struct {
-	OK       bool   `json:"ok"`
-	Detail   string `json:"detail"`
-	Error    string `json:"error"`
-	HResult  string `json:"hresult"`
-	Provider string `json:"provider"`
-	Ours     bool   `json:"ours"`
-	Status   int    `json:"status"`
+	OK          bool   `json:"ok"`
+	Detail      string `json:"detail"`
+	Error       string `json:"error"`
+	HResult     string `json:"hresult"`
+	Provider    string `json:"provider"`
+	Ours        bool   `json:"ours"`
+	Status      int    `json:"status"`
+	Placeholder bool   `json:"placeholder"`
+	Partial     bool   `json:"partial"`
+	InSync      bool   `json:"in_sync"`
+	Local       bool   `json:"local"`
+	USN         string `json:"usn"`
 }
 
 func (m *anchorManager) call(ctx context.Context, stdin string, args ...string) (cfapiAnswer, error) {
@@ -317,6 +323,12 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					guard: newAnchorGuard(log),
 					log:   log,
 				}
+				if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
+					bridge.retainLocal = true
+					bridge.observe = func(ctx context.Context, bridge *anchorBridge) {
+						m.observeLocalStates(ctx, record, bridge)
+					}
+				}
 				err := bridge.serve(ctx, streams)
 				if ctx.Err() == nil {
 					log.Warnf("anchor at %s went offline: %v", record.LocalPath, err)
@@ -367,8 +379,8 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
 	} else if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
-		// Opt-in until ordinary adopted SVN files have truthful Shell states.
-		// Windows otherwise labels them as pending sync after CfRevertPlaceholder.
+		// Opt-in: retained local state is native-tested, but batching,
+		// WC-writer serialization and visual acceptance still gate rollout.
 		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)
 		if err != nil || !answer.OK {
 			talk.With("anchor").Warnf("register Explorer provider: %s (%s): %v", answer.Error, answer.HResult, err)

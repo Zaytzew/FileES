@@ -1412,7 +1412,10 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		// new work: adding one would publish an empty copy and, on the way,
 		// download it. It joins the copy only when someone opens it.
 		abs := filepath.Join(wc, filepath.FromSlash(p))
-		switch placeholderAdd(anchored, cloudfiles.IsPlaceholder(abs), cloudfiles.NotOnDisk(abs)) {
+		local, _ := cloudfiles.LocalState(abs)
+		// Retained local CFAPI files may have been renamed/moved since their
+		// last publication. Their bytes are real work, not seeded HEAD entries.
+		switch placeholderAdd(anchored, cloudfiles.IsPlaceholder(abs) && !(anchored && local), cloudfiles.NotOnDisk(abs)) {
 		case placeholderDrop:
 			s.Logger.Debugf("skip add %s (placeholder not on this disk)", p)
 			s.removePendingIfUnchanged(p, pending)
@@ -2584,7 +2587,9 @@ const (
 
 // placeholderAdd decides what a new path's Cloud Files state means. In an
 // anchored copy a placeholder is a repository file not yet opened here, never
-// new work. Anywhere else it is another provider's (Nextcloud) and still the
+// new work. The caller excludes retained local FileES identities from that
+// seed classification, including a renamed local file. Anywhere else it is
+// another provider's (Nextcloud) and still the
 // person's file: added when its bytes are on disk, kept waiting when not.
 func placeholderAdd(anchored, placeholder, notOnDisk bool) placeholderAddAction {
 	switch {

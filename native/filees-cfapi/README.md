@@ -1,4 +1,46 @@
-# filees-cfapi — kotwica w Eksploratorze
+# filees-cfapi — punkt zaczepienia w Eksploratorze
+
+## Bieżąca próba stanów — 2026-10-05, baza r1921 + WC
+
+Oznaczenia systemowe nadal wymagają `FILEES_CFAPI_SHELL_PREVIEW=1`;
+nie są domyślnie włączone. W tym trybie po przyjęciu przez SVN plik
+zachowuje CFAPI i wszystkie lokalne bajty (`ALWAYS_FULL`, bez zwalniania
+miejsca). Tożsamość `filees.local/v1` odróżnia tę lokalną pracę od
+niewczytanego wpisu drzewa. Zmiana nazwy i usunięcie lokalnego pliku
+przechodzą do zwykłego obserwatora/publikacji; niewczytane wpisy nadal
+odmawiają. Bez zmiennej działa dotychczasowy tor `adopt` → `revert`.
+
+`file-state --root <punkt> --rel <plik>` odczytuje wyłącznie metadane:
+placeholder, dostępność bajtów, stan lokalny/bez zmian i token USN.
+Nie pobiera danych. Prywatny most podłączonego dostawcy otrzymuje:
+
+```
+demon  -> helper   state-set <TAB> id <TAB> ścieżka względna <TAB> USN <TAB> 0|1
+helper -> demon    state-set <TAB> id <TAB> HRESULT
+```
+
+Nie ma samodzielnego polecenia do ustawiania stanu. Helper sprawdza własny
+korzeń, faktyczny identyfikator punktu otwartego pliku, lokalne bajty i USN.
+Krótki wyłączny uchwyt chroni porównanie i zapis metadanych; nie zdejmuje
+atrybutu tylko do odczytu. Niepełny plik i nieaktualny token odmawiają.
+Flaga zgodności `local_state_usn_v1` oznacza, że nowy demon wymaga nowego
+helpera w tej samej paczce, również gdy próba jest wyłączona.
+
+Demon sprawdza status SVN przed potwierdzeniem braku zmian, w tym stan
+właściwości. Brak wiersza lub błąd nie oznacza pliku czystego. Odczyt
+jeden raz obejmuje najwyżej 64 lokalne ścieżki, również przy błędach;
+kursor i odpowiedzi nie tworzą trwałej pamięci wszystkich ścieżek.
+Nadal potrzebne przed domyślnym użyciem: zbiorczy odczyt zamiast procesów
+per plik, serializacja statusu/właściwości z pisarzem WC i odbiór wyglądu
+powłoki. USN zabezpiecza bajty, nie zmiany właściwości w bazie SVN.
+Na woluminie bez obsługi wymaganego USN potwierdzenie nie jest nadawane.
+
+Testy na syntetycznych punktach: pełne pobranie/adopt, edycja/publikacja,
+właściwości, ponowne podłączenie, zastąpienie przy zapisie, zmiana nazwy
+przez usługę publikacji, tylko do odczytu i odłączenie PASS. Nie jest to
+odbiór żywego BricsCAD, podglądów ani zainstalowanej pary właściciela.
+Raport: `implementation notes (not distributed)`.
+Datowane opisy pierwszego cięcia poniżej zachowują dawny kontrakt.
 
 Helper powłoki Windows dla pionu „Kotwica w Eksploratorze”
 (`implementation notes (not distributed)`, porcje w
@@ -26,6 +68,7 @@ Każdy wypisuje **jeden obiekt JSON** na standardowe wyjście
 | `shell-register --root <folder> --identity <tekst> --icon <plik.ico>` | rejestruje istniejący punkt FileES w powłoce użytkownika; tryb testowy |
 | `unregister --root <folder>` | zdejmuje rejestrację CFAPI i powłoki, również przy ponowieniu |
 | `info --root <folder>` | czy to kotwica, czyja i czy dostawca działa |
+| `file-state --root <folder> --rel <plik>` | odczyt metadanych i USN, bez pobrania |
 | `placeholders --root <folder> [--rel <podkatalog>]` | tworzy placeholdery z listingu na wejściu |
 | `connect --root <folder>` | podłącza dostawcę i **trzyma połączenie do zamknięcia wejścia** |
 | `revert --root <plik>` | zamienia pobrany placeholder w zwykły plik; tylko przy niepodłączonym dostawcy |
@@ -115,7 +158,8 @@ Wyłączenie zmiennej nie usuwa już utworzonego wpisu — test kończy się
 wyrejestrowaniem własnego punktu. Nie używać tej próby na roboczych punktach.
 
 Menu przypinania i zwalniania miejsca jest wyłączone (`AllowPinning=false`).
-Nie ma własnego rozszerzenia nakładek ani zmiany kontraktu adopt/revert.
+Nie ma własnego rozszerzenia nakładek. Aktualny próbny kontrakt po adopt
+opisano na początku dokumentu; `revert` pozostaje domyślną ścieżką.
 Raport: `implementation notes (not distributed)`.
 
 ### Dostarczanie plików

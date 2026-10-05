@@ -7,6 +7,7 @@
 package cloudfiles
 
 import (
+	"bytes"
 	"os"
 	"runtime"
 	"sync"
@@ -28,9 +29,12 @@ const (
 const exposePlaceholders = 2
 
 var (
-	loadState sync.Once
-	stateProc *windows.LazyProc
-	modeProc  *windows.LazyProc
+	loadState     sync.Once
+	stateProc     *windows.LazyProc
+	modeProc      *windows.LazyProc
+	infoProc      *windows.LazyProc
+	localIdentity = []byte{'f', 0, 'i', 0, 'l', 0, 'e', 0, 'e', 0, 's', 0, '.', 0,
+		'l', 0, 'o', 0, 'c', 0, 'a', 0, 'l', 0, '/', 0, 'v', 0, '1', 0, 0, 0}
 )
 
 // state asks the system, not the reparse tag: the anchor's own root carries
@@ -49,6 +53,7 @@ func state(path string) (uint32, bool) {
 		cldapi := windows.NewLazySystemDLL("cldapi.dll")
 		if cldapi.Load() == nil {
 			stateProc = cldapi.NewProc("CfGetPlaceholderStateFromFindData")
+			infoProc = cldapi.NewProc("CfGetPlaceholderInfo")
 		}
 		modeProc = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlSetThreadPlaceholderCompatibilityMode")
 	})
@@ -79,12 +84,47 @@ func state(path string) (uint32, bool) {
 
 // IsPlaceholder reports whether path is a Cloud Files placeholder that has not
 // been turned back into an ordinary file - whether or not its bytes have been
-// fetched. Any provider's placeholder counts: none of them is work the person
-// produced, and a fetched one is about to be taken into the working copy.
+// fetched. It says nothing about publication: LocalState distinguishes retained
+// local work from a seeded placeholder that has not been adopted into SVN.
 // An anchor's own folder is a sync root, not a placeholder.
 func IsPlaceholder(path string) bool {
 	value, ok := state(path)
 	return ok && value&statePlaceholder != 0 && value&stateSyncRoot == 0
+}
+
+// LocalState recognises only the helper's fully local, ALWAYS_FULL identity,
+// not an arbitrary hydrated remote placeholder. Attribute-only inspection
+// neither hydrates nor starts a subprocess. This marker survives rename;
+// those local bytes remain ordinary work for the scanner/commit service.
+func LocalState(path string) (managed, inSync bool) {
+	if !IsPlaceholder(path) || NotOnDisk(path) || infoProc == nil || infoProc.Find() != nil {
+		return false, false
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false, false
+	}
+	handle, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return false, false
+	}
+	defer windows.CloseHandle(handle)
+	// CF_PLACEHOLDER_BASIC_INFO: two enums, two LARGE_INTEGERs, length/blob.
+	var info struct {
+		Pin, Sync      uint32
+		FileID, RootID int64
+		Length         uint32
+		Identity       [4096]byte
+	}
+	var returned uint32
+	hr, _, _ := infoProc.Call(uintptr(handle), 0, uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), uintptr(unsafe.Pointer(&returned)))
+	if int32(hr) < 0 || info.Length != uint32(len(localIdentity)) ||
+		returned < uint32(unsafe.Offsetof(info.Identity))+info.Length || !bytes.Equal(info.Identity[:info.Length], localIdentity) {
+		return false, false
+	}
+	return true, info.Sync == 1
 }
 
 // NotOnDisk reports whether path is a placeholder whose content is not (or not

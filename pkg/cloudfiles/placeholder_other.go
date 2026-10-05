@@ -7,6 +7,9 @@ import "os"
 // Cloud Files placeholders exist only on Windows.
 func IsPlaceholder(string) bool { return false }
 
+// LocalState is unavailable without Cloud Files integration.
+func LocalState(string) (bool, bool) { return false, false }
+
 // NotOnDisk is false where there are no placeholders.
 func NotOnDisk(string) bool { return false }
 

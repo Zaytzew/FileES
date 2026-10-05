@@ -98,8 +98,9 @@ nieobsługiwany folder otrzyma wyjaśnienie odmowy w GUI.
 
 Rejestrację dodaje nowy MSI, nie sama aktualizacja binariów kanałem.
 Naprawa starego MSI nie doda menu i może przywrócić jego stare binaria.
-Ta porcja nie obejmuje Microsoft Store. Kod i testowy MSI są gotowe,
-odbiór zainstalowanego menu i wydanie pozostają odrębne; patrz
+Ta porcja nie obejmuje Microsoft Store. Developerski MSI przeszedł instalację,
+naprawę, zimny/ciepły start i odinstalowanie menu w izolowanym Windows.
+Spójne wydanie i odbiór dialogów na rzeczywistym repo pozostają odrębne; patrz
 raport (implementation notes, not distributed).
 
 ## Odinstalowanie

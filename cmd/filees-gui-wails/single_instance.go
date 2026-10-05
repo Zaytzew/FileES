@@ -14,13 +14,13 @@ import (
 // other, which is the one situation this guard exists to prevent.
 const singleInstanceID = "pl.filees.desktop-client"
 
-// raiseMainPanel is set once the main window exists.
+// raiseMainPanel is set once the main window's WebView runtime is ready.
 //
 // The single-instance callback is handed to application.New, which runs before
 // any window is constructed, so the callback cannot close over the window
 // directly. It closes over this instead and does nothing until the window is
-// there - a click that arrives during the first two seconds of startup is
-// dropped rather than dereferencing a window that does not exist yet.
+// ready. An early raise is dropped rather than focusing an incomplete WebView;
+// an Explorer gesture is still retained separately in the bounded queue.
 var raiseMainPanel struct {
 	sync.Mutex
 	show func()

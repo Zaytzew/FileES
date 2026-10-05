@@ -421,9 +421,14 @@ func main() {
 		host.Quit,
 	)
 
+	// ApplicationStarted precedes WebView2 controller creation. Explorer's
+	// first gesture can open a prompt immediately, so wait for that window.
+	var explorerRuntimeOnce sync.Once
+	promptWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
+		explorerRuntimeOnce.Do(func() { go gui.runExplorerRequests(host.Context()) })
+	})
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 		go gui.run(host.Context())
-		go gui.runExplorerRequests(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())
 			go watchDisplayHealth(host.Context(), *activationRoot, gui, actionPlatform, func() bool {
@@ -473,12 +478,13 @@ func main() {
 				opjournal.RecordFailure("interface", "Okno nie dostało małej ikony (Alt-Tab, pasek tytułu)", err)
 			}
 		})
-	})
-
-	setMainPanelRaiser(func() {
-		mainWindow.Show()
-		mainWindow.UnMinimise()
-		mainWindow.Focus()
+		// A second launch may arrive while the native window exists but its
+		// WebView2 controller does not. Do not focus it before RuntimeReady.
+		setMainPanelRaiser(func() {
+			mainWindow.Show()
+			mainWindow.UnMinimise()
+			mainWindow.Focus()
+		})
 	})
 	configureWailsTray(host, mainWindow, gui, actionPlatform, func(language nativeLanguage) {
 		settingsWindow.SetTitle(language.text("window.settings"))

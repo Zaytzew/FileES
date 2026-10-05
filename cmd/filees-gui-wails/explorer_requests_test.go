@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,31 @@ import (
 	"filees/internal/gui/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+func TestExplorerGesturesWaitForPromptRuntime(t *testing.T) {
+	source := readMainSource(t)
+	applicationStarted := strings.Index(source, "host.Event.OnApplicationEvent(events.Common.ApplicationStarted")
+	runtimeReady := strings.Index(source, "promptWindow.OnWindowEvent(events.Common.WindowRuntimeReady")
+	runner := strings.Index(source, "go gui.runExplorerRequests(host.Context())")
+	if runtimeReady < 0 || runner < runtimeReady || runner > applicationStarted {
+		t.Fatal("Explorer gestures must wait for the prompt WebView runtime, not merely ApplicationStarted")
+	}
+}
+
+func TestMainPanelRaiserWaitsForWindowRuntime(t *testing.T) {
+	source := readMainSource(t)
+	runtimeReady := strings.Index(source, "mainWindow.RegisterHook(events.Common.WindowRuntimeReady")
+	tray := strings.Index(source, "configureWailsTray(host, mainWindow")
+	if runtimeReady < 0 || tray < runtimeReady {
+		t.Fatal("main window readiness hook missing")
+	}
+	block := source[runtimeReady:tray]
+	end := strings.Index(block, "\n\t})")
+	raiser := strings.Index(block, "setMainPanelRaiser(")
+	if raiser < 0 || raiser > end {
+		t.Fatal("main panel raising must be enabled only inside WindowRuntimeReady, after WebView2 exists")
+	}
+}
 
 func resetExplorerQueue(t *testing.T) {
 	t.Helper()

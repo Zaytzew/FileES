@@ -384,6 +384,14 @@ func recordSyncFailure(sink *errmap.Sink, lg talk.Logger, what string, err error
 // received, when set, journals what an update brought in; the read-write
 // path does the same through commit.Service.RecordUpdate.
 func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger, received func(context.Context, string), pauses ...*runtime.SyncPause) {
+	runReadOnlyRepoWithUpdate(ctx, repo, rs, cli, sink, lg, received, func(ctx context.Context, wc string) (string, error) {
+		return cli.Update(ctx, wc)
+	}, pauses...)
+}
+
+// The live RO pipeline injects its guarded update; lightweight existing
+// callers retain the same loop and update behavior without a second client.
+func runReadOnlyRepoWithUpdate(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger, received func(context.Context, string), svnUpdate func(context.Context, string) (string, error), pauses ...*runtime.SyncPause) {
 	var pause *runtime.SyncPause
 	if len(pauses) > 0 {
 		pause = pauses[0]
@@ -429,7 +437,7 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 			rs.SetCurrentOp(nil)
 			projectCycle(contract.CycleWaiting, tickAt, tickAt.Add(interval))
 		}()
-		out, err := cli.Update(ctx, repo.LocalPath)
+		out, err := svnUpdate(ctx, repo.LocalPath)
 		if err != nil {
 			if ctx.Err() == nil {
 				recordSyncFailure(sink, lg, "svn update failed", err)

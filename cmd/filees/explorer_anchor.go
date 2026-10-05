@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -47,11 +48,12 @@ import (
 type anchorBridge struct {
 	// Experimental Shell mode retains adopted files as fully local CFAPI
 	// placeholders. Only the daemon's SVN/USN observer may confirm clean.
-	retainLocal bool
-	observe     func(context.Context, *anchorBridge)
-	stateMu     sync.Mutex
-	stateID     uint64
-	stateWait   map[string]chan string
+	retainLocal     bool
+	observe         func(context.Context, *anchorBridge)
+	stateMu         sync.Mutex
+	stateID         uint64
+	stateWait       map[string]chan string
+	stopStateWriter func() // kill and reap before releasing the WC metadata guard
 	// root is the anchor folder; identities are paths below it.
 	root string
 	// materialize writes the file at identity to a temporary file and says at
@@ -102,6 +104,7 @@ type anchorHelperStreams struct {
 	stdout io.Reader
 	stdin  io.WriteCloser
 	wait   func() error
+	abort  func()
 }
 
 func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperStreams, error) {
@@ -109,18 +112,34 @@ func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperS
 		return nil, errors.New("explorer anchor needs absolute helper and anchor paths")
 	}
 	command := exec.CommandContext(ctx, helper, "connect", "--root", root)
-	stdout, err := command.StdoutPipe()
+	// Own the output pipe: Wait may run independently without closing the
+	// scanner's read end before the remaining ACKs have been drained.
+	stdout, output, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	command.Stdout = output
 	stdin, err := command.StdinPipe()
 	if err != nil {
+		_ = stdout.Close()
+		_ = output.Close()
 		return nil, err
 	}
 	if err := command.Start(); err != nil {
+		_ = stdout.Close()
+		_ = output.Close()
+		_ = stdin.Close()
 		return nil, err
 	}
-	return &anchorHelperStreams{stdout: stdout, stdin: stdin, wait: command.Wait}, nil
+	_ = output.Close()
+	exited := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = command.Wait(); close(exited) }()
+	return &anchorHelperStreams{
+		stdout: stdout, stdin: stdin,
+		wait:  func() error { <-exited; _ = stdout.Close(); return waitErr },
+		abort: func() { _ = command.Process.Kill(); <-exited },
+	}, nil
 }
 
 // serve reads the helper's lines until it stops. It returns when the helper
@@ -129,6 +148,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	bridge.ready = sync.NewCond(&bridge.queueMu)
+	bridge.stopStateWriter = streams.abort
 	if bridge.revertRetry <= 0 {
 		bridge.revertRetry = 5 * time.Second
 	}
@@ -293,6 +313,9 @@ func (bridge *anchorBridge) hydrated(ctx context.Context, id string) {
 // not block stdout draining, hydration or cancellation; replies are retired
 // on completion/timeout instead of becoming a per-path lifetime cache.
 func (bridge *anchorBridge) setLocalState(ctx context.Context, rel, usn string, clean bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, ok := cleanAnchorIdentity(rel); !ok || strings.ContainsAny(rel, "\t\r\n") {
 		return errors.New("invalid local state path")
 	}
@@ -323,8 +346,16 @@ func (bridge *anchorBridge) setLocalState(ctx context.Context, rel, usn string, 
 		}
 		return nil
 	case <-ctx.Done():
+		// The connected command may already be executing. Cancellation is
+		// not an ACK: reap its process before allowing another WC writer in.
+		if bridge.stopStateWriter != nil {
+			bridge.stopStateWriter()
+		}
 		return ctx.Err()
 	case <-deadline.C:
+		if bridge.stopStateWriter != nil {
+			bridge.stopStateWriter()
+		}
 		return errors.New("local Shell state response timed out")
 	}
 }

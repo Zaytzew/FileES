@@ -117,18 +117,31 @@ static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
     return file_usn(file, &out->usn);
 }
 
-int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
+static HRESULT read_state(const WCHAR *root, const WCHAR *relative, struct state *state)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
-    struct state state;
     HANDLE file = INVALID_HANDLE_VALUE;
     HRESULT hr = local_path(root, relative, path);
     if (SUCCEEDED(hr)) {
         file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-        hr = file == INVALID_HANDLE_VALUE ? HRESULT_FROM_WIN32(GetLastError()) : inspect(file, root, &state);
+        hr = file == INVALID_HANDLE_VALUE ? HRESULT_FROM_WIN32(GetLastError()) : inspect(file, root, state);
     }
     if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+    return hr;
+}
+
+static void print_state(const struct state *state)
+{
+    printf("{\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\"}",
+           state->placeholder ? "true" : "false", state->partial ? "true" : "false",
+           state->clean ? "true" : "false", state->local ? "true" : "false", state->usn);
+}
+
+int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
+{
+    struct state state;
+    HRESULT hr = read_state(root, relative, &state);
     if (FAILED(hr)) {
         filees_cfapi_fail("file_state", hr);
         return 1;
@@ -136,6 +149,45 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
     printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\"}\n",
            state.placeholder ? "true" : "false", state.partial ? "true" : "false",
            state.clean ? "true" : "false", state.local ? "true" : "false", state.usn);
+    fflush(stdout);
+    return 0;
+}
+
+/* Read at most 64 relative paths in one process. No bytes, hydration or
+ * mutation; failed rows keep their position and never imply a clean file.
+ * Validate the complete bounded input before opening any file. */
+int filees_cfapi_file_states(const WCHAR *root)
+{
+    WCHAR relatives[64][FILEES_CFAPI_MAX_PATH];
+    char line[FILEES_CFAPI_MAX_LINE];
+    int count = 0, i;
+    while (fgets(line, sizeof line, stdin)) {
+        size_t length = strlen(line);
+        if (count == 64 || !length || line[length - 1] != '\n') {
+            filees_cfapi_fail("file_states_input", E_INVALIDARG);
+            return 2;
+        }
+        line[--length] = 0;
+        if (length && line[length - 1] == '\r') line[--length] = 0;
+        if (!length || !filees_cfapi_widen(line, relatives[count], FILEES_CFAPI_MAX_PATH)) {
+            filees_cfapi_fail("file_states_input", E_INVALIDARG);
+            return 2;
+        }
+        ++count;
+    }
+    if (ferror(stdin)) {
+        filees_cfapi_fail("file_states_input", E_FAIL);
+        return 2;
+    }
+    printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"states\":[");
+    for (i = 0; i < count; ++i) {
+        struct state state;
+        HRESULT hr = read_state(root, relatives[i], &state);
+        if (i) putchar(',');
+        if (SUCCEEDED(hr)) print_state(&state);
+        else printf("{\"ok\":false,\"hresult\":\"0x%08lx\"}", (unsigned long)hr);
+    }
+    puts("]}");
     fflush(stdout);
     return 0;
 }

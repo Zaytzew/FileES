@@ -24,10 +24,72 @@ import (
 	"filees/pkg/cloudfiles"
 )
 
+// Opt-in manual receipt. The harness owns the synthetic point and always
+// unregisters it; the owner's daemon, configuration and files are untouched.
+func TestAnchorShellVisualReceipt(t *testing.T) {
+	if os.Getenv("FILEES_CFAPI_VISUAL") != "1" {
+		t.Skip("explicit visual receipt only")
+	}
+	root := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	p := newLocalStateProbe(t, root, "", "f\t8192\tcloud.txt\tcloud.txt\n", true)
+	for _, entry := range []struct {
+		name  string
+		clean bool
+	}{{"local-clean.txt", true}, {"local-pending.txt", false}} {
+		if err := os.WriteFile(filepath.Join(root, entry.name), []byte("Synthetic FileES visual receipt\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		p.accept(entry.name, entry.clean)
+	}
+	t.Logf("VISUAL_ROOT=%s", root)
+	t.Logf("VISUAL_DONE=%s", filepath.Join(root, "visual.done"))
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(filepath.Join(root, "visual.done")); err == nil {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatal("visual receipt not completed before deadline")
+}
+
 type anchorLocalState struct {
 	OK, Placeholder, Partial, Local bool
 	InSync                          bool `json:"in_sync"`
 	USN                             string
+}
+
+func TestAnchorConnectedHelperAbortIsReaped(t *testing.T) {
+	root := t.TempDir()
+	helper := probeTool(t, "FILEES_CFAPI")
+	m := &anchorManager{helper: helper}
+	if answer, err := m.call(t.Context(), "", "register", "--root", root, "--identity", "synthetic-abort"); err != nil || !answer.OK {
+		t.Fatalf("register: %+v %v", answer, err)
+	}
+	t.Cleanup(func() {
+		if out, err := exec.Command(helper, "unregister", "--root", root).CombinedOutput(); err != nil {
+			t.Errorf("unregister after abort: %s %v", out, err)
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	streams, err := startAnchorHelper(ctx, helper, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { streams.abort(); _ = streams.wait(); _ = streams.stdin.Close() })
+	reader := bufio.NewScanner(streams.stdout)
+	if !reader.Scan() || !strings.Contains(reader.Text(), `"ok":true`) {
+		t.Fatal("connected helper not ready")
+	}
+	streams.abort() // returns only after the actual child process has exited
+	if err := streams.wait(); err == nil {
+		t.Fatal("terminated helper unexpectedly reported normal exit")
+	}
+	if reader.Scan() {
+		t.Fatal("connected helper still produced output after being reaped")
+	}
 }
 
 type localStateProbe struct {
@@ -41,7 +103,7 @@ type localStateProbe struct {
 	stop   func()
 }
 
-func newLocalStateProbe(t *testing.T, root, content, listing string) *localStateProbe {
+func newLocalStateProbe(t *testing.T, root, content, listing string, shell ...bool) *localStateProbe {
 	t.Helper()
 	helper := probeTool(t, "FILEES_CFAPI")
 	m := &anchorManager{helper: helper}
@@ -53,6 +115,20 @@ func newLocalStateProbe(t *testing.T, root, content, listing string) *localState
 			t.Errorf("unregister: %s %v", out, err)
 		}
 	})
+	if len(shell) > 0 && shell[0] {
+		icon, err := anchorFolderIconPath()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := markManagedFolder(root, icon); err != nil {
+			t.Fatal(err)
+		}
+		answer, err := m.call(t.Context(), "", "shell-register", "--root", root, "--identity", "synthetic-local-state", "--icon", icon)
+		info, _ := m.call(t.Context(), "", "info", "--root", root)
+		if err != nil || !answer.OK {
+			t.Fatalf("shell registration: %+v %v; info=%+v", answer, err, info)
+		}
+	}
 	if listing != "" {
 		if answer, err := m.call(t.Context(), listing, "placeholders", "--root", root); err != nil || !answer.OK {
 			t.Fatalf("seed: %+v %v", answer, err)
@@ -154,6 +230,17 @@ func TestAnchorLocalStateRefusesMissingBytesAndStalePublication(t *testing.T) {
 	root := t.TempDir()
 	p := newLocalStateProbe(t, root, "", "f\t8192\tremote.txt\tremote.txt\n")
 	m := &anchorManager{helper: p.helper}
+	// Batch order includes failed rows; an unread placeholder stays off disk.
+	batch, err := m.call(t.Context(), "remote.txt\nmissing.txt\n", "file-states", "--root", root)
+	if err != nil || !batch.OK || len(batch.States) != 2 || !batch.States[0].Partial || batch.States[1].OK {
+		t.Fatalf("batch metadata: %+v %v", batch, err)
+	}
+	for _, input := range []string{strings.Repeat("remote.txt\n", 65), "remote.txt", strings.Repeat("a", 4096) + "\n"} {
+		answer, err := m.call(t.Context(), input, "file-states", "--root", root)
+		if err == nil && answer.OK {
+			t.Fatal("malformed or oversize batch accepted")
+		}
+	}
 	for _, rel := range []string{"../outside.txt", ".svn/entries", ".svn./entries", ".filees /identity", "local.txt:stream", "/absolute.txt"} {
 		if raw, err := exec.Command(p.helper, "file-state", "--root", root, "--rel", rel).CombinedOutput(); err == nil {
 			t.Fatalf("invalid relative path accepted: %q %s", rel, raw)

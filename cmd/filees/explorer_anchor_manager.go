@@ -109,18 +109,19 @@ func anchorHelperPath() string {
 
 // cfapiAnswer is the helper's one JSON object.
 type cfapiAnswer struct {
-	OK          bool   `json:"ok"`
-	Detail      string `json:"detail"`
-	Error       string `json:"error"`
-	HResult     string `json:"hresult"`
-	Provider    string `json:"provider"`
-	Ours        bool   `json:"ours"`
-	Status      int    `json:"status"`
-	Placeholder bool   `json:"placeholder"`
-	Partial     bool   `json:"partial"`
-	InSync      bool   `json:"in_sync"`
-	Local       bool   `json:"local"`
-	USN         string `json:"usn"`
+	OK          bool          `json:"ok"`
+	Detail      string        `json:"detail"`
+	Error       string        `json:"error"`
+	HResult     string        `json:"hresult"`
+	Provider    string        `json:"provider"`
+	Ours        bool          `json:"ours"`
+	Status      int           `json:"status"`
+	Placeholder bool          `json:"placeholder"`
+	Partial     bool          `json:"partial"`
+	InSync      bool          `json:"in_sync"`
+	Local       bool          `json:"local"`
+	USN         string        `json:"usn"`
+	States      []cfapiAnswer `json:"states"`
 }
 
 func (m *anchorManager) call(ctx context.Context, stdin string, args ...string) (cfapiAnswer, error) {
@@ -379,8 +380,8 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
 	} else if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
-		// Opt-in: retained local state is native-tested, but batching,
-		// WC-writer serialization and visual acceptance still gate rollout.
+		// Opt-in until visual/large-tree acceptance and the remaining sparse
+		// operations are complete. Metadata observations share the WC guard.
 		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)
 		if err != nil || !answer.OK {
 			talk.With("anchor").Warnf("register Explorer provider: %s (%s): %v", answer.Error, answer.HResult, err)

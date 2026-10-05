@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -37,8 +38,16 @@ func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo
 }
 
 func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) {
-	candidates, paths, err := anchorLocalStateBatch(ctx, record.LocalPath, cursor, func(rel string) (cfapiAnswer, error) {
-		return m.call(ctx, "", "file-state", "--root", record.LocalPath, "--rel", rel)
+	// One budget for enumeration, one metadata process, SVN and acknowledgements.
+	// A busy writer is skipped, never queued behind a slow publication.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	candidates, paths, err := anchorLocalStateBatch(ctx, record.LocalPath, cursor, func(paths []string) ([]cfapiAnswer, error) {
+		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
+		if err != nil || !answer.OK {
+			return nil, errors.New("local metadata batch unavailable")
+		}
+		return answer.States, nil
 	})
 	if err != nil || len(paths) == 0 || ctx.Err() != nil {
 		return
@@ -48,12 +57,11 @@ func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo
 
 // The limit applies even when every inspection fails. The cursor is a visited
 // path in WalkDir order, not lexical order (directories sort differently).
-func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, probe func(string) (cfapiAnswer, error)) (map[string]cfapiAnswer, []string, error) {
+func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, probe func([]string) ([]cfapiAnswer, error)) (map[string]cfapiAnswer, []string, error) {
 	const batchLimit = 64
 	candidates := make(map[string]cfapiAnswer, batchLimit)
 	paths := make([]string, 0, batchLimit)
 	fullPass := true
-	inspections := 0
 	resume := *cursor == ""
 	err := filepath.WalkDir(root, func(abs string, entry fs.DirEntry, walkErr error) error {
 		if ctx.Err() != nil {
@@ -91,32 +99,8 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		if !info.Mode().IsRegular() || cloudfiles.RecallsOnRead(info) {
 			return nil
 		}
-		// Count attempts, not successful candidates: unsupported metadata or
-		// errors must not spawn one helper for every file in a large tree.
-		inspections++
-		if inspections == batchLimit {
-			fullPass = false
-		}
-		// Content writes invalidate CFAPI's clean flag, property edits do not.
-		// Keep checking SVN for clean local files, without spawning the helper.
-		if local, inSync := cloudfiles.LocalState(abs); local && inSync {
-			candidates[rel] = cfapiAnswer{Local: true, InSync: true}
-			paths = append(paths, rel)
-			if inspections == batchLimit {
-				return filepath.SkipAll
-			}
-			return nil
-		}
-		state, err := probe(rel)
-		if err != nil || !state.OK || state.Partial || state.USN == "" || (state.Local && state.InSync) {
-			if inspections == batchLimit {
-				return filepath.SkipAll
-			}
-			return nil
-		}
-		candidates[rel] = state
 		paths = append(paths, rel)
-		if inspections == batchLimit {
+		if len(paths) == batchLimit {
 			fullPass = false
 			return filepath.SkipAll
 		}
@@ -125,51 +109,71 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 	if fullPass {
 		*cursor = ""
 	}
-	return candidates, paths, err
+	if err != nil || len(paths) == 0 {
+		return candidates, nil, err
+	}
+	states, err := probe(paths)
+	if err != nil {
+		return candidates, nil, err
+	}
+	if len(states) != len(paths) {
+		return candidates, nil, errors.New("local metadata batch length mismatch")
+	}
+	eligible := paths[:0]
+	for i, rel := range paths {
+		state := states[i]
+		if !state.OK || state.Partial || state.USN == "" {
+			continue
+		}
+		candidates[rel] = state
+		eligible = append(eligible, rel)
+	}
+	return candidates, eligible, nil
 }
 
 func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string) {
-	svn, err := m.svn(record.ServerID)
-	if err != nil {
+	if m.repos == nil {
 		return
 	}
-	rows, err := svn.Status(ctx, record.LocalPath, paths)
-	if err != nil {
+	repo := m.repos(record.ServerID, record.RepoID)
+	if repo == nil {
 		return
 	}
-	for _, row := range rows {
-		rel := filepath.ToSlash(row.Path)
-		if filepath.IsAbs(row.Path) {
-			local, err := filepath.Rel(record.LocalPath, row.Path)
-			if err != nil {
+	// The commit service keeps its WC operation lock from status until the
+	// helper ACK (or its confirmed exit). USN guards bytes, not SVN properties.
+	_ = repo.WithLocalStatus(ctx, paths, func(rows []client.StatusEntry) error {
+		for _, row := range rows {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			rel := filepath.ToSlash(row.Path)
+			if filepath.IsAbs(row.Path) {
+				local, err := filepath.Rel(record.LocalPath, row.Path)
+				if err != nil {
+					continue
+				}
+				rel = filepath.ToSlash(local)
+			}
+			state, found := candidates[rel]
+			if !found {
 				continue
 			}
-			rel = filepath.ToSlash(local)
-		}
-		state, found := candidates[rel]
-		if !found {
-			continue
-		}
-		clean, local := anchorSVNLocalState(row)
-		if !local {
-			continue
-		} // An unadopted/new placeholder is not a local WC file.
-		if state.Local && !clean && !state.InSync {
-			continue // Do not rewrite unchanged pending metadata every cycle.
-		}
-		if state.Local && state.InSync {
-			if clean {
+			clean, local := anchorSVNLocalState(row)
+			if !local {
 				continue
+			} // An unadopted/new placeholder is not a local WC file.
+			if state.Local && !clean && !state.InSync {
+				continue // Do not rewrite unchanged pending metadata every cycle.
 			}
-			// Only demoting clean here: a fresh token obtained after status
-			// cannot be used to promote bytes that were not inspected by SVN.
-			state, err = m.call(ctx, "", "file-state", "--root", record.LocalPath, "--rel", rel)
-			if err != nil || !state.OK || state.Partial || state.USN == "" {
-				continue
+			if state.Local && state.InSync {
+				if clean {
+					continue
+				}
 			}
+			_ = bridge.setLocalState(ctx, rel, state.USN, clean)
 		}
-		_ = bridge.setLocalState(ctx, rel, state.USN, clean)
-	}
+		return ctx.Err()
+	})
 }
 
 func anchorSVNLocalState(row client.StatusEntry) (clean, local bool) {

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -71,6 +72,7 @@ type RepoState struct {
 	publishFn                func(ctx context.Context, comment string) (int64, error)
 	depthFn                  func(ctx context.Context, rel, depth string) error
 	adoptFn                  func(ctx context.Context, rel string, revision int64) error
+	localStatusFn            func(context.Context, []string, func([]client.StatusEntry) error) error
 	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)
@@ -139,6 +141,24 @@ func (rs *RepoState) Adopt(ctx context.Context, rel string, revision int64) erro
 		return ErrDepthUnavailable
 	}
 	return fn(ctx, rel, revision)
+}
+
+// SetLocalStatusFunc wires only the daemon's CFAPI observer. This callback is
+// not exposed as a request, capability or new external protocol endpoint.
+func (rs *RepoState) SetLocalStatusFunc(fn func(context.Context, []string, func([]client.StatusEntry) error) error) {
+	rs.mu.Lock()
+	rs.localStatusFn = fn
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) WithLocalStatus(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+	rs.mu.RLock()
+	fn := rs.localStatusFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return ErrDepthUnavailable
+	}
+	return fn(ctx, paths, confirm)
 }
 
 // ErrDepthUnavailable: the repository has no running working copy to deepen.

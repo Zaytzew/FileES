@@ -166,6 +166,7 @@ func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetPublishFunc(nil)
 	state.SetDepthFunc(nil)
 	state.SetAdoptFunc(nil)
+	state.SetLocalStatusFunc(nil)
 	state.SetIntentFuncs(nil, nil)
 	state.SetCommitRecoveryFuncs(nil, nil, nil)
 	state.SetNoticeFuncs(nil, nil)
@@ -496,6 +497,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetAdoptFunc(func(ctx context.Context, rel string, revision int64) error {
 		return service.AdoptPath(ctx, wc, rel, revision)
 	})
+	runtimeRepo.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+		return service.WithLocalStatus(ctx, wc, paths, confirm)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	var canonicalPlan *canonicalRecoveryJob
@@ -536,6 +540,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetPublishFunc(nil)
 			runtimeRepo.state.SetDepthFunc(nil)
 			runtimeRepo.state.SetAdoptFunc(nil)
+			runtimeRepo.state.SetLocalStatusFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -549,7 +554,12 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			go func() {
 				defer close(migrationDone)
 				retryEditingPolicyMigration(migrationCtx, migrationWake, deps.gate, deps.mutex, repo.RepoURL, func(ctx context.Context) bool {
-					return applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+					deferred := true
+					_ = service.WithWorkingCopyWrite(ctx, wc, func() error {
+						deferred = applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+						return nil
+					})
+					return deferred
 				}, logger)
 			}()
 			defer func() { cancelMigration(); <-migrationDone }()
@@ -590,6 +600,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		runtimeRepo.state.SetPublishFunc(nil)
 		runtimeRepo.state.SetDepthFunc(nil)
 		runtimeRepo.state.SetAdoptFunc(nil)
+		runtimeRepo.state.SetLocalStatusFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
 		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -1045,9 +1056,22 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	}
 	logger.Infof("reservation local overlay wired (read-only)")
 	wc := runtime.config.LocalPath
+	// Read-only copies still mutate local SVN metadata while receiving or
+	// adopting files. Share an operation guard, without a publication loop.
+	guard := &commit.Service{Cli: svn}
+	guard.BindWorkingCopy(runtime.config.ID, wc)
 	runtime.state.SetSparse(runtime.config.Sparse)
-	runtime.state.SetDepthFunc(readOnlyDepthFunc(svn, wc))
-	runtime.state.SetAdoptFunc(readOnlyAdoptFunc(svn, wc))
+	depth := readOnlyDepthFunc(svn, wc)
+	adopt := readOnlyAdoptFunc(svn, wc)
+	runtime.state.SetDepthFunc(func(ctx context.Context, rel, value string) error {
+		return guard.WithWorkingCopyWrite(ctx, wc, func() error { return depth(ctx, rel, value) })
+	})
+	runtime.state.SetAdoptFunc(func(ctx context.Context, rel string, revision int64) error {
+		return guard.WithWorkingCopyWrite(ctx, wc, func() error { return adopt(ctx, rel, revision) })
+	})
+	runtime.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+		return guard.WithLocalStatus(ctx, wc, paths, confirm)
+	})
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
 		func(id string) error { return shout.Ack(wc, id) },
@@ -1079,7 +1103,15 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 				}
 			}
 		}
-		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger, received, s.pause)
+		runReadOnlyRepoWithUpdate(ctx, runtime.config, runtime.state, svn, sink, logger, received, func(ctx context.Context, wc string) (string, error) {
+			var out string
+			err := guard.WithWorkingCopyWrite(ctx, wc, func() error {
+				var err error
+				out, err = svn.Update(ctx, wc)
+				return err
+			})
+			return out, err
+		}, s.pause)
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationReleaseFunc(nil)
@@ -1089,6 +1121,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		runtime.state.SetNoticeFuncs(nil, nil)
 		runtime.state.SetDepthFunc(nil)
 		runtime.state.SetAdoptFunc(nil)
+		runtime.state.SetLocalStatusFunc(nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

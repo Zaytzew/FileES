@@ -40,13 +40,17 @@ func TestAnchorLocalStateBatchBoundsFailedInspectionsAndResumes(t *testing.T) {
 	cursor := ""
 	for _, want := range []int{64, 64, 2} {
 		calls := 0
-		_, paths, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(rel string) (cfapiAnswer, error) {
+		attempts := 0
+		_, paths, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
 			calls++
-			seen[rel]++
-			return cfapiAnswer{}, errors.New("unavailable metadata")
+			attempts += len(paths)
+			for _, rel := range paths {
+				seen[rel]++
+			}
+			return make([]cfapiAnswer, len(paths)), nil
 		})
-		if err != nil || len(paths) != 0 || calls != want {
-			t.Fatalf("batch: %d calls, %d candidates, %v", calls, len(paths), err)
+		if err != nil || len(paths) != 0 || calls != 1 || attempts != want {
+			t.Fatalf("batch: %d calls, %d attempts, %d candidates, %v", calls, attempts, len(paths), err)
 		}
 	}
 	if cursor != "" || len(seen) != 130 {
@@ -83,6 +87,48 @@ func TestAnchorSVNLocalStateRequiresPositiveStatus(t *testing.T) {
 				t.Fatalf("state %v %v, want %v %v", clean, local, tc.clean, tc.local)
 			}
 		})
+	}
+}
+
+func TestAnchorLocalStateBatchRefusesTruncatedAnswer(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cursor := ""
+	_, paths, err := anchorLocalStateBatch(t.Context(), root, &cursor, func([]string) ([]cfapiAnswer, error) { return nil, nil })
+	if err == nil || len(paths) != 0 {
+		t.Fatalf("truncated batch: %v %v", paths, err)
+	}
+}
+
+func TestAnchorCanceledStateWriterIsReapedBeforeReturning(t *testing.T) {
+	bridge := &anchorBridge{}
+	helper, _ := runAnchorBridge(t, bridge)
+	if _, err := io.WriteString(helper.toDaemon, "{\"ok\":true}\n"); err != nil {
+		t.Fatal(err)
+	}
+	// Handshake completes before installing a simulated process-reap hook.
+	ctx, cancel := context.WithCancel(t.Context())
+	started, reaped := make(chan struct{}), make(chan struct{})
+	bridge.stopStateWriter = func() { close(started); <-reaped }
+	done := make(chan error, 1)
+	go func() { done <- bridge.setLocalState(ctx, "file", "123", true) }()
+	helper.answer(t)
+	cancel()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("state writer not stopped")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("returned before process exit: %v", err)
+	default:
+	}
+	close(reaped)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 }
 

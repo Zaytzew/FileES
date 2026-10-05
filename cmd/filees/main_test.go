@@ -161,6 +161,52 @@ func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	}
 }
 
+func TestReadOnlyUpdateUsesLocalStatusWriterGuard(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	fake := &updateOnlyClient{called: make(chan struct{}, 1)}
+	guard := &commit.Service{Cli: fake}
+	guard.BindWorkingCopy("archive", wc)
+	server := ipcserver.New(filepath.Join(t.TempDir(), "filees.sock"))
+	rs := server.RegisterRepo("archive", "svn://example/archive", wc)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runReadOnlyRepoWithUpdate(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, nil, talk.With("readonly-guard"), nil, func(ctx context.Context, path string) (string, error) {
+			err := guard.WithWorkingCopyWrite(ctx, path, func() error {
+				close(entered)
+				<-ctx.Done()
+				return ctx.Err()
+			})
+			return "", err
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("read-only update did not acquire guard")
+	}
+	confirmed := false
+	err := guard.WithLocalStatus(t.Context(), wc, []string{"file"}, func([]client.StatusEntry) error { confirmed = true; return nil })
+	if !errors.Is(err, commit.ErrLocalStatusBusy) || confirmed {
+		t.Fatalf("observer entered during read-only update: %v, confirmed=%v", err, confirmed)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("read-only update retained guard on cancellation")
+	}
+	if err := guard.WithWorkingCopyWrite(t.Context(), wc, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
 	parent := t.TempDir()
 	wc := filepath.Join(parent, "archive")

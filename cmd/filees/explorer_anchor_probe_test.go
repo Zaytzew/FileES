@@ -26,6 +26,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	"filees/pkg/commit"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
@@ -182,6 +183,12 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		}).UpdateAdoptPath(ctx, anchor, rel, revision)
 		adopted <- rel
 		return err
+	})
+	// The production observer uses the commit service's operation guard.
+	service := &commit.Service{Cli: svn}
+	service.BindWorkingCopy("atlas", anchor)
+	state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+		return service.WithLocalStatus(ctx, anchor, paths, confirm)
 	})
 	manager := &anchorManager{
 		helper: helper, nativeSVN: native,

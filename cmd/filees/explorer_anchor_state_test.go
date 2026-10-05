@@ -63,6 +63,85 @@ func TestAnchorLocalStateBatchBoundsFailedInspectionsAndResumes(t *testing.T) {
 	}
 }
 
+func TestAnchorLocalStateBatchResumesAfterDeletedBookmark(t *testing.T) {
+	root := t.TempDir()
+	for i := range 130 {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("file-%03d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursor := "file-063"
+	if err := os.Remove(filepath.Join(root, cursor)); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	_, _, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
+		first = paths[0]
+		return make([]cfapiAnswer, len(paths)), nil
+	})
+	if err != nil || first != "file-064" {
+		t.Fatalf("deleted bookmark: first=%q, err=%v", first, err)
+	}
+}
+
+func TestAnchorLocalStateBatchPreservesBookmarkOnCancellation(t *testing.T) {
+	root := t.TempDir()
+	cursor := "previous/file"
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err := anchorLocalStateBatch(ctx, root, &cursor, func([]string) ([]cfapiAnswer, error) {
+		t.Fatal("canceled enumeration invoked helper")
+		return nil, nil
+	})
+	if !errors.Is(err, context.Canceled) || cursor != "previous/file" {
+		t.Fatalf("canceled bookmark: cursor=%q, err=%v", cursor, err)
+	}
+}
+
+func TestAnchorLocalStateBatchHandlesChangedBookmarkSubtree(t *testing.T) {
+	for _, replaced := range []bool{false, true} {
+		t.Run(fmt.Sprint(replaced), func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "a"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "a.txt"), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			cursor, want := "a/deleted", "a.txt"
+			if replaced {
+				// A bookmark formerly naming a file now names a directory.
+				if err := os.Mkdir(filepath.Join(root, "a", "deleted"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "a", "deleted", "child"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+				want = "a/deleted/child"
+			}
+			var first string
+			_, _, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
+				first = paths[0]
+				return make([]cfapiAnswer, len(paths)), nil
+			})
+			if err != nil || first != want {
+				t.Fatalf("changed subtree: first=%q, want=%q, err=%v", first, want, err)
+			}
+		})
+	}
+}
+
+func TestAnchorWalkOrderMatchesDirectoryTraversal(t *testing.T) {
+	paths := []string{"a/child", "a/z/deep", "a.txt", "ab/file", "b"}
+	for i, a := range paths {
+		for j, b := range paths {
+			if got := anchorWalkBefore(a, b); got != (i < j) {
+				t.Fatalf("order %q < %q = %v", a, b, got)
+			}
+		}
+	}
+}
+
 func TestAnchorSVNLocalStateRequiresPositiveStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name         string

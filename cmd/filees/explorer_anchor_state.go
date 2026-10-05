@@ -70,8 +70,18 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		if walkErr != nil {
 			return walkErr
 		}
+		rel, err := filepath.Rel(root, abs)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
 		if entry.IsDir() {
 			if entry.Name() == ".svn" || entry.Name() == ".filees" {
+				return filepath.SkipDir
+			}
+			// Skip completed subtrees, but retain ancestors of the bookmark.
+			// A file replaced by a directory must still expose its new children.
+			if !resume && rel != "." && rel != *cursor && !strings.HasPrefix(*cursor, rel+"/") && !anchorWalkBefore(*cursor, rel) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -79,14 +89,11 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		if entry.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
-		rel, err := filepath.Rel(root, abs)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
 		if !resume {
-			resume = rel == *cursor
-			return nil
+			if !anchorWalkBefore(*cursor, rel) {
+				return nil
+			}
+			resume = true // The bookmark itself may have been removed or renamed.
 		}
 		*cursor = rel
 		if _, ok := cleanAnchorIdentity(rel); !ok {
@@ -106,7 +113,7 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		}
 		return nil
 	})
-	if fullPass {
+	if fullPass && err == nil {
 		*cursor = ""
 	}
 	if err != nil || len(paths) == 0 {
@@ -129,6 +136,23 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		eligible = append(eligible, rel)
 	}
 	return candidates, eligible, nil
+}
+
+// WalkDir sorts each directory's entries, then descends immediately. Compare
+// components, not whole strings: "a/child" precedes "a.txt" in that order.
+// Cut avoids allocating one slice per path visited while finding the cursor.
+func anchorWalkBefore(a, b string) bool {
+	for {
+		partA, restA, moreA := strings.Cut(a, "/")
+		partB, restB, moreB := strings.Cut(b, "/")
+		if partA != partB {
+			return partA < partB
+		}
+		if !moreA || !moreB {
+			return !moreA && moreB
+		}
+		a, b = restA, restB
+	}
 }
 
 func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string) {

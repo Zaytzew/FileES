@@ -135,6 +135,17 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	svnadmin := probeTool(t, "FILEES_PROBE_SVNADMIN")
 
 	root := t.TempDir()
+	visual := func(stage, anchor string) {
+		if os.Getenv("FILEES_CFAPI_VISUAL") != "1" {
+			return
+		}
+		done := filepath.Join(root, "visual-"+stage+".done")
+		t.Logf("VISUAL_STAGE=%s VISUAL_ROOT=%s VISUAL_DONE=%s", stage, anchor, done)
+		waitFor(t, 3*time.Minute, "visual "+stage, func() bool {
+			_, err := os.Stat(done)
+			return err == nil
+		})
+	}
 	repo := filepath.Join(root, "repo")
 	probeRun(t, root, svnadmin, "create", repo)
 	source := filepath.Join(root, "source")
@@ -224,6 +235,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		info, err := manager.call(ctx, "", "info", "--root", anchor)
 		return err == nil && info.OK && info.Status == 1 // CF_PROVIDER_STATUS_IDLE
 	})
+	visual("online", anchor)
 	opened := time.Now()
 	read, err := os.ReadFile(filepath.Join(anchor, "sala.dwg"))
 	if err != nil {
@@ -262,6 +274,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	if len(adopted) < 2 {
 		t.Fatalf("adopted %d paths, want both opened files", len(adopted))
 	}
+	visual("local", anchor)
 	path := filepath.Join(anchor, "sala.dwg")
 	if err := os.WriteFile(path, []byte("edited synthetic drawing"), 0600); err != nil {
 		t.Fatal(err)
@@ -270,21 +283,32 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		local, clean := cloudfiles.LocalState(path)
 		return local && !clean
 	})
-	if _, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer publication"); err != nil {
+	visual("changed", anchor)
+	if err := service.WithWorkingCopyWrite(t.Context(), anchor, func() error {
+		_, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer publication")
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 10*time.Second, "confirmed publication", func() bool {
 		local, clean := cloudfiles.LocalState(path)
 		return local && clean
 	})
-	if _, err := svn.PropSet(t.Context(), anchor, "filees:probe", "changed", []string{"sala.dwg"}); err != nil {
+	visual("published", anchor)
+	if err := service.WithWorkingCopyWrite(t.Context(), anchor, func() error {
+		_, err := svn.PropSet(t.Context(), anchor, "filees:probe", "changed", []string{"sala.dwg"})
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 10*time.Second, "unpublished properties", func() bool {
 		local, clean := cloudfiles.LocalState(path)
 		return local && !clean
 	})
-	if _, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer properties"); err != nil {
+	if err := service.WithWorkingCopyWrite(t.Context(), anchor, func() error {
+		_, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer properties")
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 10*time.Second, "confirmed properties", func() bool {
@@ -308,6 +332,8 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	if local, clean := cloudfiles.LocalState(path); !local || !clean {
 		t.Fatal("reconnect lost published local state")
 	}
+	visual("reconnected", anchor)
+	t.Logf("visual receipt=%v; synthetic content, not a real CAD drawing", os.Getenv("FILEES_CFAPI_VISUAL") == "1")
 }
 
 func waitFor(t *testing.T, limit time.Duration, what string, done func() bool) {

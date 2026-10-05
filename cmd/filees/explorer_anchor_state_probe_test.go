@@ -15,14 +15,93 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	"golang.org/x/sys/windows"
 )
+
+func probeHandleCount(t *testing.T) uint32 {
+	t.Helper()
+	var count uint32
+	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+	if ok, _, err := proc.Call(uintptr(windows.CurrentProcess()), uintptr(unsafe.Pointer(&count))); ok == 0 {
+		t.Fatalf("read probe handles: %v", err)
+	}
+	return count
+}
+
+func TestAnchorLocalStateLargeTree(t *testing.T) {
+	const localCount, remoteCount = 4096, 2048
+	root := t.TempDir()
+	var listing strings.Builder
+	for i := range remoteCount {
+		fmt.Fprintf(&listing, "f\t8192\tcloud-%04d.txt\tcloud-%04d.txt\n", i, i)
+	}
+	p := newLocalStateProbe(t, root, "", listing.String())
+	for i := range localCount {
+		dir := filepath.Join(root, fmt.Sprintf("local-%02d", i/64))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file-%04d.txt", i)), []byte("synthetic local bytes"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &anchorManager{helper: p.helper}
+	initial := probeHandleCount(t)
+	for pass := range 6 {
+		cursor := ""
+		seen := make(map[string]bool, localCount)
+		calls := 0
+		started := time.Now()
+		var maxBatch time.Duration
+		for rounds := 0; ; rounds++ {
+			if rounds > localCount/64+2 {
+				t.Fatal("local cursor did not finish the pass")
+			}
+			batchStart := time.Now()
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			states, paths, err := anchorLocalStateBatch(ctx, root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
+				calls++
+				answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", root)
+				if err != nil || !answer.OK {
+					return nil, fmt.Errorf("metadata: %+v %w", answer, err)
+				}
+				return answer.States, nil
+			})
+			cancel()
+			maxBatch = max(maxBatch, time.Since(batchStart))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, rel := range paths {
+				if seen[rel] || !states[rel].OK || states[rel].Partial || !strings.HasPrefix(rel, "local-") {
+					t.Fatalf("duplicate, unavailable or remote row: %s", rel)
+				}
+				seen[rel] = true
+			}
+			if cursor == "" {
+				break
+			}
+		}
+		if len(seen) != localCount || calls != localCount/64 {
+			t.Fatalf("local paths=%d helpers=%d", len(seen), calls)
+		}
+		t.Logf("pass=%d local=%d remote=%d helpers=%d elapsed=%s max_batch=%s handles_initial=%d handles_after=%d goroutines=%d", pass+1, localCount, remoteCount, calls, time.Since(started), maxBatch, initial, probeHandleCount(t), runtime.NumGoroutine())
+	}
+	select {
+	case <-p.fetch:
+		t.Fatal("metadata pass fetched remote bytes")
+	default:
+	}
+}
 
 // Opt-in manual receipt. The harness owns the synthetic point and always
 // unregisters it; the owner's daemon, configuration and files are untouched.

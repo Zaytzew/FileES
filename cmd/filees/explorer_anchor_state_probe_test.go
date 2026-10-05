@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -24,6 +25,9 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	"filees/pkg/commit"
+	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 	"golang.org/x/sys/windows"
 )
 
@@ -35,6 +39,55 @@ func probeHandleCount(t *testing.T) uint32 {
 		t.Fatalf("read probe handles: %v", err)
 	}
 	return count
+}
+
+func TestAnchorLocalStateBatchIncludesRetainedFiles(t *testing.T) {
+	root := t.TempDir()
+	p := newLocalStateProbe(t, root, "", "f\t8192\tremote.txt\tremote.txt\n")
+	if err := os.Mkdir(filepath.Join(root, "folder"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "local.txt"), []byte("local bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.accept("local.txt", true)
+	if err := os.WriteFile(filepath.Join(root, "folder", "nested.txt"), []byte("nested bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.accept("folder/nested.txt", true)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err == nil {
+			t.Logf("entry=%s type=%s info_mode=%s recall=%v", entry.Name(), entry.Type(), info.Mode(), cloudfiles.RecallsOnRead(info))
+		}
+	}
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			info, e := entry.Info()
+			if e == nil {
+				t.Logf("walk=%s type=%s mode=%s recall=%v", filepath.Base(path), entry.Type(), info.Mode(), cloudfiles.RecallsOnRead(info))
+			}
+		}
+		return err
+	})
+	m := &anchorManager{helper: p.helper}
+	cursor := ""
+	_, paths, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
+		answer, err := m.call(t.Context(), strings.Join(paths, "\n")+"\n", "file-states", "--root", root)
+		return answer.States, err
+	})
+	if err != nil || len(paths) != 2 || paths[0] != "folder/nested.txt" || paths[1] != "local.txt" {
+		t.Fatalf("retained local file skipped: %v %v", paths, err)
+	}
+	select {
+	case <-p.fetch:
+		t.Fatal("retained-file enumeration fetched remote bytes")
+	default:
+	}
 }
 
 func TestAnchorLocalStateLargeTree(t *testing.T) {
@@ -101,6 +154,195 @@ func TestAnchorLocalStateLargeTree(t *testing.T) {
 		t.Fatal("metadata pass fetched remote bytes")
 	default:
 	}
+}
+
+// Exercise the production cadence, real status guard and connected-helper
+// ACKs, not just metadata enumeration with the idle intervals removed.
+func TestAnchorLargeWorkingPointObserver(t *testing.T) {
+	testAnchorWorkingPointObserver(t, 4096)
+}
+
+func TestAnchorWorkingPointObserverRepeats(t *testing.T) {
+	testAnchorWorkingPointObserver(t, 256)
+}
+
+func testAnchorWorkingPointObserver(t *testing.T, localCount int) {
+	const remoteCount = 2048
+	root := t.TempDir()
+	repo, source, point := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point")
+	cli, admin, native := probeTool(t, "FILEES_PROBE_SVN"), probeTool(t, "FILEES_PROBE_SVNADMIN"), probeTool(t, "FILEES_SVN_PROBE")
+	helper := probeTool(t, "FILEES_CFAPI")
+	probeRun(t, root, admin, "create", repo)
+	for i := range localCount {
+		dir := filepath.Join(source, fmt.Sprintf("local-%02d", i/64))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file-%04d.txt", i)), []byte("synthetic versioned bytes"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	uri := (&url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(repo)}).String()
+	probeRun(t, root, cli, "import", "-q", "-m", "large observer fixture", source, uri)
+	probeRun(t, root, cli, "checkout", "-q", uri, point)
+	if err := os.Mkdir(filepath.Join(point, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("large working copy ready")
+	m := &anchorManager{helper: helper}
+	if answer, err := m.call(t.Context(), "", "register", "--root", point, "--identity", "synthetic-large-observer"); err != nil || !answer.OK {
+		t.Fatalf("register: %+v %v", answer, err)
+	}
+	t.Cleanup(func() {
+		if out, err := exec.Command(helper, "unregister", "--root", point).CombinedOutput(); err != nil {
+			t.Errorf("unregister: %s %v", out, err)
+		}
+	})
+	var listing strings.Builder
+	for i := range remoteCount {
+		fmt.Fprintf(&listing, "f\t8192\tcloud-%04d.txt\tcloud-%04d.txt\n", i, i)
+	}
+	if answer, err := m.call(t.Context(), listing.String(), "placeholders", "--root", point); err != nil || !answer.OK {
+		t.Fatalf("seed: %+v %v", answer, err)
+	}
+	svn := client.New(client.Options{SvnPath: filepath.Join(root, "absent-cli.exe"), NativeSVNPath: native, Timeout: time.Minute})
+	service := &commit.Service{Cli: svn}
+	service.BindWorkingCopy("fixture", point)
+	// Hold the real writer guard for the first observation, not a fake error.
+	writeHeld, releaseWrite, writerDone := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseWrite) }) }
+	go func() {
+		writerDone <- service.WithWorkingCopyWrite(t.Context(), point, func() error {
+			close(writeHeld)
+			<-releaseWrite
+			return nil
+		})
+	}()
+	<-writeHeld
+	t.Cleanup(func() { release(); <-writerDone })
+	state := &ipcserver.RepoState{}
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	calls, busy := 0, false
+	var lastStatusErr error
+	var firstBatch, retryBatch string
+	var maxStatus time.Duration
+	state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+		mu.Lock()
+		calls++
+		if !busy {
+			busy, firstBatch = true, paths[0]
+			mu.Unlock()
+			err := service.WithLocalStatus(ctx, point, paths, confirm)
+			if err != commit.ErrLocalStatusBusy {
+				t.Errorf("real writer did not reject observer: %v", err)
+			}
+			release()
+			return err
+		}
+		if retryBatch == "" {
+			retryBatch = paths[0]
+		}
+		mu.Unlock()
+		started := time.Now()
+		err := service.WithLocalStatus(ctx, point, paths, confirm)
+		mu.Lock()
+		defer mu.Unlock()
+		maxStatus = max(maxStatus, time.Since(started))
+		lastStatusErr = err
+		if err == nil {
+			for _, rel := range paths {
+				seen[rel] = true
+			}
+		}
+		return err
+	})
+	m.repos = func(string, string) *ipcserver.RepoState { return state }
+	ctx, cancel := context.WithCancel(t.Context())
+	streams, err := startAnchorHelper(ctx, helper, point)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	bridge := &anchorBridge{root: point, retainLocal: true, guard: newAnchorGuard(m.log)}
+	bridge.observe = func(ctx context.Context, bridge *anchorBridge) {
+		defer func() { t.Logf("observer stopped: %v", ctx.Err()) }()
+		m.observeLocalStates(ctx, localrepo.Record{LocalPath: point}, bridge)
+	}
+	done := make(chan error, 1)
+	started := time.Now()
+	initial := probeHandleCount(t)
+	go func() { done <- bridge.serve(ctx, streams) }()
+	t.Cleanup(func() { cancel(); streams.abort(); <-done })
+	defer func() {
+		mu.Lock()
+		defer mu.Unlock()
+		t.Logf("observer diagnostic: seen=%d calls=%d max_status=%s last_status=%v", len(seen), calls, maxStatus, lastStatusErr)
+	}()
+	waitFor(t, 2*time.Minute, "all local files through the production observer", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(seen) == localCount
+	})
+	mu.Lock()
+	if firstBatch != retryBatch {
+		t.Errorf("busy batch skipped: first=%q retry=%q", firstBatch, retryBatch)
+	}
+	t.Logf("local=%d remote=%d status_batches=%d first_pass_with_busy_backoff=%s max_status_ack=%s handles_initial=%d handles_after=%d goroutines=%d", len(seen), remoteCount, calls, time.Since(started), maxStatus, initial, probeHandleCount(t), runtime.NumGoroutine())
+	mu.Unlock()
+	// Tail status confirms actual Shell metadata, not merely successful callbacks.
+	p := &localStateProbe{t: t, root: point, helper: helper}
+	if s := p.state(fmt.Sprintf("local-%02d/file-%04d.txt", (localCount-1)/64, localCount-1)); !s.Local || !s.InSync || s.Partial {
+		t.Fatalf("tail state: %+v", s)
+	}
+	if !cloudfiles.RecallsOnRead(mustStatProbe(t, filepath.Join(point, "cloud-2047.txt"))) {
+		t.Fatal("metadata observer downloaded remote bytes")
+	}
+	// A first conversion of ordinary WC files is more expensive than subsequent
+	// checks of retained local placeholders. Measure both with the real cadence.
+	mu.Lock()
+	seen = map[string]bool{}
+	beforeCalls := calls
+	maxStatus = 0
+	mu.Unlock()
+	steadyStarted := time.Now()
+	waitFor(t, time.Minute, "a complete retained-local observer pass", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(seen) == localCount
+	})
+	mu.Lock()
+	t.Logf("retained_pass=%s status_batches=%d max_status_ack=%s handles_after=%d goroutines=%d", time.Since(steadyStarted), calls-beforeCalls, maxStatus, probeHandleCount(t), runtime.NumGoroutine())
+	mu.Unlock()
+	tail := fmt.Sprintf("local-%02d/file-%04d.txt", (localCount-1)/64, localCount-1)
+	if err := os.WriteFile(filepath.Join(point, filepath.FromSlash(tail)), []byte("synthetic unpublished replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if p.state(tail).InSync {
+		t.Fatal("Windows did not invalidate the changed file")
+	}
+	if err := service.WithWorkingCopyWrite(t.Context(), point, func() error {
+		_, err := svn.Commit(t.Context(), point, []string{tail}, "publish observer fixture edit")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	publicationStarted := time.Now()
+	waitFor(t, time.Minute, "the nested published file to be confirmed again", func() bool {
+		_, clean := cloudfiles.LocalState(filepath.Join(point, filepath.FromSlash(tail)))
+		return clean
+	})
+	t.Logf("nested_publication_confirmation=%s", time.Since(publicationStarted))
+}
+
+func mustStatProbe(t *testing.T, path string) os.FileInfo {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info
 }
 
 // Opt-in manual receipt. The harness owns the synthetic point and always

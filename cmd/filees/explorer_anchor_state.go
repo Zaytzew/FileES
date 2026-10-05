@@ -12,6 +12,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 )
 
@@ -24,24 +25,56 @@ func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo
 	if period <= 0 {
 		period = 3 * time.Second
 	}
-	ticker := time.NewTicker(period)
-	defer ticker.Stop()
 	cursor := ""
 	for ctx.Err() == nil {
-		m.refreshLocalStates(ctx, record, bridge, &cursor)
+		more := anchorLocalStateTurn(ctx, &cursor, func(ctx context.Context) error {
+			return m.refreshLocalStates(ctx, record, bridge, &cursor)
+		})
+		delay := period
+		if more {
+			delay = min(period, 250*time.Millisecond)
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
 
-func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) {
-	// One budget for enumeration, one metadata process, SVN and acknowledgements.
-	// A busy writer is skipped, never queued behind a slow publication.
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
+// One turn starts at most eight batches within a 500 ms soft budget, releasing
+// the WC guard between them. Each batch retains its own two-second deadline:
+// do not shorten a metadata ACK just because an earlier batch used the budget.
+// An unfinished pass continues after a short yield;
+// completion or failure returns to the normal idle/backoff interval.
+// Roll back only the failed batch, so a busy writer does not cost a full pass.
+func anchorLocalStateTurn(ctx context.Context, cursor *string, refresh func(context.Context) error) bool {
+	until := time.Now().Add(500 * time.Millisecond)
+	for range 8 {
+		before := *cursor
+		if err := ctx.Err(); err != nil {
+			return false
+		}
+		batchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := refresh(batchCtx)
+		cancel()
+		if err != nil {
+			*cursor = before
+			return false
+		}
+		if *cursor == "" {
+			return false
+		}
+		if !time.Now().Before(until) {
+			return true
+		}
+	}
+	return true
+}
+
+func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) error {
 	candidates, paths, err := anchorLocalStateBatch(ctx, record.LocalPath, cursor, func(paths []string) ([]cfapiAnswer, error) {
 		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
 		if err != nil || !answer.OK {
@@ -49,15 +82,24 @@ func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo
 		}
 		return answer.States, nil
 	})
-	if err != nil || len(paths) == 0 || ctx.Err() != nil {
-		return
+	if err != nil {
+		return err
 	}
-	m.confirmLocalStates(ctx, record, bridge, candidates, paths)
+	if ctx.Err() != nil || len(paths) == 0 {
+		return ctx.Err()
+	}
+	return m.confirmLocalStates(ctx, record, bridge, candidates, paths)
 }
 
 // The limit applies even when every inspection fails. The cursor is a visited
 // path in WalkDir order, not lexical order (directories sort differently).
-func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, probe func([]string) ([]cfapiAnswer, error)) (map[string]cfapiAnswer, []string, error) {
+func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, probe func([]string) ([]cfapiAnswer, error)) (_ map[string]cfapiAnswer, _ []string, retErr error) {
+	before := *cursor
+	defer func() {
+		if retErr != nil {
+			*cursor = before // No complete metadata answer means no visited batch.
+		}
+	}()
 	const batchLimit = 64
 	candidates := make(map[string]cfapiAnswer, batchLimit)
 	paths := make([]string, 0, batchLimit)
@@ -103,8 +145,20 @@ func anchorLocalStateBatch(ctx context.Context, root string, cursor *string, pro
 		if err != nil {
 			return nil
 		}
-		if !info.Mode().IsRegular() || cloudfiles.RecallsOnRead(info) {
+		if cloudfiles.RecallsOnRead(info) {
 			return nil
+		}
+		if !info.Mode().IsRegular() {
+			// Windows may expose retained CFAPI files in subfolders as
+			// ModeIrregular. Admit only the fully local FileES identity,
+			// never generic reparse points, pipes or another provider.
+			local := false
+			if info.Mode()&fs.ModeIrregular != 0 {
+				local, _ = cloudfiles.LocalState(abs)
+			}
+			if !local {
+				return nil
+			}
 		}
 		paths = append(paths, rel)
 		if len(paths) == batchLimit {
@@ -155,17 +209,17 @@ func anchorWalkBefore(a, b string) bool {
 	}
 }
 
-func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string) {
+func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string) error {
 	if m.repos == nil {
-		return
+		return ipcserver.ErrDepthUnavailable
 	}
 	repo := m.repos(record.ServerID, record.RepoID)
 	if repo == nil {
-		return
+		return ipcserver.ErrDepthUnavailable
 	}
 	// The commit service keeps its WC operation lock from status until the
 	// helper ACK (or its confirmed exit). USN guards bytes, not SVN properties.
-	_ = repo.WithLocalStatus(ctx, paths, func(rows []client.StatusEntry) error {
+	return repo.WithLocalStatus(ctx, paths, func(rows []client.StatusEntry) error {
 		for _, row := range rows {
 			if ctx.Err() != nil {
 				return ctx.Err()

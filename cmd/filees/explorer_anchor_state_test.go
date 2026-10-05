@@ -13,7 +13,114 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 )
+
+func TestAnchorLocalStateBatchRetriesUnavailableMetadata(t *testing.T) {
+	root := t.TempDir()
+	for i := range 130 {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("file-%03d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, bookmark := range []string{"file-063", "file-127"} {
+		for _, truncated := range []bool{false, true} {
+			cursor := bookmark
+			_, _, err := anchorLocalStateBatch(t.Context(), root, &cursor, func(paths []string) ([]cfapiAnswer, error) {
+				if truncated {
+					return make([]cfapiAnswer, len(paths)-1), nil
+				}
+				return nil, errors.New("temporary helper failure")
+			})
+			if err == nil || cursor != bookmark {
+				t.Fatalf("failed metadata skipped batch: cursor=%q err=%v", cursor, err)
+			}
+		}
+	}
+}
+
+func TestAnchorConfirmationReportsBusyWorkingCopy(t *testing.T) {
+	repo := &ipcserver.RepoState{}
+	want := errors.New("working copy busy")
+	repo.SetLocalStatusFunc(func(context.Context, []string, func([]client.StatusEntry) error) error {
+		return want
+	})
+	m := &anchorManager{repos: func(string, string) *ipcserver.RepoState { return repo }}
+	if err := m.confirmLocalStates(t.Context(), localrepo.Record{}, &anchorBridge{}, nil, []string{"file"}); !errors.Is(err, want) {
+		t.Fatalf("busy working copy: %v", err)
+	}
+}
+
+func TestAnchorLocalStateTurnBoundsWorkAndStopsAtPassEnd(t *testing.T) {
+	for _, endAt := range []int{0, 1, 3, 8} {
+		t.Run(fmt.Sprint(endAt), func(t *testing.T) {
+			cursor, calls := "", 0
+			more := anchorLocalStateTurn(t.Context(), &cursor, func(ctx context.Context) error {
+				calls++
+				deadline, ok := ctx.Deadline()
+				if !ok || time.Until(deadline) > 2*time.Second {
+					t.Fatal("missing bounded batch deadline")
+				}
+				cursor = fmt.Sprint(calls)
+				if calls == endAt {
+					cursor = ""
+				}
+				return nil
+			})
+			want := endAt
+			if want == 0 {
+				want = 8
+			}
+			if calls != want || more != (endAt == 0) {
+				t.Fatalf("calls=%d more=%v", calls, more)
+			}
+		})
+	}
+}
+
+func TestAnchorLocalStateTurnYieldsAfterSlowBatch(t *testing.T) {
+	cursor, calls := "", 0
+	started := time.Now()
+	more := anchorLocalStateTurn(t.Context(), &cursor, func(ctx context.Context) error {
+		calls++
+		cursor = "visited"
+		// A completed slow batch is not canceled by the turn's soft budget.
+		select {
+		case <-time.After(550 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return nil
+	})
+	if calls != 1 || !more || cursor != "visited" || time.Since(started) >= 2*time.Second {
+		t.Fatalf("slow batch: calls=%d more=%v cursor=%q", calls, more, cursor)
+	}
+}
+
+func TestAnchorLocalStateTurnRetriesOnlyFailedBatchAndBacksOff(t *testing.T) {
+	cursor, calls := "before", 0
+	more := anchorLocalStateTurn(t.Context(), &cursor, func(context.Context) error {
+		calls++
+		cursor = fmt.Sprint(calls)
+		if calls == 3 {
+			return errors.New("busy or unavailable status")
+		}
+		return nil
+	})
+	if more || calls != 3 || cursor != "2" {
+		t.Fatalf("failed turn: calls=%d more=%v cursor=%q", calls, more, cursor)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	anchorLocalStateTurn(ctx, &cursor, func(context.Context) error {
+		t.Fatal("canceled turn ran a batch")
+		return nil
+	})
+	if cursor != "2" {
+		t.Fatal("cancellation lost progress")
+	}
+}
 
 func TestAnchorLocalStateBatchBoundsFailedInspectionsAndResumes(t *testing.T) {
 	root := t.TempDir()

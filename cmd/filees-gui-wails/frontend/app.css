@@ -85,6 +85,7 @@ button:focus-visible,a:focus-visible { outline:3px solid color-mix(in srgb,var(-
 .hero.has-announcements { border-radius:20px; background:linear-gradient(100deg,color-mix(in srgb,var(--red) 9%,transparent),transparent); }
 .announcement-banner { display:flex; flex-wrap:wrap; align-items:center; gap:14px 24px; margin-top:20px; padding:16px; border:1px solid color-mix(in srgb,var(--red) 55%,var(--line)); border-radius:14px; background:var(--panel); }
 .announcement-banner[hidden] { display:none; }
+#lock-release-banner:not([hidden]) { animation:announcement-panel-alert 1.55s ease-in-out infinite; }
 .intent-alerts[hidden] { display:none; }
 .repo-row.requires-decision { outline:2px solid color-mix(in srgb,var(--red) 65%,var(--line)); }
 .intent-folder-warning { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px; border-radius:10px; background:color-mix(in srgb,var(--red) 12%,var(--panel)); }
@@ -371,6 +372,9 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .announcement-buttons button { min-height:39px; padding:9px 14px; border:1px solid var(--line); border-radius:10px; color:var(--soft-text); background:rgba(255,255,255,.04); font-size:12px; font-weight:800; cursor:pointer; }
 .announcement-buttons button:hover { color:#fff; background:rgba(255,255,255,.09); }
 .announcement-buttons button.primary { border-color:rgba(255,123,132,.55); color:#fff; background:var(--red); }
+.lock-release-context { display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px 16px; margin:0; padding:0 26px 23px; color:var(--soft-text); font-size:13px; }
+.lock-release-context dt { color:var(--muted); }
+.lock-release-context dd { margin:0; overflow-wrap:anywhere; }
 .announcement-buttons button.primary:hover { background:#dc3945; }
 .announcement-buttons button:disabled { opacity:.48; cursor:wait; }
 

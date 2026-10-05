@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "locks.requestsCount": {"one": "{count} Anfrage zur Freigabe einer Sperre", "other": "{count} Anfragen zur Freigabe einer Sperre"},
+  "locks.requestsNote": "Jemand möchte eine von Ihnen ausgeliehene Datei bearbeiten. Sie entscheiden.",
+  "locks.requestsOpen": "Anfragen ansehen",
+  "locks.requestsTitle": "Anfrage zur Freigabe einer Sperre",
+  "locks.requestsRepo": "Ordner",
+  "locks.requestsWho": "Angefragt von",
+  "locks.requestsTime": "Angefragt am",
+  "locks.requestsNext": "Nächste Anfrage",
+  "locks.requestsKeep": "OK · Sperre behalten",
+  "locks.requestsHelp": "Das Schließen des Fensters beantwortet die Anfrage nicht. „OK“ behält die Sperre und schließt die Anfrage; „Freigeben“ bittet um Bestätigung der Freigabe für den Anfragenden.",
+  "locks.requestSending": "Die Entscheidung wird übermittelt. Die Anfrage bleibt bis zur Bestätigung ihres Status sichtbar.",
+  "locks.requestOffline": "Warten auf einen aktuellen Status und die Verbindung zum Hintergrunddienst. Sie können die Anfrage noch nicht beantworten.",
   "explorer.unavailable.title": "Aktion nicht verfügbar",
   "explorer.unavailable.text": "{path}\n\nWählen Sie einen normalen Ordner zum Hinzufügen oder genau den Stamm eines verbundenen Ordners zum Trennen. Verwalten Sie Explorer-Anknüpfungspunkte in FileES. Die Anwendung benötigt den aktuellen Zustand des Dienstes und entsprechende Berechtigungen.",
   "explorer.server.title": "Zu FileES hinzufügen",

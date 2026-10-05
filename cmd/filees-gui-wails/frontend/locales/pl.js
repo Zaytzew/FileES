@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "locks.requestsCount": {"one": "{count} prośba o zwolnienie blokady", "few": "{count} prośby o zwolnienie blokady", "many": "{count} próśb o zwolnienie blokady", "other": "{count} prośby o zwolnienie blokady"},
+  "locks.requestsNote": "Ktoś chce edytować wypożyczony przez Ciebie plik. Decyzja należy do Ciebie.",
+  "locks.requestsOpen": "Zobacz prośby",
+  "locks.requestsTitle": "Prośba o zwolnienie blokady",
+  "locks.requestsRepo": "Folder",
+  "locks.requestsWho": "Prosi",
+  "locks.requestsTime": "Zgłoszono",
+  "locks.requestsNext": "Następna prośba",
+  "locks.requestsKeep": "OK · Zachowaj blokadę",
+  "locks.requestsHelp": "Zamknięcie okna nie jest odpowiedzią. „OK” pozostawia blokadę i zamyka prośbę; „Zwolnij” poprosi o potwierdzenie zwolnienia dla proszącego.",
+  "locks.requestSending": "Przekazuję decyzję. Prośba pozostaje widoczna do potwierdzenia jej stanu.",
+  "locks.requestOffline": "Czekam na aktualny stan i połączenie z demonem. Teraz nie można odpowiedzieć na prośbę.",
   "explorer.unavailable.title": "Działanie jest niedostępne",
   "explorer.unavailable.text": "{path}\n\nWybierz zwykły folder do dodania albo dokładny korzeń podłączonego folderu do odłączenia. Punkty zaczepienia obsługuj w FileES. Aplikacja musi mieć aktualny stan demona i odpowiednie uprawnienia.",
   "explorer.server.title": "Dodaj do FileES",

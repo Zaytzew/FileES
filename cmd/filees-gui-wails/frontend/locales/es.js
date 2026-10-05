@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "locks.requestsCount": {"one": "{count} solicitud de liberación de bloqueo", "many": "{count} solicitudes de liberación de bloqueo", "other": "{count} solicitudes de liberación de bloqueo"},
+  "locks.requestsNote": "Alguien quiere editar un archivo que has tomado prestado. Tú decides.",
+  "locks.requestsOpen": "Ver solicitudes",
+  "locks.requestsTitle": "Solicitud de liberación de bloqueo",
+  "locks.requestsRepo": "Carpeta",
+  "locks.requestsWho": "Solicitada por",
+  "locks.requestsTime": "Fecha de solicitud",
+  "locks.requestsNext": "Siguiente solicitud",
+  "locks.requestsKeep": "OK · Mantener bloqueo",
+  "locks.requestsHelp": "Cerrar la ventana no responde a la solicitud. «OK» mantiene el bloqueo y cierra la solicitud; «Liberar» pide confirmar su liberación para quien la solicita.",
+  "locks.requestSending": "Enviando la decisión. La solicitud sigue visible hasta que se confirme su estado.",
+  "locks.requestOffline": "Esperando un estado actualizado y la conexión al servicio. Todavía no puedes responder a esta solicitud.",
   "explorer.unavailable.title": "Acción no disponible",
   "explorer.unavailable.text": "{path}\n\nElija una carpeta normal para añadir o exactamente la raíz de una carpeta conectada para desvincular. Gestione los puntos de anclaje del Explorador en FileES. La aplicación necesita el estado actual del servicio y los permisos correspondientes.",
   "explorer.server.title": "Añadir a FileES",

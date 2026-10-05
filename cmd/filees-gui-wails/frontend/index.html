@@ -73,6 +73,10 @@
           <button id="open-announcements" type="button" aria-haspopup="dialog" aria-controls="announcement-overlay" data-i18n="announcement.read">Przeczytaj i potwierdź</button>
         </div>
         <div id="intent-alerts" class="intent-alerts" aria-live="assertive" aria-atomic="true" hidden></div>
+        <div id="lock-release-banner" class="announcement-banner" hidden>
+          <div role="status" aria-live="polite" aria-atomic="true"><strong id="lock-release-banner-count"></strong><p data-i18n="locks.requestsNote">Ktoś chce edytować wypożyczony przez Ciebie plik. Decyzja należy do Ciebie.</p></div>
+          <button id="open-lock-release" type="button" aria-haspopup="dialog" aria-controls="lock-release-overlay" data-i18n="locks.requestsOpen">Zobacz prośby</button>
+        </div>
       </div>
       <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES" data-i18n-title="projection.state">
         <div class="pulse-orbit orbit-a"></div>
@@ -253,6 +257,30 @@
     <footer><button id="dismiss-deleted-copy" type="button" data-i18n="action.close">Zamknij</button><button id="detach-deleted-copy" type="button" data-i18n="deleted.detach">Odłącz lokalną projekcję</button></footer>
   </dialog>
 
+  <div id="lock-release-overlay" class="announcement-overlay" hidden>
+    <section class="announcement-dialog lock-release-dialog" role="dialog" aria-modal="true" aria-labelledby="lock-release-title" aria-describedby="lock-release-status">
+      <header>
+        <span class="announcement-dialog-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg></span>
+        <div><p class="eyebrow" data-i18n="announcement.attention">Wymaga uwagi</p><h2 id="lock-release-title" data-i18n="locks.requestsTitle">Prośba o zwolnienie blokady</h2></div>
+        <button id="close-lock-release" class="journal-close" type="button" title="Zamknij" aria-label="Zamknij" data-i18n-title="action.close" data-i18n-aria-label="action.close">×</button>
+      </header>
+      <p id="lock-release-path" class="announcement-copy"></p>
+      <dl class="lock-release-context">
+        <dt data-i18n="locks.requestsRepo">Folder</dt><dd id="lock-release-repository"></dd>
+        <dt data-i18n="locks.requestsWho">Prosi</dt><dd id="lock-release-who"></dd>
+        <dt data-i18n="locks.requestsTime">Zgłoszono</dt><dd id="lock-release-time"></dd>
+      </dl>
+      <footer>
+        <span id="lock-release-status" class="announcement-status" role="status"></span>
+        <div class="announcement-buttons">
+          <button id="dismiss-lock-release-dialog" type="button" data-i18n="action.close">Zamknij</button>
+          <button id="next-lock-release" type="button" hidden data-i18n="locks.requestsNext">Następna prośba</button>
+          <button id="lock-release-dismiss" type="button" data-i18n="locks.requestsKeep">OK · Zachowaj blokadę</button>
+          <button id="lock-release-accept" class="primary" type="button" data-i18n="locks.release">Zwolnij</button>
+        </div>
+      </footer>
+    </section>
+  </div>
   <div id="announcement-overlay" class="announcement-overlay" hidden>
     <section class="announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="announcement-title" aria-describedby="announcement-copy">
       <header>

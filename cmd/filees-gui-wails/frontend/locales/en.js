@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "locks.requestsCount": {"one": "{count} lock release request", "other": "{count} lock release requests"},
+  "locks.requestsNote": "Someone wants to edit a file you have borrowed. The decision is yours.",
+  "locks.requestsOpen": "View requests",
+  "locks.requestsTitle": "Lock release request",
+  "locks.requestsRepo": "Folder",
+  "locks.requestsWho": "Requested by",
+  "locks.requestsTime": "Requested at",
+  "locks.requestsNext": "Next request",
+  "locks.requestsKeep": "OK · Keep lock",
+  "locks.requestsHelp": "Closing this window does not answer the request. “OK” keeps the lock and closes the request; “Release” asks you to confirm releasing it for the requester.",
+  "locks.requestSending": "Sending the decision. The request remains visible until its state is confirmed.",
+  "locks.requestOffline": "Waiting for a current state and daemon connection. You cannot answer this request yet.",
   "explorer.unavailable.title": "Action unavailable",
   "explorer.unavailable.text": "{path}\n\nChoose an ordinary folder to add, or the exact root of an attached folder to detach. Manage Explorer attachment points in FileES. The application needs current daemon state and appropriate permissions.",
   "explorer.server.title": "Add to FileES",

@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "locks.requestsCount": {"one": "{count} demande de libération de verrou", "many": "{count} demandes de libération de verrou", "other": "{count} demandes de libération de verrou"},
+  "locks.requestsNote": "Quelqu’un souhaite modifier un fichier que vous avez emprunté. La décision vous appartient.",
+  "locks.requestsOpen": "Voir les demandes",
+  "locks.requestsTitle": "Demande de libération de verrou",
+  "locks.requestsRepo": "Dossier",
+  "locks.requestsWho": "Demandée par",
+  "locks.requestsTime": "Date de la demande",
+  "locks.requestsNext": "Demande suivante",
+  "locks.requestsKeep": "OK · Garder le verrou",
+  "locks.requestsHelp": "Fermer la fenêtre ne répond pas à la demande. « OK » garde le verrou et clôt la demande ; « Libérer » demande confirmation de la libération pour le demandeur.",
+  "locks.requestSending": "Envoi de la décision. La demande reste visible jusqu’à confirmation de son état.",
+  "locks.requestOffline": "En attente d’un état à jour et de la connexion au service. Vous ne pouvez pas encore répondre à cette demande.",
   "explorer.unavailable.title": "Action indisponible",
   "explorer.unavailable.text": "{path}\n\nChoisissez un dossier ordinaire à ajouter ou exactement la racine d’un dossier connecté à détacher. Gérez les points d’ancrage de l’Explorateur dans FileES. L’application doit disposer de l’état actuel du service et des autorisations nécessaires.",
   "explorer.server.title": "Ajouter à FileES",

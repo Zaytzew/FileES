@@ -55,6 +55,9 @@ let deletedCopyReturnFocus = null;
 let selectedAnnouncementID = "";
 let announcementAckPending = "";
 let announcementReturnFocus = null;
+let selectedLockReleaseID = "";
+let lockReleaseReturnFocus = null;
+const lockReleaseInFlight = new Set();
 const selectedPublicShares = new Set();
 let selectedPublicShareServer = "";
 const renderedHTML = new WeakMap();
@@ -369,7 +372,8 @@ function renderMetrics(snapshot) {
   const publicSharesStale = publicShares.some((share) => share.stale);
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
-  const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0);
+  const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0)
+    + (snapshot.lock_release_requests || []).filter(request => request.role === "holder" && request.state === "pending").length;
 
   $("#metric-servers").textContent = snapshot.servers?.length ?? 0;
   $("#metric-repos").textContent = repos.length;
@@ -929,6 +933,98 @@ function renderPublicShares(snapshot) {
   replaceHTMLIfChanged(root, bulk + rows);
 }
 
+function pendingHolderLockRequests(snapshot) {
+  return (snapshot?.lock_release_requests || []).filter(request => request.role === "holder" && request.state === "pending");
+}
+
+function canDecideLockRelease(snapshot, request, kind) {
+  if (!snapshot?.connected || snapshot.stale || !request || lockReleaseInFlight.has(request.id)) return false;
+  return kind === "accept_lock_release" ? !!request.can_accept
+    : kind === "dismiss_lock_release" ? !!request.can_dismiss : false;
+}
+
+// The request projection remains the authority. Opening/closing this view and
+// acceptance by the local action queue never resolve or acknowledge a request.
+function renderLockReleaseRequests(snapshot) {
+  const pending = pendingHolderLockRequests(snapshot);
+  $("#lock-release-banner").hidden = pending.length === 0;
+  $("#lock-release-banner-count").textContent = pending.length ? tn("locks.requestsCount", pending.length) : "";
+  if (selectedLockReleaseID && !pending.some(request => request.id === selectedLockReleaseID)) {
+    selectedLockReleaseID = pending[0]?.id || "";
+    if (!selectedLockReleaseID) closeLockReleaseRequests();
+  }
+  // Both entry points share the same in-flight decision, without replacing a
+  // focused button every time a snapshot arrives.
+  document.querySelectorAll("[data-lock-release-request-id] [data-action]").forEach(button => {
+    const id = button.closest("[data-lock-release-request-id]").dataset.lockReleaseRequestId;
+    button.disabled = !canDecideLockRelease(snapshot, pending.find(request => request.id === id), button.dataset.action);
+  });
+  renderLockReleaseDialog(snapshot);
+}
+
+function closeLockReleaseRequests() {
+  $("#lock-release-overlay").hidden = true;
+  selectedLockReleaseID = "";
+  const target = lockReleaseReturnFocus;
+  lockReleaseReturnFocus = null;
+  if (target?.isConnected) target.focus();
+  else if (!$("#lock-release-banner").hidden) $("#open-lock-release").focus();
+  else $("#client-version").focus();
+}
+
+function openLockReleaseRequests(focusOrigin = null) {
+  const first = pendingHolderLockRequests(currentSnapshot)[0];
+  if (!first) return;
+  if (selectedAnnouncementID) closeAnnouncement();
+  selectedLockReleaseID = first.id;
+  lockReleaseReturnFocus = focusOrigin;
+  renderLockReleaseRequests(currentSnapshot);
+  $("#lock-release-overlay").hidden = false;
+  $("#close-lock-release").focus();
+}
+
+function openNextLockReleaseRequest() {
+  const pending = pendingHolderLockRequests(currentSnapshot);
+  if (!pending.length) return;
+  const index = pending.findIndex(request => request.id === selectedLockReleaseID);
+  selectedLockReleaseID = pending[(index + 1) % pending.length].id;
+  renderLockReleaseDialog(currentSnapshot);
+}
+
+function renderLockReleaseDialog(snapshot) {
+  if (!selectedLockReleaseID) return;
+  const request = pendingHolderLockRequests(snapshot).find(item => item.id === selectedLockReleaseID);
+  if (!request) return;
+  $("#lock-release-path").textContent = request.path || t("locks.file");
+  $("#lock-release-repository").textContent = request.repository || request.repo_id;
+  $("#lock-release-who").textContent = request.counterparty_realm_alias || t("locks.otherPerson");
+  $("#lock-release-time").textContent = shortDateTime(request.created_at);
+  $("#lock-release-status").textContent = lockReleaseInFlight.has(request.id) ? t("locks.requestSending")
+    : !snapshot.connected || snapshot.stale ? t("locks.requestOffline") : t("locks.requestsHelp");
+  $("#next-lock-release").hidden = pendingHolderLockRequests(snapshot).length < 2;
+  $("#lock-release-accept").hidden = !request.can_accept;
+  $("#lock-release-dismiss").hidden = !request.can_dismiss;
+  $("#lock-release-accept").disabled = !canDecideLockRelease(snapshot, request, "accept_lock_release");
+  $("#lock-release-dismiss").disabled = !canDecideLockRelease(snapshot, request, "dismiss_lock_release");
+}
+
+async function decideLockRelease(requestID, kind) {
+  const request = pendingHolderLockRequests(currentSnapshot).find(item => item.id === requestID);
+  if (!canDecideLockRelease(currentSnapshot, request, kind)) return;
+  lockReleaseInFlight.add(requestID);
+  renderLockReleaseRequests(currentSnapshot);
+  try {
+    // Reuse controller confirmation, freshness and fencing-token validation.
+    const result = await GUIService.Trigger({ kind, lock_release_request_id: requestID });
+    if (!result.accepted) showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.reason] || actionErrors[result.code] || result.code });
+  } catch (error) {
+    showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
+  } finally {
+    lockReleaseInFlight.delete(requestID);
+    renderLockReleaseRequests(currentSnapshot);
+  }
+}
+
 function unreadAnnouncements(snapshot) {
   return (snapshot?.notices || []).filter((notice) => !notice.acked);
 }
@@ -945,7 +1041,8 @@ function renderAnnouncementBanner(snapshot) {
   replaceHTMLIfChanged(alerts, decisions.map(({repo,kind}) => `<div class="announcement-banner" role="alert" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>${escapeHTML(t(kind === "recovery" ? "commitRecovery.paused" : "intent.paused", { name: repo.display_name || repo.id }))}</strong><p>${escapeHTML(t(kind === "recovery" ? "commitRecovery.help" : "intent.help"))}</p></div><button type="button" data-action="${kind === "recovery" ? "resolve_commit_recovery" : "resolve_intents"}">${escapeHTML(t(kind === "recovery" ? "commitRecovery.resolve" : "intent.resolve"))}</button></div>`).join(""));
   const banner = $("#announcement-banner");
   banner.hidden = unread.length === 0;
-  $("#top").classList.toggle("has-announcements", unread.length > 0 || decisions.length > 0);
+  const releaseRequests = (snapshot.lock_release_requests || []).some(request => request.role === "holder" && request.state === "pending");
+  $("#top").classList.toggle("has-announcements", unread.length > 0 || decisions.length > 0 || releaseRequests);
   const heroTitle = decisions.length ? "hero.waitTitle" : unread.length ? "hero.shoutTitle" : "hero.title";
   const heroAccent = decisions.length ? "hero.waitAccent" : unread.length ? "hero.shoutAccent" : "hero.accent";
   replaceHTMLIfChanged($("#hero-title"), `${escapeHTML(t(heroTitle))}<br><span>${escapeHTML(t(heroAccent))}</span>`);
@@ -1205,6 +1302,7 @@ function render(snapshot) {
   const repositoriesChanged = renderRepositories(snapshot);
   renderActions(snapshot);
   renderReservations(snapshot);
+  renderLockReleaseRequests(snapshot);
   renderPublicShares(snapshot);
   renderAnnouncementBanner(snapshot);
   renderShouts(snapshot);
@@ -1356,6 +1454,10 @@ async function triggerAction(button) {
   const serverPanel = button.closest("[data-server-id]");
 	const globalAction = button.closest("[data-global-action]");
 	if (!repoRow && !reservationRow && !lockReleaseRow && !noticeRow && !serverPanel && !globalAction) return;
+  if (lockReleaseRow && ["accept_lock_release", "dismiss_lock_release"].includes(button.dataset.action)) {
+    await decideLockRelease(lockReleaseRow.dataset.lockReleaseRequestId, button.dataset.action);
+    return;
+  }
   button.disabled = true;
   try {
     const result = await GUIService.Trigger({
@@ -1415,7 +1517,10 @@ window.addEventListener("filees:language-changed", () => {
   scheduleWindowFit();
 });
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
-Events.On("filees:open-announcement", openNewestUnreadAnnouncement);
+Events.On("filees:open-announcement", () => {
+  if (!$("#lock-release-overlay").hidden) closeLockReleaseRequests();
+  openNewestUnreadAnnouncement();
+});
 $("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#pair-mobile").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#activate-demo").addEventListener("click", (event) => triggerAction(event.currentTarget));
@@ -1463,6 +1568,20 @@ $("#journal-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.hidden = true;
 });
 document.addEventListener("keydown", (event) => {
+  if (!$("#lock-release-overlay").hidden && !$("#deleted-copy-dialog").open) {
+    if (event.key === "Escape") { event.preventDefault(); closeLockReleaseRequests(); return; }
+    if (event.key === "Tab") {
+      const overlay = $("#lock-release-overlay");
+      const buttons = [...overlay.querySelectorAll("button")].filter(button => !button.hidden && !button.disabled);
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !overlay.contains(document.activeElement))) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !overlay.contains(document.activeElement))) {
+        event.preventDefault(); first?.focus();
+      }
+      return;
+    }
+  }
   if (event.key === "Tab" && !$("#announcement-overlay").hidden && !$("#deleted-copy-dialog").open) {
     const buttons = [...document.querySelectorAll("#announcement-overlay button")].filter((button) => !button.hidden && !button.disabled);
     const first = buttons[0], last = buttons[buttons.length - 1];
@@ -1621,6 +1740,15 @@ $("#shouts").addEventListener("click", (event) => {
   if (button) openAnnouncement(button.dataset.noticeId, button);
 });
 $("#close-announcement").addEventListener("click", closeAnnouncement);
+$("#open-lock-release").addEventListener("click", event => openLockReleaseRequests(event.currentTarget));
+$("#close-lock-release").addEventListener("click", closeLockReleaseRequests);
+$("#dismiss-lock-release-dialog").addEventListener("click", closeLockReleaseRequests);
+$("#next-lock-release").addEventListener("click", openNextLockReleaseRequest);
+$("#lock-release-accept").addEventListener("click", () => decideLockRelease(selectedLockReleaseID, "accept_lock_release"));
+$("#lock-release-dismiss").addEventListener("click", () => decideLockRelease(selectedLockReleaseID, "dismiss_lock_release"));
+$("#lock-release-overlay").addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeLockReleaseRequests();
+});
 $("#open-announcements").addEventListener("click", (event) => openNewestUnreadAnnouncement(event.currentTarget));
 $("#next-announcement").addEventListener("click", openNextUnreadAnnouncement);
 $("#dismiss-announcement").addEventListener("click", closeAnnouncement);

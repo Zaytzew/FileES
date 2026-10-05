@@ -87,6 +87,7 @@
     <string name="browse_directory">folder</string>
     <string name="browse_file_size">%1$d B</string>
     <string name="browse_empty">This folder is empty.</string>
+    <string name="browse_last_known">Last known state. The queue will be carried out when connectivity returns.</string>
     <string name="settings_pairing">Pairing (fallback)</string>
     <string name="settings_device">This device</string>
     <string name="settings_watched">Watched folders</string>

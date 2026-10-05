@@ -76,14 +76,15 @@ func (c Client) Refresh(ctx context.Context, repoID string) (*v1.Manifest, error
 	return res.Manifest, nil
 }
 
-// ListDirectory returns immediate children of path at revision, using the
-// local directory cache when generation and revision match.
+// ListDirectory returns immediate children of path at revision. A page
+// already stored at that generation and revision is the answer; the server
+// is not asked again. Entries are kept in path order.
 func (c Client) ListDirectory(ctx context.Context, repoID, path string, generation, revision int64) (*v1.Manifest, error) {
 	path = strings.Trim(path, "/")
 	if cached, err := c.Store.LoadDirectory(repoID, path, generation, revision); err != nil {
 		return nil, err
 	} else if cached != nil {
-		return cached, nil
+		return c.persistManifestOrder(path, cached)
 	}
 	req, err := v1.NewRequest(uuid.NewString(), v1.OpListDirectory, v1.ListDirectoryPayload{
 		RepoID: repoID, Path: path, Revision: revision,
@@ -117,6 +118,70 @@ func (c Client) ListDirectory(ctx context.Context, repoID, path string, generati
 		return nil, err
 	}
 	return &m, nil
+}
+
+// CachedDirectory is the newest local page for path. Browse paints this
+// the way a public link paints its own manifest: no server round trip.
+func (c Client) CachedDirectory(repoID, path string) (*v1.Manifest, error) {
+	path = strings.Trim(path, "/")
+	page, err := c.Store.LoadNewestDirectory(repoID, path)
+	if err != nil || page == nil {
+		return page, err
+	}
+	return c.persistManifestOrder(path, page)
+}
+
+// SyncDirectory brings the local page up to the repo header when that is
+// needed. force false and a page already stored at knownGeneration and
+// knownRevision returns that page with no network. A missing page at that
+// pin is listed once. force asks whether the header moved and lists the
+// folder only when the stored page is not already at that header.
+func (c Client) SyncDirectory(ctx context.Context, repoID, path string, knownGeneration, knownRevision int64, force bool) (*v1.Manifest, error) {
+	path = strings.Trim(path, "/")
+	if !force && knownGeneration >= 1 && knownRevision >= 1 {
+		cached, err := c.Store.LoadDirectory(repoID, path, knownGeneration, knownRevision)
+		if err != nil {
+			return nil, err
+		}
+		if cached != nil {
+			return c.persistManifestOrder(path, cached)
+		}
+		return c.ListDirectory(ctx, repoID, path, knownGeneration, knownRevision)
+	}
+	header, err := c.Refresh(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if header == nil || header.ViewGeneration < 1 || header.RepoRevision < 1 {
+		return nil, errors.New("refresh returned neither manifest nor not_modified")
+	}
+	cached, err := c.Store.LoadDirectory(repoID, path, header.ViewGeneration, header.RepoRevision)
+	if err != nil {
+		return nil, err
+	}
+	var page *v1.Manifest
+	if cached != nil {
+		page, err = c.persistManifestOrder(path, cached)
+	} else {
+		page, err = c.ListDirectory(ctx, repoID, path, header.ViewGeneration, header.RepoRevision)
+	}
+	if err != nil {
+		return nil, err
+	}
+	page.Shouts = header.Shouts
+	return page, nil
+}
+
+// persistManifestOrder rewrites a page that was stored in wire order.
+func (c Client) persistManifestOrder(path string, page *v1.Manifest) (*v1.Manifest, error) {
+	if page == nil || entriesInManifestOrder(page.Entries) {
+		return page, nil
+	}
+	page.Entries = orderManifestEntries(page.Entries)
+	if err := c.Store.SaveDirectory(path, page); err != nil {
+		return nil, err
+	}
+	return page, nil
 }
 
 // ListFilesUnder recursively lists directories and returns files under path.

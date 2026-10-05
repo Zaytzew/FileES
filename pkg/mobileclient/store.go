@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"filees/internal/durable"
 	v1 "filees/pkg/mobile/v1"
@@ -98,6 +99,36 @@ func (s Store) LoadDirectory(repoID, path string, gen, rev int64) (*v1.Manifest,
 	if gen < 1 || rev < 1 {
 		return nil, nil
 	}
+	return s.readDirectory(repoID, path, gen, rev)
+}
+
+// LoadNewestDirectory returns the stored page for path with the highest
+// revision, then generation. The browse screen paints this without asking
+// which generation the server is on. (nil, nil) when this path was never listed.
+func (s Store) LoadNewestDirectory(repoID, path string) (*v1.Manifest, error) {
+	path = strings.Trim(path, "/")
+	if !uploadComponent(repoID) {
+		return nil, errors.New("invalid listing repo_id")
+	}
+	directoryCacheMu.Lock()
+	defer directoryCacheMu.Unlock()
+	var best *v1.Manifest
+	for _, pair := range s.listingPairs(repoID) {
+		page, err := s.readDirectory(repoID, path, pair.gen, pair.rev)
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			continue
+		}
+		if best == nil || page.RepoRevision > best.RepoRevision || (page.RepoRevision == best.RepoRevision && page.ViewGeneration > best.ViewGeneration) {
+			best = page
+		}
+	}
+	return best, nil
+}
+
+func (s Store) readDirectory(repoID, path string, gen, rev int64) (*v1.Manifest, error) {
 	raw, err := os.ReadFile(s.dirListingPath(repoID, path, gen, rev))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -137,6 +168,9 @@ func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
 	if !uploadComponent(m.RepoID) {
 		return errors.New("invalid listing repo_id")
 	}
+	// The local page is the browse source. Keep it in path order so a later
+	// read does not replay the order the server happened to send.
+	m.Entries = orderManifestEntries(m.Entries)
 	directoryCacheMu.Lock()
 	defer directoryCacheMu.Unlock()
 	pairs := s.listingPairs(m.RepoID)

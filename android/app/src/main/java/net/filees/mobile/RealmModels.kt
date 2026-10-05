@@ -212,12 +212,12 @@ object ManifestBrowse {
                 },
             )
         }
-        // Newest commit first. The same commit keeps directories together and
-        // then the name, so a tied set does not fall back to svn list order.
+        // Directories, then the path. The revision stays on the row as its
+        // mtime and is not the order the folder is shown in.
         return rows.values.sortedWith(
-            compareByDescending<BrowseRow> { it.changed }
-                .thenBy { !it.directory }
-                .thenBy { it.name.lowercase() },
+            compareBy<BrowseRow> { !it.directory }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.name },
         )
     }
 

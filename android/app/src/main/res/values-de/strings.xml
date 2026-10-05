@@ -85,6 +85,7 @@
     <string name="browse_directory">Ordner</string>
     <string name="browse_file_size">%1$d B</string>
     <string name="browse_empty">Dieser Ordner ist leer.</string>
+    <string name="browse_last_known">Letzter bekannter Stand. Die Warteschlange wird nach Wiederherstellung der Verbindung abgearbeitet.</string>
     <string name="settings_pairing">Kopplung (Notfall)</string>
     <string name="settings_device">Dieses Gerät</string>
     <string name="settings_watched">Beobachtete Ordner</string>

@@ -94,6 +94,10 @@ class MainActivity : AppCompatActivity() {
     private var browseRevision: Long = 0
     private var browseGeneration: Long = 0
     private var legacyFullTree: Boolean = false
+    private var confirmedRepoId: String? = null
+    private var confirmedRevision: Long = 0
+    private var confirmedGeneration: Long = 0
+    private var browseOffline: Boolean = false
     private var pendingDecisions: List<PendingUpload> = emptyList()
     private val browseAdapter = BrowseAdapter(
         onOpen = { openRow(it) }, onDownload = { downloadRow(it) }, onShare = { shareRow(it) },
@@ -386,6 +390,7 @@ class MainActivity : AppCompatActivity() {
             browseAdapter.submit(homeRows())
             binding.toolbar.title = null
             binding.toolbar.subtitle = null
+            binding.textBrowseState.visibility = View.GONE
             binding.brandLockup.visibility = View.VISIBLE
             binding.buttonAdd.visibility = View.GONE
             binding.barServerAddress.visibility = View.GONE
@@ -401,6 +406,7 @@ class MainActivity : AppCompatActivity() {
         rows.add(factsRow())
         rows.addAll(ManifestBrowse.children(manifestEntries, browsePrefix))
         browseAdapter.submit(rows)
+        bindBrowseState()
     }
 
     private fun homeRows(): List<BrowseRow> {
@@ -681,39 +687,77 @@ class MainActivity : AppCompatActivity() {
         }
         selectedRepoId = null
         FileesSession.setSelectedRepo(prefs, null)
+        clearBrowseConfirmation()
         renderList()
         return true
     }
 
     private fun refreshAndList() {
+        openDirectory(force = true)
+    }
+
+    private fun listCurrentDir() {
+        if (legacyFullTree) {
+            renderList()
+            return
+        }
+        openDirectory(force = false)
+    }
+
+    // The folder on screen comes from the local directory manifest. The server
+    // is asked only when that page is missing, behind the confirmed pin, or
+    // this open has to check whether the header moved.
+    private fun openDirectory(force: Boolean) {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
         val prefix = browsePrefix
-        val ticket = beginUiRequest("browse", getString(R.string.status_refreshing))
+        val ticket = uiRequests.begin("browse")
+        val offline = browseOffline
+        val knownRevision = if (confirmedRepoId == repoId) confirmedRevision else 0L
+        val knownGeneration = if (confirmedRepoId == repoId) confirmedGeneration else 0L
         io.execute {
+            val cached = try {
+                active.cachedDirectoryJSON(repoId, prefix)
+            } catch (_: Exception) {
+                ""
+            }
+            val pageCurrent = cachedMatches(cached, knownGeneration, knownRevision)
+            val needHeader = force || offline || knownRevision < 1
+            if (cached.isNotBlank()) {
+                postCurrent(ticket) { applyDirectoryManifest(cached) }
+            } else {
+                postCurrent(ticket) {
+                    if (!uiRequests.current(ticket)) return@postCurrent
+                    setBusy(true, getString(R.string.status_refreshing))
+                    uiRequests.ownBusy(ticket)
+                }
+            }
+            if (!needHeader && pageCurrent) return@execute
             try {
-                val listing = active.listDirectoryJSON(repoId, prefix, 0, 0)
+                val listing = active.syncDirectoryJSON(repoId, prefix, knownRevision, knownGeneration, needHeader)
                 val listed = JSONObject(listing)
                 val listedRev = listed.optLong("repo_revision")
                 val listedGen = listed.optLong("view_generation")
-                var shouts = emptyList<Pair<Long, String>>()
-                try {
-                    shouts = ManifestBrowse.shoutsFrom(active.refreshJSON(repoId))
-                    if (listedRev > 0) {
-                        shouts = shouts.filter { it.first <= listedRev }
-                    }
-                } catch (_: Exception) {
+                val shouts = ManifestBrowse.shoutsFrom(listing).let { all ->
+                    if (listedRev > 0) all.filter { it.first <= listedRev } else all
                 }
                 postCurrent(ticket) {
-                    legacyFullTree = false
-                    browseRevision = listedRev
-                    browseGeneration = listedGen
-                    manifestEntries = ManifestBrowse.entriesFrom(listing)
-                    renderList()
+                    browseOffline = false
+                    confirmedRepoId = repoId
+                    if (listedRev > 0) confirmedRevision = listedRev
+                    if (listedGen > 0) confirmedGeneration = listedGen
+                    applyDirectoryManifest(listing)
                     showNewShouts(repoId, shouts)
                     requestBusy(ticket, false, "")
                 }
             } catch (e: Exception) {
+                if (cached.isNotBlank()) {
+                    postCurrent(ticket) {
+                        browseOffline = true
+                        applyDirectoryManifest(cached)
+                    }
+                    return@execute
+                }
                 if (!isUnsupported(e)) {
                     postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e) }
                     return@execute
@@ -721,6 +765,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val json = active.refreshJSON(repoId)
                     postCurrent(ticket) {
+                        browseOffline = false
                         legacyFullTree = true
                         browseRevision = if (json.isBlank()) 0L else JSONObject(json).optLong("repo_revision")
                         browseGeneration = if (json.isBlank()) 0L else JSONObject(json).optLong("view_generation")
@@ -736,35 +781,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun listCurrentDir() {
-        val ticket = uiRequests.begin("browse")
-        if (legacyFullTree) {
-            renderList()
-            return
+    private fun applyDirectoryManifest(json: String) {
+        val listed = JSONObject(json)
+        val rev = listed.optLong("repo_revision")
+        val gen = listed.optLong("view_generation")
+        if (rev > 0) browseRevision = rev
+        if (gen > 0) browseGeneration = gen
+        legacyFullTree = false
+        manifestEntries = ManifestBrowse.entriesFrom(json)
+        renderList()
+    }
+
+    private fun cachedMatches(json: String, generation: Long, revision: Long): Boolean {
+        if (json.isBlank() || generation < 1 || revision < 1) return false
+        return try {
+            val listed = JSONObject(json)
+            listed.optLong("view_generation") == generation && listed.optLong("repo_revision") == revision
+        } catch (_: Exception) {
+            false
         }
-        val active = client ?: return
-        val repoId = selectedRepoId ?: return
-        if (browseRevision < 1) {
-            refreshAndList()
-            return
+    }
+
+    private fun bindBrowseState() {
+        if (selectedRepoId != null && browseOffline) {
+            binding.textBrowseState.text = getString(R.string.browse_last_known)
+            binding.textBrowseState.visibility = View.VISIBLE
+        } else {
+            binding.textBrowseState.visibility = View.GONE
         }
-        val prefix = browsePrefix
-        val revision = browseRevision
-        val generation = browseGeneration
-        setBusy(true, getString(R.string.status_refreshing))
-        uiRequests.ownBusy(ticket)
-        io.execute {
-            try {
-                val listing = active.listDirectoryJSON(repoId, prefix, revision, generation)
-                postCurrent(ticket) {
-                    manifestEntries = ManifestBrowse.entriesFrom(listing)
-                    renderList()
-                    requestBusy(ticket, false, "")
-                }
-            } catch (e: Exception) {
-                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e) }
-            }
-        }
+    }
+
+    private fun clearBrowseConfirmation() {
+        confirmedRepoId = null
+        confirmedRevision = 0
+        confirmedGeneration = 0
+        browseOffline = false
+        bindBrowseState()
     }
 
     private fun isUnsupported(e: Exception): Boolean {
@@ -1474,6 +1526,7 @@ class MainActivity : AppCompatActivity() {
         browseRevision = 0
         browseGeneration = 0
         legacyFullTree = false
+        clearBrowseConfirmation()
         selectableShares = emptyList()
         drawerFrame = DrawerFrame.empty()
         manifestEntries = emptyList()
@@ -1496,6 +1549,7 @@ class MainActivity : AppCompatActivity() {
         browseRevision = 0
         browseGeneration = 0
         legacyFullTree = false
+        clearBrowseConfirmation()
         bindDecisions(emptyList())
         bindServerLabel()
         val next = FileesSession.current(prefs)

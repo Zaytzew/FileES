@@ -162,6 +162,19 @@
                 android:text="@string/action_scan_qr" />
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/textBrowseState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/filees_panel"
+            android:paddingStart="@dimen/filees_gutter"
+            android:paddingEnd="@dimen/filees_gutter"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:textAppearance="@style/TextAppearance.Filees.Body"
+            android:textColor="@color/filees_muted"
+            android:visibility="gone" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerBrowse"
             android:layout_width="match_parent"

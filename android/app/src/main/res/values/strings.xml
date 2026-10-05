@@ -93,6 +93,7 @@
     <string name="browse_directory">folder</string>
     <string name="browse_file_size">%1$d B</string>
     <string name="browse_empty">Ten folder jest pusty.</string>
+    <string name="browse_last_known">Ostatni znany stan. Kolejka zostanie zrealizowana po przywróceniu łączności.</string>
     <string name="settings_pairing">Parowanie (awaryjne)</string>
     <string name="settings_device">To urządzenie</string>
     <string name="settings_watched">Śledzone foldery</string>

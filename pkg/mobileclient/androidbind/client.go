@@ -145,6 +145,38 @@ func (c *Client) RefreshJSON(repoID string) (string, error) {
 	return string(raw), nil
 }
 
+// CachedDirectoryJSON is the newest local directory page, or "" when this
+// path has never been listed. The screen paints it before any server call.
+func (c *Client) CachedDirectoryJSON(repoID, path string) (string, error) {
+	page, err := c.inner.CachedDirectory(repoID, path)
+	if err != nil || page == nil {
+		return "", err
+	}
+	raw, err := json.Marshal(page)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// SyncDirectoryJSON updates the local page in the background. revision and
+// generation are the pin already confirmed this session; force asks the
+// server whether the repo header moved. A page at the current pin is kept
+// and the folder is listed only when that page is missing.
+func (c *Client) SyncDirectoryJSON(repoID, path string, revision, generation int64, force bool) (string, error) {
+	ctx, cancel := context.WithTimeout(c.baseContext(), refreshTimeout)
+	defer cancel()
+	page, err := c.inner.SyncDirectory(ctx, repoID, path, generation, revision, force)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(page)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // ListDirectoryJSON returns immediate children of path as a manifest JSON
 // (entries in the object, not a recursive tree). revision/generation pin the
 // local directory cache; 0 lets the worker use HEAD.

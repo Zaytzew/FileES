@@ -171,7 +171,8 @@
     <string name="download_folder_confirm_title">¿Descargar toda la carpeta?</string>
     <string name="download_folder_confirm">«%1$s»: %2$s. El teléfono traerá cada archivo por separado y armará un zip.</string>
     <string name="share_folder_confirm_title">¿Compartir toda la carpeta?</string>
-    <string name="share_folder_confirm">«%1$s»: %2$s. El teléfono descargará los archivos, creará un ZIP y mostrará las aplicaciones.</string>
+    <string name="share_folder_confirm">«%1$s»: %2$s. El teléfono preparará un ZIP hasta el límite de %3$s y la aplicación elegida recibirá una copia. ¿Continuar?</string>
+    <string name="share_folder_limit_exceeded">El paquete ocupa %1$s; el límite para compartir es %2$s. Puedes cambiarlo en Ajustes → Avanzado.</string>
     <string name="error_share">No se pudo preparar el archivo para compartir.</string>
     <string name="error_folder_too_big">La carpeta es demasiado grande para descargarla entera al teléfono (%1$s).</string>
     <string name="shouts_title">Anuncio</string>
@@ -264,6 +265,11 @@
     <string name="device_lock_prompt_title">Desbloquear la aplicación</string>
     <string name="device_lock_prompt_subtitle">Desbloquear la aplicación</string>
     <string name="settings_advanced">Avanzado</string>
+    <string name="settings_share_limit_title">Límite del ZIP compartido</string>
+    <string name="settings_share_limit_change">Cambiar límite para compartir</string>
+    <string name="settings_share_limit_value">Tamaño total máximo: %1$d MiB</string>
+    <string name="settings_share_limit_help">Introduce un límite en MiB (de %1$d a %2$d). Se aplica al compartir carpetas.</string>
+    <string name="settings_share_limit_invalid">Introduce un número entre %1$d y %2$d.</string>
     <string name="watch_state_checking">Comprobando</string>
     <string name="watch_state_preparing">Preparando</string>
     <string name="watch_state_sending">Enviando</string>

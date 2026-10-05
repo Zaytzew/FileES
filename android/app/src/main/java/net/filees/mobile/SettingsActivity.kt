@@ -136,6 +136,8 @@ class SettingsActivity : AppCompatActivity() {
             binding.root.post { if(!isFinishing && !isDestroyed) showAbout() }
         }
         binding.buttonAdvanced.setOnClickListener { showAdvanced() }
+        binding.buttonShareLimit.setOnClickListener { changeShareLimit() }
+        bindShareLimit()
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
         FileesSession.migrate(prefs)
@@ -229,6 +231,41 @@ class SettingsActivity : AppCompatActivity() {
                 panel.visibility = View.GONE
                 parent.addView(panel, index)
             }.show()
+    }
+
+    private fun bindShareLimit() {
+        binding.textShareLimit.text = getString(R.string.settings_share_limit_value, SharePackageLimit.mib(this))
+    }
+
+    private fun changeShareLimit() {
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(SharePackageLimit.mib(this@SettingsActivity).toString())
+            selectAll()
+        }
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val field = android.widget.FrameLayout(this).apply {
+            setPadding(padding, 0, padding, 0)
+            addView(input)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.settings_share_limit_title)
+            .setMessage(getString(R.string.settings_share_limit_help, SharePackageLimit.MIN_MIB, SharePackageLimit.MAX_MIB))
+            .setView(field)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(R.string.action_cancel, null)
+            .create()
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val value = SharePackageLimit.parse(input.text?.toString().orEmpty())
+            if (value == null) {
+                input.error = getString(R.string.settings_share_limit_invalid, SharePackageLimit.MIN_MIB, SharePackageLimit.MAX_MIB)
+            } else {
+                SharePackageLimit.save(this, value)
+                bindShareLimit()
+                dialog.dismiss()
+            }
+        }
     }
 
     private fun showAbout() {

@@ -140,6 +140,27 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="@string/settings_share_limit_title"
+            android:textAppearance="@style/TextAppearance.Filees.Heading" />
+
+        <TextView
+            android:id="@+id/textShareLimit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAppearance="@style/TextAppearance.Filees.Body" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonShareLimit"
+            style="@style/Widget.Filees.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/settings_share_limit_change" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:text="@string/settings_device"
             android:textAppearance="@style/TextAppearance.Filees.Heading" />

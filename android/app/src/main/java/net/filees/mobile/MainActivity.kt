@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val uiRequests = UiRequests(::sessionKey)
-    private class ShareTask(var ticket: UiRequests.Ticket) {
+    private class ShareTask(var ticket: UiRequests.Ticket, val limitBytes: Long) {
         @Volatile var cancelled = false
             private set
         @Volatile var client: Client? = null
@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         fun close() { client?.cancel() }
         fun check() { if (cancelled) throw InterruptedIOException("Share cancelled") }
     }
+    private class SharePackageTooLarge(val actual: Long, val limit: Long) : java.io.IOException("Share package limit exceeded")
     private var shareTask: ShareTask? = null
     private var shareDialog: AlertDialog? = null
     private var shareConfirmDialog: AlertDialog? = null
@@ -922,7 +923,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginSharePreparation(ticket: UiRequests.Ticket, message: String): ShareTask {
-        val task = ShareTask(ticket)
+        val task = ShareTask(ticket, SharePackageLimit.bytes(this))
         shareTask = task
         showSharePreparation(task, message)
         return task
@@ -978,6 +979,14 @@ class MainActivity : AppCompatActivity() {
             if (shareTask !== task) return@postCurrent
             clearSharePreparation(task)
             if (task.cancelled) requestBusy(task.ticket, false, getString(R.string.status_share_cancelled))
+            else if (error is SharePackageTooLarge) {
+                requestBusy(task.ticket, false, "")
+                AlertDialog.Builder(this)
+                    .setMessage(getString(R.string.share_folder_limit_exceeded,
+                        HumanSize.format(error.actual), HumanSize.format(error.limit)))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
             else failRequest(task.ticket, getString(R.string.error_share), error)
         }
     }
@@ -1066,17 +1075,20 @@ class MainActivity : AppCompatActivity() {
             setBusy(false, getString(R.string.browse_empty))
             return
         }
-        val limit = 400L * 1024 * 1024
+        val limit = task?.limitBytes ?: 400L * 1024 * 1024
         var bytes = 0L
+        var invalidSize = false
         for (file in files) {
-            if (file.size < 0 || file.size > limit - bytes) { bytes = limit + 1; break }
+            if (file.size < 0 || file.size > Long.MAX_VALUE - bytes) { invalidSize = true; break }
             bytes += file.size
         }
-        if (files.size > 200 || bytes > limit) {
+        if (invalidSize || (task == null && files.size > 200) || bytes > limit) {
             if (task != null) clearSharePreparation(task)
             setBusy(false, "")
             AlertDialog.Builder(this)
-                .setMessage(getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
+                .setMessage(if (invalidSize) getString(if (share) R.string.error_share else R.string.error_download)
+                    else if (share) getString(R.string.share_folder_limit_exceeded, HumanSize.format(bytes), HumanSize.format(limit))
+                    else getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
                 .setPositiveButton(android.R.string.ok, null)
                 .show()
             return
@@ -1084,7 +1096,7 @@ class MainActivity : AppCompatActivity() {
         val start = {
             if (uiRequests.current(ticket)) pullFolderZip(target, row, files, share)
         }
-        if (files.size >= 40 || bytes >= 40L * 1024 * 1024) {
+        if (share || files.size >= 40 || bytes >= 40L * 1024 * 1024) {
             if (task != null) {
                 shareDialog?.dismiss()
                 shareDialog = null
@@ -1094,7 +1106,8 @@ class MainActivity : AppCompatActivity() {
             )
             val confirm = AlertDialog.Builder(this)
                 .setTitle(if (share) R.string.share_folder_confirm_title else R.string.download_folder_confirm_title)
-                .setMessage(getString(if (share) R.string.share_folder_confirm else R.string.download_folder_confirm, row.name, summary))
+                .setMessage(if (share) getString(R.string.share_folder_confirm, row.name, summary, HumanSize.format(limit))
+                    else getString(R.string.download_folder_confirm, row.name, summary))
                 .setPositiveButton(if (share) R.string.action_share else R.string.action_download) { _, _ ->
                     if (task != null) shareConfirmDialog = null
                     start()
@@ -1132,7 +1145,7 @@ class MainActivity : AppCompatActivity() {
                 DownloadPublication.requireName("${row.name}.zip")
                 val entries = ShareExport.relativeFiles(row.path, files)
                 var downloadedBytes = 0L
-                val limit = 400L * 1024 * 1024
+                val limit = task?.limitBytes ?: 400L * 1024 * 1024
                 for ((index, pair) in entries.withIndex()) {
                     task?.check()
                     val (entry, relative) = pair
@@ -1147,7 +1160,10 @@ class MainActivity : AppCompatActivity() {
                     DownloadCache.checkActive(cacheDir, target.server)
                     readTarget.client.downloadTo(readTarget.repo, entry.path, dest.absolutePath)
                     task?.check()
-                    if (dest.length() > limit - downloadedBytes) throw java.io.IOException("Folder exceeds download limit")
+                    if (dest.length() > limit - downloadedBytes) {
+                        if (task != null) throw SharePackageTooLarge(downloadedBytes + dest.length(), limit)
+                        throw java.io.IOException("Folder exceeds download limit")
+                    }
                     downloadedBytes += dest.length()
                     staged.add(relative to dest)
                 }
@@ -1159,6 +1175,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val zip = TreeZip.packNamed(staged, dir, "${row.name}.zip") { task?.check() }
                 task?.check()
+                if (task != null && zip.length() > limit) throw SharePackageTooLarge(zip.length(), limit)
                 DownloadCache.checkActive(cacheDir, target.server)
                 if (share) {
                     for ((_, part) in staged) {

@@ -31,6 +31,11 @@ built and verified.
   A modal preparation dialog blocks accidental navigation. Cancel interrupts
   the share's own download handle and discards the private attempt; leaving
   the app requests the same cancellation.
+  Every folder share asks for confirmation. The default source-size budget is
+  40 MiB with no file-count cap; Settings → Advanced can set 1–4096 MiB.
+  A server-side LIST_DIRECTORY guard still rejects a single directory with
+  more than 1024 immediate entries.
+  The ordinary Download action keeps its separate folder limits.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.

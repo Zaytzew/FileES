@@ -9,6 +9,17 @@ import java.util.zip.ZipFile
 
 internal object ShareExportChecks {
     fun run(context: Context) {
+        check(SharePackageLimit.parse("40") == 40)
+        check(SharePackageLimit.parse("0") == null)
+        check(SharePackageLimit.parse("4097") == null)
+        val priorLimit = SharePackageLimit.mib(context)
+        try {
+            SharePackageLimit.save(context, 64)
+            check(SharePackageLimit.mib(context) == 64)
+            check(SharePackageLimit.bytes(context) == 64L * 1024 * 1024)
+        } finally {
+            SharePackageLimit.save(context, priorLimit)
+        }
         val server = "share-check-${System.nanoTime()}"
         val dir = DownloadCache.create(context.cacheDir, server)
         try {

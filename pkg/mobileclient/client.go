@@ -76,8 +76,6 @@ func (c Client) Refresh(ctx context.Context, repoID string) (*v1.Manifest, error
 	return res.Manifest, nil
 }
 
-const maxListedFiles = 200
-
 // ListDirectory returns immediate children of path at revision, using the
 // local directory cache when generation and revision match.
 func (c Client) ListDirectory(ctx context.Context, repoID, path string, generation, revision int64) (*v1.Manifest, error) {
@@ -121,8 +119,8 @@ func (c Client) ListDirectory(ctx context.Context, repoID, path string, generati
 	return &m, nil
 }
 
-// ListFilesUnder walks LIST_DIRECTORY pages and returns files under path,
-// stopping after maxListedFiles. Used for folder download, not browse.
+// ListFilesUnder recursively lists directories and returns files under path.
+// The caller applies its own transfer budget after listing.
 func (c Client) ListFilesUnder(ctx context.Context, repoID, path string, generation, revision int64) ([]v1.ManifestEntry, error) {
 	var files []v1.ManifestEntry
 	var walk func(string) error
@@ -134,9 +132,6 @@ func (c Client) ListFilesUnder(ctx context.Context, repoID, path string, generat
 		for _, e := range m.Entries {
 			if e.Kind == v1.KindFile {
 				files = append(files, e)
-				if len(files) > maxListedFiles {
-					return fmt.Errorf("mobile operation failed: manifest.too_large: folder has more than %d files", maxListedFiles)
-				}
 			}
 		}
 		for _, e := range m.Entries {

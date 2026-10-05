@@ -73,7 +73,9 @@ class MainActivity : AppCompatActivity() {
     private var browseGeneration: Long = 0
     private var legacyFullTree: Boolean = false
     private var pendingDecisions: List<PendingUpload> = emptyList()
-    private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
+    private val browseAdapter = BrowseAdapter(
+        onOpen = { openRow(it) }, onDownload = { downloadRow(it) }, onShare = { shareRow(it) },
+    )
     private val pendingAdapter = PendingUploadsAdapter(
         onDiscard = { discardPending(it) },
         onRetry = { retryPending(it) },
@@ -877,21 +879,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun downloadFolder(row: BrowseRow) {
+    private fun shareRow(row: BrowseRow) {
+        if (row.share) return
+        if (row.directory) {
+            prepareFolder(row, share = true)
+            return
+        }
         val target = downloadTarget() ?: return
-        val ticket = beginUiRequest("download", getString(R.string.status_scanning))
+        val ticket = beginUiRequest("download", getString(R.string.status_preparing_share))
+        io.execute {
+            var dest: File? = null
+            try {
+                val ready = cachedDownload(target, row)
+                dest = ready
+                DownloadCache.checkActive(cacheDir, target.server)
+                dest = null // The chooser's recipient may read after this task ends.
+                showShareWhenReady(ticket, target.server, ready, row.name, folder = false)
+            } catch (e: Exception) {
+                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_share), e) }
+            } finally {
+                dest?.parentFile?.let { DownloadCache.removeAttempt(cacheDir, it) }
+            }
+        }
+    }
+
+    private fun downloadFolder(row: BrowseRow) {
+        prepareFolder(row, share = false)
+    }
+
+    private fun prepareFolder(row: BrowseRow, share: Boolean) {
+        val target = downloadTarget() ?: return
+        val ticket = beginUiRequest("download", getString(if (share) R.string.status_preparing_share else R.string.status_scanning))
         if (legacyFullTree) {
-            confirmDownloadFolder(target, ticket, row, ManifestBrowse.filesUnder(manifestEntries, row.path))
+            confirmFolder(target, ticket, row, ManifestBrowse.filesUnder(manifestEntries, row.path), share)
             return
         }
         io.execute {
             try {
                 val json = target.client.listFilesUnderJSON(target.repo, row.path, target.revision, target.generation)
                 val files = ManifestBrowse.entriesFrom(json)
-                postCurrent(ticket) { confirmDownloadFolder(target, ticket, row, files) }
+                postCurrent(ticket) { confirmFolder(target, ticket, row, files, share) }
             } catch (e: Exception) {
                 if (!isUnsupported(e)) {
-                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
+                    postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e) }
                     return@execute
                 }
                 try {
@@ -899,23 +929,28 @@ class MainActivity : AppCompatActivity() {
                         ManifestBrowse.entriesFrom(target.client.refreshJSON(target.repo)),
                         row.path,
                     )
-                    postCurrent(ticket) { confirmDownloadFolder(target, ticket, row, files) }
+                    postCurrent(ticket) { confirmFolder(target, ticket, row, files, share) }
                 } catch (e2: Exception) {
-                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e2) }
+                    postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e2) }
                 }
             }
         }
     }
 
-    private fun confirmDownloadFolder(target: DownloadTarget, ticket: UiRequests.Ticket, row: BrowseRow, files: List<ManifestEntry>) {
+    private fun confirmFolder(target: DownloadTarget, ticket: UiRequests.Ticket, row: BrowseRow, files: List<ManifestEntry>, share: Boolean) {
         if (!uiRequests.current(ticket)) return
         requestBusy(ticket, false, "")
-        if (files.isEmpty()) {
+        if (files.isEmpty() && !share) {
             setBusy(false, getString(R.string.browse_empty))
             return
         }
-        val bytes = files.sumOf { it.size }
-        if (files.size > 200 || bytes > 400L * 1024 * 1024) {
+        val limit = 400L * 1024 * 1024
+        var bytes = 0L
+        for (file in files) {
+            if (file.size < 0 || file.size > limit - bytes) { bytes = limit + 1; break }
+            bytes += file.size
+        }
+        if (files.size > 200 || bytes > limit) {
             setBusy(false, "")
             AlertDialog.Builder(this)
                 .setMessage(getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
@@ -924,16 +959,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val start = {
-            if (uiRequests.current(ticket)) pullFolderZip(target, row, files)
+            if (uiRequests.current(ticket)) pullFolderZip(target, row, files, share)
         }
         if (files.size >= 40 || bytes >= 40L * 1024 * 1024) {
             val summary = resources.getQuantityString(
                 R.plurals.status_preflight, files.size, files.size, HumanSize.format(bytes),
             )
             AlertDialog.Builder(this)
-                .setTitle(R.string.download_folder_confirm_title)
-                .setMessage(getString(R.string.download_folder_confirm, row.name, summary))
-                .setPositiveButton(R.string.action_download) { _, _ -> start() }
+                .setTitle(if (share) R.string.share_folder_confirm_title else R.string.download_folder_confirm_title)
+                .setMessage(getString(if (share) R.string.share_folder_confirm else R.string.download_folder_confirm, row.name, summary))
+                .setPositiveButton(if (share) R.string.action_share else R.string.action_download) { _, _ -> start() }
                 .setNegativeButton(R.string.action_cancel, null)
                 .show()
             return
@@ -941,35 +976,73 @@ class MainActivity : AppCompatActivity() {
         start()
     }
 
-    private fun pullFolderZip(target: DownloadTarget, row: BrowseRow, files: List<ManifestEntry>) {
-        val ticket = beginUiRequest("download", getString(R.string.status_downloading_folder, 1, files.size))
-        executeDownload(ticket) {
+    private fun pullFolderZip(target: DownloadTarget, row: BrowseRow, files: List<ManifestEntry>, share: Boolean) {
+        val message = if (files.isEmpty()) getString(R.string.status_packing_download)
+            else getString(R.string.status_downloading_folder, 1, files.size)
+        val ticket = beginUiRequest("download", message)
+        val action = {
             val staged = ArrayList<Pair<String, File>>(files.size)
             var attempt: File? = null
             try {
                 val dir = DownloadCache.create(cacheDir, target.server)
                 attempt = dir
                 DownloadPublication.requireName("${row.name}.zip")
-                val pfx = if (row.path.isEmpty()) "" else "${row.path}/"
-                for ((index, entry) in files.withIndex()) {
+                val entries = ShareExport.relativeFiles(row.path, files)
+                var downloadedBytes = 0L
+                val limit = 400L * 1024 * 1024
+                for ((index, pair) in entries.withIndex()) {
+                    val (entry, relative) = pair
                     postCurrent(ticket) {
                         requestBusy(ticket, true, getString(R.string.status_downloading_folder, index + 1, files.size))
                     }
-                    val relative = if (pfx.isEmpty()) entry.path else entry.path.removePrefix(pfx)
                     val dest = File(dir, "part-$index")
                     DownloadCache.checkActive(cacheDir, target.server)
                     target.client.downloadTo(target.repo, entry.path, dest.absolutePath)
+                    if (dest.length() > limit - downloadedBytes) throw java.io.IOException("Folder exceeds download limit")
+                    downloadedBytes += dest.length()
                     staged.add(relative to dest)
                 }
                 postCurrent(ticket) { requestBusy(ticket, true, getString(R.string.status_packing_download)) }
                 val zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
                 DownloadCache.checkActive(cacheDir, target.server)
-                publishDownload(zip, "${row.name}.zip")
-                postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, "${row.name}.zip")) }
+                if (share) {
+                    for ((_, part) in staged) {
+                        if (!part.delete()) throw java.io.IOException("Cannot remove ZIP staging file")
+                    }
+                    dir.setLastModified(System.currentTimeMillis())
+                    attempt = null // Keep the private file until the receiving app has read it.
+                    showShareWhenReady(ticket, target.server, zip, "${row.name}.zip", folder = true)
+                } else {
+                    publishDownload(zip, "${row.name}.zip")
+                    postCurrent(ticket) { requestBusy(ticket, false, getString(R.string.status_downloaded, "${row.name}.zip")) }
+                }
             } catch (e: Exception) {
-                postCurrent(ticket) { failRequest(ticket, getString(R.string.error_download), e) }
+                postCurrent(ticket) { failRequest(ticket, getString(if (share) R.string.error_share else R.string.error_download), e) }
             } finally {
                 attempt?.let { DownloadCache.removeAttempt(cacheDir, it) }
+            }
+        }
+        if (share) io.execute { action() } else executeDownload(ticket, action)
+    }
+
+    private fun showShareWhenReady(ticket: UiRequests.Ticket, server: String, file: File, name: String, folder: Boolean) {
+        main.post {
+            if (isDestroyed || isFinishing || !uiRequests.current(ticket)) {
+                DownloadCache.removeAttempt(cacheDir, file.parentFile!!)
+                return@post
+            }
+            try {
+                DownloadCache.checkActive(cacheDir, server)
+                val send = ShareExport.sendIntent(this, file, name, folder)
+                val chooser = Intent.createChooser(send, getString(R.string.action_share)).apply {
+                    clipData = send.clipData
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(chooser)
+                requestBusy(ticket, false, "")
+            } catch (e: Exception) {
+                DownloadCache.removeAttempt(cacheDir, file.parentFile!!)
+                failRequest(ticket, getString(R.string.error_share), e)
             }
         }
     }

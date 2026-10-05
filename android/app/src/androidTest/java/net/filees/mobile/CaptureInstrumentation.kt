@@ -32,6 +32,8 @@ class CaptureInstrumentation : Instrumentation() {
                     DownloadPublicationChecks.run(dir)
                     DownloadCacheChecks.run(dir)
                 } finally { dir.deleteRecursively() }
+            } else if (args.containsKey("share_export")) {
+                ShareExportChecks.run(targetContext)
             } else if (args.containsKey("watch_bindings")) {
                 ReceiptAcknowledgementChecks.run()
                 WatchRegistryChecks.run()

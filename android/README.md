@@ -23,6 +23,11 @@ built and verified.
   the operational screen. After pairing, the phone loads the realm
   projection (`LIST_REPOSITORIES`) and offers a share picker. Mobile never
   creates repositories and never asks the operator to type a repo UUID.
+- In the repository browser, **Share** downloads one file or prepares a ZIP
+  of a folder off the UI thread, then opens Android's app chooser. It uses the
+  existing private download cache and `FileProvider` with a temporary read
+  grant. The copy remains available to the chosen app until the cache sweep
+  (24 hours) or server unpairing; Share does not save to public Downloads.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.

@@ -12,6 +12,7 @@ import com.google.android.material.button.MaterialButton
 class BrowseAdapter(
     private val onOpen: (BrowseRow) -> Unit,
     private val onDownload: (BrowseRow) -> Unit,
+    private val onShare: (BrowseRow) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var rows: List<BrowseRow> = emptyList()
@@ -69,7 +70,7 @@ class BrowseAdapter(
             is JournalEntryHolder -> holder.bind(row, onOpen)
             is HeaderHolder -> holder.bind(row, onOpen)
             is AddServerHolder -> holder.bind(row, onOpen)
-            is Holder -> holder.bind(row, onOpen, onDownload)
+            is Holder -> holder.bind(row, onOpen, onDownload, onShare)
         }
     }
 
@@ -197,9 +198,10 @@ class BrowseAdapter(
         private val title: TextView = itemView.findViewById(R.id.textBrowseName)
         private val meta: TextView = itemView.findViewById(R.id.textBrowseMeta)
         private val download: MaterialButton = itemView.findViewById(R.id.buttonDownload)
+        private val share: MaterialButton = itemView.findViewById(R.id.buttonShare)
         private val divider: View = itemView.findViewById(R.id.dividerBrowse)
 
-        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit, onDownload: (BrowseRow) -> Unit) {
+        fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit, onDownload: (BrowseRow) -> Unit, onShare: (BrowseRow) -> Unit) {
             applyPanel(itemView, row.panel)
             // The card's own edge closes the last row; a hairline above it
             // would read as a double line.
@@ -212,13 +214,17 @@ class BrowseAdapter(
                 icon.setImageResource(R.drawable.ic_folder)
                 meta.text = itemView.context.getString(R.string.browse_directory)
                 download.visibility = if (row.share) View.GONE else View.VISIBLE
-                download.setOnClickListener { onDownload(row) }
+                share.visibility = if (row.share) View.GONE else View.VISIBLE
+                download.setOnClickListener(if (row.share) null else View.OnClickListener { onDownload(row) })
+                share.setOnClickListener(if (row.share) null else View.OnClickListener { onShare(row) })
                 itemView.setOnClickListener { onOpen(row) }
             } else {
                 icon.setImageResource(R.drawable.ic_file)
                 meta.text = HumanSize.format(row.size)
                 download.visibility = View.VISIBLE
+                share.visibility = View.VISIBLE
                 download.setOnClickListener { onDownload(row) }
+                share.setOnClickListener { onShare(row) }
                 itemView.setOnClickListener { onOpen(row) }
             }
         }

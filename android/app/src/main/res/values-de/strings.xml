@@ -18,6 +18,7 @@
     <string name="action_browse_up">Nach oben</string>
     <string name="action_add">Hinzufügen</string>
     <string name="action_download">Herunterladen</string>
+    <string name="action_share">Teilen</string>
     <string name="action_add_files">Dateien</string>
     <string name="action_add_folder">Ordner</string>
     <string name="status_scanning">Dateien werden gezählt…</string>
@@ -35,6 +36,7 @@
     <string name="status_sent">Gesendet.</string>
     <string name="status_sent_count">%1$d Dateien gesendet.</string>
     <string name="status_downloading">Wird heruntergeladen…</string>
+    <string name="status_preparing_share">Freigabe wird vorbereitet…</string>
     <string name="status_downloaded">Gespeichert: %1$s</string>
     <string name="action_add_watched">Ordner beobachten…</string>
     <string name="action_add_watched_folder">Beobachteten Ordner hinzufügen</string>
@@ -166,6 +168,9 @@
     <string name="status_packing_download">Ordner wird gepackt…</string>
     <string name="download_folder_confirm_title">Ganzen Ordner herunterladen?</string>
     <string name="download_folder_confirm">„%1$s“: %2$s. Das Telefon holt jede Datei einzeln und baut ein Zip.</string>
+    <string name="share_folder_confirm_title">Ganzen Ordner teilen?</string>
+    <string name="share_folder_confirm">„%1$s“: %2$s. Das Telefon lädt die Dateien, erstellt ein ZIP und zeigt die App-Auswahl.</string>
+    <string name="error_share">Freigabe konnte nicht vorbereitet werden.</string>
     <string name="error_folder_too_big">Der Ordner ist zu groß, um ihn vollständig auf das Telefon zu holen (%1$s).</string>
     <string name="shouts_title">Mitteilung</string>
     <string name="shouts_ack">OK</string>

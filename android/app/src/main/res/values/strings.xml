@@ -20,6 +20,7 @@
     <string name="action_browse_up">W górę</string>
     <string name="action_add">Dodaj</string>
     <string name="action_download">Pobierz</string>
+    <string name="action_share">Udostępnij</string>
     <string name="action_add_files">Pliki</string>
     <string name="action_add_folder">Folder</string>
     <string name="status_scanning">Liczę pliki…</string>
@@ -39,6 +40,7 @@
     <string name="status_sent">Wysłano.</string>
     <string name="status_sent_count">Wysłano %1$d plików.</string>
     <string name="status_downloading">Pobieranie…</string>
+    <string name="status_preparing_share">Przygotowuję do udostępnienia…</string>
     <string name="status_downloaded">Zapisano: %1$s</string>
     <string name="action_add_watched">Śledź folder…</string>
     <string name="action_add_watched_folder">Dodaj folder śledzony</string>
@@ -178,6 +180,9 @@
     <string name="status_packing_download">Pakowanie folderu…</string>
     <string name="download_folder_confirm_title">Pobrać cały folder?</string>
     <string name="download_folder_confirm">„%1$s”: %2$s. Telefon ściągnie każdy plik osobno i złoży zip.</string>
+    <string name="share_folder_confirm_title">Udostępnić cały folder?</string>
+    <string name="share_folder_confirm">„%1$s”: %2$s. Telefon pobierze pliki, złoży ZIP i pokaże wybór aplikacji.</string>
+    <string name="error_share">Nie udało się przygotować udostępnienia.</string>
     <string name="error_folder_too_big">Folder jest za duży, żeby ściągnąć go w całości na telefon (%1$s).</string>
     <string name="shouts_title">Ogłoszenie</string>
     <string name="shouts_ack">OK</string>

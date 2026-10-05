@@ -18,6 +18,7 @@
     <string name="action_browse_up">Arriba</string>
     <string name="action_add">Añadir</string>
     <string name="action_download">Descargar</string>
+    <string name="action_share">Compartir</string>
     <string name="action_add_files">Archivos</string>
     <string name="action_add_folder">Carpeta</string>
     <string name="status_scanning">Contando archivos…</string>
@@ -35,6 +36,7 @@
     <string name="status_sent">Enviado.</string>
     <string name="status_sent_count">Enviados %1$d archivos.</string>
     <string name="status_downloading">Descargando…</string>
+    <string name="status_preparing_share">Preparando para compartir…</string>
     <string name="status_downloaded">Guardado: %1$s</string>
     <string name="action_add_watched">Vigilar carpeta…</string>
     <string name="action_add_watched_folder">Añadir carpeta vigilada</string>
@@ -166,6 +168,9 @@
     <string name="status_packing_download">Empaquetando carpeta…</string>
     <string name="download_folder_confirm_title">¿Descargar toda la carpeta?</string>
     <string name="download_folder_confirm">«%1$s»: %2$s. El teléfono traerá cada archivo por separado y armará un zip.</string>
+    <string name="share_folder_confirm_title">¿Compartir toda la carpeta?</string>
+    <string name="share_folder_confirm">«%1$s»: %2$s. El teléfono descargará los archivos, creará un ZIP y mostrará las aplicaciones.</string>
+    <string name="error_share">No se pudo preparar el archivo para compartir.</string>
     <string name="error_folder_too_big">La carpeta es demasiado grande para descargarla entera al teléfono (%1$s).</string>
     <string name="shouts_title">Anuncio</string>
     <string name="shouts_ack">OK</string>

@@ -18,6 +18,7 @@
     <string name="action_browse_up">Haut</string>
     <string name="action_add">Ajouter</string>
     <string name="action_download">Télécharger</string>
+    <string name="action_share">Partager</string>
     <string name="action_add_files">Fichiers</string>
     <string name="action_add_folder">Dossier</string>
     <string name="status_scanning">Comptage des fichiers…</string>
@@ -35,6 +36,7 @@
     <string name="status_sent">Envoyé.</string>
     <string name="status_sent_count">%1$d fichiers envoyés.</string>
     <string name="status_downloading">Téléchargement…</string>
+    <string name="status_preparing_share">Préparation du partage…</string>
     <string name="status_downloaded">Enregistré : %1$s</string>
     <string name="action_add_watched">Surveiller un dossier…</string>
     <string name="action_add_watched_folder">Ajouter un dossier suivi</string>
@@ -166,6 +168,9 @@
     <string name="status_packing_download">Empaquetage du dossier…</string>
     <string name="download_folder_confirm_title">Télécharger tout le dossier ?</string>
     <string name="download_folder_confirm">« %1$s » : %2$s. Le téléphone récupère chaque fichier séparément et compose un zip.</string>
+    <string name="share_folder_confirm_title">Partager tout le dossier ?</string>
+    <string name="share_folder_confirm">« %1$s » : %2$s. Le téléphone récupère les fichiers, crée un ZIP, puis affiche les applications.</string>
+    <string name="error_share">Impossible de préparer le partage.</string>
     <string name="error_folder_too_big">Le dossier est trop grand pour le télécharger entièrement sur le téléphone (%1$s).</string>
     <string name="shouts_title">Annonce</string>
     <string name="shouts_ack">OK</string>

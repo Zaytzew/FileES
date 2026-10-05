@@ -20,6 +20,7 @@
     <string name="action_browse_up">Up</string>
     <string name="action_add">Add</string>
     <string name="action_download">Download</string>
+    <string name="action_share">Share</string>
     <string name="action_add_files">Files</string>
     <string name="action_add_folder">Folder</string>
     <string name="status_scanning">Counting files…</string>
@@ -37,6 +38,7 @@
     <string name="status_sent">Sent.</string>
     <string name="status_sent_count">Sent %1$d files.</string>
     <string name="status_downloading">Downloading…</string>
+    <string name="status_preparing_share">Preparing to share…</string>
     <string name="status_downloaded">Saved: %1$s</string>
     <string name="action_add_watched">Watch folder…</string>
     <string name="action_add_watched_folder">Add watched folder</string>
@@ -171,6 +173,9 @@
     <string name="status_packing_download">Packing folder…</string>
     <string name="download_folder_confirm_title">Download the whole folder?</string>
     <string name="download_folder_confirm">“%1$s”: %2$s. The phone will fetch each file separately and build a zip.</string>
+    <string name="share_folder_confirm_title">Share the whole folder?</string>
+    <string name="share_folder_confirm">“%1$s”: %2$s. The phone will fetch the files, build a ZIP and show the app chooser.</string>
+    <string name="error_share">Could not prepare the share.</string>
     <string name="error_folder_too_big">The folder is too large to download whole onto the phone (%1$s).</string>
     <string name="shouts_title">Announcement</string>
     <string name="shouts_ack">OK</string>

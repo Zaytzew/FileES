@@ -97,6 +97,45 @@ func Open(path string, limit int) (*Journal, error) {
 func (j *Journal) Record(entry Entry) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.record(entry)
+}
+
+// RecordHydration records a completed virtual-file download, not an outgoing
+// change or a proof that today's local file is clean. Check and write under the
+// same journal lock: a concurrent pipeline entry must never be overwritten by
+// a late hydration ACK. Reopening already received/published bytes is not a
+// new revision and must not repeatedly notify after a daemon restart.
+func (j *Journal) RecordHydration(entry Entry) (bool, error) {
+	if entry.Stage != Received || entry.Revision <= 0 {
+		return false, errors.New("hydration requires a received revision")
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	probe := entry
+	probe.UpdatedAt = j.now().UTC()
+	if probe.DetectedAt.IsZero() {
+		probe.DetectedAt = probe.UpdatedAt
+	}
+	if err := validate(probe); err != nil {
+		return false, err
+	}
+	if old, ok := j.entries[key(entry.RepoID, entry.Path)]; ok {
+		switch old.Stage {
+		case Received, Published:
+			if old.Revision >= entry.Revision {
+				return false, nil
+			}
+		case Reconciled:
+		default:
+			return false, nil // Protect detected, queued, publishing and failed work.
+		}
+	}
+	err := j.record(entry)
+	return err == nil, err
+}
+
+// record requires j.mu to be held.
+func (j *Journal) record(entry Entry) error {
 	now := j.now().UTC()
 	k := key(entry.RepoID, entry.Path)
 	if old, ok := j.entries[k]; ok {

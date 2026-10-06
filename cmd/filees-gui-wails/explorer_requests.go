@@ -13,6 +13,9 @@ import (
 var explorerRequests = make(chan explorermenu.Request, 16)
 
 func queueExplorerRequest(request explorermenu.Request) bool {
+	if _, err := explorermenu.Parse([]string{request.Verb, request.Path}); err != nil {
+		return false
+	}
 	select {
 	case explorerRequests <- request:
 		return true
@@ -49,12 +52,24 @@ func (service *GUIService) runExplorerRequests(ctx context.Context) {
 			}
 			deadline.Stop()
 			poll.Stop()
+			if request.Verb == explorermenu.Download || request.Verb == explorermenu.Release {
+				// This handler acquires display admission itself. Do not retain an
+				// admission read lock across another read acquisition: a recovery
+				// writer may already be waiting. The queue serialises confirmations.
+				service.mu.RLock()
+				handler := service.explorerFolder
+				service.mu.RUnlock()
+				if handler != nil {
+					handler(ctx, request)
+				}
+				continue
+			}
 			service.actionAdmission.RLock()
 			service.mu.RLock()
 			actions := service.actions
 			service.mu.RUnlock()
 			if !service.recoveringDisplay && actions != nil {
-				kind := tray.IntentExplorerAdd
+				kind := tray.IntentExplorerAdd // Queue admission accepts closed verbs only.
 				if request.Verb == explorermenu.Detach {
 					kind = tray.IntentExplorerDetach
 				}

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 
+	"filees/pkg/activity"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 )
@@ -13,6 +14,6 @@ import (
 // ships without Explorer anchors and without any Cloud Files API code (owner's
 // decision, 2026-09-24). With no precheck set, repo.anchor_create answers
 // anchor_unavailable and the capability is never advertised.
-func explorerAnchors(*ipcserver.Server, *localrepo.Store, *daemonProvisioner) func(context.Context) {
+func explorerAnchors(*ipcserver.Server, *localrepo.Store, *daemonProvisioner, *activity.Journal) func(context.Context) {
 	return nil
 }

@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.virtualUnavailable": "Elija una carpeta dentro de una carpeta virtual FileES conectada. Esta acción requiere el estado actual del servicio y un componente auxiliar disponible.",
   "locks.requestsCount": {"one": "{count} solicitud de liberación de bloqueo", "many": "{count} solicitudes de liberación de bloqueo", "other": "{count} solicitudes de liberación de bloqueo"},
   "locks.requestsNote": "Alguien quiere editar un archivo que has tomado prestado. Tú decides.",
   "locks.requestsOpen": "Ver solicitudes",

@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.virtualUnavailable": "Wybierz folder wewnątrz podłączonego folderu wirtualnego FileES. Działanie wymaga aktualnego stanu demona i dostępnego pomocnika.",
   "locks.requestsCount": {"one": "{count} prośba o zwolnienie blokady", "few": "{count} prośby o zwolnienie blokady", "many": "{count} próśb o zwolnienie blokady", "other": "{count} prośby o zwolnienie blokady"},
   "locks.requestsNote": "Ktoś chce edytować wypożyczony przez Ciebie plik. Decyzja należy do Ciebie.",
   "locks.requestsOpen": "Zobacz prośby",

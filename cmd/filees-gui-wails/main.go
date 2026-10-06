@@ -17,6 +17,7 @@ import (
 	rootversion "filees"
 	"filees/internal/explorermenu"
 	"filees/internal/gui/clientactivation"
+	"filees/internal/gui/platform"
 	"filees/internal/gui/projectionmirror"
 	"filees/internal/gui/reponames"
 	"filees/pkg/clientprofile"
@@ -73,6 +74,8 @@ func main() {
 	devtools := flags.Bool("devtools", false, "włącz narzędzia deweloperskie WebView")
 	flags.String("explorer-add", "", "dodaj wskazany folder przez menu Eksploratora")
 	flags.String("explorer-detach", "", "odłącz wskazany folder, zachowując pliki")
+	flags.String("explorer-download", "", "pobierz lokalnie folder wirtualny FileES")
+	flags.String("explorer-release", "", "zwolnij lokalne miejsce folderu wirtualnego FileES")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	chooseChannel := flags.String("choose-update-channel", "", "choose initial update channel for this configuration file")
 	replaceFrom := flags.String("replace-predecessor", "", "ask to remove the other FileES variant (msi or store) before starting")
@@ -82,7 +85,7 @@ func main() {
 	}
 	explorerRequested := false
 	flags.Visit(func(value *flag.Flag) {
-		if value.Name == "explorer-add" || value.Name == "explorer-detach" {
+		if value.Name == "explorer-add" || value.Name == "explorer-detach" || value.Name == "explorer-download" || value.Name == "explorer-release" {
 			explorerRequested = true
 		}
 	})
@@ -194,6 +197,17 @@ func main() {
 	headBrowser := newHeadBrowserService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
 	headBrowser.confirm = prompts.Confirm
 	headBrowser.beginDisplayCall = gui.beginDisplayCall
+	gui.explorerFolder = func(ctx context.Context, request explorermenu.Request) {
+		finish, err := gui.beginDisplayCall()
+		if err != nil {
+			return // Display recovery must not admit or replay a gesture.
+		}
+		defer finish()
+		err = headBrowser.explorerFolder(request)
+		if err != nil {
+			_ = prompts.ShowInfo(ctx, platform.InfoRequest{Title: gui.localizeText("repository.title", "Folder FileES"), Text: err.Error()})
+		}
+	}
 	timeMachine.beginDisplayCall = gui.beginDisplayCall
 	restartRequested := make(chan struct{}, 1)
 

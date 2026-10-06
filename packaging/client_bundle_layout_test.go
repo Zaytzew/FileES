@@ -203,7 +203,7 @@ func TestTheAnchorHelperIsPackagedForAlphaOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(wxs), `<?if $(var.WithCfapi) = "1" ?>`) != 2 || !strings.Contains(string(wxs), `$(var.SourceDir)\filees-cfapi.exe`) {
+	if strings.Count(string(wxs), `<?if $(var.WithCfapi) = "1" ?>`) != 3 || !strings.Contains(string(wxs), `$(var.SourceDir)\filees-cfapi.exe`) {
 		t.Error("the MSI does not include the helper conditionally")
 	}
 	msi, err := os.ReadFile("windows/build-msi.ps1")

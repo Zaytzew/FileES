@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
@@ -142,7 +143,11 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, op, finish func() error) error {
 		return service.WithFileRelease(ctx, point, rel, recovery, op, finish)
 	})
-	m := &anchorManager{helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
+	journal, err := activity.Open(filepath.Join(root, "activity.json"), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
 		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
 	}, log: talk.With("batch-native"), stateEvery: time.Hour}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -203,6 +208,18 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	}
 	if revision, err := svn.Revision(t.Context(), uri); err != nil || revision != 1 {
 		t.Fatal("download changed repository", revision, err)
+	}
+	// Receipts are persisted by the real bridge, only after SVN adoption.
+	// Folder completion alone is not used to fabricate per-file journal rows.
+	waitFor(t, 5*time.Second, "all batch download receipts", func() bool { return len(journal.List()) == 24 })
+	reopened, err := activity.Open(filepath.Join(root, "activity.json"), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range reopened.List() {
+		if row.Stage != activity.Received || row.Revision != 1 || row.Size == nil || *row.Size != 14 {
+			t.Fatal(row)
+		}
 	}
 	m.mu.Lock()
 	bridge := m.running[anchorKey(record)].bridge

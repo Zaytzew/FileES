@@ -175,6 +175,19 @@
       <RemoveRegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\FileES" Action="removeOnUninstall" />
     </Component>
 
+    <?if $(var.WithCfapi) = "1" ?>
+    <Component Id="FileESExplorerVirtualMenu" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\03Download" Name="MUIVerb" Type="string" Value="Pobierz lokalnie" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\03Download" Name="MultiSelectModel" Type="string" Value="Single" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\03Download\command" Type="string" Value="&quot;[INSTALLFOLDER]filees-launch.exe&quot; --explorer-download &quot;%1&quot;" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\04Release" Name="MUIVerb" Type="string" Value="Zwolnij miejsce" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\04Release" Name="MultiSelectModel" Type="string" Value="Single" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\04Release\command" Type="string" Value="&quot;[INSTALLFOLDER]filees-launch.exe&quot; --explorer-release &quot;%1&quot;" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\03Download" Action="removeOnUninstall" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\FileES\shell\04Release" Action="removeOnUninstall" />
+    </Component>
+    <?endif?>
+
     <!-- Removed on uninstall because they are ours and nothing else writes
          them. The owner's working copies and his configuration are not listed
          anywhere here and are never touched. -->
@@ -201,6 +214,7 @@
       <ComponentRef Id="FileESLegacyLauncher" />
       <?if $(var.WithCfapi) = "1" ?>
       <ComponentRef Id="FileESAnchorHelper" />
+      <ComponentRef Id="FileESExplorerVirtualMenu" />
       <?endif?>
       <ComponentRef Id="FileESFolderIcon" />
       <ComponentRef Id="FileESRegistry" />

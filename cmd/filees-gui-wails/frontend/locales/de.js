@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.virtualUnavailable": "Wählen Sie einen Ordner in einem verbundenen virtuellen FileES-Ordner. Diese Aktion erfordert einen aktuellen Dienststatus und einen verfügbaren Helfer.",
   "locks.requestsCount": {"one": "{count} Anfrage zur Freigabe einer Sperre", "other": "{count} Anfragen zur Freigabe einer Sperre"},
   "locks.requestsNote": "Jemand möchte eine von Ihnen ausgeliehene Datei bearbeiten. Sie entscheiden.",
   "locks.requestsOpen": "Anfragen ansehen",

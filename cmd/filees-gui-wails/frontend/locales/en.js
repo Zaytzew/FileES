@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.virtualUnavailable": "Select a folder inside an attached FileES virtual folder. This action requires current daemon state and an available helper.",
   "locks.requestsCount": {"one": "{count} lock release request", "other": "{count} lock release requests"},
   "locks.requestsNote": "Someone wants to edit a file you have borrowed. The decision is yours.",
   "locks.requestsOpen": "View requests",

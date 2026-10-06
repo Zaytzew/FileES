@@ -145,7 +145,7 @@ func TestHeadBrowserFrontendBindingUsesBuildContextIDs(t *testing.T) {
 			t.Fatalf("frontend module lacks %s with the released binary's ID %s", method, id)
 		}
 	}
-	for _, internal := range []string{"lookup", "focused", "chooseAnchor", "openPath", "attachPlatform"} {
+	for _, internal := range []string{"lookup", "focused", "chooseAnchor", "openPath", "attachPlatform", "explorerFolder"} {
 		if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.HeadBrowserService." + internal}) != nil {
 			t.Fatalf("Go-only method %s was exposed to the WebView", internal)
 		}

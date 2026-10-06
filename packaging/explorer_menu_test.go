@@ -3,6 +3,7 @@ package packaging_test
 import (
 	"encoding/xml"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -54,4 +55,51 @@ func TestClassicExplorerMenuUsesOnlyClosedSupervisorGesturesAndUninstalls(t *tes
 		return
 	}
 	t.Fatal("missing classic menu")
+}
+
+func TestVirtualExplorerMenuIsConditionalAndNeverExecutesSVN(t *testing.T) {
+	data, err := os.ReadFile("windows/filees.wxs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	start := strings.Index(source, `<Component Id="FileESExplorerVirtualMenu"`)
+	if start < 0 {
+		t.Fatal("missing virtual folder menu")
+	}
+	end := strings.Index(source[start:], "</Component>")
+	if end < 0 {
+		t.Fatal("invalid component")
+	}
+	block := source[start : start+end]
+	gate := `<?if $(var.WithCfapi) = "1" ?>`
+	before := source[:start]
+	if strings.LastIndex(before, gate) < strings.LastIndex(before, "<?endif?>") {
+		t.Fatal("menu outside CFAPI gate")
+	}
+	ref := strings.Index(source, `<ComponentRef Id="FileESExplorerVirtualMenu"`)
+	if ref < 0 {
+		t.Fatal("component not installed")
+	}
+	before = source[:ref]
+	if strings.LastIndex(before, gate) < strings.LastIndex(before, "<?endif?>") {
+		t.Fatal("menu reference outside CFAPI gate")
+	}
+	for _, item := range []struct{ key, verb string }{{"03Download", "--explorer-download"}, {"04Release", "--explorer-release"}} {
+		key := `Software\Classes\Directory\shell\FileES\shell\` + item.key
+		for _, want := range []string{
+			`Key="` + key + `" Name="MultiSelectModel" Type="string" Value="Single"`,
+			`Key="` + key + `\command" Type="string" Value="&quot;[INSTALLFOLDER]filees-launch.exe&quot; ` + item.verb + ` &quot;%1&quot;"`,
+			`Key="` + key + `" Action="removeOnUninstall"`,
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("menu missing %s", want)
+			}
+		}
+	}
+	for _, unsafe := range []string{"svn.exe", "filees-cfapi.exe", "cmd.exe", "powershell", "runas", "Directory\\Background"} {
+		if strings.Contains(block, unsafe) {
+			t.Fatal("menu bypasses closed supervisor gesture", unsafe)
+		}
+	}
 }

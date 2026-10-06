@@ -278,7 +278,7 @@ func runDaemon() {
 	// Explorer anchors exist only where the Cloud Files helper is installed
 	// next to the daemon (Windows); the precheck being set is the capability.
 	// A build tagged nocfapi (the Microsoft Store package) has no anchors at all.
-	if anchors := explorerAnchors(ipc, lifecycleStore, provisioner); anchors != nil {
+	if anchors := explorerAnchors(ipc, lifecycleStore, provisioner, activityJournal); anchors != nil {
 		runtime.Go(ctx, func() { anchors(ctx) })
 	}
 	// An export must land outside every working copy, so it asks the lifecycle

@@ -1,5 +1,6 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "explorer.virtualUnavailable": "Choisissez un dossier dans un dossier virtuel FileES connecté. Cette action nécessite un état du service à jour et un composant auxiliaire disponible.",
   "locks.requestsCount": {"one": "{count} demande de libération de verrou", "many": "{count} demandes de libération de verrou", "other": "{count} demandes de libération de verrou"},
   "locks.requestsNote": "Quelqu’un souhaite modifier un fichier que vous avez emprunté. La décision vous appartient.",
   "locks.requestsOpen": "Voir les demandes",

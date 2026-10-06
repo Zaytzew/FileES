@@ -8,7 +8,7 @@ import (
 
 func TestExplorerClosedFolderGesturesAndRestartDoesNotReplay(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Żółć i zdjęcia")
-	for _, verb := range []string{Add, Detach} {
+	for _, verb := range []string{Add, Detach, Download, Release} {
 		request, err := Parse([]string{verb, path})
 		if err != nil || request.Verb != verb || request.Path != path {
 			t.Fatalf("request=%+v err=%v", request, err)

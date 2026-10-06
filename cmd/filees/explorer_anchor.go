@@ -65,8 +65,11 @@ type anchorBridge struct {
 	// adopt takes identity into the working copy at revision, adopting the
 	// bytes already on disk. Nil in tests that stop at the fetch.
 	adopt func(ctx context.Context, identity string, revision int64) error
-	guard *anchorGuard
-	log   talk.Logger
+	// received is advisory activity, emitted only after hydration and adoption.
+	// It never authorizes a clean marker, release or publication.
+	received func(identity string, revision int64, size *int64)
+	guard    *anchorGuard
+	log      talk.Logger
 
 	fetchMu   sync.Mutex
 	revisions map[string]anchorFetched
@@ -88,6 +91,7 @@ type anchorBridge struct {
 type anchorFetched struct {
 	identity string
 	revision int64
+	size     *int64
 	reverts  int
 }
 
@@ -299,11 +303,18 @@ func (bridge *anchorBridge) handle(ctx context.Context, request anchorFetch) {
 		err = fmt.Errorf("materialized path %q is not absolute", file)
 	}
 	if err == nil {
+		var size *int64
+		// Stat the provider's temporary file, never recall the placeholder or
+		// guess receipt size from a local file an application may already edit.
+		if info, statErr := os.Stat(file); statErr == nil && info.Mode().IsRegular() {
+			n := info.Size()
+			size = &n
+		}
 		bridge.fetchMu.Lock()
 		if bridge.revisions == nil {
 			bridge.revisions = map[string]anchorFetched{}
 		}
-		bridge.revisions[request.id] = anchorFetched{identity: request.identity, revision: revision}
+		bridge.revisions[request.id] = anchorFetched{identity: request.identity, revision: revision, size: size}
 		bridge.fetchMu.Unlock()
 	}
 	bridge.answer(request.id, file, err)
@@ -326,6 +337,9 @@ func (bridge *anchorBridge) hydrated(ctx context.Context, id string) {
 		delete(bridge.revisions, id)
 		bridge.fetchMu.Unlock()
 		return
+	}
+	if bridge.received != nil {
+		bridge.received(fetched.identity, fetched.revision, fetched.size)
 	}
 	if bridge.retainLocal {
 		bridge.fetchMu.Lock()

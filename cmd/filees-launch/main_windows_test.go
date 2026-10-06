@@ -72,7 +72,7 @@ func TestLauncherArguments(t *testing.T) {
 }
 
 func TestExplorerLauncherHasOnlyTwoClosedFolderGestures(t *testing.T) {
-	for _, verb := range []string{explorermenu.Add, explorermenu.Detach} {
+	for _, verb := range []string{explorermenu.Add, explorermenu.Detach, explorermenu.Download, explorermenu.Release} {
 		mode, ok := launchMode([]string{verb, `D:\Żółć i zdjęcia`})
 		if !ok || mode != "explorer" {
 			t.Fatalf("mode=%q ok=%v", mode, ok)

@@ -49,6 +49,38 @@ func resetExplorerQueue(t *testing.T) {
 	}
 }
 
+func TestExplorerVirtualRequestsNeverBecomeOrdinaryAdd(t *testing.T) {
+	resetExplorerQueue(t)
+	t.Cleanup(func() { resetExplorerQueue(t); setMainPanelRaiser(nil) })
+	path := t.TempDir()
+	if queueExplorerRequest(explorermenu.Request{Verb: "--explorer-delete", Path: path}) {
+		t.Fatal("accepted unknown verb")
+	}
+	actions := make(chan tray.Intent, 4)
+	delivered := make(chan explorermenu.Request, 4)
+	service := &GUIService{actions: actions, view: guiapp.ViewModel{Connected: true}, explorerFolder: func(_ context.Context, r explorermenu.Request) { delivered <- r }}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() { service.runExplorerRequests(ctx); close(finished) }()
+	defer func() { cancel(); <-finished }()
+	for _, verb := range []string{explorermenu.Download, explorermenu.Release} {
+		singleInstanceOptions().OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"gui", verb, path}})
+		select {
+		case r := <-delivered:
+			if r.Verb != verb || r.Path != path {
+				t.Fatal(r)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("virtual folder request lost")
+		}
+	}
+	select {
+	case a := <-actions:
+		t.Fatal("virtual selection became ordinary action", a)
+	default:
+	}
+}
+
 func TestSecondLaunchForwardsUnicodeGestureAndStartupDoesNotLoseIt(t *testing.T) {
 	resetExplorerQueue(t)
 	t.Cleanup(func() { resetExplorerQueue(t); setMainPanelRaiser(nil) })

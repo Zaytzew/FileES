@@ -19,10 +19,12 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/cloudfiles"
 	"filees/pkg/commit"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/errcat"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -31,7 +33,7 @@ import (
 
 // explorerAnchors wires the anchor manager into the IPC server and answers its
 // loop, or nil when the Cloud Files helper is not installed next to the daemon.
-func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisioner *daemonProvisioner) func(context.Context) {
+func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisioner *daemonProvisioner, journal *activity.Journal) func(context.Context) {
 	// A Windows build with the Cloud Files API attaches partially only as an
 	// anchor, helper or not (owner, 2026-09-28): a missing helper makes
 	// anchors unavailable, it does not switch to plain sparse copies.
@@ -41,6 +43,10 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	anchors := &anchorManager{
 		nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
 		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
+		activity: journal,
+		activityChanged: func(repoID string) {
+			ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvActivityChanged, nil))
+		},
 	}
 	if runtime.GOOS == "windows" {
 		// Refuse even without a compatible helper; never use plain SVN on a
@@ -85,8 +91,10 @@ type anchorManager struct {
 	stateEvery     time.Duration
 	// newSVN builds the client for a server; nil means the activated
 	// profile's identity (profileSVN). Tests hand over a local client.
-	newSVN        func(serverID string) (client.Client, error)
-	localIntentMu *sync.Mutex
+	newSVN          func(serverID string) (client.Client, error)
+	localIntentMu   *sync.Mutex
+	activity        *activity.Journal
+	activityChanged func(repoID string)
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -340,6 +348,9 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					},
 					adopt: func(ctx context.Context, identity string, revision int64) error {
 						return m.adopt(ctx, record, identity, revision)
+					},
+					received: func(identity string, revision int64, size *int64) {
+						m.recordHydration(record, identity, revision, size)
 					},
 					guard: newAnchorGuard(log),
 					log:   log,

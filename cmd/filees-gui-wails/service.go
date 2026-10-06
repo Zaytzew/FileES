@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"filees/internal/explorermenu"
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
 	"filees/internal/gui/platform"
@@ -50,6 +51,7 @@ type GUIService struct {
 	emitter             snapshotEmitter
 	progress            *ProgressService
 	actions             chan<- tray.Intent
+	explorerFolder      func(context.Context, explorermenu.Request)
 	actionSeq           atomic.Uint64
 	observer            func(Snapshot)
 	branding            realmBrandingClient

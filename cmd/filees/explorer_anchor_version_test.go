@@ -132,7 +132,7 @@ func TestAnchorHelperOverrideDoesNotBypassWiringCheck(t *testing.T) {
 		t.Setenv("FILEES_TEST_CFAPI_VERSION_JSON", answer)
 		server := ipcserver.New("unused")
 		p := &daemonProvisioner{}
-		loop := explorerAnchors(server, nil, p)
+		loop := explorerAnchors(server, nil, p, nil)
 		if (loop != nil) != good || (p.detachAnchor != nil) != good {
 			t.Fatalf("incorrect wiring, compatible=%v", good)
 		}

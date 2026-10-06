@@ -7,6 +7,8 @@ import androidx.appcompat.app.AppCompatActivity
 // Share the catalogue across foreground errors, notifications and folder cards.
 fun mobileRecoveryMessage(context: android.content.Context, raw: String): String? {
     val text = raw.lowercase()
+    // Refusal of an unattended upload into a repository another realm writes to.
+    if (text.contains("mobile operation failed: automatic.shared_repository")) return context.getString(R.string.upload_automatic_shared)
     if (!text.contains("mobile operation failed: storage.full:") &&
         !text.contains("mobile operation failed: operation.uncertain:")) return null
     return runCatching {

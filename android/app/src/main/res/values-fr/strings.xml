@@ -149,6 +149,7 @@
     <string name="upload_outcome_policy_rejected">La politique du serveur a rejeté ce fichier.</string>
     <string name="upload_outcome_name_taken_diff">Ce nom existe déjà, mais le contenu est différent.</string>
     <string name="upload_outcome_name_taken_same">Le même fichier est déjà dans le partage.</string>
+    <string name="upload_automatic_shared">Envoi automatique suspendu : un autre domaine écrit aussi dans ce partage. Choisissez un autre partage cible ou ajoutez les fichiers ici à la main.</string>
     <string name="uploads_empty">La file est vide.</string>
     <string name="action_retry_upload">Réessayer</string>
     <string name="action_send_as">Envoyer sous…</string>

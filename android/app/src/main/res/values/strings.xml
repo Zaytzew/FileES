@@ -161,6 +161,7 @@
     <string name="upload_outcome_policy_rejected">Polityka serwera odrzuciła ten plik.</string>
     <string name="upload_outcome_name_taken_diff">Taka nazwa już jest, ale treść jest inna.</string>
     <string name="upload_outcome_name_taken_same">Taki sam plik już jest w udziale.</string>
+    <string name="upload_automatic_shared">Automatyczna wysyłka wstrzymana: do tego udziału pisze także inna strefa. Wybierz inny udział docelowy albo dodawaj tu pliki ręcznie.</string>
     <string name="uploads_empty">Kolejka jest pusta.</string>
     <string name="action_retry_upload">Ponów</string>
     <string name="action_send_as">Wyślij jako…</string>

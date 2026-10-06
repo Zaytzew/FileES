@@ -149,6 +149,7 @@
     <string name="upload_outcome_policy_rejected">Die Serverrichtlinie hat diese Datei abgelehnt.</string>
     <string name="upload_outcome_name_taken_diff">Dieser Name existiert schon, der Inhalt ist aber anders.</string>
     <string name="upload_outcome_name_taken_same">Dieselbe Datei ist schon in der Freigabe.</string>
+    <string name="upload_automatic_shared">Automatisches Senden angehalten: In diese Freigabe schreibt auch ein anderer Bereich. Wähle eine andere Zielfreigabe oder füge Dateien hier von Hand hinzu.</string>
     <string name="uploads_empty">Die Warteschlange ist leer.</string>
     <string name="action_retry_upload">Erneut</string>
     <string name="action_send_as">Senden als…</string>

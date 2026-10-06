@@ -154,6 +154,7 @@
     <string name="upload_outcome_policy_rejected">Server policy rejected this file.</string>
     <string name="upload_outcome_name_taken_diff">That name already exists, but the content is different.</string>
     <string name="upload_outcome_name_taken_same">The same file is already in the share.</string>
+    <string name="upload_automatic_shared">Automatic sending is on hold: another realm also writes to this share. Choose a different target share or add files here by hand.</string>
     <string name="uploads_empty">The queue is empty.</string>
     <string name="action_retry_upload">Retry</string>
     <string name="action_send_as">Send as…</string>

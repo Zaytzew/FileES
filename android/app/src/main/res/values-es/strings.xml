@@ -149,6 +149,7 @@
     <string name="upload_outcome_policy_rejected">La política del servidor rechazó este archivo.</string>
     <string name="upload_outcome_name_taken_diff">Ese nombre ya existe, pero el contenido es distinto.</string>
     <string name="upload_outcome_name_taken_same">El mismo archivo ya está en el recurso.</string>
+    <string name="upload_automatic_shared">Envío automático en pausa: otro ámbito también escribe en este recurso. Elige otro recurso de destino o añade aquí los archivos a mano.</string>
     <string name="uploads_empty">La cola está vacía.</string>
     <string name="action_retry_upload">Reintentar</string>
     <string name="action_send_as">Enviar como…</string>

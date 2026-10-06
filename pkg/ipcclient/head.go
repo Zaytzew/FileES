@@ -64,3 +64,21 @@ func (c *Client) AnchorRelease(ctx context.Context, payload contract.RepoAnchorR
 	var result contract.RepoHeadWriteResult
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
+
+func (c *Client) AnchorPlan(ctx context.Context, payload contract.RepoAnchorPlanPayload) (*contract.RepoAnchorPlan, error) {
+	resp, err := c.do(ctx, contract.CmdRepoAnchorPlan, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoAnchorPlan
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) AnchorBatch(ctx context.Context, payload contract.RepoAnchorBatchPayload) (*contract.RepoAnchorBatchResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoAnchorBatch, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoAnchorBatchResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}

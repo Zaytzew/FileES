@@ -192,6 +192,7 @@ func main() {
 	// "Browse on the server" (implementation notes (not distributed)) is
 	// built the same way: its own window, talking to the daemon itself.
 	headBrowser := newHeadBrowserService(daemon, gui.Snapshot, gui.domainMessage, gui.localizeText)
+	headBrowser.confirm = prompts.Confirm
 	headBrowser.beginDisplayCall = gui.beginDisplayCall
 	timeMachine.beginDisplayCall = gui.beginDisplayCall
 	restartRequested := make(chan struct{}, 1)

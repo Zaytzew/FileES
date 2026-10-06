@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"filees/pkg/cloudfiles"
 	"github.com/google/uuid"
@@ -112,8 +113,8 @@ func anchorReleaseID(info windows.ByHandleFileInformation) anchorReleaseFileID {
 
 // Guards every directory component through the final directory. Junctions,
 // symlinks and remote paths refuse. The one admitted reparse directory is the
-// exact registered WC root; helper inspection independently proves ownership.
-// Reparse subdirectories remain conservative refusals in this first slice.
+// registered WC root or a Cloud Files directory whose opened handle belongs
+// to that exact guarded root. No provider-name or reparse-tag-only admission.
 func guardAnchorReleaseDirectories(path, wcRoot string) ([]windows.Handle, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.HasPrefix(path, `\\`) {
 		return nil, errors.New("release storage needs a canonical local directory")
@@ -126,6 +127,8 @@ func guardAnchorReleaseDirectories(path, wcRoot string) ([]windows.Handle, error
 		}
 	}
 	var guards []windows.Handle
+	var point windows.ByHandleFileInformation
+	pointFound := false
 	for i := len(paths) - 1; i >= 0; i-- {
 		wide, err := windows.UTF16PtrFromString(paths[i])
 		if err != nil {
@@ -140,10 +143,19 @@ func guardAnchorReleaseDirectories(path, wcRoot string) ([]windows.Handle, error
 		if err == nil {
 			var info windows.ByHandleFileInformation
 			err = windows.GetFileInformationByHandle(h, &info)
+			if err == nil && cloudfiles.IsSyncRoot(paths[i]) {
+				// A registered root may have no REPARSE_POINT after full
+				// population. It is still not an ordinary backup directory.
+				if !strings.EqualFold(paths[i], wcRoot) {
+					err = errors.New("release directory crosses another sync root")
+				} else {
+					point, pointFound = info, true
+				}
+			}
 			if err == nil && (info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 ||
 				(info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 &&
-					!(strings.EqualFold(paths[i], wcRoot) && cloudfiles.IsSyncRoot(paths[i])))) {
-				err = errors.New("release directory is not an ordinary directory or its exact sync root")
+					!(pointFound && anchorReleaseCloudDirectory(h, info, point)))) {
+				err = errors.New("release directory is not ordinary or belongs to another sync root")
 			}
 			guards = append(guards, h)
 		}
@@ -153,6 +165,26 @@ func guardAnchorReleaseDirectories(path, wcRoot string) ([]windows.Handle, error
 		}
 	}
 	return guards, nil
+}
+
+var anchorReleaseRootInfo = windows.NewLazySystemDLL("cldapi.dll").NewProc("CfGetSyncRootInfoByHandle")
+
+// CF_SYNC_ROOT_BASIC_INFO is one LARGE_INTEGER (cfapi.h). Inspect the actual
+// opened object without reading directory contents or asking for hydration.
+func anchorReleaseCloudDirectory(h windows.Handle, info, point windows.ByHandleFileInformation) bool {
+	if anchorReleaseRootInfo.Find() != nil || info.VolumeSerialNumber != point.VolumeSerialNumber {
+		return false
+	}
+	var tag struct{ Attributes, Tag uint32 }
+	if err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&tag)), uint32(unsafe.Sizeof(tag))); err != nil ||
+		tag.Tag&0xffff0fff != 0x9000001a {
+		return false
+	}
+	var rootID int64
+	var returned uint32
+	hr, _, _ := anchorReleaseRootInfo.Call(uintptr(h), 0, uintptr(unsafe.Pointer(&rootID)), unsafe.Sizeof(rootID), uintptr(unsafe.Pointer(&returned)))
+	return int32(hr) >= 0 && returned >= uint32(unsafe.Sizeof(rootID)) &&
+		uint64(rootID) == uint64(point.FileIndexHigh)<<32|uint64(point.FileIndexLow)
 }
 
 func closeAnchorReleaseGuards(guards []windows.Handle) {

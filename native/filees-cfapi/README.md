@@ -259,6 +259,16 @@ odpowiedział. Bez tej zmiennej stderr milczy, bo czyta go demon.
 
 ## Budowanie i testy
 
+Od 2026-10-06, baza r1953: odpowiedź `file-states` zawiera również
+rozmiar i tożsamość każdego pliku. Cecha `batch_release_observation_v1`
+jest wymagana przez aktualny demon; starszy pomocnik odmawia przed użyciem.
+Podgląd folderu pozostaje odczytem metadanych. Jawna zgoda na pobranie
+wiąże pojedynczą ścieżkę z przypiętą rewizją i faktycznym obrazem pomocnika
+widzianym przez Windows; nie wyłącza strażnika innych programów.
+Pobranie i zwolnienie folderu są szeregiem chronionych operacji plikowych,
+nie atomową operacją ani automatyczną dehydratacją. Klasyczne menu i trwały
+opt-in pozostają odrębne od tego kroku.
+
 ```powershell
 cmake -S native/filees-cfapi -B <build> -G "Visual Studio 17 2022" -A x64
 cmake --build <build> --config RelWithDebInfo

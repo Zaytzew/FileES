@@ -19,6 +19,39 @@ const CapRepoAnchorRelease = "repo.anchor_release"
 
 const CmdRepoAnchorRelease = "repo.anchor_release"
 
+// Folder actions require a metadata preview and explicit confirmation of that
+// exact selection. They never invoke ordinary sparse SVN operations.
+const CapRepoAnchorBatch = "repo.anchor_batch"
+const CmdRepoAnchorPlan = "repo.anchor_plan"
+const CmdRepoAnchorBatch = "repo.anchor_batch"
+
+type RepoAnchorPlanPayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+	Path     string `json:"path"`
+	Action   string `json:"action"` // download or release
+}
+
+type RepoAnchorPlan struct {
+	Directory   bool   `json:"directory"`
+	Files       int64  `json:"files"`
+	Bytes       int64  `json:"bytes"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+type RepoAnchorBatchPayload struct {
+	RepoAnchorPlanPayload
+	Fingerprint string `json:"fingerprint"`
+}
+
+type RepoAnchorBatchResult struct {
+	LocalPath string `json:"local_path"`
+	Path      string `json:"path"`
+	State     string `json:"state"` // attached or partial; never an atomic folder transaction
+	Completed int64  `json:"completed"`
+	Total     int64  `json:"total"`
+}
+
 type RepoAnchorReleasePayload struct {
 	ServerID string `json:"server_id"`
 	RepoID   string `json:"repo_id"`

@@ -24,6 +24,7 @@ func (m *anchorManager) wireRelease(ipc *ipcserver.Server) {
 	// The final durable user opt-in replaces this development gate later.
 	if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
 		ipc.SetAnchorRelease(m.release)
+		ipc.SetAnchorBatch(anchorBatchAdapter{manager: m})
 	}
 }
 

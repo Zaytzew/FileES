@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"filees/internal/gui/platform"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 )
@@ -35,6 +37,11 @@ type headBrowserReleaseDaemon interface {
 	AnchorRelease(context.Context, contract.RepoAnchorReleasePayload) (*contract.RepoHeadWriteResult, error)
 }
 
+type headBrowserBatchDaemon interface {
+	AnchorPlan(context.Context, contract.RepoAnchorPlanPayload) (*contract.RepoAnchorPlan, error)
+	AnchorBatch(context.Context, contract.RepoAnchorBatchPayload) (*contract.RepoAnchorBatchResult, error)
+}
+
 // HeadBrowserService serves the "Browse on the server" window
 // (implementation notes (not distributed)): the tree of a repository with
 // no copy on this computer, or with only chosen paths. Like the time machine
@@ -47,6 +54,7 @@ type HeadBrowserService struct {
 	projection       func() Snapshot
 	render           func(code, key string, details map[string]string) string
 	text             func(key, fallback string) string
+	confirm          func(context.Context, platform.ConfirmRequest) (bool, error)
 
 	mu      sync.RWMutex
 	emitter snapshotEmitter
@@ -75,6 +83,7 @@ type HeadBrowserRepository struct {
 	Attached   bool   `json:"attached"`
 	Sparse     bool   `json:"sparse"`
 	CanRelease bool   `json:"can_release"`
+	CanBatch   bool   `json:"can_batch"`
 	LocalPath  string `json:"local_path,omitempty"`
 }
 
@@ -107,10 +116,11 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 	if !snapshot.Connected || snapshot.Stale {
 		return HeadBrowserRepository{}, false
 	}
-	offered, releaseOffered := false, false
+	offered, releaseOffered, batchOffered := false, false, false
 	for _, capability := range snapshot.Capabilities {
 		offered = offered || capability == contract.CapRepoHeadBrowse
 		releaseOffered = releaseOffered || capability == contract.CapRepoAnchorRelease
+		batchOffered = batchOffered || capability == contract.CapRepoAnchorBatch
 	}
 	if !offered {
 		return HeadBrowserRepository{}, false
@@ -133,6 +143,7 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 			Name: firstNonBlank(repo.DisplayName, repo.ID), Access: repo.Access,
 			Attached: repo.Attached, Sparse: repo.Sparse, LocalPath: repo.LocalPath,
 			CanRelease: repo.Attached && repo.Sparse && releaseOffered,
+			CanBatch:   repo.Attached && repo.Sparse && batchOffered,
 		}, true
 	}
 	return HeadBrowserRepository{}, false
@@ -154,9 +165,76 @@ func (service *HeadBrowserService) Release(path string) (contract.RepoHeadWriteR
 	if !repo.CanRelease || !available {
 		return contract.RepoHeadWriteResult{}, errors.New(service.render("HEAD-2014", "head.release_unavailable", nil))
 	}
+	if result, handled, err := service.folderAction(repo, path, "release"); handled {
+		return result, err
+	}
 	return headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2015", "head.release_refused", func(ctx context.Context) (*contract.RepoHeadWriteResult, error) {
 		return daemon.AnchorRelease(ctx, contract.RepoAnchorReleasePayload{ServerID: repo.ServerID, RepoID: repo.RepoID, Path: path})
 	})
+}
+
+// The daemon previews metadata first. Confirmed work is bound to that exact
+// selection, focused window and current attachment, never a JS-only promise.
+func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path, action string) (contract.RepoHeadWriteResult, bool, error) {
+	var zero contract.RepoHeadWriteResult
+	if !repo.CanBatch {
+		return zero, false, nil
+	}
+	daemon, ok := service.daemon.(headBrowserBatchDaemon)
+	if !ok {
+		return zero, true, errors.New(service.render("HEAD-2014", "head.release_unavailable", nil))
+	}
+	focus := service.Context()
+	payload := contract.RepoAnchorPlanPayload{ServerID: repo.ServerID, RepoID: repo.RepoID, Path: path, Action: action}
+	plan, err := headBrowserCall(service, headBrowserReadTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoAnchorPlan, error) {
+		return daemon.AnchorPlan(ctx, payload)
+	})
+	if err != nil {
+		return zero, true, err
+	}
+	if !plan.Directory {
+		return zero, false, nil
+	}
+	if plan.Files < 0 || plan.Bytes < 0 || len(plan.Fingerprint) != 64 {
+		return zero, true, errors.New(service.render("HEAD-2006", "head.materialize_failed", nil))
+	}
+	if plan.Files == 0 {
+		return contract.RepoHeadWriteResult{State: "attached", Path: path, LocalPath: repo.LocalPath}, true, nil
+	}
+	if service.confirm == nil {
+		return zero, true, errors.New(service.text("headBrowser.confirmUnavailable", "Potwierdzenie działania jest niedostępne"))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), headBrowserWriteTimeout)
+	defer cancel()
+	accepted, err := service.confirm(ctx, platform.ConfirmRequest{
+		PresentationKey:  "confirm.anchorFolder." + action,
+		PresentationArgs: map[string]string{"files": fmt.Sprint(plan.Files), "bytes": fmt.Sprint(plan.Bytes), "path": path},
+		Title:            "Folder FileES", Text: fmt.Sprintf("%s: %d plików, %d B", path, plan.Files, plan.Bytes),
+		ConfirmText: "Kontynuuj", CancelText: "Anuluj",
+	})
+	if err != nil {
+		return zero, true, err
+	}
+	if !accepted {
+		return contract.RepoHeadWriteResult{State: "cancelled"}, true, nil
+	}
+	current, err := service.focused()
+	if err != nil {
+		return zero, true, err
+	}
+	if service.Context() != focus || !current.CanBatch || current.LocalPath != repo.LocalPath || current.ServerID != repo.ServerID || current.RepoID != repo.RepoID {
+		return zero, true, errors.New(service.render("HEAD-2001", "head.forbidden", nil))
+	}
+	result, err := headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoAnchorBatchResult, error) {
+		return daemon.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: payload, Fingerprint: plan.Fingerprint})
+	})
+	if err != nil {
+		return zero, true, err
+	}
+	if result.State != "attached" || result.Completed != result.Total || result.Total != plan.Files {
+		return zero, true, fmt.Errorf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
+	}
+	return contract.RepoHeadWriteResult{LocalPath: result.LocalPath, Path: result.Path, State: result.State}, true, nil
 }
 
 func (service *HeadBrowserService) focused() (HeadBrowserRepository, error) {
@@ -295,6 +373,9 @@ func (service *HeadBrowserService) Materialize(path string) (contract.RepoHeadWr
 		return contract.RepoHeadWriteResult{}, err
 	}
 	payload := contract.RepoHeadMaterializePayload{ServerID: repo.ServerID, RepoID: repo.RepoID, Path: path}
+	if result, handled, err := service.folderAction(repo, path, "download"); handled {
+		return result, err
+	}
 	if !repo.Attached {
 		anchor, err := service.chooseAnchor(repo)
 		if err != nil || anchor == "" {
@@ -380,6 +461,9 @@ func (service *HeadBrowserService) Fill() (contract.RepoHeadWriteResult, error) 
 	}
 	if !repo.Attached {
 		return contract.RepoHeadWriteResult{}, errors.New(service.render("HEAD-2005", "head.anchor_required", nil))
+	}
+	if result, handled, err := service.folderAction(repo, ".", "download"); handled {
+		return result, err
 	}
 	return headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2007", "head.fill_failed", func(ctx context.Context) (*contract.RepoHeadWriteResult, error) {
 		return service.daemon.HeadFill(ctx, contract.RepoHeadFillPayload{ServerID: repo.ServerID, RepoID: repo.RepoID})

@@ -60,7 +60,8 @@ type anchorBridge struct {
 	root string
 	// materialize writes the file at identity to a temporary file and says at
 	// which revision it read it.
-	materialize func(ctx context.Context, identity string) (file string, revision int64, err error)
+	materialize       func(ctx context.Context, identity string) (file string, revision int64, err error)
+	materializePinned func(context.Context, string, int64, int64) (string, int64, error)
 	// adopt takes identity into the working copy at revision, adopting the
 	// bytes already on disk. Nil in tests that stop at the fetch.
 	adopt func(ctx context.Context, identity string, revision int64) error
@@ -281,7 +282,19 @@ func (bridge *anchorBridge) handle(ctx context.Context, request anchorFetch) {
 		bridge.answer(request.id, "", errors.New("materialization unavailable"))
 		return
 	}
-	file, revision, err := bridge.materialize(ctx, request.identity)
+	var file string
+	var revision int64
+	var err error
+	approved := bridge.guard.approval(request.process, request.identity)
+	if approved.revision > 0 {
+		if bridge.materializePinned == nil {
+			err = errors.New("confirmed revision download unavailable")
+		} else {
+			file, revision, err = bridge.materializePinned(ctx, request.identity, approved.revision, approved.bytes)
+		}
+	} else {
+		file, revision, err = bridge.materialize(ctx, request.identity)
+	}
 	if err == nil && !filepath.IsAbs(file) {
 		err = fmt.Errorf("materialized path %q is not absolute", file)
 	}
@@ -511,14 +524,20 @@ type anchorGuard struct {
 	window time.Duration
 	log    talk.Logger
 
-	mu      sync.Mutex
-	recent  map[string][]anchorAsk
-	refused map[string]bool
+	mu       sync.Mutex
+	recent   map[string][]anchorAsk
+	refused  map[string]bool
+	explicit map[string]anchorApproval // only the current daemon helper and one approved path
 }
 
 type anchorAsk struct {
 	identity string
 	at       time.Time
+}
+
+type anchorApproval struct {
+	count           int
+	revision, bytes int64
 }
 
 func newAnchorGuard(log talk.Logger) *anchorGuard {
@@ -534,6 +553,9 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 	}
 	guard.mu.Lock()
 	defer guard.mu.Unlock()
+	if guard.explicit[anchorExplicitKey(process, identity)].count > 0 {
+		return nil
+	}
 	if guard.recent == nil {
 		guard.recent, guard.refused = map[string][]anchorAsk{}, map[string]bool{}
 	}
@@ -555,4 +577,55 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 		return fmt.Errorf("%s may not download from this anchor (too many files at once)", filepath.Base(process))
 	}
 	return nil
+}
+
+func anchorExplicitKey(process, identity string) string {
+	return strings.ToLower(filepath.Clean(process)) + "\x00" + identity
+}
+
+func (guard *anchorGuard) authorize(process, identity string) func() {
+	withdraw, _ := guard.authorizePinned(process, identity, 0, 0)
+	return withdraw
+}
+
+func (guard *anchorGuard) approval(process, identity string) anchorApproval {
+	if guard == nil {
+		return anchorApproval{}
+	}
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	return guard.explicit[anchorExplicitKey(process, identity)]
+}
+
+func (guard *anchorGuard) authorizePinned(process, identity string, revision, bytes int64) (func(), error) {
+	if guard == nil {
+		return func() {}, errors.New("explicit download guard unavailable")
+	}
+	key := anchorExplicitKey(process, identity)
+	guard.mu.Lock()
+	if guard.explicit == nil {
+		guard.explicit = make(map[string]anchorApproval)
+	}
+	approval := guard.explicit[key]
+	if approval.count > 0 && (approval.revision != revision || approval.bytes != bytes) {
+		guard.mu.Unlock()
+		return func() {}, errors.New("another confirmed download is already in progress")
+	}
+	approval.count++
+	approval.revision, approval.bytes = revision, bytes
+	guard.explicit[key] = approval
+	guard.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			guard.mu.Lock()
+			defer guard.mu.Unlock()
+			approval := guard.explicit[key]
+			approval.count--
+			guard.explicit[key] = approval
+			if approval.count == 0 {
+				delete(guard.explicit, key)
+			}
+		})
+	}, nil
 }

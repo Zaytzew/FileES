@@ -26,8 +26,12 @@ export function copyStatusKey(repo) {
   return repo.sparse ? "headBrowser.statusSparse" : "headBrowser.statusFull";
 }
 
-// Availability is supplied by the daemon; directories get their own explicit
-// bulk flow later. Never offer a destructive transition for a remote-only row.
+// Folder release always goes through the daemon's preview/confirmation flow.
 export function releaseAllowed(repo, entry) {
-  return Boolean(repo?.attached && repo?.sparse && repo?.can_release && entry?.local && entry?.kind === "file");
+  return Boolean(repo?.attached && repo?.sparse && repo?.can_release &&
+    ((entry?.local && entry?.kind === "file") || (repo?.can_batch && entry?.kind === "dir")));
+}
+
+export function materializeAllowed(repo, entry) {
+  return !entry?.local || Boolean(repo?.can_batch && entry?.kind === "dir");
 }

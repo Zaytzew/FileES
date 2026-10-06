@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entryType, sortEntries, copyStatusKey, releaseAllowed } from "../frontend/headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed } from "../frontend/headbrowser-view.js";
 
 test("a file's badge is its extension, never a guess from content", () => {
   assert.equal(entryType("model.blend"), "BLEND");
@@ -8,6 +8,16 @@ test("a file's badge is its extension, never a guess from content", () => {
   assert.equal(entryType("README"), "—");
   assert.equal(entryType(".hidden"), "—");
   assert.equal(entryType("trailing."), "—");
+});
+
+test("folder actions require the batch capability even on a partly local folder", () => {
+  const repo = { attached: true, sparse: true, can_release: true, can_batch: true };
+  const folder = { kind: "dir", local: true };
+  assert.equal(releaseAllowed(repo, folder), true);
+  assert.equal(materializeAllowed(repo, folder), true);
+  assert.equal(releaseAllowed({ ...repo, can_batch: false }, folder), false);
+  assert.equal(materializeAllowed({ ...repo, can_batch: false }, folder), false);
+  assert.equal(materializeAllowed(repo, { kind: "file", local: true }), false);
 });
 
 test("folders come first, then files, in natural order", () => {

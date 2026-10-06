@@ -68,7 +68,7 @@ static const char *fr_dir_id(BY_HANDLE_FILE_INFORMATION i, apr_pool_t *pool)
 
 /* Freeze the entire local path chain against rename/reparse changes.
  * UNC, alternate streams, dot segments and junctions are outside this ABI.
- * Only the exact WC root may have a Cloud Files reparse tag. No hydration. */
+ * Cloud directories must belong to the exact guarded WC root. No hydration. */
 static svn_error_t *fr_parents(const char **ids, const char *path,
                               const char *wcroot, apr_pool_t *pool)
 {
@@ -76,6 +76,8 @@ static svn_error_t *fr_parents(const char **ids, const char *path,
   char *part;
   size_t j, len = strlen(parent);
   int count = 0;
+  BY_HANDLE_FILE_INFORMATION point;
+  svn_boolean_t point_found = FALSE;
   *ids = "";
   if (len < 3 || parent[1] != ':' || parent[2] != '/' ||
       !((parent[0] >= 'A' && parent[0] <= 'Z') || (parent[0] >= 'a' && parent[0] <= 'z')))
@@ -100,11 +102,26 @@ static svn_error_t *fr_parents(const char **ids, const char *path,
       if (!GetFileInformationByHandle(h, &i) || !(i.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
           || (!i.nFileIndexHigh && !i.nFileIndexLow))
         return fr_refuse("FileES release parent is not a directory");
+      if (!strcmp(part, wcroot)) { point = i; point_found = TRUE; }
       if (i.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
         {
-          if (strcmp(part, wcroot) || !GetFileInformationByHandleEx(h, FileAttributeTagInfo, &tag, sizeof(tag))
+          typedef HRESULT (WINAPI *root_info_fn)(HANDLE, int, void *, DWORD, DWORD *);
+          HMODULE module;
+          root_info_fn get_root;
+          LARGE_INTEGER actual_root;
+          DWORD returned = 0;
+          HRESULT hr;
+          if (!point_found || !GetFileInformationByHandleEx(h, FileAttributeTagInfo, &tag, sizeof(tag))
               || (tag.ReparseTag & 0xffff0fffUL) != 0x9000001aUL)
             return fr_refuse("FileES release refuses a redirected parent");
+          module = LoadLibraryExW(L"cldapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+          if (!module) return fr_refuse("FileES release cannot inspect cloud parent ownership");
+          get_root = (root_info_fn)GetProcAddress(module, "CfGetSyncRootInfoByHandle");
+          hr = get_root ? get_root(h, 0, &actual_root, sizeof actual_root, &returned) : E_FAIL;
+          FreeLibrary(module);
+          if (FAILED(hr) || returned < sizeof actual_root || i.dwVolumeSerialNumber != point.dwVolumeSerialNumber
+              || (ULONGLONG)actual_root.QuadPart != (((ULONGLONG)point.nFileIndexHigh << 32) | point.nFileIndexLow))
+            return fr_refuse("FileES release cloud parent belongs to another point");
         }
       *ids = apr_pstrcat(pool, *ids, fr_dir_id(i, pool), ";", NULL);
       part[j] = saved;

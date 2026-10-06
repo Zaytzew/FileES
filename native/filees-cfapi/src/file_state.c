@@ -150,9 +150,11 @@ static HRESULT read_state(const WCHAR *root, const WCHAR *relative, struct state
 
 static void print_state(const struct state *state)
 {
-    printf("{\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\"}",
+    printf("{\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\",\"size\":%lld,\"identity\":",
            state->placeholder ? "true" : "false", state->partial ? "true" : "false",
-           state->clean ? "true" : "false", state->local ? "true" : "false", state->usn);
+           state->clean ? "true" : "false", state->local ? "true" : "false", state->usn, state->size);
+    filees_cfapi_json_string(state->identity);
+    putchar('}');
 }
 
 /* Only the connected provider may prepare an adopted file for SVN exclusion.

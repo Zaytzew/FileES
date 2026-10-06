@@ -335,6 +335,9 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					materialize: func(ctx context.Context, identity string) (string, int64, error) {
 						return m.materialize(ctx, record, identity)
 					},
+					materializePinned: func(ctx context.Context, identity string, revision, size int64) (string, int64, error) {
+						return m.materializeAt(ctx, record, identity, revision, size)
+					},
 					adopt: func(ctx context.Context, identity string, revision int64) error {
 						return m.adopt(ctx, record, identity, revision)
 					},
@@ -532,6 +535,10 @@ type anchorFileReader interface {
 // materialize reads one file at HEAD into a temporary file and says at which
 // revision. The file is removed later: the helper reads it after the answer.
 func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record, identity string) (string, int64, error) {
+	return m.materializeAt(ctx, record, identity, 0, -1)
+}
+
+func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Record, identity string, revision, expectedSize int64) (string, int64, error) {
 	if commit.HasPendingFileRelease(record.LocalPath) {
 		return "", 0, commit.ErrFileReleasePending
 	}
@@ -547,18 +554,25 @@ func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record
 	if !ok {
 		return "", 0, errors.New("SVN client cannot read a file at a revision")
 	}
-	revision, err := reader.Revision(ctx, record.RepoURL)
-	if err != nil {
-		return "", 0, err
+	if revision == 0 {
+		revision, err = reader.Revision(ctx, record.RepoURL)
+		if err != nil {
+			return "", 0, err
+		}
 	}
 	dir, err := os.MkdirTemp("", "filees-anchor-*")
 	if err != nil {
 		return "", 0, err
 	}
 	dest := filepath.Join(dir, path.Base(rel))
-	if _, err := reader.HistoryFetchFile(ctx, headJoin(record.RepoURL, rel), revision, dest); err != nil {
+	size, err := reader.HistoryFetchFile(ctx, headJoin(record.RepoURL, rel), revision, dest)
+	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", 0, err
+	}
+	if expectedSize >= 0 && size != expectedSize {
+		_ = os.RemoveAll(dir)
+		return "", 0, errors.New("download size differs from confirmed metadata")
 	}
 	time.AfterFunc(30*time.Minute, func() { _ = os.RemoveAll(dir) })
 	if commit.HasPendingFileRelease(record.LocalPath) {

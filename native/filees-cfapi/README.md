@@ -1,5 +1,36 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Wewnętrzne przygotowanie i odtworzenie po wykluczeniu 2026-10-06
+
+Podłączony pomocnik rozumie dwie opcjonalne linie prywatnego mostu:
+
+```
+demon  -> helper   prepare-release <TAB> id <TAB> ścieżka <TAB> USN
+helper -> demon    release-prepared <TAB> id <TAB> HRESULT
+demon  -> helper   restore-release <TAB> id <TAB> ścieżka <TAB> rozmiar
+helper -> demon    release-restored <TAB> id <TAB> HRESULT
+```
+
+`prepare_release_usn_v1` oznacza kontrolę własnego pełnego lokalnego
+pliku, markera, stanu bez zmian i USN pod uchwytem READ/WRITE_DAC bez
+współdzielenia. Otwarci czytelnicy/pisarze, niepełny plik, nieaktualny token
+i prywatna/obca ścieżka odmawiają. Revert usuwa tylko oznaczenia CFAPI,
+nie bajty; atrybut tylko do odczytu pozostaje. Kontrolka bez zmian nie
+zastępuje porównania z bazową treścią SVN i zabezpieczenia poza WC.
+
+`restore_release_v1` tworzy dokładnie jeden nowy niepobrany wpis. Tożsamością
+pobrania jest ścieżka w repo, a rozmiar pochodzi od przyszłego koordynatora.
+Istniejący plik, placeholder lub katalog odmawiają bez zastępowania.
+Faktyczny korzeń rodzica jest sprawdzany przez uchwyt, również przy junction.
+Zadanie trafia do podłączonego pomocnika: odtworzenie przez osobny proces
+przy aktywnym dostawcy odmawiało z CLOUD_FILE_IN_USE.
+
+Nie ma samodzielnych czasowników, wywołania z demona ani nowej akcji GUI.
+Trwała transakcja, blokada WC między etapami, kontrola zmiany nazwy/podmiany,
+odzyskanie po przerwaniu i wycofanie kopii zabezpieczającej są nadal konieczne.
+Uchwyty nie stanowią rezerwacji ścieżki po odpowiedzi pomocnika.
+Dowody: `implementation notes (not distributed)`.
+
 ## Świadome pobranie jednego pliku 2026-10-06
 
 `hydrate --root <punkt> --rel <plik>` sprawdza własny punkt i faktyczny

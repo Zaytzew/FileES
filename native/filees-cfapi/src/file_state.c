@@ -138,6 +138,102 @@ static void print_state(const struct state *state)
            state->clean ? "true" : "false", state->local ? "true" : "false", state->usn);
 }
 
+/* Only the connected provider may prepare an adopted file for SVN exclusion.
+ * This removes CFAPI metadata, NEVER bytes. A Shell clean flag is only an
+ * admission check, not publication proof: the future transaction must also
+ * preserve a verified copy and perform SVN pristine/status checks.
+ * A share-none READ handle rejects existing readers/writers and rename while
+ * this operation runs, including read-only svn:needs-lock files via WRITE_DAC.
+ * No handle or reservation is handed to the subsequent SVN process. */
+HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    struct state before;
+    BY_HANDLE_FILE_INFORMATION identity, after;
+    FILE_ATTRIBUTE_TAG_INFO attributes;
+    HANDLE file;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || expected_usn <= 0) return FAILED(hr) ? hr : E_INVALIDARG;
+    /* Metadata-only admission avoids asking for an off-disk file's bytes. */
+    hr = read_state(root, relative, &before);
+    if (FAILED(hr)) return hr;
+    if (!before.placeholder || !before.local || before.partial || !before.clean ||
+        before.usn != expected_usn || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE))
+        return HRESULT_FROM_WIN32(ERROR_RETRY);
+    file = CreateFileW(path, GENERIC_READ | WRITE_DAC, 0, NULL, OPEN_EXISTING,
+                       FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    hr = inspect(file, root, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || !before.local || before.partial || !before.clean ||
+                         before.usn != expected_usn || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE)))
+        hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+    if (SUCCEEDED(hr)) {
+        if (!GetFileInformationByHandle(file, &identity)) hr = HRESULT_FROM_WIN32(GetLastError());
+        else if (identity.nNumberOfLinks != 1) hr = E_ACCESSDENIED;
+    }
+    if (SUCCEEDED(hr)) hr = CfRevertPlaceholder(file, CF_REVERT_FLAG_NONE, NULL);
+    if (SUCCEEDED(hr)) {
+        if (!GetFileInformationByHandle(file, &after) ||
+            !GetFileInformationByHandleEx(file, FileAttributeTagInfo, &attributes, sizeof attributes))
+            hr = HRESULT_FROM_WIN32(GetLastError());
+        else if ((attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+                 identity.dwVolumeSerialNumber != after.dwVolumeSerialNumber ||
+                 identity.nFileIndexHigh != after.nFileIndexHigh || identity.nFileIndexLow != after.nFileIndexLow ||
+                 identity.nFileSizeHigh != after.nFileSizeHigh || identity.nFileSizeLow != after.nFileSizeLow ||
+                 ((identity.dwFileAttributes ^ after.dwFileAttributes) & FILE_ATTRIBUTE_READONLY))
+            hr = E_FAIL;
+    }
+    CloseHandle(file);
+    return hr;
+}
+
+/* Restore just one absent entry from the connected provider. Never convert
+ * or replace an obstruction; the transaction supplies trusted repository
+ * size/path metadata and retains its backup until a separate verified receipt.
+ * Parent identity is checked by handle, including intermediate junctions. */
+HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH], identity[FILEES_CFAPI_MAX_IDENTITY];
+    WCHAR *name, *p;
+    HANDLE parent;
+    BY_HANDLE_FILE_INFORMATION parent_info;
+    CF_PLACEHOLDER_CREATE_INFO entry;
+    DWORD processed = 0;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || size < 0 || wcslen(relative) + 1 > FILEES_CFAPI_MAX_IDENTITY)
+        return FAILED(hr) ? hr : E_INVALIDARG;
+    wcscpy_s(identity, FILEES_CFAPI_MAX_IDENTITY, relative);
+    for (p = identity; *p; ++p) if (*p == L'\\') *p = L'/';
+    for (p = path; *p; ++p) if (*p == L'/') *p = L'\\';
+    name = wcsrchr(path, L'\\');
+    if (!name) return E_INVALIDARG;
+    *name++ = 0;
+    /* Keep the parent handle open; this is not a durable path reservation
+     * across commands. Arbitrary ancestor replacement belongs to coordinator. */
+    parent = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (parent == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    hr = belongs_to_point(parent, root);
+    if (SUCCEEDED(hr)) {
+        if (!GetFileInformationByHandle(parent, &parent_info)) hr = HRESULT_FROM_WIN32(GetLastError());
+        else if (!(parent_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) hr = E_INVALIDARG;
+    }
+    if (SUCCEEDED(hr)) {
+        ZeroMemory(&entry, sizeof entry);
+        entry.RelativeFileName = name;
+        entry.FileIdentity = identity;
+        entry.FileIdentityLength = (DWORD)((wcslen(identity) + 1) * sizeof(WCHAR));
+        entry.FsMetadata.FileSize.QuadPart = size;
+        entry.FsMetadata.BasicInfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+        entry.Flags = CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC;
+        hr = CfCreatePlaceholders(path, &entry, 1, CF_CREATE_FLAG_STOP_ON_ERROR, &processed);
+        if (SUCCEEDED(hr) && (processed != 1 || FAILED(entry.Result)))
+            hr = FAILED(entry.Result) ? entry.Result : E_FAIL;
+    }
+    CloseHandle(parent);
+    return hr;
+}
+
 /* Explicit single-file download. WRITE_DAC on an attribute handle satisfies
  * CfHydratePlaceholder without opening for READ_DATA (which could hydrate
  * before the provider/path checks). The connected provider supplies all bytes.

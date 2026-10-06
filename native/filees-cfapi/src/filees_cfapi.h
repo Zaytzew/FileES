@@ -56,6 +56,8 @@ void filees_bridge_start(void);
 void filees_bridge_answer(char *line);
 void filees_bridge_say_reverted(const char *id, HRESULT hr);
 void filees_bridge_say_state_set(const char *id, HRESULT hr);
+void filees_bridge_say_release_prepared(const char *id, HRESULT hr);
+void filees_bridge_say_release_restored(const char *id, HRESULT hr);
 int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG offset, LONGLONG length,
                           filees_bridge_waiting waiting, void *context, WCHAR *path, int *id_out);
 void filees_bridge_say_hydrated(int id, const WCHAR *identity);
@@ -80,6 +82,8 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_file_states(const WCHAR *root);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
+HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
+HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size);
 int filees_local_identity(const void *identity, DWORD length);
 
 #ifdef __cplusplus

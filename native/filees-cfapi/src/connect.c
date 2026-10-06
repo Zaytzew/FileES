@@ -16,6 +16,20 @@
 #include <cfapi.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+
+/* New release requests have canonical unsigned decimal tokens only. Refuse
+ * signs, whitespace, suffixes and saturation instead of interpreting them. */
+static int release_number(const char *token, LONGLONG *value, int zero_allowed)
+{
+    const char *p;
+    char *end;
+    if (!token || !*token) return 0;
+    for (p = token; *p; ++p) if (*p < '0' || *p > '9') return 0;
+    errno = 0;
+    *value = _strtoi64(token, &end, 10);
+    return errno != ERANGE && !*end && *value >= (zero_allowed ? 0 : 1);
+}
 
 /* The SDK documents CF_SIZE_OF_OP_PARAM but does not define it in cfapi.h.
  * The filter reads exactly as many bytes as the answered member needs, so the
@@ -327,6 +341,34 @@ int filees_cfapi_connect(const WCHAR *root)
                     hr = filees_set_local_state(g_root, wide, usn, *clean == '1');
             }
             filees_bridge_say_state_set(id, hr);
+        }
+        else if (!strncmp(line, "prepare-release\t", 16)) {
+            char *id = line + 16, *rel = strchr(id, '\t'), *token = NULL;
+            WCHAR wide[FILEES_CFAPI_MAX_PATH];
+            LONGLONG usn = 0;
+            hr = E_INVALIDARG;
+            if (rel) { *rel++ = '\0'; token = strchr(rel, '\t'); }
+            if (token) {
+                *token++ = '\0';
+                if (*id && release_number(token, &usn, 0) &&
+                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH))
+                    hr = filees_prepare_release(g_root, wide, usn);
+            }
+            filees_bridge_say_release_prepared(id, hr);
+        }
+        else if (!strncmp(line, "restore-release\t", 16)) {
+            char *id = line + 16, *rel = strchr(id, '\t'), *token = NULL;
+            WCHAR wide[FILEES_CFAPI_MAX_PATH];
+            LONGLONG size = -1;
+            hr = E_INVALIDARG;
+            if (rel) { *rel++ = '\0'; token = strchr(rel, '\t'); }
+            if (token) {
+                *token++ = '\0';
+                if (*id && release_number(token, &size, 1) &&
+                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH))
+                    hr = filees_restore_release(g_root, wide, size);
+            }
+            filees_bridge_say_release_restored(id, hr);
         }
         else if (!strncmp(line, "revert\t", 7)) revert_request(line + 7);
         else filees_bridge_answer(line);

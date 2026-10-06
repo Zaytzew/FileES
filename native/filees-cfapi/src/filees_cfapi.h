@@ -83,6 +83,7 @@ int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_file_states(const WCHAR *root);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
+HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);
 HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size);
 int filees_local_identity(const void *identity, DWORD length);
 

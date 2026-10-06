@@ -162,7 +162,8 @@ static void print_state(const struct state *state)
  * A share-none READ handle rejects existing readers/writers and rename while
  * this operation runs, including read-only svn:needs-lock files via WRITE_DAC.
  * No handle or reservation is handed to the subsequent SVN process. */
-HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn)
+static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn,
+                               const char *expected_id)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
     struct state before;
@@ -187,6 +188,12 @@ HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
     if (SUCCEEDED(hr)) {
         if (!GetFileInformationByHandle(file, &identity)) hr = HRESULT_FROM_WIN32(GetLastError());
         else if (identity.nNumberOfLinks != 1) hr = E_ACCESSDENIED;
+        else if (expected_id) {
+            char actual[64];
+            sprintf_s(actual, sizeof actual, "%lu:%llu", (unsigned long)identity.dwVolumeSerialNumber,
+                      ((unsigned long long)identity.nFileIndexHigh << 32) | identity.nFileIndexLow);
+            if (strcmp(actual, expected_id)) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+        }
     }
     if (SUCCEEDED(hr)) hr = CfRevertPlaceholder(file, CF_REVERT_FLAG_NONE, NULL);
     if (SUCCEEDED(hr)) {
@@ -202,6 +209,18 @@ HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
     }
     CloseHandle(file);
     return hr;
+}
+
+HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn)
+{
+    return prepare_release(root, relative, expected_usn, NULL);
+}
+
+HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative,
+                                    LONGLONG expected_usn, const char *expected_id)
+{
+    if (!expected_id || !*expected_id || strlen(expected_id) > 32) return E_INVALIDARG;
+    return prepare_release(root, relative, expected_usn, expected_id);
 }
 
 /* Restore just one absent entry from the connected provider. Never convert

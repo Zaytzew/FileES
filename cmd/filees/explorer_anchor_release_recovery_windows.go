@@ -112,8 +112,8 @@ func observeAnchorReleaseSeed(ctx context.Context, r anchorReleaseRecord, inspec
 
 // Caller must hold the live WC operation guard AND use the current activated
 // repository identity. This private slice only repairs the missing remote seed
-// after a proven exclusion. Initial destructive exclusion still needs a leaf
-// replacement fence across processes; wcOpMu alone is not that fence.
+// after a proven exclusion. The initial coordinator binds the recorded source
+// ID inside both helpers; wcOpMu alone is not that replacement fence.
 func (j *anchorReleaseJournal) recoverSeed(ctx context.Context, ops anchorReleaseRecoveryIO) (anchorReleaseRecovery, error) {
 	var out anchorReleaseRecovery
 	if err := ctx.Err(); err != nil {
@@ -125,30 +125,12 @@ func (j *anchorReleaseJournal) recoverSeed(ctx context.Context, ops anchorReleas
 	if ops.svn == nil || ops.inspect == nil || ops.restore == nil {
 		return out, errors.New("release recovery needs explicit SVN and provider operations")
 	}
-	parent, err := guardAnchorReleaseDirectories(filepath.Dir(filepath.Join(j.identity.WC, filepath.FromSlash(j.identity.Rel))), j.identity.WC)
+	closeGuard, err := lockAnchorRelease(j)
 	if err != nil {
 		return out, err
 	}
-	defer closeAnchorReleaseGuards(parent)
+	defer closeGuard()
 	dir := filepath.Join(j.store, j.id)
-	guards, err := guardAnchorReleaseDirectories(dir, "")
-	if err != nil {
-		return out, err
-	}
-	defer closeAnchorReleaseGuards(guards)
-	// Independent process attempts serialize too. Never remove the lock file.
-	wide, _ := windows.UTF16PtrFromString(filepath.Join(dir, ".resume.lock"))
-	lock, err := windows.CreateFile(wide, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil,
-		windows.OPEN_ALWAYS, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
-	if err != nil {
-		return out, err
-	}
-	defer windows.CloseHandle(lock)
-	var lockInfo windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(lock, &lockInfo); err != nil ||
-		lockInfo.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_DIRECTORY) != 0 || lockInfo.NumberOfLinks != 1 {
-		return out, errors.New("invalid release recovery guard")
-	}
 	r, err := j.inspect(ctx)
 	if err != nil {
 		return out, err

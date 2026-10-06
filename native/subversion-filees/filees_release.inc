@@ -8,11 +8,30 @@
 #include <wincrypt.h>
 #include <apr_strings.h>
 #include "private/svn_wc_private.h"
+#include "svn_path.h"
 #pragma comment(lib, "advapi32.lib")
 
 static svn_error_t *fr_refuse(const char *why)
 {
   return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL, why);
+}
+
+/* A fully hydrated cloud file can lack REPARSE_POINT on the opened handle.
+ * Require an explicit ordinary-file answer, not absence of attribute flags.
+ * Resolve only the system Cloud Files library; no directory/PATH probing. */
+static svn_boolean_t fr_ordinary(HANDLE file)
+{
+  typedef HRESULT (WINAPI *get_info_fn)(HANDLE, int, void *, DWORD, DWORD *);
+  HMODULE module = LoadLibraryExW(L"cldapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  get_info_fn get_info;
+  HRESULT hr;
+  BYTE info[4096];
+  DWORD returned = 0;
+  if (!module) return FALSE;
+  get_info = (get_info_fn)GetProcAddress(module, "CfGetPlaceholderInfo");
+  hr = get_info ? get_info(file, 0, info, sizeof info, &returned) : E_FAIL;
+  FreeLibrary(module);
+  return hr == HRESULT_FROM_WIN32(ERROR_NOT_A_CLOUD_FILE);
 }
 
 static apr_status_t fr_close(void *baton)
@@ -114,7 +133,7 @@ static svn_error_t *fr_open(HANDLE *out, const char *path, svn_boolean_t remove,
       if (allow_missing && GetLastError() == ERROR_FILE_NOT_FOUND) return SVN_NO_ERROR;
       return fr_refuse("FileES release file is busy or unavailable");
     }
-  if (!GetFileInformationByHandle(h, &i) || (i.dwFileAttributes & forbidden) || i.nNumberOfLinks != 1
+  if (!GetFileInformationByHandle(h, &i) || (i.dwFileAttributes & forbidden) || i.nNumberOfLinks != 1 || !fr_ordinary(h)
       || (!i.nFileIndexHigh && !i.nFileIndexLow)
       || !GetVolumeInformationByHandleW(h, NULL, 0, NULL, NULL, NULL, filesystem, 16)
       || wcscmp(filesystem, L"NTFS"))
@@ -125,7 +144,7 @@ static svn_error_t *fr_open(HANDLE *out, const char *path, svn_boolean_t remove,
   if (data == INVALID_HANDLE_VALUE)
     { CloseHandle(h); return fr_refuse("FileES release file is open for writing/deletion or unavailable"); }
   apr_pool_cleanup_register(pool, data, fr_close, apr_pool_cleanup_null);
-  if (!GetFileInformationByHandle(data, &d) || (d.dwFileAttributes & forbidden) || d.nNumberOfLinks != 1
+  if (!GetFileInformationByHandle(data, &d) || (d.dwFileAttributes & forbidden) || d.nNumberOfLinks != 1 || !fr_ordinary(data)
       || strcmp(fr_id(&i, pool), fr_id(&d, pool)))
     { CloseHandle(h); return fr_refuse("FileES release file changed during admission"); }
   CloseHandle(h);
@@ -265,12 +284,15 @@ struct fr_baton {
   HANDLE expected;
   svn_cancel_func_t cancel_func;
   void *cancel_baton;
+  svn_revnum_t expected_revision;
+  const char *expected_uuid, *expected_url;
 };
 
 static svn_error_t *fr_exclude_locked(void *baton, apr_pool_t *result_pool, apr_pool_t *pool)
 {
   struct fr_baton *b = baton;
   const char *root, *rel, *ids, *copy_ids, *digest, *copy_digest;
+  const char *repos_relpath, *repos_url, *repos_uuid;
   HANDLE source, retained;
   BY_HANDLE_FILE_INFORMATION expected, actual, copy;
   const svn_string_t *prop;
@@ -299,11 +321,15 @@ static svn_error_t *fr_exclude_locked(void *baton, apr_pool_t *result_pool, apr_
   SVN_ERR(fr_digest(&copy_digest, retained, b->cancel_func, b->cancel_baton, pool));
   if (strcmp(digest, copy_digest)) return fr_refuse("FileES release retained copy differs");
   SVN_ERR(svn_wc__db_is_switched(&is_root, &switched, NULL, b->ctx->db, b->path, pool));
-  SVN_ERR(svn_wc__db_base_get_info(&status, &kind, &revision, NULL, NULL, NULL,
+  SVN_ERR(svn_wc__db_base_get_info(&status, &kind, &revision, &repos_relpath, &repos_url, &repos_uuid,
           NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
           b->ctx->db, b->path, pool, pool));
   if (is_root || switched || status != svn_wc__db_status_normal || kind != svn_node_file
       || !SVN_IS_VALID_REVNUM(revision)) return fr_refuse("FileES release requires a normal BASE file");
+  if (b->expected_uuid && (revision != b->expected_revision || !repos_uuid || !repos_url || !repos_relpath
+      || strcmp(repos_uuid, b->expected_uuid)
+      || strcmp(svn_path_url_add_component2(repos_url, repos_relpath, pool), b->expected_url)))
+    return fr_refuse("FileES release repository or revision changed under the SVN write lock");
   SVN_ERR(svn_wc__node_has_local_mods(&modified, &deletes, b->ctx->db, b->path, FALSE,
           b->cancel_func, b->cancel_baton, pool));
   if (modified) return fr_refuse("FileES release refuses local changes");
@@ -325,21 +351,39 @@ static svn_error_t *fr_exclude_locked(void *baton, apr_pool_t *result_pool, apr_
   return svn_wc__wq_run(b->ctx->db, b->path, b->cancel_func, b->cancel_baton, pool);
 }
 
-svn_error_t *svn_wc__filees_exclude_retained_v1(svn_wc_context_t *ctx, const char *path,
+static svn_error_t *fr_exclude(svn_wc_context_t *ctx, const char *path,
     const char *retained, void *expected, svn_cancel_func_t cancel_func,
-    void *cancel_baton, apr_pool_t *pool)
+    void *cancel_baton, svn_revnum_t revision, const char *uuid, const char *url, apr_pool_t *pool)
 {
   struct fr_baton b;
   if (!svn_dirent_is_absolute(path) || !svn_dirent_is_absolute(retained) || !expected)
     return fr_refuse("FileES release requires absolute paths and a verified source handle");
   b.ctx = ctx; b.path = path; b.retained = retained; b.expected = (HANDLE)expected;
   b.cancel_func = cancel_func; b.cancel_baton = cancel_baton;
+  b.expected_revision = revision; b.expected_uuid = uuid; b.expected_url = url;
   {
     apr_pool_t *guards = svn_pool_create(pool);
     svn_error_t *err = svn_wc__call_with_write_lock(fr_exclude_locked, &b, ctx, path, TRUE, guards, guards);
     svn_pool_destroy(guards);
     return err;
   }
+}
+
+svn_error_t *svn_wc__filees_exclude_retained_v1(svn_wc_context_t *ctx, const char *path,
+    const char *retained, void *expected, svn_cancel_func_t cancel_func,
+    void *cancel_baton, apr_pool_t *pool)
+{
+  return fr_exclude(ctx, path, retained, expected, cancel_func, cancel_baton,
+                    SVN_INVALID_REVNUM, NULL, NULL, pool);
+}
+
+svn_error_t *svn_wc__filees_exclude_bound_v1(svn_wc_context_t *ctx, const char *path,
+    const char *retained, void *expected, svn_revnum_t revision, const char *uuid,
+    const char *url, svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *pool)
+{
+  if (!SVN_IS_VALID_REVNUM(revision) || !uuid || !*uuid || !url || !svn_path_is_url(url))
+    return fr_refuse("FileES release requires exact repository evidence");
+  return fr_exclude(ctx, path, retained, expected, cancel_func, cancel_baton, revision, uuid, url, pool);
 }
 #else
 svn_error_t *svn_wc__filees_exclude_retained_v1(svn_wc_context_t *ctx, const char *path,

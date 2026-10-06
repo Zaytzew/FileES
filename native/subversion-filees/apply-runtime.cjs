@@ -89,6 +89,12 @@ svn_wc__filees_exclude_retained_v1(svn_wc_context_t *wc_ctx,
                                   void *cancel_baton,
                                   apr_pool_t *scratch_pool);
 
+svn_error_t *
+svn_wc__filees_exclude_bound_v1(svn_wc_context_t *wc_ctx,
+    const char *local_abspath, const char *retained_abspath, void *expected_source_handle,
+    svn_revnum_t expected_revision, const char *expected_uuid, const char *expected_url,
+    svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */`);

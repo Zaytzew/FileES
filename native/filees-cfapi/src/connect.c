@@ -342,6 +342,21 @@ int filees_cfapi_connect(const WCHAR *root)
             }
             filees_bridge_say_state_set(id, hr);
         }
+        else if (!strncmp(line, "prepare-release-bound\t", 22)) {
+            char *id = line + 22, *rel = strchr(id, '\t'), *token = NULL, *source = NULL;
+            WCHAR wide[FILEES_CFAPI_MAX_PATH];
+            LONGLONG usn = 0;
+            hr = E_INVALIDARG;
+            if (rel) { *rel++ = '\0'; token = strchr(rel, '\t'); }
+            if (token) { *token++ = '\0'; source = strchr(token, '\t'); }
+            if (source) {
+                *source++ = '\0';
+                if (*id && release_number(token, &usn, 0) && !strchr(source, '\t') &&
+                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH))
+                    hr = filees_prepare_release_bound(g_root, wide, usn, source);
+            }
+            filees_bridge_say_release_prepared(id, hr);
+        }
         else if (!strncmp(line, "prepare-release\t", 16)) {
             char *id = line + 16, *rel = strchr(id, '\t'), *token = NULL;
             WCHAR wide[FILEES_CFAPI_MAX_PATH];

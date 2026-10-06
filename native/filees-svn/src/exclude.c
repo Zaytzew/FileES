@@ -1,6 +1,6 @@
 /* Internal sparse-WC release primitive. The caller must preserve an exact
  * copy outside WC and serialize its transaction under the WC guard. This
- * Windows requires a conditional-removal runtime; its durable work item
+ * On Windows this requires a conditional-removal runtime; its durable work item
  * validates the object again and deletes by handle, not pathname. This does
  * not restore CFAPI identity or retire any backup. Failure retains the copy. */
 #include "filees_svn.h"
@@ -10,6 +10,7 @@
 #include <apr_strings.h>
 #include <svn_dirent_uri.h>
 #include <svn_props.h>
+#include <svn_path.h>
 #ifdef _WIN32
 #include <windows.h>
 
@@ -17,6 +18,21 @@ static apr_status_t close_retained_guard(void *baton)
 {
     CloseHandle((HANDLE)baton);
     return APR_SUCCESS;
+}
+
+static svn_boolean_t release_ordinary(HANDLE file)
+{
+    typedef HRESULT (WINAPI *get_info_fn)(HANDLE, int, void *, DWORD, DWORD *);
+    HMODULE module = LoadLibraryExW(L"cldapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    get_info_fn get_info;
+    HRESULT hr;
+    BYTE info[4096];
+    DWORD returned = 0;
+    if (!module) return FALSE;
+    get_info = (get_info_fn)GetProcAddress(module, "CfGetPlaceholderInfo");
+    hr = get_info ? get_info(file, 0, info, sizeof info, &returned) : E_FAIL;
+    FreeLibrary(module);
+    return hr == HRESULT_FROM_WIN32(ERROR_NOT_A_CLOUD_FILE);
 }
 
 /* Admit ordinary local attributes before opening a data-read guard. Windows
@@ -45,7 +61,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, HANDLE 
     if (handle == INVALID_HANDLE_VALUE)
         return filees_refuse("release file is busy or unavailable");
     apr_pool_cleanup_register(pool, handle, close_retained_guard, apr_pool_cleanup_null);
-    if (!GetFileInformationByHandle(handle, &info) || (info.dwFileAttributes & forbidden))
+    if (!GetFileInformationByHandle(handle, &info) || (info.dwFileAttributes & forbidden) || !release_ordinary(handle))
         return filees_refuse("release requires an ordinary locally materialized file");
     read_guard = CreateFileW(wide, GENERIC_READ,
                             FILE_SHARE_READ | (retained ? 0 : FILE_SHARE_DELETE),
@@ -54,7 +70,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, HANDLE 
         return filees_refuse("release file is open for writing or unavailable");
     apr_pool_cleanup_register(pool, read_guard, close_retained_guard, apr_pool_cleanup_null);
     if (!GetFileInformationByHandle(read_guard, &guarded_info) ||
-        (guarded_info.dwFileAttributes & forbidden) ||
+        (guarded_info.dwFileAttributes & forbidden) || !release_ordinary(read_guard) ||
         info.dwVolumeSerialNumber != guarded_info.dwVolumeSerialNumber ||
         info.nFileIndexHigh != guarded_info.nFileIndexHigh ||
         info.nFileIndexLow != guarded_info.nFileIndexLow)
@@ -74,6 +90,14 @@ static conditional_exclude_fn conditional_exclude(void)
 }
 
 int filees_conditional_exclusion_available(void) { return conditional_exclude() != NULL; }
+typedef svn_error_t *(*bound_exclude_fn)(svn_wc_context_t *, const char *, const char *, void *,
+    svn_revnum_t, const char *, const char *, svn_cancel_func_t, void *, apr_pool_t *);
+static bound_exclude_fn bound_exclude(void)
+{
+    HMODULE wc = GetModuleHandleW(L"libsvn_wc-1.dll");
+    return wc ? (bound_exclude_fn)GetProcAddress(wc, "svn_wc__filees_exclude_bound_v1") : NULL;
+}
+int filees_bound_exclusion_available(void) { return bound_exclude() != NULL; }
 #else
 /* FileES writer/WC guards are not a lock against arbitrary external Unix
  * editors. The CFAPI coordinator is Windows-only and not wired here yet. */
@@ -83,6 +107,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_poo
     return SVN_NO_ERROR;
 }
 int filees_conditional_exclusion_available(void) { return 0; }
+int filees_bound_exclusion_available(void) { return 0; }
 #endif
 
 struct exclude_observation {
@@ -204,8 +229,9 @@ svn_error_t *filees_inspect_excluded(const char *wc_arg, const char *rel, apr_po
     return SVN_NO_ERROR;
 }
 
-svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_arg,
-                                    const char *rel, apr_pool_t *pool)
+static svn_error_t *exclude_retained(const char *wc_arg, const char *retained_arg,
+    const char *rel, const char *source_id, svn_revnum_t expected_revision,
+    const char *expected_uuid, const char *expected_url, apr_pool_t *pool)
 {
     const char *wc, *path, *root, *retained;
     const char *rels[1];
@@ -229,6 +255,10 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     svn_error_t *exclude_error;
     conditional_exclude_fn exclude_fn = conditional_exclude();
     if (!exclude_fn) return filees_refuse("guarded exclusion requires the FileES conditional SVN runtime");
+    if (source_id && !bound_exclude()) return filees_refuse("bound exclusion requires the FileES bound SVN runtime");
+#else
+    (void)expected_revision; (void)expected_uuid; (void)expected_url;
+    if (source_id) return filees_refuse("bound exclusion is Windows-only");
 #endif
 
     if (!filees_safe_relative(rel)) return filees_refuse("exclude requires one canonical data path");
@@ -246,6 +276,14 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     SVN_ERR(filees_plain_node(path, APR_REG, FALSE, pool));
 #ifdef _WIN32
     SVN_ERR(guard_file(path, FALSE, &source_guard, pool));
+    if (source_id) {
+        char actual[64];
+        BY_HANDLE_FILE_INFORMATION info;
+        if (!GetFileInformationByHandle(source_guard, &info)) return filees_refuse("cannot inspect bound source");
+        sprintf_s(actual, sizeof actual, "%lu:%llu", (unsigned long)info.dwVolumeSerialNumber,
+                  ((unsigned long long)info.nFileIndexHigh << 32) | info.nFileIndexLow);
+        if (strcmp(actual, source_id)) return filees_refuse("release source differs from the retained transaction");
+    }
     SVN_ERR(guard_file(retained, TRUE, NULL, pool));
 #else
     SVN_ERR(guard_file(path, FALSE, pool));
@@ -295,8 +333,12 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     revision.kind = svn_opt_revision_number;
     revision.value.number = s->revision;
 #ifdef _WIN32
-    exclude_error = exclude_fn(ctx->wc_ctx, path, retained, source_guard,
-                              ctx->cancel_func, ctx->cancel_baton, pool);
+    if (source_id)
+        exclude_error = bound_exclude()(ctx->wc_ctx, path, retained, source_guard, expected_revision,
+                           expected_uuid, expected_url, ctx->cancel_func, ctx->cancel_baton, pool);
+    else
+        exclude_error = exclude_fn(ctx->wc_ctx, path, retained, source_guard,
+                                  ctx->cancel_func, ctx->cancel_baton, pool);
     apr_pool_cleanup_run(pool, source_guard, close_retained_guard);
     SVN_ERR(exclude_error);
 #else
@@ -311,4 +353,17 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     filees_json_string(rel);
     puts("}");
     return SVN_NO_ERROR;
+}
+
+svn_error_t *filees_exclude_retained(const char *wc, const char *retained, const char *rel, apr_pool_t *pool)
+{
+    return exclude_retained(wc, retained, rel, NULL, SVN_INVALID_REVNUM, NULL, NULL, pool);
+}
+
+svn_error_t *filees_exclude_bound(const char *wc, const char *retained, const char *rel,
+    const char *source_id, svn_revnum_t revision, const char *uuid, const char *url, apr_pool_t *pool)
+{
+    if (!source_id || !*source_id || strlen(source_id) > 32 || revision < 1 || !uuid || !*uuid || !url || !svn_path_is_url(url))
+        return filees_refuse("bound exclusion needs exact retained evidence");
+    return exclude_retained(wc, retained, rel, source_id, revision, uuid, url, pool);
 }

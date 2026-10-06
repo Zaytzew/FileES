@@ -3,7 +3,7 @@
 package main
 
 // Private release evidence only. No startup hook, exclusion, restoration or
-// backup retirement is wired here. A future coordinator must hold wcOpMu and
+// backup retirement is wired here. The private coordinator must hold wcOpMu and
 // inspect actual effects before acting after an uncertain receipt. A phase is
 // a persisted REQUEST, never evidence that its external effect happened.
 import (

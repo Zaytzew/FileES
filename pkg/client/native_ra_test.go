@@ -20,6 +20,10 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
+		if os.Getenv("FILEES_TEST_RA_BOUND_RELEASE") == "1" {
+			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["sparse_exclude_bound_v1"]}`)
+			return
+		}
 		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1","sparse_checkout_v1","sparse_update_parents_v1","history_list_v1","history_raw_file_v1","history_dated_log_v1","history_tree_v1"]}`)
 		return
 	}

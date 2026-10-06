@@ -138,6 +138,41 @@ static void print_state(const struct state *state)
            state->clean ? "true" : "false", state->local ? "true" : "false", state->usn);
 }
 
+/* Explicit single-file download. WRITE_DAC on an attribute handle satisfies
+ * CfHydratePlaceholder without opening for READ_DATA (which could hydrate
+ * before the provider/path checks). The connected provider supplies all bytes.
+ * No pin, conversion, sync-state assertion or SVN mutation here. */
+int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    struct state state;
+    HANDLE file;
+    HRESULT hr = local_path(root, relative, path);
+    LARGE_INTEGER offset, length;
+    if (FAILED(hr)) { filees_cfapi_fail("hydrate_path", hr); return 1; }
+    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        filees_cfapi_fail("hydrate_open", HRESULT_FROM_WIN32(GetLastError()));
+        return 1;
+    }
+    hr = inspect(file, root, &state);
+    if (SUCCEEDED(hr) && state.partial) {
+        offset.QuadPart = 0;
+        length.QuadPart = CF_EOF;
+        hr = CfHydratePlaceholder(file, offset, length, CF_HYDRATE_FLAG_NONE, NULL);
+        if (SUCCEEDED(hr)) {
+            hr = inspect(file, root, &state);
+            if (SUCCEEDED(hr) && state.partial) hr = HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_UNSUCCESSFUL);
+        }
+    }
+    CloseHandle(file);
+    if (FAILED(hr)) { filees_cfapi_fail("hydrate", hr); return 1; }
+    filees_cfapi_ok("hydrated");
+    return 0;
+}
+
 int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
 {
     struct state state;

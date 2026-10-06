@@ -1,6 +1,7 @@
 package ipcserver
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -20,6 +21,28 @@ type AnchorAttacher interface {
 // synchronises (Windows does not nest sync roots). The daemon supplies it only
 // where anchors exist at all, and its presence is the capability.
 type AnchorPrecheck func(localPath string) error
+
+// AnchorDownload distinguishes a durable Explorer point from an ordinary WC.
+// A handled failure must never fall back to SVN depth changes on placeholders.
+// A dot denotes explicit whole-tree download; implementations may refuse it
+// until a conscious bulk-download policy is available.
+type AnchorDownload func(ctx context.Context, serverID, repoID, rel string) (handled bool, err error)
+
+func (s *Server) SetAnchorDownload(download AnchorDownload) {
+	s.mu.Lock()
+	s.anchorDownload = download
+	s.mu.Unlock()
+}
+
+func (s *Server) downloadAnchor(ctx context.Context, serverID, repoID, rel string) (bool, error) {
+	s.mu.RLock()
+	download := s.anchorDownload
+	s.mu.RUnlock()
+	if download == nil {
+		return false, nil
+	}
+	return download(ctx, serverID, repoID, rel)
+}
 
 func (s *Server) SetAnchorPrecheck(check AnchorPrecheck) {
 	s.mu.Lock()

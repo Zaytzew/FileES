@@ -56,6 +56,7 @@ type Server struct {
 	historyReads         HistoryService
 	headReads            HeadService
 	anchorCheck          AnchorPrecheck
+	anchorDownload       AnchorDownload
 	partialAnchor        bool
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService

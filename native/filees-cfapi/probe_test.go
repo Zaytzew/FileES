@@ -317,6 +317,58 @@ func drain(requests chan []string) {
 	}
 }
 
+func TestExplicitHydrateDownloadsOnlyChosenFileAndPreservesEdits(t *testing.T) {
+	root := anchor(t)
+	content := strings.Repeat("explicit bytes", 230000) + "end"
+	materialized := filepath.Join(t.TempDir(), "chosen.txt")
+	if err := os.WriteFile(materialized, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	listing := "f\t" + strconv.Itoa(len(content)) + "\tchosen.txt\tchosen.txt\nf\t4096\tuntouched.txt\tuntouched.txt\nf\t4096\trefused.txt\trefused.txt\nd\t0\tfolder\tfolder\n"
+	if got := run(t, listing, "placeholders", "--root", root); !got.OK {
+		t.Fatalf("seed: %+v", got)
+	}
+	connected := connectAnchor(t, root, func(request []string) string {
+		if request[4] != "chosen.txt" {
+			return "err\t" + request[1] + "\tprovider refused"
+		}
+		return "ok\t" + request[1] + "\t" + materialized
+	})
+	if got := run(t, "", "hydrate", "--root", root, "--rel", "chosen.txt"); !got.OK {
+		t.Fatalf("explicit hydrate: %+v", got)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "chosen.txt")); err != nil || string(got) != content {
+		t.Fatalf("bytes differ: len=%d err=%v", len(got), err)
+	}
+	info, err := os.Stat(filepath.Join(root, "untouched.txt"))
+	if err != nil || !cloudfiles.RecallsOnRead(info) {
+		t.Fatalf("unselected placeholder downloaded: %v", err)
+	}
+	for _, rel := range []string{"refused.txt", "folder", ".svn/private", "../outside", "chosen.txt:stream", "chosen.txt."} {
+		if got := run(t, "", "hydrate", "--root", root, "--rel", rel); got.OK {
+			t.Fatalf("unsafe/unsupported path accepted: %q", rel)
+		}
+	}
+	if got := run(t, "", "hydrate", "--root", t.TempDir(), "--rel", "chosen.txt"); got.OK {
+		t.Fatal("ordinary root accepted")
+	}
+	drain(connected.requests)
+	if err := os.WriteFile(filepath.Join(root, "chosen.txt"), []byte("local edit"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, "", "hydrate", "--root", root, "--rel", "chosen.txt"); !got.OK {
+		t.Fatalf("local hydrate: %+v", got)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "chosen.txt")); err != nil || string(got) != "local edit" {
+		t.Fatalf("local edit lost: %q %v", got, err)
+	}
+	select {
+	case request := <-connected.requests:
+		t.Fatalf("local bytes caused another fetch: %v", request)
+	default:
+	}
+}
+
 func itoa(value int) string {
 	return strconv.Itoa(value)
 }

@@ -37,6 +37,15 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	if runtime.GOOS == "windows" {
 		ipc.SetPartialAnchorMode(true)
 	}
+	anchors := &anchorManager{
+		nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
+		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
+	}
+	if runtime.GOOS == "windows" {
+		// Refuse even without a compatible helper; never use plain SVN on a
+		// durable point merely because its Cloud Files provider is unavailable.
+		ipc.SetAnchorDownload(anchors.download)
+	}
 	cfapi := anchorHelperPath()
 	if cfapi == "" {
 		return nil
@@ -46,10 +55,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 		talk.With("anchor").Warnf("Explorer anchor helper unavailable: %v", err)
 		return nil
 	}
-	anchors := &anchorManager{
-		helper: cfapi, nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
-		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
-	}
+	anchors.helper = cfapi
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
 	return anchors.run

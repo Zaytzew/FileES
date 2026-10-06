@@ -1,5 +1,23 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Świadome pobranie jednego pliku 2026-10-06
+
+`hydrate --root <punkt> --rel <plik>` sprawdza własny punkt i faktyczny
+korzeń otwartego pliku przed żądaniem bajtów. Otwiera metadane z WRITE_DAC,
+bez READ_DATA, potem CfHydratePlaceholder żąda całości przez działającego
+dostawcę. Odmawia folderów, prywatnych ścieżek i wyjścia poza punkt.
+Nie przypina na stałe, nie nadaje stanu czystego, nie konwertuje ani nie wywołuje SVN;
+plik już lokalny pozostaje bez zmian, również przy nieopublikowanej edycji.
+Funkcja wymaga flagi zgodności explicit_hydrate_v1.
+
+Przeglądarka demona używa istniejącego repo.head_materialize. Powodzenie
+hydratacji nie wystarcza: demon czeka na status potwierdzający przyjęcie
+ścieżki do WC. Status używa strażnika pisarza, ale samo oczekiwanie na
+hydratację nie trzyma go, bo callback adopt też go potrzebuje. Brak zgodnego
+helpera nie pozwala użyć zwykłego SVN na placeholderach. Folderowe pobranie,
+zwolnienie miejsca i wybór przy masowych pobraniach są osobnymi porcjami.
+Raport: `implementation notes (not distributed)`.
+
 ## Bieżąca próba stanów — 2026-10-05, baza r1921 + WC
 
 Oznaczenia systemowe nadal wymagają `FILEES_CFAPI_SHELL_PREVIEW=1`;
@@ -69,6 +87,7 @@ Każdy wypisuje **jeden obiekt JSON** na standardowe wyjście
 | `unregister --root <folder>` | zdejmuje rejestrację CFAPI i powłoki, również przy ponowieniu |
 | `info --root <folder>` | czy to kotwica, czyja i czy dostawca działa |
 | `file-state --root <folder> --rel <plik>` | odczyt metadanych i USN, bez pobrania |
+| `hydrate --root <folder> --rel <plik>` | jawne pobranie jednego pliku przez działającego dostawcę, bez zastępowania lokalnych bajtów |
 | `placeholders --root <folder> [--rel <podkatalog>]` | tworzy placeholdery z listingu na wejściu |
 | `connect --root <folder>` | podłącza dostawcę i **trzyma połączenie do zamknięcia wejścia** |
 | `revert --root <plik>` | zamienia pobrany placeholder w zwykły plik; tylko przy niepodłączonym dostawcy |

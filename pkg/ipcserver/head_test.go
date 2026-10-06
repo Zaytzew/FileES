@@ -3,6 +3,7 @@ package ipcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,40 @@ import (
 type headStub struct {
 	listed, catted []string
 	entries        []contract.RepoHeadEntry
+}
+
+func TestHeadMaterializeUsesAnchorDownloadWithoutSVNDepthFallback(t *testing.T) {
+	wc := t.TempDir()
+	server := New("unused")
+	server.RegisterActivation(contract.ActivationStatus{ServerID: "primary", ClientRole: contract.ClientRoleNormal})
+	repo := server.RegisterRepoAccess("repo-1", "svn://example/repo", wc, "primary", "r")
+	repo.SetSparse(true)
+	depthCalls, downloadCalls := 0, 0
+	repo.SetDepthFunc(func(context.Context, string, string) error { depthCalls++; return nil })
+	var downloadErr error
+	server.SetAnchorDownload(func(_ context.Context, serverID, repoID, rel string) (bool, error) {
+		downloadCalls++
+		if serverID != "primary" || repoID != "repo-1" || (rel != "art/chosen.dwg" && rel != ".") {
+			t.Fatalf("wrong anchor identity: %s %s %q", serverID, repoID, rel)
+		}
+		return true, downloadErr
+	})
+	req := lifecycleRequest(contract.CmdRepoHeadMaterialize, contract.RepoHeadMaterializePayload{ServerID: "primary", RepoID: "repo-1", Path: "art/chosen.dwg"})
+	headDecode[contract.RepoHeadWriteResult](t, server.dispatch(req))
+	downloadErr = errors.New("provider unavailable")
+	if response := server.dispatch(req); response.Status == contract.StatusOK || response.Error.MessageKey != "head.materialize_failed" {
+		t.Fatalf("failed hydration reported success: %+v", response)
+	}
+	if response := server.dispatch(lifecycleRequest(contract.CmdRepoHeadFill, contract.RepoHeadFillPayload{ServerID: "primary", RepoID: "repo-1"})); response.Status == contract.StatusOK {
+		t.Fatal("anchor fill fell back to SVN")
+	}
+	if depthCalls != 0 || downloadCalls != 3 || !repo.Snapshot().Sparse {
+		t.Fatalf("depth=%d download=%d sparse=%v", depthCalls, downloadCalls, repo.Snapshot().Sparse)
+	}
+	repo.SetProjection("svn://example/repo", "")
+	if response := server.dispatch(req); response.Status == contract.StatusOK || downloadCalls != 3 {
+		t.Fatal("anchor download bypassed projected access")
+	}
 }
 
 func (h *headStub) HeadList(_ context.Context, _, _, path string) ([]contract.RepoHeadEntry, error) {

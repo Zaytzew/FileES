@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/cloudfiles"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -88,7 +89,7 @@ func markLocal(localPath, dir string, entries []contract.RepoHeadEntry) {
 	}
 	base := filepath.Join(localPath, filepath.FromSlash(dir))
 	for i := range entries {
-		if _, err := os.Lstat(filepath.Join(base, entries[i].Name)); err == nil {
+		if info, err := os.Lstat(filepath.Join(base, entries[i].Name)); err == nil && !cloudfiles.RecallsOnRead(info) {
 			entries[i].Local = true
 		}
 	}
@@ -171,7 +172,11 @@ func (s *Server) handleHeadMaterialize(req contract.Request) contract.Response {
 	if summary.Attached && filepath.IsAbs(summary.LocalPath) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := repo.SetDepth(ctx, path, "infinity"); err != nil {
+		handled, err := s.downloadAnchor(ctx, p.ServerID, p.RepoID, path)
+		if !handled && err == nil {
+			err = repo.SetDepth(ctx, path, "infinity")
+		}
+		if err != nil {
 			if errors.Is(err, ErrDepthUnavailable) {
 				return contract.ErrResponse(req.RequestID, "HEAD-2008", "ERROR", "RETRY", "head.copy_not_running", nil)
 			}
@@ -226,11 +231,19 @@ func (s *Server) handleHeadFill(req contract.Request) contract.Response {
 	if repo.Snapshot().Sparse {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := repo.SetDepth(ctx, ".", "infinity"); err != nil {
+		handled, err := s.downloadAnchor(ctx, p.ServerID, p.RepoID, ".")
+		if !handled && err == nil {
+			err = repo.SetDepth(ctx, ".", "infinity")
+		}
+		if err != nil {
 			if errors.Is(err, ErrDepthUnavailable) {
 				return contract.ErrResponse(req.RequestID, "HEAD-2008", "ERROR", "RETRY", "head.copy_not_running", nil)
 			}
 			return contract.ErrResponse(req.RequestID, "HEAD-2007", "ERROR", "RETRY", "head.fill_failed", map[string]string{"detail": err.Error()})
+		}
+		if handled {
+			// A point remains sparse, even after explicitly downloading its files.
+			return contract.OKResponse(req.RequestID, contract.RepoHeadWriteResult{LocalPath: summary.LocalPath, Path: ".", State: "attached"})
 		}
 		if recorder, ok := s.repositoryLifecycleService().(FullDepthRecorder); ok {
 			if err := recorder.MarkFullDepth(p.ServerID, p.RepoID); err != nil {

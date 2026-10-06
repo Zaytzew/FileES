@@ -77,6 +77,7 @@ HRESULT filees_own_sync_root(const WCHAR *root);
 /* Availability does not prove publication. SVN is checked between a read-only
  * USN probe and a compare-and-set sent to the connected provider. */
 int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative);
+int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_file_states(const WCHAR *root);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
 int filees_local_identity(const void *identity, DWORD length);

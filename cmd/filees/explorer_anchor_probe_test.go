@@ -237,6 +237,11 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	})
 	visual("online", anchor)
 	opened := time.Now()
+	// The browser explicitly downloads one file through CFAPI, not SetDepth.
+	// Its success must include adoption, even though hydration ACK arrives first.
+	if err := manager.downloadFile(t.Context(), record, "sala.dwg"); err != nil {
+		t.Fatalf("explicit download: %v", err)
+	}
 	read, err := os.ReadFile(filepath.Join(anchor, "sala.dwg"))
 	if err != nil {
 		t.Fatalf("opening the placeholder: %v", err)
@@ -284,6 +289,12 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		return local && !clean
 	})
 	visual("changed", anchor)
+	if err := manager.downloadFile(t.Context(), record, "sala.dwg"); err != nil {
+		t.Fatalf("idempotent download of modified local file: %v", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "edited synthetic drawing" {
+		t.Fatalf("explicit download overwrote local work: %q %v", got, err)
+	}
 	if err := service.WithWorkingCopyWrite(t.Context(), anchor, func() error {
 		_, err := svn.Commit(t.Context(), anchor, []string{"sala.dwg"}, "state observer publication")
 		return err

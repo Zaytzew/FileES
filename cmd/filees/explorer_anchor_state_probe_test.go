@@ -547,6 +547,56 @@ func (p *localStateProbe) accept(rel string, clean bool) {
 	}
 }
 
+// A Shell checkmark is not permission to discard a versioned file. Until
+// release coordinates SVN exclusion and identity restoration, ALWAYS_FULL
+// must reject even a direct, exclusive Windows dehydration request.
+func TestAnchorRetainedFilesRefuseDirectDehydration(t *testing.T) {
+	root := t.TempDir()
+	p := newLocalStateProbe(t, root, "", "")
+	path := filepath.Join(root, "retained.txt")
+	content := bytes.Repeat([]byte("synthetic published bytes\n"), 512)
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.accept("retained.txt", true)
+	dehydrate := windows.NewLazySystemDLL("cldapi.dll").NewProc("CfDehydratePlaceholder")
+	for _, clean := range []bool{true, false} {
+		p.accept("retained.txt", clean)
+		name, err := windows.UTF16PtrFromString(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Attribute-only, share-none: no read/hydration and no competing open.
+		file, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES|windows.WRITE_DAC,
+			0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hr, _, _ := dehydrate.Call(uintptr(file), 0, ^uintptr(0), 0, 0)
+		_ = windows.CloseHandle(file)
+		// winerror.h: DEHYDRATION_DISALLOWED = 434, NOT_IN_SYNC = 377.
+		want := uint32(0x80070000 | 434)
+		if !clean {
+			want = 0x80070000 | 377
+		}
+		if uint32(hr) != want {
+			t.Fatalf("clean=%v: dehydration result 0x%08x, want 0x%08x", clean, uint32(hr), want)
+		}
+		state := p.state("retained.txt")
+		if state.Partial || !state.Local || state.InSync != clean {
+			t.Fatalf("refusal changed state: %+v", state)
+		}
+		if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, content) {
+			t.Fatalf("refusal lost bytes: len=%d err=%v", len(got), err)
+		}
+	}
+	select {
+	case request := <-p.fetch:
+		t.Fatalf("refusal fetched bytes: %v", request)
+	default:
+	}
+}
+
 func TestAnchorLocalStateRefusesMissingBytesAndStalePublication(t *testing.T) {
 	root := t.TempDir()
 	p := newLocalStateProbe(t, root, "", "f\t8192\tremote.txt\tremote.txt\n")

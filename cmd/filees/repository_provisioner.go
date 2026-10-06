@@ -18,6 +18,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
+	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
@@ -36,6 +37,7 @@ type daemonProvisioner struct {
 	provisioning     *provisioning.Store
 	mu               sync.RWMutex
 	detachMu         sync.Mutex
+	localIntentMu    sync.Mutex // lifecycle intent admission versus explicit CFAPI actions
 	detachAnchor     func(context.Context, localrepo.Record) error
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
@@ -833,8 +835,17 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	if current.State != localrepo.StateDetaching && current.State != localrepo.StateDeleting {
 		return current, errors.New("repository detach is not in progress")
 	}
+	if current.LocalPath != "" && commit.HasPendingFileRelease(current.LocalPath) {
+		return current, commit.ErrFileReleasePending
+	}
 	if err := p.quiesceAttachment(ctx, current); err != nil {
 		return current, err
+	}
+	// A release may have begun while quiesce waited for the writer. Its
+	// durable evidence must survive stopping the attachment, even in a
+	// nocfapi build which cannot resume that operation itself.
+	if current.LocalPath != "" && commit.HasPendingFileRelease(current.LocalPath) {
+		return current, commit.ErrFileReleasePending
 	}
 	if current.Anchor {
 		if p.detachAnchor == nil {
@@ -1095,6 +1106,9 @@ func stripWorkingCopyMetadataWithRetry(ctx context.Context, root, operationID st
 }
 
 func stripWorkingCopyMetadata(root, operationID string) error {
+	if root != "" && commit.HasPendingFileRelease(root) {
+		return commit.ErrFileReleasePending
+	}
 	root = filepath.Clean(root)
 	if !filepath.IsAbs(root) || filepath.Dir(root) == root {
 		return errors.New("refusing metadata cleanup outside a specific working-copy directory")

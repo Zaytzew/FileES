@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -53,6 +54,10 @@ func (s *Scanner) AcknowledgePublication(p *PublicationSnapshot) error {
 	}
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
+	return s.acknowledgePublicationLocked(p)
+}
+
+func (s *Scanner) acknowledgePublicationLocked(p *PublicationSnapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.workingCopyAvailable() {
@@ -108,6 +113,40 @@ func (s *Scanner) AcknowledgePublication(p *PublicationSnapshot) error {
 	}
 	s.totalBytes = indexBytes(s.cur)
 	return nil
+}
+
+// WithCleanFileMutation fences a deliberate local-only transition, not a
+// publication. Caller first proves a clean SVN file under its WC writer lock;
+// operation proves the resulting remote placeholder before returning nil.
+// Keep the previous metadata: the scanner carries it across unhydrated files
+// without opening them. A later real edit must still be discovered normally.
+// Lock order is WC writer -> scanMu -> mu; operation must not call Scanner.
+func (s *Scanner) WithCleanFileMutation(ctx context.Context, rel string, operation func() error) error {
+	if !publicationPath(rel) || operation == nil {
+		return errors.New("invalid clean-file mutation")
+	}
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	m, known := s.cur[rel]
+	p := &PublicationSnapshot{Session: s.session, Sequence: s.sequence,
+		Entries: []PublicationEntry{{Path: rel, Present: known, Mtime: m.MtimeSec, Size: m.Size, MD5: m.MD5, Identity: m.Identity, IsDir: m.IsDir}}}
+	s.mu.Unlock()
+	if m.IsDir {
+		return errors.New("clean-file mutation cannot acknowledge a directory")
+	}
+	if err := operation(); err != nil {
+		return err // Neither an intent nor an uncertain effect is a receipt.
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Also retires pre-existing selected queued events after the caller's
+	// independent clean/effect proof. Unrelated and newer events remain.
+	return s.acknowledgePublicationLocked(p)
 }
 
 // EventAcknowledged rejects only queued observations included in this process's

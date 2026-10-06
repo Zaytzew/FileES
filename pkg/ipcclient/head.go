@@ -55,3 +55,12 @@ func (c *Client) HeadFill(ctx context.Context, payload contract.RepoHeadFillPayl
 	var result contract.RepoHeadWriteResult
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
+
+func (c *Client) AnchorRelease(ctx context.Context, payload contract.RepoAnchorReleasePayload) (*contract.RepoHeadWriteResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoAnchorRelease, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoHeadWriteResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}

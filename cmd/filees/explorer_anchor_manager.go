@@ -22,6 +22,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/cloudfiles"
+	"filees/pkg/commit"
 	"filees/pkg/errcat"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -56,6 +57,8 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 		return nil
 	}
 	anchors.helper = cfapi
+	anchors.localIntentMu = &provisioner.localIntentMu
+	anchors.wireRelease(ipc)
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
 	return anchors.run
@@ -82,7 +85,8 @@ type anchorManager struct {
 	stateEvery     time.Duration
 	// newSVN builds the client for a server; nil means the activated
 	// profile's identity (profileSVN). Tests hand over a local client.
-	newSVN func(serverID string) (client.Client, error)
+	newSVN        func(serverID string) (client.Client, error)
+	localIntentMu *sync.Mutex
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -91,6 +95,8 @@ type anchorManager struct {
 type anchorConnection struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	ctx    context.Context
+	bridge *anchorBridge
 }
 
 // anchorHelperPath finds filees-cfapi next to the daemon. FILEES_CFAPI points a
@@ -235,7 +241,7 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 		}
 		anchorCtx, stop := context.WithCancel(ctx)
 		done := make(chan struct{})
-		m.running[key] = anchorConnection{cancel: stop, done: done}
+		m.running[key] = anchorConnection{cancel: stop, done: done, ctx: anchorCtx}
 		go func() {
 			defer close(done)
 			m.keep(anchorCtx, record)
@@ -248,6 +254,9 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 // unregisters without fetching: fully hydrated files stay, unhydrated entries
 // disappear locally. No SVN deletion is scheduled (owner, 2026-09-28).
 func (m *anchorManager) detach(ctx context.Context, record localrepo.Record) error {
+	if commit.HasPendingFileRelease(record.LocalPath) {
+		return commit.ErrFileReleasePending // Keep registration, journal and local metadata intact.
+	}
 	m.mu.Lock()
 	connection, active := m.running[anchorKey(record)]
 	if active {
@@ -338,7 +347,25 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 						m.observeLocalStates(ctx, record, bridge)
 					}
 				}
+				bridge.onConnected = func(providerCtx context.Context) {
+					m.mu.Lock()
+					connection, ok := m.running[anchorKey(record)]
+					if ok && connection.ctx == ctx {
+						connection.bridge = bridge
+						m.running[anchorKey(record)] = connection
+					}
+					m.mu.Unlock()
+					if ok && connection.ctx == ctx {
+						m.recoverAnchorRelease(providerCtx, record, bridge)
+					}
+				}
 				err := bridge.serve(ctx, streams)
+				m.mu.Lock()
+				if connection := m.running[anchorKey(record)]; connection.bridge == bridge {
+					connection.bridge = nil
+					m.running[anchorKey(record)] = connection
+				}
+				m.mu.Unlock()
 				if ctx.Err() == nil {
 					log.Warnf("anchor at %s went offline: %v", record.LocalPath, err)
 				}
@@ -371,6 +398,12 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	}
 	if info.OK && !info.Ours {
 		return fmt.Errorf("%s is registered by %s", record.LocalPath, info.Provider)
+	}
+	if commit.HasPendingFileRelease(record.LocalPath) {
+		if !info.OK {
+			return errors.New("release recovery requires its existing FileES registration")
+		}
+		return nil // Reconnect only; never reseed, rename or replace pending data.
 	}
 	if !info.OK {
 		answer, err := m.call(ctx, "", "register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID)
@@ -499,6 +532,9 @@ type anchorFileReader interface {
 // materialize reads one file at HEAD into a temporary file and says at which
 // revision. The file is removed later: the helper reads it after the answer.
 func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record, identity string) (string, int64, error) {
+	if commit.HasPendingFileRelease(record.LocalPath) {
+		return "", 0, commit.ErrFileReleasePending
+	}
 	rel, ok := cleanAnchorIdentity(identity)
 	if !ok {
 		return "", 0, fmt.Errorf("unsafe anchor path %q", identity)
@@ -525,6 +561,9 @@ func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record
 		return "", 0, err
 	}
 	time.AfterFunc(30*time.Minute, func() { _ = os.RemoveAll(dir) })
+	if commit.HasPendingFileRelease(record.LocalPath) {
+		return "", 0, commit.ErrFileReleasePending
+	}
 	return dest, revision, nil
 }
 

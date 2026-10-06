@@ -2,8 +2,9 @@
 
 package main
 
-// Private coordinator, not called by startup/GUI. Caller holds wcOpMu and
-// supplies the current activated identity/provider. A request is NOT a receipt.
+// Private coordinator behind the daemon's guarded provider action/recovery.
+// Caller holds wcOpMu and supplies the current activated identity/provider.
+// A request is NOT a receipt.
 import (
 	"context"
 	"encoding/json"
@@ -34,6 +35,9 @@ type anchorReleaseIO struct {
 	// not legacy revert. All callbacks finish/reap before returning on cancel.
 	prepare func(context.Context, string, string, anchorReleaseFileID) error
 	restore func(context.Context, string, int64) error
+	// Production admission persists the WC fence after retaining bytes and
+	// BEFORE any mutating request. Private native probes may leave this nil.
+	retained func(context.Context, *anchorReleaseJournal) error
 }
 
 type anchorReleaseResumer interface {
@@ -216,6 +220,11 @@ func startAnchorRelease(ctx context.Context, store string, identity anchorReleas
 	j, err := prepareAnchorReleaseJournal(ctx, store, identity, func(ctx context.Context) (cfapiAnswer, error) { return ops.inspect(ctx, identity.Rel) })
 	if err != nil {
 		return nil, anchorReleaseRecovery{}, err
+	}
+	if ops.retained != nil {
+		if err := ops.retained(ctx, j); err != nil {
+			return j, anchorReleaseRecovery{}, err
+		}
 	}
 	out, err := j.advanceRelease(ctx, ops)
 	return j, out, err

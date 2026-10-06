@@ -31,6 +31,10 @@ type headBrowserDaemon interface {
 	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
 }
 
+type headBrowserReleaseDaemon interface {
+	AnchorRelease(context.Context, contract.RepoAnchorReleasePayload) (*contract.RepoHeadWriteResult, error)
+}
+
 // HeadBrowserService serves the "Browse on the server" window
 // (implementation notes (not distributed)): the tree of a repository with
 // no copy on this computer, or with only chosen paths. Like the time machine
@@ -70,6 +74,7 @@ type HeadBrowserRepository struct {
 	Access     string `json:"access"`
 	Attached   bool   `json:"attached"`
 	Sparse     bool   `json:"sparse"`
+	CanRelease bool   `json:"can_release"`
 	LocalPath  string `json:"local_path,omitempty"`
 }
 
@@ -102,9 +107,10 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 	if !snapshot.Connected || snapshot.Stale {
 		return HeadBrowserRepository{}, false
 	}
-	offered := false
+	offered, releaseOffered := false, false
 	for _, capability := range snapshot.Capabilities {
 		offered = offered || capability == contract.CapRepoHeadBrowse
+		releaseOffered = releaseOffered || capability == contract.CapRepoAnchorRelease
 	}
 	if !offered {
 		return HeadBrowserRepository{}, false
@@ -126,9 +132,31 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 			ServerID: serverID, ServerName: serverName, RepoID: repoID,
 			Name: firstNonBlank(repo.DisplayName, repo.ID), Access: repo.Access,
 			Attached: repo.Attached, Sparse: repo.Sparse, LocalPath: repo.LocalPath,
+			CanRelease: repo.Attached && repo.Sparse && releaseOffered,
 		}, true
 	}
 	return HeadBrowserRepository{}, false
+}
+
+// Release leaves the published file on the server and replaces only a proved
+// clean local FileES file with its remote entry. The daemon is the authority.
+func (service *HeadBrowserService) Release(path string) (contract.RepoHeadWriteResult, error) {
+	finish, err := beginDirectDisplayCall(service.beginDisplayCall)
+	if err != nil {
+		return contract.RepoHeadWriteResult{}, err
+	}
+	defer finish()
+	repo, err := service.focused()
+	if err != nil {
+		return contract.RepoHeadWriteResult{}, err
+	}
+	daemon, available := service.daemon.(headBrowserReleaseDaemon)
+	if !repo.CanRelease || !available {
+		return contract.RepoHeadWriteResult{}, errors.New(service.render("HEAD-2014", "head.release_unavailable", nil))
+	}
+	return headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2015", "head.release_refused", func(ctx context.Context) (*contract.RepoHeadWriteResult, error) {
+		return daemon.AnchorRelease(ctx, contract.RepoAnchorReleasePayload{ServerID: repo.ServerID, RepoID: repo.RepoID, Path: path})
+	})
 }
 
 func (service *HeadBrowserService) focused() (HeadBrowserRepository, error) {

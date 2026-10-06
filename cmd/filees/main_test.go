@@ -207,6 +207,45 @@ func TestReadOnlyUpdateUsesLocalStatusWriterGuard(t *testing.T) {
 	}
 }
 
+func TestReadOnlyReleaseRecoveryFenceIsNotOffline(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "filees.sock"))
+	rs := server.RegisterRepo("archive", "svn://example/archive", wc)
+	rs.SetConnectivity(contract.ConnOnline)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	called, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		runReadOnlyRepoWithUpdate(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, nil, nil, talk.With("release-fence"), nil, func(context.Context, string) (string, error) {
+			close(called)
+			return "", commit.ErrFileReleasePending
+		})
+	}()
+	<-called
+	deadline := time.After(time.Second)
+	for {
+		snap := rs.Snapshot()
+		if snap.Cycle.Phase == contract.CycleWaiting {
+			if snap.Connectivity != contract.ConnOnline || snap.State != contract.StateActive || snap.LastSyncAt != "" {
+				t.Fatalf("local fence became an offline alarm or successful update: %+v", snap)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("deferred cycle did not finish")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
+}
+
 func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
 	parent := t.TempDir()
 	wc := filepath.Join(parent, "archive")

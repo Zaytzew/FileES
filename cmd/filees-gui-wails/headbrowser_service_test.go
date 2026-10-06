@@ -19,6 +19,12 @@ type fakeHeadBrowserDaemon struct {
 	materialized []contract.RepoHeadMaterializePayload
 	fills        []contract.RepoHeadFillPayload
 	anchors      []contract.RepoAnchorCreatePayload
+	releases     []contract.RepoAnchorReleasePayload
+}
+
+func (f *fakeHeadBrowserDaemon) AnchorRelease(_ context.Context, p contract.RepoAnchorReleasePayload) (*contract.RepoHeadWriteResult, error) {
+	f.releases = append(f.releases, p)
+	return &contract.RepoHeadWriteResult{Path: p.Path, State: "attached"}, nil
 }
 
 func (f *fakeHeadBrowserDaemon) AnchorCreate(_ context.Context, p contract.RepoAnchorCreatePayload) (*contract.RepoHeadWriteResult, error) {
@@ -72,6 +78,46 @@ func newTestHeadBrowser(snapshot Snapshot) (*HeadBrowserService, *fakeHeadBrowse
 	return service, daemon
 }
 
+func TestHeadBrowserReleaseNeedsCurrentProviderAndFocus(t *testing.T) {
+	snapshot := headBrowserSnapshot()
+	snapshot.Capabilities = append(snapshot.Capabilities, contract.CapRepoAnchorRelease)
+	service, daemon := newTestHeadBrowser(snapshot)
+	service.projection = func() Snapshot { return snapshot }
+	if err := service.Open("office", "sparse"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Release("docs/drawing.dwg"); err != nil {
+		t.Fatal(err)
+	}
+	if len(daemon.releases) != 1 || daemon.releases[0] != (contract.RepoAnchorReleasePayload{ServerID: "office", RepoID: "sparse", Path: "docs/drawing.dwg"}) {
+		t.Fatal("selection was not bound to focused repository", daemon.releases)
+	}
+	// A capability lost after opening the window must not leave a stale action.
+	snapshot.Capabilities = []string{contract.CapRepoHeadBrowse}
+	if _, err := service.Release("docs/drawing.dwg"); err == nil {
+		t.Fatal("stale provider capability admitted")
+	}
+	snapshot.Capabilities = append(snapshot.Capabilities, contract.CapRepoAnchorRelease)
+	for _, repo := range []string{"remote", "sparse"} {
+		if err := service.Open("office", repo); err != nil {
+			t.Fatal(err)
+		}
+		if repo == "sparse" {
+			snapshot.Repositories[1].Sparse = false
+		}
+		if _, err := service.Release("drawing.dwg"); err == nil {
+			t.Fatalf("release admitted for %s", repo)
+		}
+	}
+	snapshot.Stale = true
+	if _, err := service.Release("drawing.dwg"); err == nil {
+		t.Fatal("stale projection admitted")
+	}
+	if len(daemon.releases) != 1 || len(daemon.materialized) != 0 || len(daemon.fills) != 0 {
+		t.Fatal("refusal performed alternate action", daemon)
+	}
+}
+
 func TestHeadBrowserFrontendBindingUsesBuildContextIDs(t *testing.T) {
 	_ = application.New(application.Options{})
 	bindings := application.NewBindings(nil, nil)
@@ -88,7 +134,7 @@ func TestHeadBrowserFrontendBindingUsesBuildContextIDs(t *testing.T) {
 	// import path instead, so an ID read from bindings here would differ from
 	// the one the application answers to - which is exactly how r1450 shipped
 	// with "unknown bound method id" behind every button of this window.
-	for _, method := range []string{"Open", "Context", "Repository", "List", "Preview", "OpenLocal", "Materialize", "Fill", "Operation", "Close"} {
+	for _, method := range []string{"Open", "Context", "Repository", "List", "Preview", "OpenLocal", "Materialize", "Fill", "Release", "Operation", "Close"} {
 		if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.HeadBrowserService." + method}) == nil {
 			t.Fatalf("binding not found: %s", method)
 		}

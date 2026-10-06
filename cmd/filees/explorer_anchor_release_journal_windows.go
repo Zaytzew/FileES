@@ -247,6 +247,10 @@ func writeAnchorReleaseRecord(dir string, index int, record anchorReleaseRecord)
 }
 
 func writeAnchorReleaseJSON(dir string, index int, value any) error {
+	return writeAnchorReleaseJSONFile(dir, fmt.Sprintf("%02d.json", index), value)
+}
+
+func writeAnchorReleaseJSONFile(dir, name string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -271,7 +275,7 @@ func writeAnchorReleaseJSON(dir string, index int, value any) error {
 	if err != nil {
 		return err
 	}
-	to, err := windows.UTF16PtrFromString(filepath.Join(dir, fmt.Sprintf("%02d.json", index)))
+	to, err := windows.UTF16PtrFromString(filepath.Join(dir, name))
 	if err != nil {
 		return err
 	}

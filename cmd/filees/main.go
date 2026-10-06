@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -264,6 +265,7 @@ func runDaemon() {
 	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetLockReleaseService(realmAliases)
 	lifecycleService := repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue, onRepair: provisioner.RepairLifecycle, importProgress: provisioner.ImportProgress}
+	lifecycleService.localIntentMu = &provisioner.localIntentMu
 	ipc.SetRepositoryLifecycleService(lifecycleService)
 	history := historyService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath}
 	ipc.SetHistoryService(history)
@@ -439,6 +441,9 @@ func runReadOnlyRepoWithUpdate(ctx context.Context, repo config.Repo, rs *ipcser
 		}()
 		out, err := svnUpdate(ctx, repo.LocalPath)
 		if err != nil {
+			if errors.Is(err, commit.ErrFileReleasePending) {
+				return true // Local recovery fence, not a lost server connection.
+			}
 			if ctx.Err() == nil {
 				recordSyncFailure(sink, lg, "svn update failed", err)
 				if strings.TrimSpace(out) != "" {

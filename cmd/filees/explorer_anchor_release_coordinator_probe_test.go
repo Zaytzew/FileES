@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/commit"
+	"filees/pkg/watcher"
 )
 
 func (p *localStateProbe) prepareReleaseBound(rel, usn string, source anchorReleaseFileID) string {
@@ -89,7 +91,7 @@ func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target stri
 
 // Actual CFAPI and SVN in owned fixtures. No production pair, GUI or copy retirement.
 func TestAnchorReleaseCoordinatorNative(t *testing.T) {
-	for _, name := range []string{"normal", "empty", "lost-prepare-ack", "lost-exclude-ack", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
+	for _, name := range []string{"normal", "empty", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			repo, source, point, store := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point"), filepath.Join(root, "evidence")
@@ -101,7 +103,7 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}
 			}
 			body := bytes.Repeat([]byte("bound retained fixture "), 800)
-			if name == "empty" {
+			if name == "empty" || name == "managed-empty" {
 				body = []byte{}
 			}
 			cache := filepath.Join(source, "drawing.dwg")
@@ -235,6 +237,77 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}
 				if got, err := svn.InspectPathExclusion(t.Context(), point, identity.Rel); err != nil || got.Excluded || !got.Idle {
 					t.Fatal("BASE changed", got, err)
+				}
+				return
+			}
+			if name == "managed" || name == "managed-empty" || name == "managed-ack-failure" {
+				state := filepath.Join(point, ".filees", "state")
+				if err := os.Mkdir(state, 0700); err != nil {
+					t.Fatal(err)
+				}
+				scanner, err := watcher.NewScanner(watcher.Options{WC: point, StatePath: filepath.Join(state, "manifest.json"), PublicationPending: func() bool { return commit.HasPendingFileRelease(point) }})
+				if err != nil {
+					t.Fatal(err)
+				}
+				service := &commit.Service{Cli: c, FenceFileRelease: scanner.WithCleanFileMutation}
+				service.BindWorkingCopy("fixture", point)
+				var saved *anchorReleaseJournal
+				var fence *anchorReleaseFence
+				ops.retained = func(ctx context.Context, j *anchorReleaseJournal) error {
+					saved = j
+					var err error
+					fence, err = j.persistFence(ctx)
+					return err
+				}
+				remote := c.(anchorReleaseRemoteReader)
+				ackFailure := errors.New("fixture durable ack refused")
+				if name == "managed-ack-failure" {
+					service.FenceFileRelease = func(_ context.Context, _ string, op func() error) error {
+						if err := op(); err != nil {
+							return err
+						}
+						return ackFailure
+					}
+				}
+				err = service.WithFileRelease(ctx, point, identity.Rel, false, func() error {
+					var err error
+					var result anchorReleaseRecovery
+					saved, result, err = startAnchorRelease(ctx, store, identity, ops)
+					if err == nil && !result.seedObserved {
+						return errors.New("missing remote seed")
+					}
+					return err
+				}, func() error { return finishManagedAnchorRelease(ctx, saved, fence, ops, remote) })
+				if name == "managed-ack-failure" {
+					if !errors.Is(err, ackFailure) || !commit.HasPendingFileRelease(point) {
+						t.Fatal("ack failure cleared fence", err)
+					}
+					if got, err := os.ReadFile(filepath.Join(store, saved.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
+						t.Fatal("ack failure lost retained bytes", err)
+					}
+					service.FenceFileRelease = scanner.WithCleanFileMutation
+					err = service.WithFileRelease(t.Context(), point, identity.Rel, true, func() error {
+						var err error
+						saved, fence, err = loadAnchorReleaseFence(t.Context(), store, identity)
+						if err != nil {
+							return err
+						}
+						return advanceManagedAnchorRelease(t.Context(), saved, ops, remote)
+					}, func() error { return finishManagedAnchorRelease(t.Context(), saved, fence, ops, remote) })
+				}
+				if err != nil || commit.HasPendingFileRelease(point) {
+					t.Fatal("managed cycle", err)
+				}
+				if _, err := os.Lstat(filepath.Join(store, saved.id, "data.bin")); !os.IsNotExist(err) {
+					t.Fatal("verified retained copy not retired", err)
+				}
+				if _, err := os.Stat(filepath.Join(state, "manifest.json")); err != nil {
+					t.Fatal("scanner ack not durable", err)
+				}
+				select {
+				case request := <-p.fetch:
+					t.Fatalf("release hydrated bytes: %v", request)
+				default:
 				}
 				return
 			}

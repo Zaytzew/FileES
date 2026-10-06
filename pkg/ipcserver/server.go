@@ -57,6 +57,7 @@ type Server struct {
 	headReads            HeadService
 	anchorCheck          AnchorPrecheck
 	anchorDownload       AnchorDownload
+	anchorRelease        AnchorRelease
 	partialAnchor        bool
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
@@ -409,6 +410,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.anchorPrecheck() != nil {
 		caps = append(caps, contract.CapRepoExplorerAnchor)
+	}
+	if s.anchorReleaseHandler() != nil {
+		caps = append(caps, contract.CapRepoAnchorRelease)
 	}
 	if s.partialAnchorMode() {
 		caps = append(caps, contract.CapRepoPartialAnchor)

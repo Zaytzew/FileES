@@ -88,7 +88,7 @@ type Options struct {
 // Scanner performs shell-first periodic scans
 // BASELINING => PROMOTE => ACTIVE (per baseline.ok flag)
 type Scanner struct {
-	scanMu             sync.Mutex // scan/snapshot/ack; never held while delivering events
+	scanMu             sync.Mutex // scan/hash/snapshot/ack/mutation; never held while delivering events
 	session            string
 	sequence           uint64
 	acknowledged       map[string]uint64
@@ -1014,6 +1014,14 @@ func (s *Scanner) runBacklogWorker(ctx context.Context) {
 // processOneBacklogItem picks the smallest pending backlog entry, verifies the
 // file is still stable, computes its MD5, then updates s.cur and removes the entry.
 func (s *Scanner) processOneBacklogItem(ctx context.Context) {
+	// The background hash is another filesystem reader. A release fence must
+	// wait for it too, and a pending mutation must not turn a restored remote
+	// placeholder into an automatic download through the old hash backlog.
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if ctx.Err() != nil || (s.publicationPending != nil && s.publicationPending()) {
+		return
+	}
 	s.mu.Lock()
 	if len(s.backlog) == 0 {
 		s.mu.Unlock()
@@ -1032,6 +1040,9 @@ func (s *Scanner) processOneBacklogItem(ctx context.Context) {
 
 	absPath := filepath.Join(s.wc, filepath.FromSlash(item.Rel))
 	fi, err := os.Stat(absPath)
+	if err == nil && cloudfiles.RecallsOnRead(fi) {
+		return // Keep the entry, do not open a provider's missing bytes.
+	}
 	if err != nil || fi.Size() != item.Size || fi.ModTime().Unix() != item.Mtime {
 		// File gone or changed since enqueue — drop only the matching entry.
 		s.removeBacklogEntry(item)

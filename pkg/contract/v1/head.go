@@ -14,6 +14,17 @@ const CapRepoHeadBrowse = "repo.head_browse"
 // Explorer anchor: Windows with the filees-cfapi helper installed.
 const CapRepoExplorerAnchor = "repo.explorer_anchor"
 
+// Optional explicit local release; never implies ordinary sparse exclusion.
+const CapRepoAnchorRelease = "repo.anchor_release"
+
+const CmdRepoAnchorRelease = "repo.anchor_release"
+
+type RepoAnchorReleasePayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+	Path     string `json:"path"`
+}
+
 // CapRepoPartialAnchor says how this daemon does partial attachments: as
 // Explorer anchors (Windows builds with the Cloud Files API) and never as
 // plain sparse copies. Absent, partial attachments are sparse copies driven

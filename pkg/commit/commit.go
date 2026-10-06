@@ -164,6 +164,7 @@ type Service struct {
 	CapturePublication     func([]string) (*watcher.PublicationSnapshot, error)
 	AcknowledgePublication func(*watcher.PublicationSnapshot) error
 	EventAcknowledged      func(watcher.Event) bool
+	FenceFileRelease       func(context.Context, string, func() error) error
 	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
 	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
 	Emit func(evType string, payload any)
@@ -413,10 +414,10 @@ func (s *Service) SetDepth(ctx context.Context, wc, rel, depth string) error {
 	if !ok {
 		return errors.New("SVN client cannot change working copy depth")
 	}
-	s.wcOpMu.Lock()
-	defer s.wcOpMu.Unlock()
-	_, err := deepener.UpdateSetDepth(ctx, wc, rel, depth)
-	return err
+	return s.WithWorkingCopyWrite(ctx, wc, func() error {
+		_, err := deepener.UpdateSetDepth(ctx, wc, rel, depth)
+		return err
+	})
 }
 
 // AdoptPath takes one path into the working copy at a pinned revision,
@@ -430,10 +431,10 @@ func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64)
 	if !ok {
 		return errors.New("SVN client cannot adopt a path into the working copy")
 	}
-	s.wcOpMu.Lock()
-	defer s.wcOpMu.Unlock()
-	_, err := adopter.UpdateAdoptPath(ctx, wc, rel, revision)
-	return err
+	return s.WithWorkingCopyWrite(ctx, wc, func() error {
+		_, err := adopter.UpdateAdoptPath(ctx, wc, rel, revision)
+		return err
+	})
 }
 
 // Run consumes watcher events and periodically performs commits.
@@ -615,6 +616,9 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 // recordCommitFailure writes the classified fault to errors.jsonl and the
 // talk log. tryCommit used to Warnf only, which never reached `filees log`.
 func (s *Service) recordCommitFailure(what string, err error) {
+	if errors.Is(err, ErrFileReleasePending) {
+		return // Local release recovery is not a failed publication.
+	}
 	var held *recoveryFailure
 	if errors.As(err, &held) {
 		return // Already journaled by recovery or explicit-intent HOLD reporting.
@@ -712,6 +716,9 @@ func (s *Service) shutdownDrain(wc string) {
 		return
 	}
 	s.saveCache()
+	if HasPendingFileRelease(wc) {
+		return // Preserve queued edits; recovery alone may clear the fence.
+	}
 	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
 	s.drain(drainCtx, wc)
 	cancel()
@@ -952,6 +959,9 @@ type pendingEntry struct {
 // unknown identity cannot grant speculative RW. Per-path ownership includes
 // guest-owned objects; other objects remain on the manual borrow path.
 func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
+	if HasPendingFileRelease(wc) {
+		return
+	}
 	if s.AutoUnlockOwned == nil || s.RealmID == "" || (!s.PerPathOwnership && s.RealmID != s.OwnerRealmID) {
 		return
 	}
@@ -1120,6 +1130,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 // Caller holds publication admission and wcOpMu. The shout comment cannot be
 // consumed by an automatic commit or replaced by a second publish request.
 func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) error {
+	if HasPendingFileRelease(wc) {
+		return ErrFileReleasePending
+	}
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("working copy metadata is missing")
 	}

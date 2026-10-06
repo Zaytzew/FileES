@@ -24,6 +24,9 @@ func (s *Service) WithWorkingCopyWrite(ctx context.Context, wc string, operation
 	if s.wc != wc || s.commitWriterBlocked || operation == nil {
 		return ErrLocalStatusBusy
 	}
+	if HasPendingFileRelease(wc) {
+		return ErrFileReleasePending
+	}
 	return operation()
 }
 
@@ -45,6 +48,9 @@ func (s *Service) WithLocalStatus(ctx context.Context, wc string, paths []string
 	defer s.wcOpMu.Unlock()
 	if s.wc != wc || s.commitWriterBlocked || s.Cli == nil {
 		return ErrLocalStatusBusy
+	}
+	if HasPendingFileRelease(wc) {
+		return ErrFileReleasePending
 	}
 	rows, err := s.Cli.Status(ctx, wc, paths)
 	if err != nil {

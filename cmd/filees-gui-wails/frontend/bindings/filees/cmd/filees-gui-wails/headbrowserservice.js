@@ -40,6 +40,10 @@ export function Fill() {
     return $Call.ByID(158188730);
 }
 
+export function Release(path) {
+    return $Call.ByID(1622697256, path);
+}
+
 export function Operation(operationID) {
     return $Call.ByID(2266335560, operationID);
 }

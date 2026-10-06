@@ -237,6 +237,9 @@ var specs = []Spec{
 	{"HEAD-2010", "head.anchor_attached", SevError, HintNone, nil, "The repository already has a working copy here"},
 	{"HEAD-2011", "head.anchor_refused", SevError, HintRequireAction, nil, "This folder cannot become an Explorer anchor"},
 	{"HEAD-2013", "head.anchor_under_provider", SevError, HintRequireAction, []Field{{"provider", ParamText}}, "The folder is synchronised by another program"},
+	{"HEAD-2014", "head.release_unavailable", SevError, HintNone, nil, "Explicit local file release is unavailable"},
+	{"HEAD-2015", "head.release_refused", SevError, HintRetry, nil, "File release was refused; preserve local data"},
+	{"HEAD-2016", "head.release_pending", SevError, HintRetry, nil, "Interrupted file release awaits verified recovery"},
 	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},

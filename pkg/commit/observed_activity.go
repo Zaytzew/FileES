@@ -20,7 +20,7 @@ import (
 // events, and must not turn a received parent into an outgoing addition.
 func (s *Service) cleanObservedPaths(ctx context.Context, wc string, paths []string) map[string]bool {
 	clean := make(map[string]bool)
-	if s.Cli == nil || wc == "" {
+	if s.Cli == nil || wc == "" || HasPendingFileRelease(wc) {
 		return clean
 	}
 	before := make(map[string]os.FileInfo)
@@ -227,6 +227,9 @@ func updateActivityPaths(output string) map[string]watcher.OpType {
 }
 
 func (s *Service) receivedRemoval(ctx context.Context, rel string) bool {
+	if HasPendingFileRelease(s.wc) {
+		return false
+	}
 	proven := s.receivedDeletes[rel]
 	// SVN emits one deletion notification for a whole directory. The
 	// filesystem watcher emits its descendants separately after debounce.

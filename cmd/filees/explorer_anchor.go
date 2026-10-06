@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -50,9 +51,10 @@ type anchorBridge struct {
 	// placeholders. Only the daemon's SVN/USN observer may confirm clean.
 	retainLocal     bool
 	observe         func(context.Context, *anchorBridge)
+	onConnected     func(context.Context)
 	stateMu         sync.Mutex
 	stateID         uint64
-	stateWait       map[string]chan string
+	stateWait       map[string]anchorCommandWait
 	stopStateWriter func() // kill and reap before releasing the WC metadata guard
 	// root is the anchor folder; identities are paths below it.
 	root string
@@ -86,6 +88,11 @@ type anchorFetched struct {
 	identity string
 	revision int64
 	reverts  int
+}
+
+type anchorCommandWait struct {
+	prefix string
+	reply  chan string
 }
 
 var errAnchorHelperGone = errors.New("explorer anchor helper stopped")
@@ -147,8 +154,10 @@ func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperS
 func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStreams) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	bridge.queueMu.Lock()
 	bridge.ready = sync.NewCond(&bridge.queueMu)
 	bridge.stopStateWriter = streams.abort
+	bridge.queueMu.Unlock()
 	if bridge.revertRetry <= 0 {
 		bridge.revertRetry = 5 * time.Second
 	}
@@ -171,17 +180,18 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 		work(func() { bridge.observe(ctx, bridge) })
 	}
 	reader := bufio.NewScanner(streams.stdout)
+	connected := false
 	reader.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		switch {
-		case strings.HasPrefix(line, "state-set\t"):
+		case strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"):
 			fields := strings.Split(line, "\t")
 			if len(fields) == 3 {
 				bridge.stateMu.Lock()
-				if reply := bridge.stateWait[fields[1]]; reply != nil {
+				if waiter, ok := bridge.stateWait[fields[1]]; ok && waiter.prefix == fields[0] {
 					select {
-					case reply <- fields[2]:
+					case waiter.reply <- fields[2]:
 					default:
 					}
 				}
@@ -209,9 +219,13 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 				work(func() { bridge.reverted(ctx, fields[1], fields[2]) })
 			}
 		default:
-			// The helper's own first line ({"ok":true,...}) and anything else
-			// that is not part of the protocol stays out of the way: this is a
-			// protocol between two programs, not a place to guess.
+			var receipt cfapiAnswer
+			if !connected && json.Unmarshal([]byte(line), &receipt) == nil && receipt.OK && receipt.Detail == "connected" {
+				connected = true
+				if bridge.onConnected != nil {
+					work(func() { bridge.onConnected(ctx) })
+				}
+			}
 		}
 	}
 	// Answers still in flight are written to a stream that may already be
@@ -322,27 +336,73 @@ func (bridge *anchorBridge) setLocalState(ctx context.Context, rel, usn string, 
 	if token, err := strconv.ParseInt(usn, 10, 64); err != nil || token <= 0 {
 		return errors.New("invalid local state token")
 	}
-	bridge.stateMu.Lock()
-	bridge.stateID++
-	id := "state-" + strconv.FormatUint(bridge.stateID, 10)
-	if bridge.stateWait == nil {
-		bridge.stateWait = map[string]chan string{}
-	}
-	reply := make(chan string, 1)
-	bridge.stateWait[id] = reply
-	bridge.stateMu.Unlock()
-	defer func() { bridge.stateMu.Lock(); delete(bridge.stateWait, id); bridge.stateMu.Unlock() }()
 	flag := "0"
 	if clean {
 		flag = "1"
 	}
-	bridge.enqueue("state-set\t" + id + "\t" + rel + "\t" + usn + "\t" + flag)
+	return bridge.connectedCommand(ctx, "state-set", "state-set", rel, usn, flag)
+}
+
+// These commands must run on the provider which owns the connected root.
+// Separate one-shot CFAPI processes cannot safely prepare/restore its file.
+// A matching command ID with the wrong reply type is not an acknowledgement.
+func (bridge *anchorBridge) prepareRelease(ctx context.Context, rel, usn, binding string) error {
+	if _, ok := cleanAnchorIdentity(rel); !ok || strings.ContainsAny(rel, "\t\r\n") {
+		return errors.New("invalid release path")
+	}
+	if token, err := strconv.ParseInt(usn, 10, 64); err != nil || token <= 0 {
+		return errors.New("invalid release token")
+	}
+	parts := strings.Split(binding, ":")
+	if len(parts) != 2 {
+		return errors.New("invalid release source identity")
+	}
+	if _, err := strconv.ParseUint(parts[0], 10, 32); err != nil {
+		return errors.New("invalid release volume")
+	}
+	if id, err := strconv.ParseUint(parts[1], 10, 64); err != nil || id == 0 {
+		return errors.New("invalid release file identity")
+	}
+	return bridge.connectedCommand(ctx, "prepare-release-bound", "release-prepared", rel, usn, binding)
+}
+
+func (bridge *anchorBridge) restoreRelease(ctx context.Context, rel string, size int64) error {
+	if _, ok := cleanAnchorIdentity(rel); !ok || strings.ContainsAny(rel, "\t\r\n") || size < 0 {
+		return errors.New("invalid release restoration")
+	}
+	return bridge.connectedCommand(ctx, "restore-release", "release-restored", rel, strconv.FormatInt(size, 10))
+}
+
+// Caller retains the WC guard through the ACK or through process exit. A
+// timeout/cancel reaps the actual provider before a second writer may enter.
+func (bridge *anchorBridge) connectedCommand(ctx context.Context, command, prefix string, args ...string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	bridge.stateMu.Lock()
+	bridge.stateID++
+	id := "state-" + strconv.FormatUint(bridge.stateID, 10)
+	if bridge.stateWait == nil {
+		bridge.stateWait = map[string]anchorCommandWait{}
+	}
+	reply := make(chan string, 1)
+	bridge.stateWait[id] = anchorCommandWait{prefix: prefix, reply: reply}
+	bridge.stateMu.Unlock()
+	defer func() { bridge.stateMu.Lock(); delete(bridge.stateWait, id); bridge.stateMu.Unlock() }()
+	bridge.queueMu.Lock()
+	if bridge.closed || bridge.ready == nil {
+		bridge.queueMu.Unlock()
+		return errAnchorHelperGone
+	}
+	bridge.queued = append(bridge.queued, command+"\t"+id+"\t"+strings.Join(args, "\t"))
+	bridge.ready.Signal()
+	bridge.queueMu.Unlock()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	select {
 	case hr := <-reply:
 		if hr != hresultOK {
-			return fmt.Errorf("local Shell state refused: %s", hr)
+			return fmt.Errorf("connected provider %s refused: %s", command, hr)
 		}
 		return nil
 	case <-ctx.Done():

@@ -128,6 +128,9 @@ func (s *Service) PlanIntents(ctx context.Context) (*contract.IntentPlan, error)
 func (s *Service) ApplyIntents(ctx context.Context, planID, choice string) (*contract.IntentApplyResult, error) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	if HasPendingFileRelease(s.wc) {
+		return nil, ErrFileReleasePending
+	}
 	if choice != contract.IntentDeleteAdd || planID == "" {
 		return nil, errors.New("unsupported intent decision")
 	}

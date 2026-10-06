@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/google/uuid"
 
 	"filees/pkg/clientprofile"
+	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localrepo"
@@ -16,6 +18,7 @@ import (
 )
 
 type repositoryLifecycleService struct {
+	localIntentMu *sync.Mutex
 	store         *localrepo.Store
 	provisioning  *provisioning.Store
 	clientID      func(string) string
@@ -31,6 +34,14 @@ type repositoryLifecycleService struct {
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRoots())
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
@@ -46,6 +57,14 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 }
 
 func (service repositoryLifecycleService) BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	// The current root may simply have reappeared after reconnecting a drive.
 	// Exclude this record only; Store still rejects nested relocation targets.
 	operationID := ""
@@ -74,6 +93,14 @@ func (service repositoryLifecycleService) BeginLocate(serverID, repoID, existing
 // runReconcile). Options travel through the durable record, not a closure,
 // so a daemon restart before the async work runs still has them.
 func (service repositoryLifecycleService) BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	record, err := service.store.BeginReconcile(serverID, repoID, applyIgnorePolicy, keepLastRevisions)
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
@@ -85,6 +112,14 @@ func (service repositoryLifecycleService) BeginLoadDump(serverID, repoID string,
 }
 
 func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serverID, repoID string, deleteRepository, deleteLocal bool) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	if !deleteRepository && service.store.RemoteDeleted(serverID, repoID) {
 		record, err := service.store.DismissRemoteDeletedCopy(serverID, repoID)
 		return lifecycleResult(record), err
@@ -98,8 +133,38 @@ func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serve
 }
 
 func (service repositoryLifecycleService) BeginDelete(ctx context.Context, serverID, repoID, displayName string) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	record, err := service.store.BeginDelete(serverID, repoID, displayName)
 	return service.finishDetach(ctx, record, err)
+}
+
+func (service repositoryLifecycleService) fileReleasePending(serverID, repoID string) bool {
+	for _, record := range service.store.List() {
+		if record.ServerID == serverID && record.RepoID == repoID && record.LocalPath != "" && commit.HasPendingFileRelease(record.LocalPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// Never queue a lifecycle intent behind a long explicit local transfer. The
+// shared guard keeps the attached record current through release/recovery;
+// the durable pending fence handles restarts and unsupported later builds.
+func (service repositoryLifecycleService) enterLocalIntent() (func(), error) {
+	if service.localIntentMu == nil {
+		return func() {}, nil
+	}
+	if !service.localIntentMu.TryLock() {
+		return nil, commit.ErrLocalStatusBusy
+	}
+	return service.localIntentMu.Unlock, nil
 }
 
 func (service repositoryLifecycleService) DismissRecovery(serverID, repoID, operationID string) (contract.RepoRecoveryDismissResult, error) {
@@ -220,6 +285,14 @@ func (service repositoryLifecycleService) Status(operationID string) (contract.R
 }
 
 func (service repositoryLifecycleService) Repair(ctx context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, commit.ErrFileReleasePending
+	}
 	record, ok := service.store.Get(operationID)
 	if !ok {
 		return contract.RepoLifecycleResult{}, os.ErrNotExist
@@ -233,7 +306,7 @@ func (service repositoryLifecycleService) Repair(ctx context.Context, operationI
 	if service.onRepair == nil {
 		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle repair executor is unavailable")
 	}
-	record, err := service.onRepair(ctx, operationID, strategy)
+	record, err = service.onRepair(ctx, operationID, strategy)
 	return lifecycleResult(record), err
 }
 

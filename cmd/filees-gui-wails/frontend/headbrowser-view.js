@@ -25,3 +25,9 @@ export function copyStatusKey(repo) {
   if (!repo?.attached) return "headBrowser.statusNone";
   return repo.sparse ? "headBrowser.statusSparse" : "headBrowser.statusFull";
 }
+
+// Availability is supplied by the daemon; directories get their own explicit
+// bulk flow later. Never offer a destructive transition for a remote-only row.
+export function releaseAllowed(repo, entry) {
+  return Boolean(repo?.attached && repo?.sparse && repo?.can_release && entry?.local && entry?.kind === "file");
+}

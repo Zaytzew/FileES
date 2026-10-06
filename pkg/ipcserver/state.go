@@ -73,6 +73,7 @@ type RepoState struct {
 	depthFn                  func(ctx context.Context, rel, depth string) error
 	adoptFn                  func(ctx context.Context, rel string, revision int64) error
 	localStatusFn            func(context.Context, []string, func([]client.StatusEntry) error) error
+	fileReleaseFn            func(context.Context, string, bool, func() error, func() error) error
 	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)

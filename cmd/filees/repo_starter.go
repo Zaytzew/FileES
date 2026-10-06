@@ -258,8 +258,8 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		return false
 	}
 	defer leave()
-	if commit.HasUnresolvedCommit(wc) {
-		logger.Infof("startup update deferred: durable commit receipt recovery pending")
+	if commit.HasUnresolvedCommit(wc) || commit.HasPendingFileRelease(wc) {
+		logger.Infof("startup update deferred: durable local operation recovery pending")
 		return false
 	}
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
@@ -405,7 +405,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		_ = os.Remove(baselineOK)
 	}
 	wopts, latency := buildWatcherOptions(repo, manifest, busyPath)
-	wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) }
+	wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) || commit.HasPendingFileRelease(wc) }
 	scanner, err := watcher.NewScanner(wopts)
 	if err != nil {
 		return nil, err
@@ -444,13 +444,17 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service.CapturePublication = scanner.CapturePublication
 	service.AcknowledgePublication = scanner.AcknowledgePublication
 	service.EventAcknowledged = scanner.EventAcknowledged
+	service.FenceFileRelease = scanner.WithCleanFileMutation
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
 	if recovered {
 		// Conflicts an older update left behind block the migration below
 		// and every commit of their paths; settle them first.
 		service.ReconcileStandingConflicts(ctx, wc)
 	}
-	migrationDeferred := applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+	migrationDeferred := true
+	if !commit.HasPendingFileRelease(wc) {
+		migrationDeferred = applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+	}
 	// A deferred migration is retried after each confirmed publication rather
 	// than only at the next start: the change that blocked it has just gone
 	// out (owner's production, 2026-09-25).
@@ -500,6 +504,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return service.WithLocalStatus(ctx, wc, paths, confirm)
 	})
+	runtimeRepo.state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, operation func() error, complete func() error) error {
+		return service.WithFileRelease(ctx, wc, rel, recovery, operation, complete)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	var canonicalPlan *canonicalRecoveryJob
@@ -541,6 +548,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetDepthFunc(nil)
 			runtimeRepo.state.SetAdoptFunc(nil)
 			runtimeRepo.state.SetLocalStatusFunc(nil)
+			runtimeRepo.state.SetFileReleaseFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -601,6 +609,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		runtimeRepo.state.SetDepthFunc(nil)
 		runtimeRepo.state.SetAdoptFunc(nil)
 		runtimeRepo.state.SetLocalStatusFunc(nil)
+		runtimeRepo.state.SetFileReleaseFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
 		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -1072,6 +1081,9 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	runtime.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return guard.WithLocalStatus(ctx, wc, paths, confirm)
 	})
+	runtime.state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, operation func() error, complete func() error) error {
+		return guard.WithFileRelease(ctx, wc, rel, recovery, operation, complete)
+	})
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
 		func(id string) error { return shout.Ack(wc, id) },
@@ -1122,6 +1134,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		runtime.state.SetDepthFunc(nil)
 		runtime.state.SetAdoptFunc(nil)
 		runtime.state.SetLocalStatusFunc(nil)
+		runtime.state.SetFileReleaseFunc(nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

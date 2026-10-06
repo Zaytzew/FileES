@@ -141,6 +141,9 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 	if record, ok, err := service.recoverableCreate(serverID, localPath); err != nil {
 		return contract.RepoLifecycleResult{}, err
 	} else if ok {
+		if err := provisioning.CheckInitialContent(record.LocalPath); err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
 		record, err = service.store.ResumeCreate(record.OperationID)
 		if err != nil {
 			return contract.RepoLifecycleResult{}, err

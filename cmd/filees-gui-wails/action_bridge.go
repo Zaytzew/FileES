@@ -917,18 +917,23 @@ func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, opera
 // CreationProgress is CreationStatus with the initial publication's measured
 // progress from the same repo.lifecycle_status answer.
 func (adapter repositoryCreateAdapter) CreationProgress(ctx context.Context, operationID string) (string, string, *platform.ProgressMeasure, error) {
+	state, _, detail, progress, err := adapter.CreationFault(ctx, operationID)
+	return state, detail, progress, err
+}
+
+func (adapter repositoryCreateAdapter) CreationFault(ctx context.Context, operationID string) (string, string, string, *platform.ProgressMeasure, error) {
 	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", "", nil, err
 	}
 	if result == nil {
-		return "", "", nil, errors.New("daemon returned an empty repository operation")
+		return "", "", "", nil, errors.New("daemon returned an empty repository operation")
 	}
 	var progress *platform.ProgressMeasure
 	if measured := result.ImportProgress; measured != nil && measured.FilesTotal > 0 {
 		progress = &platform.ProgressMeasure{FilesDone: measured.FilesDone, FilesTotal: measured.FilesTotal, BytesSent: measured.BytesSent, BytesTotal: measured.BytesTotal}
 	}
-	return result.State, result.LastError, progress, nil
+	return result.State, result.LastErrorKey, result.LastError, progress, nil
 }
 
 type repositoryLocateClient interface {

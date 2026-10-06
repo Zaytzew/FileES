@@ -47,6 +47,9 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 		}
 		switch op.State {
 		case StateLocalValidated, StateStoragePreflightFailed:
+			if err := CheckInitialContent(op.LocalPath); err != nil {
+				return Operation{}, err
+			}
 			if _, err := o.Store.RequestStoragePreflight(operationID, uuid.NewString()); err != nil {
 				return Operation{}, err
 			}
@@ -75,6 +78,9 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 				return Operation{}, err
 			}
 		case StateProvisioningRequested:
+			if err := CheckInitialContent(op.LocalPath); err != nil {
+				return Operation{}, err
+			}
 			requestID, err := pendingRequest(op, control.TicketCreateRepository)
 			if err != nil {
 				return Operation{}, err

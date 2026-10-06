@@ -432,6 +432,17 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.runAttach(ctx, record, profile)
 		return
 	}
+	// A replayed import must not reach SSH/SVN or read its credentials while
+	// waiting for bytes that another provider does not hold locally. Already
+	// published imports may still finish their server acknowledgement.
+	if p.provisioning != nil {
+		if operation, err := p.provisioning.Get(operationID); err == nil && operation.State != provisioning.StateInitialSnapshotPublished && operation.State != provisioning.StateActive {
+			if err := provisioning.CheckInitialContent(record.LocalPath); err != nil {
+				p.recordCreateFailure(operationID, err)
+				return
+			}
+		}
+	}
 	controlTransport, err := controlclient.New(controlclient.Config{Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile, KnownHosts: profile.KnownHosts, Timeout: 30 * time.Second})
 	if err != nil {
 		_, _ = p.local.MarkError(operationID, err)
@@ -466,18 +477,7 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	defer p.clearImportProgress(operationID)
 	operation, err := orchestrator.RunCreate(ctx, operationID)
 	if err != nil {
-		if durable, getErr := p.provisioning.Get(operationID); getErr == nil && durable.RepoID != "" {
-			if _, boundaryErr := p.local.MarkRepositoryCreated(operationID, durable.RepoID, durable.RepoURL); boundaryErr != nil {
-				// Never downgrade this record to generic StateError: that state
-				// deliberately releases its path for unrelated failed requests.
-				// Keeping request_pending claims the path until startup
-				// reconciliation can persist the server-created boundary.
-				talk.With("provisioning:"+operationID).Errorf("persist repository-created boundary after failure: %v", boundaryErr)
-				return
-			}
-		}
-		_, _ = p.local.MarkError(operationID, err)
-		talk.With("provisioning:"+operationID).Warnf("create failed: %v", err)
+		p.recordCreateFailure(operationID, err)
 		return
 	}
 	if _, err := p.local.MarkAttached(operationID, operation.RepoID); err != nil {
@@ -485,6 +485,19 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		return
 	}
 	p.publishAttachment(ctx, operation)
+}
+
+func (p *daemonProvisioner) recordCreateFailure(operationID string, cause error) {
+	if durable, getErr := p.provisioning.Get(operationID); getErr == nil && durable.RepoID != "" {
+		if _, boundaryErr := p.local.MarkRepositoryCreated(operationID, durable.RepoID, durable.RepoURL); boundaryErr != nil {
+			// Keep ownership until the identified server boundary is durable;
+			// never downgrade it to generic StateError and permit a second repo.
+			talk.With("provisioning:"+operationID).Errorf("persist repository-created boundary after failure: %v", boundaryErr)
+			return
+		}
+	}
+	_, _ = p.local.MarkError(operationID, cause)
+	talk.With("provisioning:"+operationID).Warnf("create failed: %v", cause)
 }
 
 // RepairLifecycle is the daemon-owned exit from a stuck local workflow. Retry
@@ -507,6 +520,9 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 			}
 			if operation.State == provisioning.StateAbandoned {
 				return localrepo.Record{}, errors.New("initial import was already abandoned; finish the local abandonment instead")
+			}
+			if err := provisioning.CheckInitialContent(record.LocalPath); err != nil {
+				return localrepo.Record{}, err
 			}
 		}
 		updated, err := p.local.Retry(operationID)
@@ -539,7 +555,16 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 	// it and resume ordinary supervision; local modifications remain untouched.
 	var adoptProfile clientprofile.Profile
 	adoptExisting := false
-	if record.RepoURL != "" {
+	contentUnavailable := false
+	if !record.Anchor {
+		var fault errcat.Fault
+		contentUnavailable = errors.As(provisioning.CheckInitialContent(record.LocalPath), &fault) && fault.Key == errcat.KeyInitialContentUnavailable
+	}
+	// An identified WC is not usable if another provider cannot supply its
+	// bytes. Ending this attempt must leave it remote-only, not immediately
+	// re-adopt the folder and re-enter the same failed initialization. Neither
+	// the folder, .svn nor provider markers are modified here.
+	if record.RepoURL != "" && !contentUnavailable {
 		if info, err := os.Stat(filepath.Join(record.LocalPath, ".svn")); err == nil && info.IsDir() {
 			p.mu.RLock()
 			profile, profileOK := p.profiles[record.ServerID]

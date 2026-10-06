@@ -113,6 +113,12 @@ type CreationProgressReader interface {
 	CreationProgress(ctx context.Context, operationID string) (state, lastError string, progress *platform.ProgressMeasure, err error)
 }
 
+// CreationFaultReader preserves a durable domain key alongside diagnostics,
+// without another poll or guessing identity from an English error string.
+type CreationFaultReader interface {
+	CreationFault(context.Context, string) (state, key, detail string, progress *platform.ProgressMeasure, err error)
+}
+
 type RepositoryAttacher interface {
 	AttachRepository(ctx context.Context, serverID, repoID, localPath string) (operationID string, err error)
 	AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error)
@@ -1116,7 +1122,7 @@ func (c *Controller) startRepairRepositoryLifecycle(ctx context.Context, serverI
 			name := firstNonBlank(repo.DisplayName, repo.ID)
 			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.abandonLocal", PresentationArgs: map[string]string{"name": name, "path": repo.LocalPath},
 				Title:       "Zakończ starą próbę lokalną",
-				Text:        name + "\n" + repo.LocalPath + "\n\nFileES zachowa wszystkie pliki i nie zmieni repozytorium na serwerze. Jeśli pozostawiona kopia robocza daje się jednoznacznie potwierdzić, zostanie ponownie przyjęta; w przeciwnym razie repozytorium wróci do stanu gotowego do wskazania lokalizacji.",
+				Text:        name + "\n" + repo.LocalPath + "\n\nFileES zachowa wszystkie pliki i nie zmieni repozytorium na serwerze. Kopia robocza może zostać ponownie przyjęta tylko po potwierdzeniu jej tożsamości i dostępności danych. Folder z niepobranymi plikami innego programu pozostanie odłączony, a repozytorium będzie widoczne jako zdalne. Ponowne podłączenie wymaga stanu i uprawnień, które na to pozwalają.",
 				ConfirmText: "Zakończ próbę", CancelText: "Anuluj",
 			})
 			if err != nil || !confirmed {
@@ -1157,7 +1163,7 @@ func (c *Controller) startRepairRepositoryLifecycle(ctx context.Context, serverI
 			if state == "attached" {
 				body += c.uiText("feedback.adopted", " — istniejąca kopia robocza została ponownie przyjęta")
 			} else {
-				body += c.uiText("feedback.chooseAgain", " — można wskazać lokalizację ponownie")
+				body += c.uiText("feedback.chooseAgain", " — folder nie jest podłączony; repozytorium pozostaje na serwerze")
 			}
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
@@ -3553,6 +3559,13 @@ func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoI
 // creationStatus reads the lifecycle state and, from a creator that measures
 // it, the initial publication's progress - one daemon request either way.
 func (c *Controller) creationStatus(ctx context.Context, operationID string) (string, string, *platform.ProgressMeasure, error) {
+	if reader, ok := c.cfg.RepositoryCreator.(CreationFaultReader); ok {
+		state, key, detail, progress, err := reader.CreationFault(ctx, operationID)
+		if key != "" {
+			detail = c.messageLabel("", key, nil) + "\n\n" + detail
+		}
+		return state, detail, progress, err
+	}
 	if reader, ok := c.cfg.RepositoryCreator.(CreationProgressReader); ok {
 		return reader.CreationProgress(ctx, operationID)
 	}

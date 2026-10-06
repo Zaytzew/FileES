@@ -45,6 +45,13 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 	if err != nil {
 		return LocalPathCheck{}, fmt.Errorf("resolve local path: %w", err)
 	}
+	if mode == LocalPathAttach {
+		// Refuse this exact reason even when the abandoned folder still has
+		// .svn metadata; do not replace it with a generic non-empty/WC error.
+		if err := CheckInitialContent(canonical); err != nil {
+			return LocalPathCheck{}, err
+		}
+	}
 	if mode == LocalPathAttachResume {
 		if err := rejectWorkingCopy(filepath.Dir(canonical)); err != nil {
 			return LocalPathCheck{}, err
@@ -84,6 +91,9 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 	}
 	if !info.IsDir() {
 		return LocalPathCheck{}, fmt.Errorf("local path is not a directory (%s)", fileType(info.Mode()))
+	}
+	if err := requireInitialContent(canonical, info); err != nil {
+		return LocalPathCheck{}, err
 	}
 	empty, err := directoryEmpty(canonical)
 	if err != nil {

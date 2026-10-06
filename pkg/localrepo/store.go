@@ -581,6 +581,10 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 		}
 		record.LastError = cause.Error()
 		record.LastErrorKey = ""
+		var fault errcat.Fault
+		if errors.As(cause, &fault) {
+			record.LastErrorKey = string(fault.Key)
+		}
 		return nil
 	})
 }

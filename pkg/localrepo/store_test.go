@@ -61,6 +61,38 @@ func TestDeletionPersistsServerBoundaryRecoveryAndLocalCleanupSeparately(t *test
 	}
 }
 
+func TestImportRefusalKeepsIdentityAndDomainKeyAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.BeginCreate("fixture", "Fixture", filepath.Join(t.TempDir(), "wc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.MarkRepositoryCreated(record.OperationID, "repo-fixture", "svn+ssh://_filees-client@example/repo-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.MarkError(record.OperationID, errcat.New(errcat.KeyInitialContentUnavailable, nil, errors.New("fixture unavailable")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, ok := reopened.Get(record.OperationID)
+	if !ok || failed.State != StateRepositoryCreated || failed.RepoID != "repo-fixture" || failed.LastErrorKey != string(errcat.KeyInitialContentUnavailable) {
+		t.Fatalf("lost durable refusal: %+v", failed)
+	}
+	retried, err := reopened.Retry(record.OperationID)
+	if err != nil || retried.OperationID != record.OperationID || retried.RepoID != failed.RepoID || retried.LastError != "" || retried.LastErrorKey != "" {
+		t.Fatalf("lost retry boundary: %+v %v", retried, err)
+	}
+}
+
 func TestDismissRecoveryIsDurableAndKeepsServerRetentionReceipt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)

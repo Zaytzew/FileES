@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"filees/pkg/client"
+	"filees/pkg/cloudfiles"
+	"filees/pkg/errcat"
 	"filees/pkg/filepolicy"
 )
 
@@ -64,7 +66,11 @@ func ScanInitialSnapshot(root string) (Snapshot, error) {
 			return err
 		}
 		if rel == "." {
-			return nil
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			return requireInitialContent(path, info)
 		}
 		rel = filepath.Clean(rel)
 		first := strings.Split(rel, string(filepath.Separator))[0]
@@ -86,6 +92,9 @@ func ScanInitialSnapshot(root string) (Snapshot, error) {
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("initial snapshot contains symbolic link %q", rel)
+		}
+		if err := requireInitialContent(path, info); err != nil {
+			return err
 		}
 		if info.IsDir() {
 			snapshot.Directories = append(snapshot.Directories, rel)
@@ -110,6 +119,57 @@ func ScanInitialSnapshot(root string) (Snapshot, error) {
 	})
 	sort.Slice(snapshot.Files, func(i, j int) bool { return snapshot.Files[i].Path < snapshot.Files[j].Path })
 	return snapshot, nil
+}
+
+// CheckInitialContent refuses absent provider bytes before any remote request
+// or checkout. An absent prospective root is valid; a missing descendant or
+// unreadable tree is not. A provider being offline does not establish orphanhood.
+func CheckInitialContent(root string) error {
+	if _, err := os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	_, err := ScanInitialSnapshot(root)
+	return err
+}
+
+func requireInitialContent(path string, info os.FileInfo) error {
+	if cloudfiles.RecallsOnRead(info) {
+		return errcat.New(errcat.KeyInitialContentUnavailable, map[string]string{"detail": path},
+			fmt.Errorf("initial import requires local content at %q; provider bytes unavailable", path))
+	}
+	return nil
+}
+
+// Recheck the exact batch and its parents without opening files. This also
+// catches a provider dehydrating them since the initial snapshot was scanned.
+func checkInitialPaths(root string, paths []string) error {
+	checked := make(map[string]bool)
+	for _, rel := range append(append([]string{}, paths...), ".") {
+		for {
+			if checked[rel] {
+				break
+			}
+			checked[rel] = true
+			path := filepath.Join(root, rel)
+			info, err := os.Lstat(path)
+			if err != nil {
+				return fmt.Errorf("inspect initial path %q: %w", path, err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("initial snapshot contains symbolic link %q", rel)
+			}
+			if err := requireInitialContent(path, info); err != nil {
+				return err
+			}
+			if rel == "." {
+				break
+			}
+			rel = filepath.Dir(rel)
+		}
+	}
+	return nil
 }
 
 // PublishInitialSnapshot is restart-safe. A repeated call checks WC status and
@@ -137,6 +197,9 @@ func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, opera
 			return Operation{}, fmt.Errorf("%v; persist failure: %w", cause, persistErr)
 		}
 		return Operation{}, cause
+	}
+	if err := CheckInitialContent(op.LocalPath); err != nil {
+		return fail(err)
 	}
 	if _, err := svn.Checkout(ctx, op.RepoURL, op.LocalPath); err != nil {
 		return fail(fmt.Errorf("checkout initial repository: %w", err))
@@ -197,6 +260,9 @@ func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, opera
 		}
 	}
 
+	if err := checkInitialPaths(op.LocalPath, addedDirs); err != nil {
+		return fail(err)
+	}
 	if err := addUnversioned(ctx, svn, op.LocalPath, addedDirs, status); err != nil {
 		return fail(err)
 	}
@@ -211,6 +277,9 @@ func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, opera
 	for len(pending) > 0 {
 		batch, rest := takeInitialBatch(pending, limits)
 		paths := filePaths(batch)
+		if err := checkInitialPaths(op.LocalPath, paths); err != nil {
+			return fail(err)
+		}
 		if err := addUnversioned(ctx, svn, op.LocalPath, paths, status); err != nil {
 			return fail(err)
 		}
@@ -234,6 +303,9 @@ func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, opera
 				report(now)
 			})
 		}
+		if err := checkInitialPaths(op.LocalPath, paths); err != nil {
+			return fail(err)
+		}
 		if _, err := svn.Commit(commitCtx, op.LocalPath, paths, "FileES initial import"); err != nil {
 			return fail(fmt.Errorf("commit initial snapshot: %w", err))
 		}
@@ -245,6 +317,9 @@ func PublishInitialSnapshotWithProgress(ctx context.Context, store *Store, opera
 		pending = rest
 	}
 	if firstCommit && len(addedDirs) > 0 {
+		if err := checkInitialPaths(op.LocalPath, addedDirs); err != nil {
+			return fail(err)
+		}
 		if _, err := svn.Commit(ctx, op.LocalPath, addedDirs, "FileES initial import"); err != nil {
 			return fail(fmt.Errorf("commit initial directories: %w", err))
 		}

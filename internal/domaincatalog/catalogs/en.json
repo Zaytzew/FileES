@@ -133,6 +133,7 @@
     "repo.detach_required_forbidden": "A required repository cannot be detached",
     "repo.detach_unpublished_changes": "The folder has local changes that were not published",
     "repo.attach_target_not_empty": "The chosen folder is not empty — an anchor or attachment is created only in a new or empty folder",
+    "repo.initial_content_unavailable": "Import cannot start or resume: some files or folders are not available on this disk. Download them using their provider (such as Nextcloud or OneDrive) and retry. If that program was removed, recover the data from its server first. FileES neither downloads nor deletes these files.",
     "repo.editing_policy_failed": "The reservation policy could not be changed",
     "repo.editing_policy_forbidden": "Only the owner can change the reservation policy",
     "repo.editing_policy_unavailable": "Changing the reservation policy is not available right now",

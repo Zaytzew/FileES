@@ -133,6 +133,7 @@
     "repo.detach_required_forbidden": "Wymaganego repozytorium nie można odłączyć",
     "repo.detach_unpublished_changes": "Folder ma lokalne zmiany, które nie zostały opublikowane",
     "repo.attach_target_not_empty": "Wybrany folder nie jest pusty — utworzenie punktu zaczepienia lub podłączenie wymaga nowego albo pustego folderu",
+    "repo.initial_content_unavailable": "Nie można rozpocząć lub wznowić importu: część plików albo folderów nie jest dostępna na tym dysku. Pobierz je w programie, który nimi zarządza (np. Nextcloud lub OneDrive), i ponów próbę. Jeśli ten program został usunięty, najpierw odzyskaj dane z jego serwera. FileES nie pobiera ani nie usuwa tych plików.",
     "repo.editing_policy_failed": "Zmiana polityki blokad nie powiodła się",
     "repo.editing_policy_forbidden": "Tylko właściciel może zmienić politykę blokad",
     "repo.editing_policy_unavailable": "Zmiana polityki blokad jest teraz niedostępna",

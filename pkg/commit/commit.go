@@ -1397,7 +1397,8 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	// publication without a word (owner's production, 2026-09-25).
 	anchored := cloudfiles.IsSyncRoot(wc)
 	for _, p := range addPaths {
-		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
+		info, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p)))
+		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				s.Logger.Debugf("cancel add %s (removed before publish)", p)
 				s.removePendingIfUnchanged(p, pending)
@@ -1415,7 +1416,8 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		local, _ := cloudfiles.LocalState(abs)
 		// Retained local CFAPI files may have been renamed/moved since their
 		// last publication. Their bytes are real work, not seeded HEAD entries.
-		switch placeholderAdd(anchored, cloudfiles.IsPlaceholder(abs) && !(anchored && local), cloudfiles.NotOnDisk(abs)) {
+		recalls := cloudfiles.RecallsOnRead(info)
+		switch placeholderAdd(anchored, (cloudfiles.IsPlaceholder(abs) || recalls) && !(anchored && local), cloudfiles.NotOnDisk(abs) || recalls) {
 		case placeholderDrop:
 			s.Logger.Debugf("skip add %s (placeholder not on this disk)", p)
 			s.removePendingIfUnchanged(p, pending)

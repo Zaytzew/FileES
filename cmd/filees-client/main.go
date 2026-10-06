@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"filees/pkg/client"
@@ -109,7 +110,17 @@ func prepareSSHPath(cfg Config) error {
 	if base != "ssh" && base != "ssh.exe" {
 		return fmt.Errorf("tools.ssh must name the ssh executable")
 	}
-	return os.Setenv("PATH", filepath.Dir(cfg.SSH))
+	if err := os.Setenv("PATH", filepath.Dir(cfg.SSH)); err != nil {
+		return err
+	}
+	if runtime.GOOS == "openbsd" {
+		// SVN's user configuration must live inside the unveiled state root;
+		// a home directory outside the profile is intentionally inaccessible.
+		if err := os.Setenv("HOME", cfg.effectiveLogDir()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cmdCheckout(args []string) int {

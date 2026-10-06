@@ -77,7 +77,8 @@ Identyfikator spoza listy jest odrzucany, zanim wystartuje `svn`.
 wywołującego cron. Dziennik `wc-01.jsonl` ma uprawnienia 0600 i rotuje po
 5 MiB do jednej poprzedniej generacji. Zawiera czas, etap i wynik, bez
 sekretów, ścieżek plików i tekstów błędów. Przy braku zapisu sync odmawia
-przed dotknięciem SVN.
+przed dotknięciem SVN. Na OpenBSD ten katalog jest również prywatnym `HOME`
+procesu SVN, więc może zawierać jego `.subversion`.
 
 Osobne artefakty Linux/OpenBSD buduje `packaging/build-filees-client.sh`.
 Skrypt nie publikuje ich do kanału i nie dodaje klienta do paczki serwera.
@@ -89,8 +90,13 @@ Na Windowsie nie ma `pledge` ani `unveil`. Lista z configu i tak obowiązuje.
 
 Na OpenBSD, po sprawdzeniu `--wc`, proces i wywołane przez niego `svn` oraz
 `ssh` dostają `pledge` (`ApplyForExec`, obietnice potomka obejmują `prot_exec`).
-`unveil` obejmuje skonfigurowane binarki, klucz, `known_hosts` i wyłącznie
-dozwolone kopie. Obca kopia na tej maszynie nie jest widoczna.
+`unveil` obejmuje skonfigurowane binarki, klucz, `known_hosts`, dozwolone
+kopie oraz odczyt ich katalogów nadrzędnych. Systemowy SVN wymaga odczytu
+tych rodziców przy kanonizacji WC. Dlatego inne pliki pod takim rodzicem
+mogą być czytelne dla procesu działającego jako to samo konto; konfiguracja
+CLI nadal nie pozwala wybrać ich jako celu sync. Dla ścisłej lokalnej
+izolacji należy uruchamiać klienta na dedykowanym koncie i trzymać jego WC
+w dedykowanym drzewie, bez cudzych danych w katalogach nadrzędnych.
 
 To nie jest sandbox odziedziczony po procesie `ksefpuck`. Tamten zamyka się
 zanim cron dojdzie do następnej komendy i nie odsłania klucza ani `ssh`.

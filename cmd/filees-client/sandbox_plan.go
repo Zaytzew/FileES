@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"filees/internal/obsandbox"
 )
@@ -44,8 +45,18 @@ func publishProfile(cfg Config) (obsandbox.Profile, error) {
 		{Label: "svn-temp", Name: "/tmp", Perms: "rwc"},
 		{Label: "journal", Name: cfg.effectiveLogDir(), Perms: "rwc"},
 	}
+	if runtime.GOOS == "openbsd" {
+		paths = append(paths, obsandbox.Path{Label: "utf8-locale", Name: "/usr/share/locale/UTF-8/LC_CTYPE", Perms: "r"})
+	}
 	for id, spec := range cfg.allowed() {
 		paths = append(paths, obsandbox.Path{Label: "wc-" + id, Name: spec.Path, Perms: "rwc"})
+		if runtime.GOOS == "openbsd" {
+			for parent := filepath.Dir(spec.Path); parent != "/" && parent != "."; parent = filepath.Dir(parent) {
+				// Subversion canonicalizes WC ancestors with lstat; OpenBSD
+				// unveil requires read there, even when the WC itself is rwc.
+				paths = append(paths, obsandbox.Path{Label: "wc-parent-" + id, Name: parent, Perms: "r"})
+			}
+		}
 	}
 	if st, err := os.Stat("/etc/subversion"); err == nil && st.IsDir() {
 		paths = append(paths, obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"})

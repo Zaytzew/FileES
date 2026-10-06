@@ -126,7 +126,7 @@ type changingHeadCommitter struct {
 	expectedBase int64
 }
 
-func (c changingHeadCommitter) CommitTree(ctx context.Context, repo, parent string, files []TreeFile, id string) (int64, error) {
+func (c changingHeadCommitter) CommitTree(ctx context.Context, repo, parent string, files []TreeFile, id string, automatic bool) (int64, error) {
 	for _, file := range files {
 		if file.BaseRevision != c.expectedBase {
 			c.t.Fatalf("base revision=%d want=%d", file.BaseRevision, c.expectedBase)
@@ -142,7 +142,7 @@ func (c changingHeadCommitter) CommitTree(ctx context.Context, repo, parent stri
 		c.t.Fatal(err)
 	}
 	run(c.t, "svn", "commit", "-q", wc, "-m", "concurrent desktop change")
-	return c.SVNAppender.CommitTree(ctx, repo, parent, files, id)
+	return c.SVNAppender.CommitTree(ctx, repo, parent, files, id, automatic)
 }
 
 func TestUploadTreePinnedBaseDoesNotOverwriteConcurrentEdit(t *testing.T) {

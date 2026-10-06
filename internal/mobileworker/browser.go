@@ -30,7 +30,14 @@ type View struct {
 	RepoPath   string // local repository path
 	Generation int64  // control-plane view generation (grants, policy, shouts)
 	Access     string // "r" | "rw" | "" (none)
+	// SharedWrite: a realm other than this installation's may also write
+	// here (it is a guest with rw, or its own repository has an rw guest).
+	SharedWrite bool
 }
+
+// ErrAutomaticShared refuses an unattended upload into a repository that two
+// realms write to (v1.ErrCodeAutomaticShared).
+var ErrAutomaticShared = errors.New("mobile: automatic upload into a repository shared with another realm")
 
 func (v View) readable() bool { return v.Access == "r" || v.Access == "rw" }
 

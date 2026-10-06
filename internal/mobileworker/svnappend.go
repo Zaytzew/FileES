@@ -46,7 +46,7 @@ var revLine = regexp.MustCompile(`([0-9]+)`)
 // the spooled file in, sets svn:needs-lock, and commits with the request-id
 // revprop. A commit against an existing target fails, which the worker
 // resolves as a name collision.
-func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string) (int64, error) {
+func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string, automatic bool) (int64, error) {
 	reader := SVNReader{SvnPath: s.SvnPath, SvnlookPath: s.SvnlookPath}
 	rev, err := reader.Youngest(ctx, repoPath)
 	if err != nil {
@@ -87,13 +87,13 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	if err := s.propset(ctx, passport.AppendOnlyProperty, "*", fileInWC); err != nil {
 		return 0, err
 	}
-	return s.commitRevision(ctx, wc, "mobile append", requestID)
+	return s.commitRevision(ctx, wc, commitLog("mobile append", automatic), requestID)
 }
 
 // CommitTree checks out the repo root at depth empty and publishes every
 // extracted file in one commit: mkdir missing parents, add new objects
 // (with svn:needs-lock + append-only), overwrite existing ones.
-func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string) (int64, error) {
+func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string, automatic bool) (int64, error) {
 	if len(files) == 0 {
 		out, err := output(ctx, s.svnlook(), "youngest", repoPath)
 		if err != nil {
@@ -152,7 +152,7 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 			}
 		}
 	}
-	return s.commitRevision(ctx, wc, "mobile tree ingest", requestID)
+	return s.commitRevision(ctx, wc, commitLog("mobile tree ingest", automatic), requestID)
 }
 
 // ensureParent brings each parent segment into the sparse WC: update if it
@@ -274,6 +274,16 @@ func (s SVNAppender) propset(ctx context.Context, name, value, target string) er
 		return err
 	}
 	return runStream(ctx, io.Discard, s.svn(), "propset", "-q", name, "--file", f.Name(), target)
+}
+
+// commitLog is the svn:log of a mobile commit. An unattended upload opens it
+// with v1.AutomaticMarker, so history, the journal and tools can tell it from
+// a chosen one without guessing.
+func commitLog(base string, automatic bool) string {
+	if automatic {
+		return v1.AutomaticMarker + " " + base
+	}
+	return base
 }
 
 // Parse the actual commit receipt, never HEAD: desktop writes are concurrent.

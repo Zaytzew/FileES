@@ -59,19 +59,22 @@ func (s UploadState) terminal() bool {
 // retries (concept doc §10.1) — a fresh id is only minted by EnqueueUpload for
 // a genuinely new candidate.
 type PendingUpload struct {
-	Operation     v1.Operation `json:"operation,omitempty"`
-	FileCount     int          `json:"file_count,omitempty"`
-	Sources       []string     `json:"sources,omitempty"`
-	ID            string       `json:"id"`
-	RepoID        string       `json:"repo_id"`
-	ParentPath    string       `json:"parent_path"`
-	Filename      string       `json:"filename"`
-	Size          int64        `json:"size"`
-	Sha256        string       `json:"sha256"`
-	ContentType   string       `json:"content_type,omitempty"`
-	State         UploadState  `json:"state"`
-	LastAttemptAt time.Time    `json:"last_attempt_at,omitempty"`
-	EnqueuedAt    time.Time    `json:"enqueued_at"`
+	Operation v1.Operation `json:"operation,omitempty"`
+	FileCount int          `json:"file_count,omitempty"`
+	Sources   []string     `json:"sources,omitempty"`
+	// Automatic: queued by a watched folder, not chosen by a person. Stored
+	// at enqueue so a later send (and a retry) says the same thing.
+	Automatic     bool        `json:"automatic,omitempty"`
+	ID            string      `json:"id"`
+	RepoID        string      `json:"repo_id"`
+	ParentPath    string      `json:"parent_path"`
+	Filename      string      `json:"filename"`
+	Size          int64       `json:"size"`
+	Sha256        string      `json:"sha256"`
+	ContentType   string      `json:"content_type,omitempty"`
+	State         UploadState `json:"state"`
+	LastAttemptAt time.Time   `json:"last_attempt_at,omitempty"`
+	EnqueuedAt    time.Time   `json:"enqueued_at"`
 	// Set only after the caller durably recorded every source as seen.
 	SourcesAcknowledgedAt time.Time `json:"sources_acknowledged_at,omitempty"`
 
@@ -215,7 +218,7 @@ func (s Store) RetryUploadAsContext(ctx context.Context, repoID, id, filename st
 		item.State, item.LastError = UploadPendingCreate, ""
 		return item, s.recordUploadOutcome(item)
 	}
-	next, err := s.enqueueReaderLocked(ctx, repoID, item.ParentPath, name, item.ContentType, operation, 1, item.Sources, payload)
+	next, err := s.enqueueReaderLocked(ctx, repoID, item.ParentPath, name, item.ContentType, operation, 1, item.Sources, item.Automatic, payload)
 	if err != nil {
 		return PendingUpload{}, err
 	}

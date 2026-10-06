@@ -343,7 +343,7 @@ func (c *Client) baseContext() context.Context {
 	return context.Background()
 }
 
-func (c *Client) enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON string, operation v1.Operation, count int) (string, error) {
+func (c *Client) enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON string, operation v1.Operation, count int, automatic bool) (string, error) {
 	var sources []string
 	if err := json.Unmarshal([]byte(sourcesJSON), &sources); err != nil {
 		return "", err
@@ -353,7 +353,11 @@ func (c *Client) enqueueFile(repoID, parent, name, contentType, filePath, source
 		return "", err
 	}
 	defer f.Close()
-	item, err := c.inner.Store.EnqueueReader(c.baseContext(), repoID, parent, name, contentType, operation, count, sources, f)
+	enqueue := c.inner.Store.EnqueueReader
+	if automatic {
+		enqueue = c.inner.Store.EnqueueAutomaticReader
+	}
+	item, err := enqueue(c.baseContext(), repoID, parent, name, contentType, operation, count, sources, f)
 	if err != nil {
 		return "", err
 	}
@@ -362,12 +366,24 @@ func (c *Client) enqueueFile(repoID, parent, name, contentType, filePath, source
 
 // EnqueueTreeFile durably imports the streamed ZIP, keeping its sources and ID.
 func (c *Client) EnqueueTreeFile(repoID, parent string, count int, filePath, sourcesJSON string) (string, error) {
-	return c.enqueueFile(repoID, parent, "tree.zip", "application/zip", filePath, sourcesJSON, v1.OpUploadTree, count)
+	return c.enqueueFile(repoID, parent, "tree.zip", "application/zip", filePath, sourcesJSON, v1.OpUploadTree, count, false)
+}
+
+// EnqueueAutomaticTreeFile is EnqueueTreeFile for a watched folder: the server
+// tags the commit as unattended and refuses it in a repository another realm
+// may also write to (implementation notes (not distributed)).
+func (c *Client) EnqueueAutomaticTreeFile(repoID, parent string, count int, filePath, sourcesJSON string) (string, error) {
+	return c.enqueueFile(repoID, parent, "tree.zip", "application/zip", filePath, sourcesJSON, v1.OpUploadTree, count, true)
 }
 
 // EnqueueUploadFile streams a SAF spool into the durable queue without []byte.
 func (c *Client) EnqueueUploadFile(repoID, parent, name, contentType, filePath, sourcesJSON string) (string, error) {
-	return c.enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON, v1.OpUploadObject, 1)
+	return c.enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON, v1.OpUploadObject, 1, false)
+}
+
+// EnqueueAutomaticUploadFile is EnqueueUploadFile for a watched folder.
+func (c *Client) EnqueueAutomaticUploadFile(repoID, parent, name, contentType, filePath, sourcesJSON string) (string, error) {
+	return c.enqueueFile(repoID, parent, name, contentType, filePath, sourcesJSON, v1.OpUploadObject, 1, true)
 }
 
 // SendUploadJSON reports only the requested ID, including uncertain/parked.

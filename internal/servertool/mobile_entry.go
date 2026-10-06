@@ -84,13 +84,59 @@ func (a clientviewMobileAuthority) Resolve(_ context.Context, clientID, repoID s
 	for _, repo := range view.Repositories {
 		if repo.RepoID == repoID {
 			return mobileworker.View{
-				RepoPath:   filepath.Join(a.RepositoriesRoot, repo.RepoID),
-				Generation: view.Generation,
-				Access:     repo.Access,
+				RepoPath:    filepath.Join(a.RepositoriesRoot, repo.RepoID),
+				Generation:  view.Generation,
+				Access:      repo.Access,
+				SharedWrite: a.sharedWrite(view.RealmID, repo),
 			}, nil
 		}
 	}
 	return mobileworker.View{}, mobileworker.ErrAccessDenied
+}
+
+// sharedWrite reports whether a realm other than the installation's may also
+// write to the repository (implementation notes (not distributed)). Two cases:
+// the installation is a guest with write access, so the owner's realm writes
+// too; or the repository is its own and an active grant gives another realm
+// write access. The second is read from the same canonical grant records the
+// authz is rendered from (admin/grants/<repo>/<recipient>.json).
+//
+// A repository that never had a grant has no directory and is not shared.
+// Records that exist but cannot be read count as shared: an unattended upload
+// is then refused with a named code instead of slipping past the rule, and
+// only repositories with a grant history are affected.
+func (a clientviewMobileAuthority) sharedWrite(realmID string, repo clientview.Repository) bool {
+	if repo.OwnerRealmID != "" && repo.OwnerRealmID != realmID {
+		return repo.Access == "rw"
+	}
+	dir := filepath.Join(a.ServiceWorkingCopy, "admin", "grants", repo.RepoID)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	if err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return true
+		}
+		var grant struct {
+			State  string `json:"state"`
+			Access string `json:"access"`
+		}
+		if json.Unmarshal(raw, &grant) != nil {
+			return true
+		}
+		if grant.State == "active" && grant.Access == "rw" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a clientviewMobileAuthority) List(_ context.Context, clientID string) (mobileworker.Projection, error) {

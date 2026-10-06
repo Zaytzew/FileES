@@ -54,6 +54,9 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 	if view.Access != "rw" {
 		return v1.UploadTreeResult{}, ErrAccessDenied
 	}
+	if p.Automatic && view.SharedWrite {
+		return v1.UploadTreeResult{}, ErrAutomaticShared
+	}
 	parent := strings.Trim(p.ParentPath, "/")
 	if !underMobileUploads(parent) {
 		return v1.UploadTreeResult{}, errors.New("parent_path must be under mobile-uploads/")
@@ -156,7 +159,7 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		return v1.UploadTreeResult{}, err
 	}
 
-	newRev, err := a.Committer.CommitTree(ctx, view.RepoPath, parent, toCommit, requestID)
+	newRev, err := a.Committer.CommitTree(ctx, view.RepoPath, parent, toCommit, requestID, p.Automatic)
 	if err != nil {
 		return v1.UploadTreeResult{}, err
 	}

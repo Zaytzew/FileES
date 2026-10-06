@@ -407,6 +407,7 @@ func (c Client) sendOne(ctx, caller context.Context, item PendingUpload) (Pendin
 	req, err := v1.NewRequest(item.ID, v1.OpUploadObject, v1.UploadObjectPayload{
 		RepoID: item.RepoID, ParentPath: item.ParentPath, Filename: item.Filename,
 		Size: item.Size, Sha256: item.Sha256, ContentType: item.ContentType,
+		Automatic: item.Automatic,
 	})
 	if err != nil {
 		item.State, item.LastError = UploadParked, err.Error()
@@ -433,7 +434,7 @@ func (c Client) sendOne(ctx, caller context.Context, item PendingUpload) (Pendin
 		// Only a denial for this upload can park it. Transient or unrelated
 		// failures keep the same durable candidate eligible for retry.
 		if resp.RequestID == item.ID && resp.Operation == v1.OpUploadObject &&
-			resp.Error != nil && resp.Error.Code == "access.denied" {
+			resp.Error != nil && (resp.Error.Code == "access.denied" || resp.Error.Code == v1.ErrCodeAutomaticShared) {
 			item.State, item.LastError = UploadParked, respError(resp).Error()
 			return item, c.Store.recordUploadOutcome(item)
 		}

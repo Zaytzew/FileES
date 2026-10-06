@@ -119,7 +119,10 @@ object CaptureTransfers {
                 val id: String
                 if (tree) {
                     spool = TreeZip.pack(context.contentResolver, chunk, context.cacheDir, cancel)
-                    id = client.enqueueTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), spool.absolutePath, sources)
+                    // A watched folder sends unattended: the server tags the
+                    // commit and refuses it where another realm also writes.
+                    id = if (watched != null) client.enqueueAutomaticTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), spool.absolutePath, sources)
+                    else client.enqueueTreeFile(repoId, UploadPaths.ROOT, chunk.size.toLong(), spool.absolutePath, sources)
                 } else {
                     val file = chunk.single()
                     spool = File.createTempFile("capture-", ".tmp", context.cacheDir)
@@ -127,7 +130,9 @@ object CaptureTransfers {
                         ?.createInputStream() ?: throw IOException("Cannot read source: ${file.filename}")
                     val measured = cancel.reading(input) { stream -> spool.outputStream().use { copy(stream, it, MAX_FILE_BYTES, cancel) } }
                     if (file.size > 0L && measured != file.size) throw IOException("Source size changed: ${file.filename}")
-                    id = client.enqueueUploadFile(repoId, UploadPaths.parent(file.relativeDir), file.filename,
+                    id = if (watched != null) client.enqueueAutomaticUploadFile(repoId, UploadPaths.parent(file.relativeDir), file.filename,
+                        file.contentType, spool.absolutePath, sources)
+                    else client.enqueueUploadFile(repoId, UploadPaths.parent(file.relativeDir), file.filename,
                         file.contentType, spool.absolutePath, sources)
                 }
                 // Durable ID + sources already exist before this first network call.

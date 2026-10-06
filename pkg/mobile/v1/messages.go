@@ -244,7 +244,22 @@ type UploadObjectPayload struct {
 	Sha256           string `json:"sha256"`
 	ContentType      string `json:"content_type,omitempty"`
 	ObservedRevision int64  `json:"observed_revision,omitempty"`
+	// Automatic: sent by a watched folder, not by a person choosing files.
+	// See AutomaticMarker.
+	Automatic bool `json:"automatic,omitempty"`
 }
+
+// AutomaticMarker opens the commit log of an unattended mobile upload
+// (implementation notes (not distributed), owner 2026-10-06). Same trick as
+// the Shouting Commit marker: a tag in svn:log, no heuristics. The shape is
+// odd on purpose, so nobody types it into a publication comment by accident.
+const AutomaticMarker = "[!automatic@#!~]"
+
+// ErrCodeAutomaticShared refuses an automatic upload into a repository that
+// another realm may also write to. The phone is a companion of one realm;
+// two realms' devices sending unattended into one folder is where names
+// really collide. A chosen upload is not refused.
+const ErrCodeAutomaticShared = "automatic.shared_repository"
 
 // UploadObjectResult carries the append outcome. Revision/FinalPath are set on
 // COMMITTED; ExistingSha256 is set on a NAME_TAKEN_* collision.
@@ -263,6 +278,8 @@ type UploadTreePayload struct {
 	FileCount  int    `json:"file_count"`
 	Size       int64  `json:"size"`
 	Sha256     string `json:"sha256"`
+	// Automatic: see UploadObjectPayload.Automatic.
+	Automatic bool `json:"automatic,omitempty"`
 }
 
 // UploadTreeResult is the worker's receipt for one ingested tree pack

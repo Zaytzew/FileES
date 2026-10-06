@@ -48,10 +48,22 @@ func (s Store) EnqueueReader(ctx context.Context, repoID, parent, name, contentT
 		return PendingUpload{}, err
 	}
 	defer unlock()
-	return s.enqueueReaderLocked(ctx, repoID, parent, name, contentType, operation, count, sources, input)
+	return s.enqueueReaderLocked(ctx, repoID, parent, name, contentType, operation, count, sources, false, input)
 }
 
-func (s Store) enqueueReaderLocked(ctx context.Context, repoID, parent, name, contentType string, operation v1.Operation, count int, sources []string, input io.Reader) (PendingUpload, error) {
+// EnqueueAutomaticReader is EnqueueReader for an unattended upload (a watched
+// folder). The server opens such a commit's log with v1.AutomaticMarker and
+// refuses it in a repository another realm may also write to.
+func (s Store) EnqueueAutomaticReader(ctx context.Context, repoID, parent, name, contentType string, operation v1.Operation, count int, sources []string, input io.Reader) (PendingUpload, error) {
+	unlock, err := s.lockQueue(ctx)
+	if err != nil {
+		return PendingUpload{}, err
+	}
+	defer unlock()
+	return s.enqueueReaderLocked(ctx, repoID, parent, name, contentType, operation, count, sources, true, input)
+}
+
+func (s Store) enqueueReaderLocked(ctx context.Context, repoID, parent, name, contentType string, operation v1.Operation, count int, sources []string, automatic bool, input io.Reader) (PendingUpload, error) {
 	if repoID == "" || filepath.Base(repoID) != repoID || repoID == "." || repoID == ".." {
 		return PendingUpload{}, errors.New("invalid upload repo_id")
 	}
@@ -86,7 +98,7 @@ func (s Store) enqueueReaderLocked(ctx context.Context, repoID, parent, name, co
 	if size > limit {
 		return PendingUpload{}, errors.New("upload exceeds size limit")
 	}
-	item := PendingUpload{ID: uuid.NewString(), RepoID: repoID, ParentPath: parent, Filename: name, ContentType: contentType, Operation: operation, FileCount: count, Sources: sources, Size: size, Sha256: hex.EncodeToString(h.Sum(nil)), State: UploadPendingCreate, EnqueuedAt: time.Now().UTC()}
+	item := PendingUpload{ID: uuid.NewString(), RepoID: repoID, ParentPath: parent, Filename: name, ContentType: contentType, Operation: operation, FileCount: count, Sources: sources, Automatic: automatic, Size: size, Sha256: hex.EncodeToString(h.Sum(nil)), State: UploadPendingCreate, EnqueuedAt: time.Now().UTC()}
 	// Re-entry after an uncertain result reuses its persisted identity. A
 	// completed operation is never silently treated as a new user's intent.
 	queued, err := s.ListUploads(repoID)
@@ -209,7 +221,7 @@ func (c Client) pendingError(item PendingUpload, err error) (PendingUpload, erro
 }
 
 func (c Client) sendTree(ctx, caller context.Context, item PendingUpload) (PendingUpload, error) {
-	req, err := v1.NewRequest(item.ID, v1.OpUploadTree, v1.UploadTreePayload{RepoID: item.RepoID, ParentPath: item.ParentPath, FileCount: item.FileCount, Size: item.Size, Sha256: item.Sha256})
+	req, err := v1.NewRequest(item.ID, v1.OpUploadTree, v1.UploadTreePayload{RepoID: item.RepoID, ParentPath: item.ParentPath, FileCount: item.FileCount, Size: item.Size, Sha256: item.Sha256, Automatic: item.Automatic})
 	if err != nil {
 		item.State, item.LastError = UploadParked, err.Error()
 		return item, c.Store.recordUploadOutcome(item)
@@ -229,7 +241,7 @@ func (c Client) sendTree(ctx, caller context.Context, item PendingUpload) (Pendi
 		// Generic worker failure can mean a committed transaction with a lost
 		// ledger write. Preserve its ID and bytes. Deterministic validation
 		// failures are parked, so poison packs cannot loop forever.
-		if resp.Error != nil && (resp.Error.Code == "tree.incomplete" || resp.Error.Code == "tree.limit" || resp.Error.Code == "access.denied" || resp.Error.Code == "tree.not_pack") {
+		if resp.Error != nil && (resp.Error.Code == "tree.incomplete" || resp.Error.Code == "tree.limit" || resp.Error.Code == "access.denied" || resp.Error.Code == "tree.not_pack" || resp.Error.Code == v1.ErrCodeAutomaticShared) {
 			item.State, item.LastError = UploadParked, respError(resp).Error()
 			return item, c.Store.recordUploadOutcome(item)
 		}

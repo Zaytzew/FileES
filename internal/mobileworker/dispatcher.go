@@ -228,6 +228,9 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	if errors.Is(err, ErrAccessDenied) {
 		code = "access.denied"
 	}
+	if errors.Is(err, ErrAutomaticShared) {
+		code, msg = v1.ErrCodeAutomaticShared, "automatic upload refused: another realm may also write to this repository"
+	}
 	if errors.Is(err, ErrDirectoryTooLarge) {
 		code, msg = "manifest.too_large", "directory listing exceeds limit"
 	}

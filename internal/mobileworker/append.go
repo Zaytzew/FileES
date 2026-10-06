@@ -25,10 +25,11 @@ type AppendReader interface {
 type Committer interface {
 	// AppendFile commits spoolPath as the new file parent/filename with
 	// svn:needs-lock and a filees:request-id revprop, returning the new revision.
-	AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string) (int64, error)
+	// automatic opens the commit log with v1.AutomaticMarker.
+	AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string, automatic bool) (int64, error)
 	// CommitTree publishes many files under parentPath in one commit.
 	// Replace marks an existing file that must be overwritten in HEAD.
-	CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string) (int64, error)
+	CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string, automatic bool) (int64, error)
 }
 
 // TreeFile is one extracted zip entry ready to land under parentPath.
@@ -62,6 +63,9 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 	}
 	if view.Access != "rw" {
 		return v1.UploadObjectResult{Outcome: v1.OutcomeAccessRevoked}, nil
+	}
+	if p.Automatic && view.SharedWrite {
+		return v1.UploadObjectResult{}, ErrAutomaticShared
 	}
 	// The phone's write boundary is authoritative here, not in its GUI.
 	if !underMobileUploads(p.ParentPath) {
@@ -140,7 +144,7 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 		return v1.UploadObjectResult{}, err
 	}
 
-	newRev, commitErr := a.Committer.AppendFile(ctx, view.RepoPath, p.ParentPath, p.Filename, spool, requestID)
+	newRev, commitErr := a.Committer.AppendFile(ctx, view.RepoPath, p.ParentPath, p.Filename, spool, requestID, p.Automatic)
 	if commitErr != nil {
 		// A racing client may have taken the name between the check and the
 		// commit. Re-resolve against HEAD before surfacing the error.

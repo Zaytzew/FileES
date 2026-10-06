@@ -286,6 +286,18 @@ Paczka niesie `bin/filees-cfapi.exe`, samoaktualizacja instaluje go jako plik
 opcjonalny, MSI ma komponent tylko wtedy, gdy paczka go zawiera. Beta i
 stable (`nocfapi`) odmawiają paczki z pomocnikiem.
 
+Od 2026-10-06 alfa Windows wymaga także prywatnego runtime SVN z warunkowym
+wykluczeniem i wznowieniem. Zbuduj go przez
+`packaging/windows/build-conditional-svn-runtime.ps1`, a uzyskany nowy prefix
+przekaż do `stage-native-runtime.ps1`. Nie zmieniaj zainstalowanego SDK.
+Składanie alfy uruchamia kontrolę `--anchor-release`: pełny inwentarz i źródła
+C, oba aktualne źródła modyfikacji biblioteki oraz rzeczywiste odpowiedzi
+helperów. Brak funkcji bound/resume/Idle albo niezgodna wersja CFAPI przerywa
+budowę przed spakowaniem nowego demona. Beta/Store/Linux nie wymagają tej
+biblioteki; jeśli staging zawiera modyfikację, jej źródła także muszą być
+aktualne. Próby przerwania `filees-release-probe.exe` nie należą do payloadu.
+To kontrola zgodności zestawu, nie zastępstwo podpisu wydania lub odbioru live.
+
 ## „Co nowego” na kartach pobrań (od 2026-09-29)
 
 Każde wydanie może mieć `releases/<id>/notes.json`: krótkie zdania dla ludzi,

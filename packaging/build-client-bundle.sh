@@ -87,13 +87,18 @@ case "$PLATFORM" in
 windows-amd64)
 	[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
 	[ -d "$FILEES_NATIVE_RUNTIME" ] || die "native runtime directory not found: $FILEES_NATIVE_RUNTIME"
+	set -- --files
+	if [ "${FILEES_RELEASE_CHANNEL:-}" = alpha ]; then
+		[ -n "${FILEES_CFAPI_HELPER:-}" ] || die "an alpha bundle needs FILEES_CFAPI_HELPER"
+		set -- "$@" --anchor-release "$FILEES_CFAPI_HELPER"
+	fi
 	mkdir -p "$out/bin" "$out/autostart"
 	# Windows MSI/update bundles install the complete immutable runtime as files.
 	# The first transition is through MSI; old updaters refuse the new bundle kind.
 	# Linux and Store retain their separate embedded-runtime producers.
 	native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
 	trap 'rm -rf "$native_build"' EXIT HUP INT TERM
-	go run ./cmd/filees-native-package --files "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
+	go run ./cmd/filees-native-package "$@" "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
 	cp -R "$native_build/packed/native-svn" "$out/bin/native-svn"
 	cp "$native_build/packed/native-svn.json" "$out/bin/native-svn.json"
 	native_manifest_b64=$(base64 <"$out/bin/native-svn.json" | tr -d '\r\n')

@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,17 +13,24 @@ import (
 )
 
 func main() {
-	args := os.Args[1:]
-	files := len(args) == 4 && args[0] == "--files"
-	if files {
-		args = args[1:]
-	}
+	options := flag.NewFlagSet("filees-native-package", flag.ExitOnError)
+	files := options.Bool("files", false, "install runtime as ordinary files")
+	anchor := options.String("anchor-release", "", "require the matching Windows CFAPI release helper")
+	_ = options.Parse(os.Args[1:])
+	args := options.Args()
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: filees-native-package [--files] SOURCE-TREE STAGED-RUNTIME OUTPUT-DIRECTORY")
+		fmt.Fprintln(os.Stderr, "usage: filees-native-package [--files] [--anchor-release CFAPI-HELPER] SOURCE-TREE STAGED-RUNTIME OUTPUT-DIRECTORY")
 		os.Exit(2)
 	}
 	var err error
-	if files {
+	if *anchor != "" {
+		err = verifyAnchorReleaseSet(args[0], args[1], *anchor)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	if *files {
 		err = runFiles(args[0], args[1], args[2])
 	} else {
 		err = run(args[0], args[1], args[2])
@@ -167,5 +175,5 @@ func verifySources(source, stage string) error {
 			return fmt.Errorf("native runtime source changed: %s; rebuild the stage", name)
 		}
 	}
-	return nil
+	return verifyConditionalSources(source, stage, false)
 }

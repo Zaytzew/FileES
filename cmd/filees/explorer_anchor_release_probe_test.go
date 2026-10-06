@@ -50,6 +50,102 @@ func (p *localStateProbe) restoreRelease(rel, size string) string {
 	return ""
 }
 
+func TestAnchorReleaseJournalNativePreparation(t *testing.T) {
+	for _, name := range []string{"full", "readonly", "writer", "remote", "ordinary", "inside-wc", "stale", "cancel-after-copy", "copy-fences"} {
+		t.Run(name, func(t *testing.T) {
+			point, store := t.TempDir(), t.TempDir()
+			p := newLocalStateProbe(t, point, "", "f\t8192\tremote.txt\tremote.txt\n")
+			local := filepath.Join(point, "local.dwg")
+			body := bytes.Repeat([]byte("owned source "), 24000)
+			if err := os.WriteFile(local, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if name != "ordinary" {
+				p.accept("local.dwg", true)
+			}
+			if name == "readonly" {
+				if err := os.Chmod(local, 0400); err != nil {
+					t.Fatal(err)
+				}
+				p.accept("local.dwg", true)
+			}
+			if name == "writer" {
+				wide, _ := windows.UTF16PtrFromString(local)
+				h, err := windows.CreateFile(wide, windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer windows.CloseHandle(h)
+			}
+			identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: "file:///fixture", WC: point, Rel: "local.dwg", Revision: 1}
+			if name == "remote" {
+				identity.Rel = "remote.txt"
+			}
+			if name == "inside-wc" {
+				store = point
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			m := &anchorManager{helper: p.helper}
+			calls := 0
+			journal, err := prepareAnchorReleaseJournal(ctx, store, identity, func(ctx context.Context) (cfapiAnswer, error) {
+				calls++
+				state, err := m.call(ctx, "", "file-state", "--root", point, "--rel", identity.Rel)
+				if name == "copy-fences" && calls == 2 {
+					wide, _ := windows.UTF16PtrFromString(local)
+					for _, access := range []uint32{windows.GENERIC_WRITE, windows.DELETE} {
+						h, err := windows.CreateFile(wide, access, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+						if err == nil {
+							windows.CloseHandle(h)
+							t.Fatal("copy guard admitted write/rename")
+						}
+					}
+				}
+				if calls == 3 && name == "stale" {
+					state.USN = "1"
+				}
+				if calls == 3 && name == "cancel-after-copy" {
+					cancel()
+				}
+				return state, err
+			})
+			good := name == "full" || name == "readonly" || name == "copy-fences"
+			if good {
+				if err != nil || journal == nil {
+					t.Fatalf("prepare %s: %v", name, err)
+				}
+				fresh := &anchorReleaseJournal{store: store, identity: identity, id: journal.id}
+				if record, err := fresh.inspect(t.Context()); err != nil || record.Phase != "retained" || record.Size != int64(len(body)) {
+					t.Fatalf("reload: %+v %v", record, err)
+				}
+			} else if err == nil || journal != nil {
+				t.Fatal("unsafe preparation succeeded")
+			}
+			if got, err := os.ReadFile(local); err != nil || !bytes.Equal(got, body) {
+				t.Fatal("preparation changed source")
+			}
+			if name == "cancel-after-copy" || name == "stale" {
+				entries, err := os.ReadDir(store)
+				if err != nil || len(entries) != 1 {
+					t.Fatalf("retained failed transaction: %v", err)
+				}
+				dir := filepath.Join(store, entries[0].Name())
+				if got, err := os.ReadFile(filepath.Join(dir, "data.bin")); err != nil || !bytes.Equal(got, body) {
+					t.Fatal("failed preparation lost backup")
+				}
+				if _, err := os.Stat(filepath.Join(dir, "00.json")); !os.IsNotExist(err) {
+					t.Fatal("failed preparation recorded admission")
+				}
+			}
+			select {
+			case <-p.fetch:
+				t.Fatal("retaining bytes requested remote hydration")
+			default:
+			}
+		})
+	}
+}
+
 func TestAnchorPrepareReleaseRefusesUnsafeState(t *testing.T) {
 	for _, name := range []string{"stale", "dirty", "unadopted", "partial", "ordinary", "writer", "reader", "readonly", "private", "escape", "invalid-token"} {
 		t.Run(name, func(t *testing.T) {
@@ -246,25 +342,40 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		return string(raw)
 	}
 	logBefore := readLog()
-	// Write, sync and close an independent retained file. Never retire it here.
-	retained := filepath.Join(root, "retained.dwg")
-	f, err := os.OpenFile(retained, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	// Persist byte evidence and requests before each external effect. Neither
+	// the journal nor this probe retires the copy or replays a failed effect.
+	store := filepath.Join(root, "release-evidence")
+	if err := os.Mkdir(store, 0700); err != nil {
+		t.Fatal(err)
+	}
+	m := &anchorManager{helper: p.helper}
+	identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: uri, WC: point, Rel: "drawing.dwg", Revision: 1}
+	journal, err := prepareAnchorReleaseJournal(t.Context(), store, identity, func(ctx context.Context) (cfapiAnswer, error) {
+		return m.call(ctx, "", "file-state", "--root", point, "--rel", "drawing.dwg")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.Write(body)
-	if err == nil {
-		err = f.Sync()
+	retained := filepath.Join(store, journal.id, "data.bin")
+	reload := func(phase string) {
+		fresh := &anchorReleaseJournal{store: store, identity: identity, id: journal.id}
+		if record, err := fresh.inspect(t.Context()); err != nil || record.Phase != phase {
+			t.Fatalf("reload %s: %+v %v", phase, record, err)
+		}
 	}
-	closeErr := f.Close()
-	if err != nil || closeErr != nil {
-		t.Fatalf("retain: %v %v", err, closeErr)
+	reload("retained")
+	if err := journal.request(t.Context(), "prepare_requested"); err != nil {
+		t.Fatal(err)
 	}
 	if hr := p.prepareRelease("drawing.dwg", p.state("drawing.dwg").USN); hr != hresultOK {
 		t.Fatalf("prepare: %s", hr)
 	}
 	if s := p.state("drawing.dwg"); s.Placeholder || s.Partial {
 		t.Fatalf("not ordinary/local: %+v", s)
+	}
+	reload("prepare_requested")
+	if err := journal.request(t.Context(), "exclude_requested"); err != nil {
+		t.Fatal(err)
 	}
 	raw, err := exec.CommandContext(t.Context(), native, "exclude-retained", "--wc", point, "--retained", retained, "--", "drawing.dwg").CombinedOutput()
 	var answer struct {
@@ -287,13 +398,17 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	m := &anchorManager{helper: p.helper}
+	reload("exclude_requested")
+	if err := journal.request(t.Context(), "restore_requested"); err != nil {
+		t.Fatal(err)
+	}
 	if hr := p.restoreRelease("drawing.dwg", fmt.Sprint(len(body))); hr != hresultOK {
 		t.Fatalf("restore: %s", hr)
 	}
 	if s := p.state("drawing.dwg"); !s.Placeholder || !s.Partial || s.Local {
 		t.Fatalf("not remote seed: %+v", s)
 	}
+	reload("restore_requested")
 	// The restored identity persists across provider restart without consuming
 	// the retained copy. This is not transaction recovery after an interruption.
 	p.stop()

@@ -150,13 +150,13 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	source := filepath.Join(root, "source")
 	drawing := bytes.Repeat([]byte("sala-"), 300000) // 1.5 MB, more than one chunk
 	model := []byte("model w podfolderze\n")
-	if err := os.MkdirAll(filepath.Join(source, "art"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(source, "wnętrza-東京"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(source, "sala.dwg"), drawing, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(source, "art", "model.blend"), model, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "wnętrza-東京", "model.blend"), model, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	repoPath := filepath.ToSlash(repo)
@@ -168,7 +168,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 
 	// What the attach lifecycle leaves behind for an anchor: an empty sparse
 	// copy with the working-copy identity directory.
-	anchor := filepath.Join(root, "Atlas")
+	anchor := filepath.Join(root, "Zażółć-東京-🧪")
 	svn := client.New(client.Options{SvnPath: svnCLI, NativeSVNPath: native, Timeout: time.Minute})
 	if _, err := svn.(interface {
 		CheckoutDepthEmpty(context.Context, string, string) (string, error)
@@ -220,7 +220,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		_, err := os.Stat(anchorSeedPath(anchor))
 		return err == nil
 	})
-	for _, rel := range []string{"sala.dwg", "art", filepath.Join("art", "model.blend")} {
+	for _, rel := range []string{"sala.dwg", "wnętrza-東京", filepath.Join("wnętrza-東京", "model.blend")} {
 		if !cloudfiles.IsPlaceholder(filepath.Join(anchor, rel)) {
 			t.Fatalf("%s was not seeded as a placeholder", rel)
 		}
@@ -251,21 +251,21 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	if !bytes.Equal(read, drawing) {
 		t.Fatal("the opened file does not hold the repository's bytes")
 	}
-	nested, err := os.ReadFile(filepath.Join(anchor, "art", "model.blend"))
+	nested, err := os.ReadFile(filepath.Join(anchor, "wnętrza-東京", "model.blend"))
 	if err != nil || !bytes.Equal(nested, model) {
 		t.Fatalf("opening a file in a subfolder: %v", err)
 	}
 
 	// Experimental Shell mode keeps the file local instead of stripping its
 	// CFAPI metadata. The observer verifies SVN before confirming it clean.
-	for _, rel := range []string{"sala.dwg", filepath.Join("art", "model.blend")} {
+	for _, rel := range []string{"sala.dwg", filepath.Join("wnętrza-東京", "model.blend")} {
 		path := filepath.Join(anchor, rel)
 		waitFor(t, 30*time.Second, rel+" to become a clean local file", func() bool {
 			local, clean := cloudfiles.LocalState(path)
 			return local && clean
 		})
 	}
-	statuses, err := svn.Status(context.Background(), anchor, []string{"sala.dwg", "art/model.blend"})
+	statuses, err := svn.Status(context.Background(), anchor, []string{"sala.dwg", "wnętrza-東京/model.blend"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,6 +332,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	cancel()
 	<-stopped
 	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
 	stopped = make(chan struct{})
 	go func() { manager.keep(ctx, record); close(stopped) }()
 	waitFor(t, 10*time.Second, "reconnected provider", func() bool {

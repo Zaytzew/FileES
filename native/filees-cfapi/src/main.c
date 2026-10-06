@@ -16,6 +16,7 @@
 #include "filees_cfapi.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *const k_verbs[] = {"version", "register", "shell-register", "unregister", "info", "file-state", "file-states", "hydrate", "placeholders", "connect", "revert", NULL};
@@ -55,7 +56,7 @@ static int absolute_path(const WCHAR *path)
            path[1] == L':' && (path[2] == L'\\' || path[2] == L'/');
 }
 
-int main(int argc, char **argv)
+static int run(int argc, char **argv)
 {
     WCHAR root[MAX_PATH * 2];
     WCHAR identity[FILEES_CFAPI_MAX_IDENTITY];
@@ -121,4 +122,42 @@ int main(int argc, char **argv)
 
     filees_cfapi_fail("verb_unknown", E_INVALIDARG);
     return 2;
+}
+
+/* Windows command lines are UTF-16. Narrow main() uses the system ANSI
+ * codepage, whereas our parser and stdin contract require UTF-8. Convert
+ * strictly at the entry point, as the native SVN helper does; never lose
+ * characters or depend on the user's locale. */
+int wmain(int argc, wchar_t **wide_argv)
+{
+    int i, result = 2;
+    HRESULT failure = E_OUTOFMEMORY;
+    char **argv = calloc((size_t)argc + 1, sizeof(*argv));
+    if (!argv) {
+        filees_cfapi_fail("arguments_invalid", failure);
+        return result;
+    }
+    for (i = 0; i < argc; ++i) {
+        int n = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                   wide_argv[i], -1, NULL, 0, NULL, NULL);
+        if (!n) {
+            failure = HRESULT_FROM_WIN32(GetLastError());
+            goto failed;
+        }
+        argv[i] = malloc((size_t)n);
+        if (!argv[i]) goto failed;
+        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                 wide_argv[i], -1, argv[i], n, NULL, NULL)) {
+            failure = HRESULT_FROM_WIN32(GetLastError());
+            goto failed;
+        }
+    }
+    result = run(argc, argv);
+    goto done;
+failed:
+    filees_cfapi_fail("arguments_invalid", failure);
+done:
+    for (i = 0; i < argc; ++i) free(argv[i]);
+    free(argv);
+    return result;
 }

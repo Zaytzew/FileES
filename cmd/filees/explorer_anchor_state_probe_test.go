@@ -422,6 +422,7 @@ type localStateProbe struct {
 	reply  chan []string
 	fetch  chan []string
 	stop   func()
+	crash  func() // only this fixture's child provider; kill and reap
 }
 
 func newLocalStateProbe(t *testing.T, root, content, listing string, shell ...bool) *localStateProbe {
@@ -491,6 +492,15 @@ func newLocalStateProbe(t *testing.T, root, content, listing string, shell ...bo
 		}
 	}()
 	var once sync.Once
+	p.crash = func() {
+		once.Do(func() {
+			_ = command.Process.Kill()
+			_ = input.Close()
+			<-done
+			_ = command.Wait()
+			cancel()
+		})
+	}
 	p.stop = func() {
 		once.Do(func() {
 			_ = input.Close()

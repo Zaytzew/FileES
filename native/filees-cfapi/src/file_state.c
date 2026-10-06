@@ -85,6 +85,8 @@ struct state {
     FILE_ATTRIBUTE_TAG_INFO attributes;
     int placeholder, partial, clean, local;
     USN usn;
+    LONGLONG size;
+    char identity[FILEES_CFAPI_MAX_IDENTITY * 4];
 };
 
 static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
@@ -100,13 +102,28 @@ static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
         !GetFileInformationByHandleEx(file, FileStandardInfo, &standard, sizeof standard))
         return HRESULT_FROM_WIN32(GetLastError());
     if (out->attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) return E_INVALIDARG;
+    out->size = standard.EndOfFile.QuadPart;
     hr = CfGetPlaceholderInfo(file, CF_PLACEHOLDER_INFO_STANDARD, info, sizeof data, &returned);
     if (SUCCEEDED(hr)) {
         out->placeholder = 1;
         out->partial = info->OnDiskDataSize.QuadPart < standard.EndOfFile.QuadPart;
         out->clean = info->InSyncState == CF_IN_SYNC_STATE_IN_SYNC;
-        if (info->FileIdentityLength > 4096) return E_FAIL;
+        if (info->FileIdentityLength > 4096 ||
+            returned < FIELD_OFFSET(CF_PLACEHOLDER_STANDARD_INFO, FileIdentity) + info->FileIdentityLength)
+            return E_FAIL;
         out->local = filees_local_identity(info->FileIdentity, info->FileIdentityLength);
+        /* Release recovery must verify the fetch identity, not just a cloud
+         * icon. Copy only bounded, terminated UTF-16, without reading bytes. */
+        if (info->FileIdentityLength >= sizeof(WCHAR) &&
+            info->FileIdentityLength <= FILEES_CFAPI_MAX_IDENTITY * sizeof(WCHAR) &&
+            info->FileIdentityLength % sizeof(WCHAR) == 0) {
+            const WCHAR *identity = (const WCHAR *)info->FileIdentity;
+            int count = (int)(info->FileIdentityLength / sizeof(WCHAR));
+            if (identity[count - 1] == 0 && wcsnlen(identity, count) == (size_t)count - 1 &&
+                !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, count,
+                                     out->identity, sizeof out->identity, NULL, NULL))
+                return E_FAIL;
+        }
     } else if (hr != HRESULT_FROM_WIN32(ERROR_NOT_A_CLOUD_FILE)) {
         return hr;
     } else if (out->attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -277,9 +294,11 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
         filees_cfapi_fail("file_state", hr);
         return 1;
     }
-    printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\"}\n",
+    printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\",\"size\":%lld,\"identity\":",
            state.placeholder ? "true" : "false", state.partial ? "true" : "false",
-           state.clean ? "true" : "false", state.local ? "true" : "false", state.usn);
+           state.clean ? "true" : "false", state.local ? "true" : "false", state.usn, state.size);
+    filees_cfapi_json_string(state.identity);
+    puts("}");
     fflush(stdout);
     return 0;
 }

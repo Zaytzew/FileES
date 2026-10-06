@@ -51,9 +51,9 @@ func newTestAnchorReleaseJournal(t *testing.T) (*anchorReleaseJournal, []byte) {
 		t.Fatal(err)
 	}
 	f.Close()
-	identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: "file:///fixture", WC: wc, Rel: "drawing.dwg", Revision: 1}
+	identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: "file:///fixture", RepoUUID: uuid.NewString(), WC: wc, Rel: "drawing.dwg", Revision: 1}
 	digest := sha256.Sum256(body)
-	record := anchorReleaseRecord{Version: 1, ID: id, Identity: identity, Root: anchorReleaseID(rootInfo), Source: anchorReleaseID(sourceInfo), USN: "1", Size: int64(len(body)), SHA256: hex.EncodeToString(digest[:]), Phase: anchorReleasePhases[0]}
+	record := anchorReleaseRecord{Version: 2, ID: id, Identity: identity, Root: anchorReleaseID(rootInfo), Source: anchorReleaseID(sourceInfo), USN: "1", Size: int64(len(body)), SHA256: hex.EncodeToString(digest[:]), Phase: anchorReleasePhases[0]}
 	if err := writeAnchorReleaseRecord(dir, 0, record); err != nil {
 		t.Fatal(err)
 	}

@@ -127,6 +127,8 @@ type cfapiAnswer struct {
 	InSync      bool          `json:"in_sync"`
 	Local       bool          `json:"local"`
 	USN         string        `json:"usn"`
+	Identity    string        `json:"identity"`
+	Size        *int64        `json:"size"` // nil from older metadata helpers: never release proof
 	States      []cfapiAnswer `json:"states"`
 }
 

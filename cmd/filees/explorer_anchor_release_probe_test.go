@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
 
@@ -77,7 +78,7 @@ func TestAnchorReleaseJournalNativePreparation(t *testing.T) {
 				}
 				defer windows.CloseHandle(h)
 			}
-			identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: "file:///fixture", WC: point, Rel: "local.dwg", Revision: 1}
+			identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: "file:///fixture", RepoUUID: uuid.NewString(), WC: point, Rel: "local.dwg", Revision: 1}
 			if name == "remote" {
 				identity.Rel = "remote.txt"
 			}
@@ -383,7 +384,7 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := &anchorManager{helper: p.helper}
-	identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: uri, WC: point, Rel: "drawing.dwg", Revision: 1}
+	identity := anchorReleaseIdentity{ServerID: "fixture", RepoID: "fixture-repo", RepoURL: uri, RepoUUID: repositoryID, WC: point, Rel: "drawing.dwg", Revision: 1}
 	journal, err := prepareAnchorReleaseJournal(t.Context(), store, identity, func(ctx context.Context) (cfapiAnswer, error) {
 		return m.call(ctx, "", "file-state", "--root", point, "--rel", "drawing.dwg")
 	})

@@ -28,6 +28,7 @@ type anchorReleaseIdentity struct {
 	ServerID string
 	RepoID   string
 	RepoURL  string
+	RepoUUID string
 	WC       string
 	Rel      string
 	Revision int64
@@ -68,6 +69,9 @@ func validateAnchorReleaseIdentity(in anchorReleaseIdentity) error {
 	if !ok || rel != in.Rel || in.ServerID == "" || in.RepoID == "" ||
 		in.RepoURL == "" || in.Revision < 1 || !filepath.IsAbs(in.WC) || filepath.Clean(in.WC) != in.WC {
 		return errors.New("invalid Explorer release identity")
+	}
+	if parsed, err := uuid.Parse(in.RepoUUID); err != nil || parsed.String() != in.RepoUUID {
+		return errors.New("release requires the actual SVN repository UUID")
 	}
 	return nil
 }
@@ -243,6 +247,9 @@ func writeAnchorReleaseRecord(dir string, index int, record anchorReleaseRecord)
 	if err != nil {
 		return err
 	}
+	if len(raw) > 16*1024 {
+		return errors.New("release record exceeds size limit")
+	}
 	f, err := os.CreateTemp(dir, ".pending-*")
 	if err != nil {
 		return err
@@ -360,7 +367,7 @@ func prepareAnchorReleaseJournal(ctx context.Context, store string, identity anc
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	record := anchorReleaseRecord{Version: 1, ID: id, Identity: identity, Root: anchorReleaseID(rootInfo),
+	record := anchorReleaseRecord{Version: 2, ID: id, Identity: identity, Root: anchorReleaseID(rootInfo),
 		Source: anchorReleaseID(info), USN: state.USN, Size: size, SHA256: digest, Phase: anchorReleasePhases[0]}
 	if err := writeAnchorReleaseRecord(dir, 0, record); err != nil {
 		return nil, err
@@ -406,7 +413,7 @@ func (j *anchorReleaseJournal) inspect(ctx context.Context) (anchorReleaseRecord
 	if err != nil {
 		return record, err
 	}
-	if record.Version != 1 || record.ID != j.id || record.Identity != j.identity || record.Phase != anchorReleasePhases[0] ||
+	if record.Version != 2 || record.ID != j.id || record.Identity != j.identity || record.Phase != anchorReleasePhases[0] ||
 		record.Size < 0 || record.Size == int64(^uint64(0)>>1) || record.Source.Index == 0 || record.Root.Index == 0 {
 		return record, errors.New("release evidence belongs to another transaction, WC or repository")
 	}

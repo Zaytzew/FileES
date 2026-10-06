@@ -1,5 +1,22 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Metadane odtworzonego wpisu 2026-10-06
+
+Opcjonalne release_observation_v1 rozszerza odpowiedź pojedynczego
+file-state o size i identity. To rozmiar logiczny oraz ograniczona,
+poprawna tożsamość UTF-16 przekonwertowana do UTF-8; brak obsługiwanej
+tożsamości zwraca pusty tekst, nie zgodę. Nadal wyłącznie metadane
+własnego korzenia, bez odczytu bajtów i sieci. Stan i flaga chmurki same
+nie potwierdzają tożsamości pobrania. Odpowiedź zbiorcza pozostaje bez zmian.
+
+Prywatne recoverSeed w Go używa tego odczytu po faktycznym wykluczeniu
+z SVN, porównując rejestr v2 z UUID repo oraz zabezpieczone bajty.
+Odtwarza jedynie brakujący wpis przez podłączony restore-release;
+zastane obiekty nie są zastępowane. Nie wywołuje prepare/exclude ani
+nie usuwa kopii. Nie jest podpięte do menedżera/startup/GUI; pierwsza
+część transakcji i ochrona podmiany nazwy między procesami pozostają.
+Dowody: implementation notes (not distributed)
+
 ## Wewnętrzne przygotowanie i odtworzenie po wykluczeniu 2026-10-06
 
 Podłączony pomocnik rozumie dwie opcjonalne linie prywatnego mostu:

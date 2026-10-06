@@ -174,10 +174,7 @@ func (service *SettingsService) showSettings(ctx context.Context, request platfo
 	}
 	if service.gui != nil {
 		vm := service.gui.viewModel()
-		if vm.Connected && !vm.Stale && vm.HasCap(contract.CapVirtualFolders) && vm.VirtualFolders != nil {
-			state := *vm.VirtualFolders
-			projection.VirtualFolders = &state
-		}
+		projection.VirtualFolders = virtualFoldersForServer(vm, projection.Server.ID)
 	}
 	session := &settingsSession{result: make(chan platform.SettingsDialogResult, 1)}
 

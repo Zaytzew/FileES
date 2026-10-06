@@ -64,7 +64,11 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
-	anchors.options = loadAnchorOptions(filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "virtual-folders.json"))
+	var records []localrepo.Record
+	if lifecycle != nil {
+		records = lifecycle.List()
+	}
+	anchors.options = loadAnchorOptions(filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "virtual-folders.json"), records...)
 	provisioner.anchorEnabled = anchors.virtualEnabled
 	ipc.SetVirtualFoldersService(anchors)
 	anchors.wireRelease(ipc)
@@ -177,9 +181,6 @@ func (m *anchorManager) call(ctx context.Context, stdin string, args ...string) 
 // does not nest sync roots: a folder inside Nextcloud or OneDrive cannot be an
 // anchor, and saying so here is kinder than a raw error from the filter later.
 func (m *anchorManager) precheck(localPath string) error {
-	if m.options != nil && !m.virtualEnabled() {
-		return errors.New("enable virtual folders in FileES settings first")
-	}
 	local := filepath.Clean(strings.TrimSpace(localPath))
 	if !filepath.IsAbs(local) {
 		return errors.New("the anchor folder must be an absolute path")
@@ -240,7 +241,7 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 	defer m.mu.Unlock()
 	wanted := map[string]localrepo.Record{}
 	for _, record := range m.lifecycle.List() {
-		if m.virtualEnabled() && record.Anchor && record.State == localrepo.StateAttached && filepath.IsAbs(record.LocalPath) {
+		if m.virtualEnabled(record.ServerID) && record.Anchor && record.State == localrepo.StateAttached && filepath.IsAbs(record.LocalPath) {
 			wanted[anchorKey(record)] = record
 		}
 	}
@@ -369,7 +370,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					guard: newAnchorGuard(log),
 					log:   log,
 				}
-				if m.virtualEnabled() {
+				if m.virtualEnabled(record.ServerID) {
 					bridge.retainLocal = true
 					bridge.observe = func(ctx context.Context, bridge *anchorBridge) {
 						m.observeLocalStates(ctx, record, bridge)
@@ -466,7 +467,7 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 		talk.With("anchor").Warnf("prepare folder icon: %v", err)
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
-	} else if m.virtualEnabled() {
+	} else if m.virtualEnabled(record.ServerID) {
 		// Opt-in until visual/large-tree acceptance and the remaining sparse
 		// operations are complete. Metadata observations share the WC guard.
 		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)

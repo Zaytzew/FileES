@@ -1057,15 +1057,29 @@ func (s *Store) List() []Record {
 func (s *Store) CheckAnchorRetirement() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.checkAnchorRetirementLocked()
+	return s.checkAnchorRetirementLocked("")
 }
 
-func (s *Store) checkAnchorRetirementLocked() error {
+// CheckServerAnchorRetirement protects this server's preference only.
+// The updater retains the global CheckAnchorRetirement/RetireAnchors fence.
+func (s *Store) CheckServerAnchorRetirement(serverID string) error {
+	if serverID == "" {
+		return errors.New("server ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkAnchorRetirementLocked(serverID)
+}
+
+// NeedsAnchorRetirement includes pending lifecycle and incomplete cleanup.
+func (r Record) NeedsAnchorRetirement() bool {
+	return r.Anchor && r.State != StateDeleted &&
+		!(r.State == StateDetached && (!r.RemoteDeletionObserved || r.LocalCleanupCompleted))
+}
+
+func (s *Store) checkAnchorRetirementLocked(serverID string) error {
 	for _, r := range s.records {
-		if !r.Anchor {
-			continue
-		}
-		if r.State == StateDeleted || (r.State == StateDetached && (!r.RemoteDeletionObserved || r.LocalCleanupCompleted)) {
+		if (serverID != "" && r.ServerID != serverID) || !r.NeedsAnchorRetirement() {
 			continue
 		}
 		return errors.New("this release has no Explorer point support; detach existing points and finish pending point operations before updating")
@@ -1079,7 +1093,7 @@ func (s *Store) checkAnchorRetirementLocked() error {
 func (s *Store) RetireAnchors() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.checkAnchorRetirementLocked(); err != nil {
+	if err := s.checkAnchorRetirementLocked(""); err != nil {
 		return err
 	}
 	s.anchorsRetired = true

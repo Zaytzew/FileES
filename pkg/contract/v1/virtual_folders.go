@@ -1,13 +1,18 @@
 package contract
 
-const CmdVirtualFolders = "system.virtual_folders"
+// Separate capability prevents older GUIs from making a global decision.
+const CmdVirtualFolders = "server.virtual_folders"
 const CapVirtualFolders = CmdVirtualFolders
 
-// Nil requests the current local preference, not a change. Availability is
-// announced only by a compatible Windows daemon with a CFAPI helper.
+// Nil reads a server's local preference; an empty server without a mutation
+// reads the summary. Availability requires a compatible Windows CFAPI daemon.
 type VirtualFoldersPayload struct {
-	Enabled *bool `json:"enabled,omitempty"`
+	ServerID string `json:"server_id,omitempty"`
+	Enabled  *bool  `json:"enabled,omitempty"`
 }
 type VirtualFoldersStatus struct {
-	Enabled bool `json:"enabled"`
+	ServerID string `json:"server_id,omitempty"`
+	Enabled  bool   `json:"enabled"`
+	// Servers is a system-status summary, never a global enablement switch.
+	Servers map[string]bool `json:"servers,omitempty"`
 }

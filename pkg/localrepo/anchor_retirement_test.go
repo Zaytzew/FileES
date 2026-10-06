@@ -25,6 +25,22 @@ func TestAnchorRetirementStates(t *testing.T) {
 	}
 }
 
+func TestServerRetirementKeepsGlobalUpdateFence(t *testing.T) {
+	s := &Store{records: map[string]Record{"point": {ServerID: "other", Anchor: true, State: StateAttached}}}
+	if err := s.CheckServerAnchorRetirement("lab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckServerAnchorRetirement("other"); err == nil {
+		t.Fatal("active server admitted")
+	}
+	if err := s.CheckServerAnchorRetirement(""); err == nil {
+		t.Fatal("empty scope admitted")
+	}
+	if err := s.RetireAnchors(); err == nil {
+		t.Fatal("global fence weakened")
+	}
+}
+
 func TestAnchorAttachAndRetirementAreMutuallyExclusive(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		s, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))

@@ -696,13 +696,14 @@ function serverHealthPresentation(value) {
 }
 
 let virtualFoldersBusy = false;
-async function toggleVirtualFolders() {
-  const snapshot = currentSnapshot;
-  if (virtualFoldersBusy || !snapshot?.virtual_folders) return;
+async function toggleVirtualFolders(serverID) {
+	const snapshot = currentSnapshot;
+	const state = snapshot?.servers?.find(server => server.id === serverID)?.virtual_folders;
+	if (virtualFoldersBusy || !state) return;
   virtualFoldersBusy = true;
   renderRepositories(currentSnapshot);
   try {
-    const result = await SettingsService.DashboardVirtualFolders(!snapshot.virtual_folders.enabled, snapshot.revision);
+		const result = await SettingsService.DashboardVirtualFolders(serverID, !state.enabled, snapshot.revision);
     if (!result.accepted) showToast({ title: t("virtualFolders.label"), message: t(result.code || "virtualFolders.notConfirmed"), level: "critical" });
   } catch {
     showToast({ title: t("virtualFolders.label"), message: t("virtualFolders.notConfirmed"), level: "critical" });
@@ -791,8 +792,8 @@ function renderRepositories(snapshot) {
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
             ${demo ? `<span class="demo-badge ${demo.ended ? "is-ended" : ""}" title="${escapeHTML(demo.title)}">${escapeHTML(demo.text)}</span>` : ""}
-            ${snapshot.virtual_folders ? `<button class="server-settings virtual-folders-control ${snapshot.virtual_folders.enabled ? "is-enabled" : ""}" type="button" data-virtual-folders ${virtualFoldersBusy ? "disabled" : ""} aria-pressed="${snapshot.virtual_folders.enabled}" title="${escapeHTML(t("virtualFolders.help"))}" aria-label="${escapeHTML(t("virtualFolders.label"))}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12a4 4 0 0 0 .4-8 6.5 6.5 0 0 0-12.6-1A4.5 4.5 0 0 0 6 18Z"></path>${snapshot.virtual_folders.enabled ? "" : '<path d="M3 3l18 18"></path>'}</svg>
+            ${server.virtual_folders ? `<button class="server-settings virtual-folders-control ${server.virtual_folders.enabled ? "is-enabled" : ""}" type="button" data-virtual-folders ${virtualFoldersBusy ? "disabled" : ""} aria-pressed="${server.virtual_folders.enabled}" title="${escapeHTML(t("virtualFolders.help"))}" aria-label="${escapeHTML(t("virtualFolders.label"))}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12a4 4 0 0 0 .4-8 6.5 6.5 0 0 0-12.6-1A4.5 4.5 0 0 0 6 18Z"></path>${server.virtual_folders.enabled ? "" : '<path d="M3 3l18 18"></path>'}</svg>
             </button>` : ""}
             <button class="server-settings" type="button" data-action="settings" title="${escapeHTML(t("server.settings"))}" aria-label="${escapeHTML(t("server.settingsName", { name: server.display_name || server.id }))}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
@@ -1645,7 +1646,7 @@ $("#repositories").addEventListener("change",event=>{
 $("#repositories").addEventListener("click", (event) => {
   if (event.target.closest("[data-virtual-folders]")) {
     event.preventDefault();
-    toggleVirtualFolders();
+    toggleVirtualFolders(event.target.closest("[data-server-id]")?.dataset.serverId);
     return;
   }
   const remove=event.target.closest("[data-drawer-delete]");

@@ -62,7 +62,6 @@ type GUIService struct {
 }
 
 type Snapshot struct {
-	VirtualFolders      *contract.VirtualFoldersStatus    `json:"virtual_folders,omitempty"`
 	SyncPause           contract.SyncPauseStatus          `json:"sync_pause"`
 	MemorySafety        *contract.MemorySafetyStatus      `json:"memory_safety,omitempty"`
 	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
@@ -122,20 +121,21 @@ type ReservationAvailabilityProjection struct {
 }
 
 type ServerProjection struct {
-	RealmID               string `json:"-"`
-	GUIScope              string `json:"gui_scope,omitempty"`
-	ID                    string `json:"id"`
-	DisplayName           string `json:"display_name"`
-	Address               string `json:"address"`
-	ClientRole            string `json:"client_role"`
-	RealmAlias            string `json:"realm_alias,omitempty"`
-	AccentColor           string `json:"accent_color,omitempty"`
-	Health                string `json:"health"`
-	RepositoryCount       int    `json:"repository_count"`
-	RepositoriesReady     bool   `json:"repositories_ready"`
-	PendingRequiredRepos  int    `json:"pending_required_repos"`
-	ReservationCount      int    `json:"reservation_count"`
-	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
+	VirtualFolders        *contract.VirtualFoldersStatus `json:"virtual_folders,omitempty"`
+	RealmID               string                         `json:"-"`
+	GUIScope              string                         `json:"gui_scope,omitempty"`
+	ID                    string                         `json:"id"`
+	DisplayName           string                         `json:"display_name"`
+	Address               string                         `json:"address"`
+	ClientRole            string                         `json:"client_role"`
+	RealmAlias            string                         `json:"realm_alias,omitempty"`
+	AccentColor           string                         `json:"accent_color,omitempty"`
+	Health                string                         `json:"health"`
+	RepositoryCount       int                            `json:"repository_count"`
+	RepositoriesReady     bool                           `json:"repositories_ready"`
+	PendingRequiredRepos  int                            `json:"pending_required_repos"`
+	ReservationCount      int                            `json:"reservation_count"`
+	SessionTimeoutMinutes int                            `json:"session_timeout_minutes"`
 	// DemoExpiresAt drives the DEMO badge and its countdown; after it passes
 	// the card says the demo ended instead of showing an unreachable server.
 	DemoExpiresAt string `json:"demo_expires_at,omitempty"`
@@ -916,7 +916,7 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 // canCreateAnchor: a repository without a copy here, on a daemon that can make
 // Explorer anchors (helper present).
 func canCreateAnchor(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
-	if vm.VirtualFolders != nil && !vm.VirtualFolders.Enabled {
+	if vm.VirtualFolders != nil && !vm.VirtualFolders.Servers[repo.ServerID] {
 		return false
 	}
 	return repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository() && vm.HasCap(contract.CapRepoExplorerAnchor)
@@ -1064,10 +1064,6 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		ReservationStatus:       projectReservationAvailability(vm),
 		DemoActivationAvailable: vm.CanActivateDemo(),
 	}
-	if vm.Connected && !vm.Stale && vm.HasCap(contract.CapVirtualFolders) && vm.VirtualFolders != nil {
-		state := *vm.VirtualFolders
-		result.VirtualFolders = &state
-	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
 	}
@@ -1080,7 +1076,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 
 	for _, server := range vm.Servers {
 		result.Servers = append(result.Servers, ServerProjection{
-			ID: server.ID, DisplayName: server.DisplayName, Address: server.Address,
+			VirtualFolders: virtualFoldersForServer(vm, server.ID),
+			ID:             server.ID, DisplayName: server.DisplayName, Address: server.Address,
 			ClientRole: server.ClientRole, RealmAlias: server.RealmAlias, RealmID: server.RealmID, GUIScope: guiScope(server.ID, server.RealmID),
 			Health:          projectServerHealth(vm, server),
 			RepositoryCount: len(server.Repos), RepositoriesReady: server.RepositoriesReady,

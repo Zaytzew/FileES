@@ -7,26 +7,38 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"filees/internal/durable"
+	"filees/pkg/clientprofile"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/localrepo"
 )
 
 type anchorOptions struct {
 	path    string
-	enabled atomic.Bool
+	servers atomic.Value // immutable map[string]bool snapshots
 	readErr error
 }
 type anchorOptionsWire struct {
-	Schema  string `json:"schema"`
-	Enabled bool   `json:"enabled"`
+	Schema  string          `json:"schema"`
+	Enabled *bool           `json:"enabled,omitempty"` // legacy v1 only
+	Servers map[string]bool `json:"servers,omitempty"`
 }
 
-func loadAnchorOptions(path string) *anchorOptions {
+const anchorOptionsLimit = 64 << 10
+
+func validVirtualServerID(serverID string) bool {
+	return serverID != "" && strings.TrimSpace(serverID) == serverID && !strings.ContainsAny(serverID, "/\\\x00\r\n\t ")
+}
+
+func loadAnchorOptions(path string, records ...localrepo.Record) *anchorOptions {
 	options := &anchorOptions{path: path}
+	options.servers.Store(map[string]bool{})
 	file, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return options
@@ -36,38 +48,84 @@ func loadAnchorOptions(path string) *anchorOptions {
 		return options
 	}
 	defer file.Close()
-	if info, statErr := file.Stat(); statErr != nil || info.Size() > 4096 {
+	if info, statErr := file.Stat(); statErr != nil || info.Size() > anchorOptionsLimit {
 		options.readErr = errors.New("virtual folder preference exceeds limit")
 		return options
 	}
 	var wire anchorOptionsWire
-	decoder := json.NewDecoder(io.LimitReader(file, 4097))
+	decoder := json.NewDecoder(io.LimitReader(file, anchorOptionsLimit+1))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&wire); err == nil {
 		var extra any
-		if decoder.Decode(&extra) != io.EOF || wire.Schema != "filees.virtual-folders/v1" {
+		if decoder.Decode(&extra) != io.EOF ||
+			(wire.Schema != "filees.virtual-folders/v1" && wire.Schema != "filees.virtual-folders/v2") ||
+			(wire.Schema == "filees.virtual-folders/v1" && (wire.Enabled == nil || wire.Servers != nil)) ||
+			(wire.Schema == "filees.virtual-folders/v2" && wire.Enabled != nil) {
 			err = errors.New("invalid virtual folder preference")
 		}
 	}
-	options.readErr = err
 	if err == nil {
-		options.enabled.Store(wire.Enabled)
+		servers := map[string]bool{}
+		if wire.Schema == "filees.virtual-folders/v1" {
+			// Capture once at startup. Preserve points, not a global opt-in.
+			if *wire.Enabled {
+				for _, record := range records {
+					if record.NeedsAnchorRetirement() {
+						servers[record.ServerID] = true
+					}
+				}
+			}
+		} else {
+			for serverID, enabled := range wire.Servers {
+				if !validVirtualServerID(serverID) {
+					err = errors.New("invalid virtual folder server ID")
+					break
+				}
+				if enabled {
+					servers[serverID] = true
+				}
+			}
+		}
+		if err == nil {
+			options.servers.Store(servers)
+		}
 	}
+	options.readErr = err
 	return options
 }
 
-func (m *anchorManager) virtualEnabled() bool { return m.options != nil && m.options.enabled.Load() }
+func (m *anchorManager) virtualEnabled(serverID string) bool {
+	return m.options != nil && m.options.servers.Load().(map[string]bool)[serverID]
+}
 
-// Changing this local preference shares the lifecycle-intent lock. Disabling
-// never disconnects or purges points implicitly: detach them first using the
-// existing choice that warns about keeping only downloaded files.
-func (m *anchorManager) VirtualFolders(ctx context.Context, enabled *bool) (contract.VirtualFoldersStatus, error) {
-	state := contract.VirtualFoldersStatus{Enabled: m.virtualEnabled()}
-	if enabled == nil {
-		return state, nil
-	}
+// The lifecycle intent lock serialises this preference with point creation.
+// Disabling never implicitly detaches points or checks another server.
+func (m *anchorManager) VirtualFolders(ctx context.Context, serverID string, enabled *bool) (contract.VirtualFoldersStatus, error) {
+	state := contract.VirtualFoldersStatus{ServerID: serverID, Enabled: m.virtualEnabled(serverID)}
 	if m.options == nil {
 		return state, errors.New("virtual folders unavailable")
+	}
+	if serverID == "" {
+		if enabled != nil {
+			return state, errors.New("server ID is required")
+		}
+		state.Servers = maps.Clone(m.options.servers.Load().(map[string]bool))
+		return state, nil
+	}
+	// Unknown activations cannot create opt-ins for a later activation.
+	if !validVirtualServerID(serverID) || !filepath.IsAbs(m.profiles) {
+		return state, errors.New("server activation is unavailable")
+	}
+	dir, err := clientprofile.ServerDir(m.profiles, serverID)
+	if err != nil {
+		return state, err
+	}
+	profile, err := clientprofile.Load(filepath.Join(dir, "client-profile.json"))
+	if err != nil || profile.ServerID != serverID {
+		return state, errors.New("server activation is unavailable")
+	}
+	if enabled == nil {
+		return state, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return state, err
@@ -76,6 +134,7 @@ func (m *anchorManager) VirtualFolders(ctx context.Context, enabled *bool) (cont
 		return state, errors.New("another local folder operation is running")
 	}
 	defer m.localIntentMu.Unlock()
+	state.Enabled = m.virtualEnabled(serverID)
 	if m.options.readErr != nil {
 		return state, errors.New("cannot read the saved virtual folder preference")
 	}
@@ -86,9 +145,22 @@ func (m *anchorManager) VirtualFolders(ctx context.Context, enabled *bool) (cont
 		if m.lifecycle == nil {
 			return state, errors.New("cannot confirm virtual folder retirement")
 		}
-		if err := m.lifecycle.CheckAnchorRetirement(); err != nil {
-			return state, errors.New("detach all virtual folders first; keeping the folder preserves only downloaded files")
+		if err := m.lifecycle.CheckServerAnchorRetirement(serverID); err != nil {
+			return state, errors.New("detach this server's virtual folders first; keeping the folder preserves only downloaded files")
 		}
+	}
+	servers := maps.Clone(m.options.servers.Load().(map[string]bool))
+	if *enabled {
+		servers[serverID] = true
+	} else {
+		delete(servers, serverID)
+	}
+	raw, err := json.Marshal(anchorOptionsWire{Schema: "filees.virtual-folders/v2", Servers: servers})
+	if err != nil {
+		return state, err
+	}
+	if len(raw)+1 > anchorOptionsLimit {
+		return state, errors.New("virtual folder preference exceeds limit")
 	}
 	if err := os.MkdirAll(filepath.Dir(m.options.path), 0700); err != nil {
 		return state, err
@@ -99,7 +171,7 @@ func (m *anchorManager) VirtualFolders(ctx context.Context, enabled *bool) (cont
 	}
 	name := file.Name()
 	defer os.Remove(name)
-	if err = json.NewEncoder(file).Encode(anchorOptionsWire{"filees.virtual-folders/v1", *enabled}); err == nil {
+	if _, err = file.Write(append(raw, '\n')); err == nil {
 		err = file.Sync()
 	}
 	closeErr := file.Close()
@@ -112,9 +184,8 @@ func (m *anchorManager) VirtualFolders(ctx context.Context, enabled *bool) (cont
 	if err != nil {
 		return state, err
 	}
-	// Once replace succeeded, publish its actual value even if directory sync
-	// fails: a lost ACK is never an invitation to silently repeat a decision.
-	m.options.enabled.Store(*enabled)
+	// Publish the durable value even if the directory ACK fails. Never retry.
+	m.options.servers.Store(servers)
 	state.Enabled = *enabled
 	return state, durable.SyncDirectory(filepath.Dir(m.options.path))
 }

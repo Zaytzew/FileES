@@ -55,8 +55,8 @@ export function VirtualFolders(enabled, revision) {
 }
 
 /** Main-panel shortcut; generated method ID from Wails bindings. */
-export function DashboardVirtualFolders(enabled, revision) {
-    return $Call.ByID(785526804, enabled, revision).then($$createType0);
+export function DashboardVirtualFolders(serverID, enabled, revision) {
+    return $Call.ByID(785526804, serverID, enabled, revision).then($$createType0);
 }
 
 // Private type creation functions

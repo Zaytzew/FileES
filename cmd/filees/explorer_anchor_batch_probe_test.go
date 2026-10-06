@@ -149,7 +149,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
 		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
 	}, log: talk.With("batch-native"), stateEvery: time.Hour, options: &anchorOptions{}}
-	m.options.enabled.Store(true)
+	m.options.servers.Store(map[string]bool{record.ServerID: true})
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
@@ -328,7 +328,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	m = &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
 		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
 	}, log: talk.With("batch-native-restarted"), stateEvery: time.Hour, options: &anchorOptions{}}
-	m.options.enabled.Store(true)
+	m.options.servers.Store(map[string]bool{record.ServerID: true})
 	ctx, cancel = context.WithCancel(t.Context())
 	done = make(chan struct{})
 	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}

@@ -1714,7 +1714,7 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 		LockReleaseRequests: s.allLockReleaseRequests(),
 	}
 	if service := s.virtualFoldersService(); service != nil {
-		if state, err := service.VirtualFolders(context.Background(), nil); err == nil {
+		if state, err := service.VirtualFolders(context.Background(), "", nil); err == nil {
 			result.VirtualFolders = &state
 		}
 	}

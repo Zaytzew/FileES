@@ -1966,6 +1966,8 @@ export class ServerProjection {
      * @param {Partial<ServerProjection>} [$$source = {}] - The source object to create the ServerProjection.
      */
     constructor($$source = {}) {
+		/** @type {object | undefined} */
+		this["virtual_folders"] = undefined;
         if (!("id" in $$source)) {
             /**
              * @member
@@ -2359,8 +2361,6 @@ export class Snapshot {
      * @param {Partial<Snapshot>} [$$source = {}] - The source object to create the Snapshot.
      */
     constructor($$source = {}) {
-		/** @type {object | undefined} */
-		this["virtual_folders"] = undefined;
         if (!("revision" in $$source)) {
             /**
              * @member

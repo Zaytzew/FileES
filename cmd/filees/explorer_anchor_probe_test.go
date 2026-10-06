@@ -208,7 +208,7 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		log:        talk.With("anchor-probe"),
 		options:    &anchorOptions{},
 	}
-	manager.options.enabled.Store(true)
+	manager.options.servers.Store(map[string]bool{"lokalny": true})
 	record := localrepo.Record{ServerID: "lokalny", RepoID: "atlas", RepoURL: repoURL, LocalPath: anchor, Anchor: true, Sparse: true, State: localrepo.StateAttached}
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})

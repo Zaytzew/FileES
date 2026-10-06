@@ -11,10 +11,10 @@ test('shelf shortcut uses the existing browser icon and regular controller gestu
   for (const {messages} of languages) assert.ok(messages['action.browseShelf']);
 });
 
-test('cloud control presents global preference, disabled slash and busy guard', () => {
-  assert.match(app, /snapshot\.virtual_folders \? `<button/);
-  assert.match(app, /aria-pressed="\$\{snapshot\.virtual_folders\.enabled\}"/);
-  assert.match(app, /snapshot\.virtual_folders\.enabled \? "" : '<path d="M3 3l18 18"/);
+test('cloud control presents server preference, disabled slash and busy guard', () => {
+  assert.match(app, /server\.virtual_folders \? `<button/);
+  assert.match(app, /aria-pressed="\$\{server\.virtual_folders\.enabled\}"/);
+  assert.match(app, /server\.virtual_folders\.enabled \? "" : '<path d="M3 3l18 18"/);
   assert.match(app, /virtualFoldersBusy \? "disabled"/);
   assert.match(app, /event\.target\.closest\("\[data-virtual-folders\]"\)/);
 });
@@ -23,10 +23,11 @@ test('cloud gesture toggles once, does not guess state and refreshes after lost 
   const source = app.slice(app.indexOf('let virtualFoldersBusy ='), app.indexOf('// After a demo realm'));
   for (const accepted of [true, false, 'lost']) {
     let calls = 0, refreshes = 0;
-    const snapshot = {revision: 17, virtual_folders: {enabled: false}};
+    const snapshot = {revision: 17, servers: [{id: 'selected', virtual_folders: {enabled: false}}, {id: 'other', virtual_folders: {enabled: true}}]};
     const scope = {
       currentSnapshot: snapshot, renderRepositories() {}, t: key => key, showToast() {},
-      SettingsService: {async DashboardVirtualFolders(enabled, revision) {
+      SettingsService: {async DashboardVirtualFolders(serverID, enabled, revision) {
+        assert.equal(serverID, 'selected');
         calls++; assert.equal(enabled, true); assert.equal(revision, 17);
         if (accepted === 'lost') throw Error('lost');
         return {accepted};
@@ -34,10 +35,13 @@ test('cloud gesture toggles once, does not guess state and refreshes after lost 
       GUIService: {async Refresh() { refreshes++; }},
     };
     runInNewContext(source+'; globalThis.toggle = toggleVirtualFolders;', scope);
-    await Promise.all([scope.toggle(), scope.toggle()]);
+    await Promise.all([scope.toggle('selected'), scope.toggle('selected')]);
     assert.equal(calls, 1);
     assert.equal(refreshes, 1);
-    assert.equal(snapshot.virtual_folders.enabled, false);
+    assert.equal(snapshot.servers[0].virtual_folders.enabled, false);
+    assert.equal(snapshot.servers[1].virtual_folders.enabled, true);
+    await scope.toggle('unknown');
+    assert.equal(calls, 1);
   }
 });
 

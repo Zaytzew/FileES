@@ -729,7 +729,7 @@ func TestAnchorIsOfferedOnlyWhereTheDaemonCanMakeIt(t *testing.T) {
 	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentCreateAnchor), RepoID: "oppo"}); allowed {
 		t.Fatal("point intent accepted while disabled")
 	}
-	vm.VirtualFolders.Enabled = true
+	vm.VirtualFolders.Servers = map[string]bool{"office": true}
 	if !projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
 		t.Fatal("anchor not offered with the helper")
 	}

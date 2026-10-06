@@ -15,6 +15,7 @@ type workingCopy interface {
 	Update(ctx context.Context, localPath string) (string, error)
 	Status(ctx context.Context, rootDirectory string, paths []string) ([]client.StatusEntry, error)
 	Add(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	Delete(ctx context.Context, rootDirectory string, paths []string) (string, error)
 	Commit(ctx context.Context, rootDirectory string, paths []string, message string) (string, error)
 }
 
@@ -33,14 +34,41 @@ func syncPlan(entries []client.StatusEntry) (add, commit []string, err error) {
 			commit = append(commit, path)
 		case "added", "modified", "deleted", "replaced":
 			commit = append(commit, path)
+		case "normal":
+			if entry.Props == "modified" {
+				commit = append(commit, path)
+			}
 		case "conflicted", "obstructed", "incomplete", "missing":
 			return nil, nil, fmt.Errorf("%s is %s", path, entry.Item)
+		}
+		if entry.Conflicted || entry.Props == "conflicted" {
+			return nil, nil, fmt.Errorf("%s is conflicted", path)
 		}
 	}
 	return add, commit, nil
 }
 
 func syncWorkingCopy(ctx context.Context, svn workingCopy, wc, message string) error {
+	// Stage local removals before update: otherwise SVN restores them and the
+	// one-shot publisher silently loses the user's deletion or rename.
+	before, err := svn.Status(ctx, wc, nil)
+	if err != nil {
+		return fmt.Errorf("pre-update status: %w", err)
+	}
+	var missing []string
+	for _, entry := range before {
+		if entry.Conflicted || entry.Props == "conflicted" || entry.Item == "conflicted" || entry.Item == "obstructed" || entry.Item == "incomplete" {
+			return fmt.Errorf("pre-update %s is %s", entry.Path, entry.Item)
+		}
+		if entry.Item == "missing" {
+			missing = append(missing, entry.Path)
+		}
+	}
+	if len(missing) > 0 {
+		if _, err := svn.Delete(ctx, wc, topLevelPaths(missing)); err != nil {
+			return fmt.Errorf("stage local removals: %w", err)
+		}
+	}
 	if out, err := svn.Update(ctx, wc); err != nil {
 		return fmt.Errorf("update: %w", err)
 	} else if strings.TrimSpace(out) != "" {
@@ -89,6 +117,25 @@ func syncWorkingCopy(ctx context.Context, svn workingCopy, wc, message string) e
 	}
 	fmt.Fprintf(os.Stdout, "committed %d\n", len(paths))
 	return nil
+}
+
+// SVN can report both a missing directory and children beneath it. Deleting
+// the parent schedules the subtree, so passing descendants again is unsafe.
+func topLevelPaths(paths []string) []string {
+	var out []string
+	for _, candidate := range paths {
+		covered := false
+		for _, parent := range paths {
+			if parent != candidate && strings.HasPrefix(candidate, strings.TrimSuffix(parent, "/")+"/") {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, candidate)
+		}
+	}
+	return out
 }
 
 // expandUnversioned turns an unversioned directory into the regular files

@@ -73,3 +73,17 @@ url=svn+ssh://_filees-client@example/books
 		t.Fatalf("allowed = %#v", cfg.allowed())
 	}
 }
+
+func TestPrepareSSHPathPinsConfiguredDirectory(t *testing.T) {
+	t.Setenv("PATH", "old")
+	path := filepath.Join(t.TempDir(), "ssh")
+	if err := prepareSSHPath(Config{SSH: path}); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("PATH"); got != filepath.Dir(path) {
+		t.Fatalf("PATH = %q", got)
+	}
+	if err := prepareSSHPath(Config{SSH: filepath.Join(t.TempDir(), "other")}); err == nil {
+		t.Fatal("unexpected SSH executable accepted")
+	}
+}

@@ -70,7 +70,7 @@ func addRunFlags(flags *flag.FlagSet, values *runFlags, checkout bool) {
 	flags.StringVar(&values.wc, "wc", "", "working-copy id from the config, not a path")
 	flags.DurationVar(&values.timeout, "timeout", 30*time.Minute, "per-command SVN timeout")
 	if !checkout {
-		flags.StringVar(&values.message, "message", "ksefpuck", "commit message when local files changed")
+		flags.StringVar(&values.message, "message", "FileES sync", "commit message when local files changed")
 	}
 }
 
@@ -101,6 +101,17 @@ func (cfg Config) svnClient(timeout time.Duration) client.Client {
 	})
 }
 
+// pkg/client's SVN tunnel invokes the command name "ssh". Restrict process
+// lookup to the configured binary's directory; unveil then permits only the
+// exact configured file on OpenBSD.
+func prepareSSHPath(cfg Config) error {
+	base := filepath.Base(cfg.SSH)
+	if base != "ssh" && base != "ssh.exe" {
+		return fmt.Errorf("tools.ssh must name the ssh executable")
+	}
+	return os.Setenv("PATH", filepath.Dir(cfg.SSH))
+}
+
 func cmdCheckout(args []string) int {
 	flags := flag.NewFlagSet("checkout", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -115,6 +126,10 @@ func cmdCheckout(args []string) int {
 		return 2
 	}
 	if err := lockPublishSandbox(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "checkout:", err)
+		return 1
+	}
+	if err := prepareSSHPath(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "checkout:", err)
 		return 1
 	}
@@ -151,9 +166,32 @@ func cmdSync(args []string) int {
 		fmt.Fprintln(os.Stderr, "sync:", err)
 		return 1
 	}
+	if err := prepareSSHPath(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "sync:", err)
+		return 1
+	}
+	lock, err := acquireCopyLock(spec.Path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "sync:", err)
+		return 1
+	}
+	defer lock.Close()
+	if err := appendRunLog(cfg.LogDir, spec.ID, "sync", "started", false); err != nil {
+		fmt.Fprintln(os.Stderr, "sync journal:", err)
+		return 1
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), values.timeout)
 	defer cancel()
-	if err := syncWorkingCopy(ctx, cfg.svnClient(values.timeout), spec.Path, values.message); err != nil {
+	err = syncWorkingCopy(ctx, cfg.svnClient(values.timeout), spec.Path, values.message)
+	stage := "complete"
+	if err != nil {
+		stage = "failed"
+	}
+	if logErr := appendRunLog(cfg.LogDir, spec.ID, "sync", stage, err == nil); logErr != nil {
+		fmt.Fprintln(os.Stderr, "sync journal:", logErr)
+		return 1
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "sync:", err)
 		return 1
 	}

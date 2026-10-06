@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	defaultSVN = "/usr/local/bin/svn"
-	defaultSSH = "/usr/bin/ssh"
+	defaultSVN    = "/usr/local/bin/svn"
+	defaultSSH    = "/usr/bin/ssh"
+	defaultLogDir = "/var/log/filees-client"
 )
 
 // Config is the closed invocation profile. Tool paths default to the
@@ -24,6 +25,7 @@ type Config struct {
 	Identity, KnownHosts string
 	Host                 string
 	Port                 int
+	LogDir               string
 	Copies               map[string]workingCopySpec
 	Only                 []string
 }
@@ -41,7 +43,7 @@ func loadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	defer file.Close()
-	cfg := Config{SVN: defaultSVN, SSH: defaultSSH, Port: 22, Copies: map[string]workingCopySpec{}}
+	cfg := Config{SVN: defaultSVN, SSH: defaultSSH, Port: 22, LogDir: defaultLogDir, Copies: map[string]workingCopySpec{}}
 	section := ""
 	wcID := ""
 	scanner := bufio.NewScanner(file)
@@ -73,6 +75,8 @@ func loadConfig(path string) (Config, error) {
 				cfg.SVN = value
 			case "ssh":
 				cfg.SSH = value
+			case "log_dir":
+				cfg.LogDir = value
 			default:
 				return Config{}, fmt.Errorf("unknown tools key %q", key)
 			}
@@ -139,7 +143,7 @@ func parseSection(line string) (section, wcID string, err error) {
 		return "", "", fmt.Errorf("unknown section %q", body)
 	}
 	id = strings.Trim(strings.TrimSpace(id), `"`)
-	if id == "" || strings.ContainsAny(id, " \t!") {
+	if !safeCopyID(id) {
 		return "", "", fmt.Errorf("bad working-copy id %q", id)
 	}
 	return "wc", id, nil
@@ -174,6 +178,9 @@ func (cfg Config) validate() error {
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return errors.New("port must be 1-65535")
 	}
+	if !configAbs(cfg.effectiveLogDir()) {
+		return errors.New("tools.log_dir must be absolute")
+	}
 	if len(cfg.Copies) == 0 {
 		return errors.New("at least one working copy is required")
 	}
@@ -188,6 +195,13 @@ func (cfg Config) validate() error {
 		}
 	}
 	return nil
+}
+
+func (cfg Config) effectiveLogDir() string {
+	if cfg.LogDir == "" {
+		return defaultLogDir
+	}
+	return cfg.LogDir
 }
 
 // configAbs accepts OpenBSD absolute paths (/var/...) even when the unit

@@ -9,7 +9,7 @@ zostaje przy plikach i nie uruchamia FileES. Cron robi to sam, na końcu
 istniejącego łańcucha:
 
 ```
-0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client sync --config /etc/filees/filees-client.conf --wc wc-01
+0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 --message ksefpuck
 ```
 
 `&&` zostaje. Sync rusza tylko wtedy, gdy `ksefpuck` skończy z kodem 0.
@@ -35,9 +35,13 @@ filees-client checkout --config /etc/filees/filees-client.conf --wc wc-01
 filees-client sync --config /etc/filees/filees-client.conf --wc wc-01
 ```
 
-`sync` robi `svn update`, dodaje nowe pliki (także całe nowe `YYYY/MM/`) i
-commituje z komunikatem `ksefpuck`. Konflikt, brak pliku albo symlink kończy
-przebieg błędem i nic nie wysyła. Czysta kopia wypisuje `clean`.
+`sync` najpierw rozpoznaje i planuje lokalne usunięcia, potem robi `svn update`,
+dodaje nowe pliki (także całe nowe `YYYY/MM/`) i commituje zmiany. Domyślny
+komunikat to `FileES sync`, a KSEFUCK podaje własny przez `--message`.
+Konflikt lub symlink w nowej zawartości kończy przebieg błędem bez commitu.
+Po konflikcie `svn update` może pozostawić lokalne artefakty do ręcznego
+rozstrzygnięcia. Czysta kopia wypisuje `clean`.
+Blokada `.svn/filees-client.lock` odmawia równoległego przebiegu tej samej WC.
 
 ## Config
 
@@ -45,6 +49,7 @@ przebieg błędem i nic nie wysyła. Czysta kopia wypisuje `clean`.
 [tools]
 svn=/usr/local/bin/svn
 ssh=/usr/bin/ssh
+log_dir=/var/log/filees-client
 
 [realm]
 identity=/var/filees/id_ed25519
@@ -63,9 +68,20 @@ url=svn+ssh://_filees-client@host/other
 ```
 
 `svn` i `ssh` mają te domyślne ścieżki, gdy kluczy nie ma. Nie są brane z
-`PATH`. Sekcje `[wc "…"]` są kopiami realmu. Bez `only` dozwolone są wszystkie
+odziedziczonego `PATH`: przed wywołaniem SVN klient ogranicza `PATH` do
+katalogu skonfigurowanego pliku `ssh`. Sekcje `[wc "…"]` są kopiami realmu. Bez `only` dozwolone są wszystkie
 wpisane kopie i żadna inna. `only=!wc-01 !wc-02` zostawia tylko te dwie.
 Identyfikator spoza listy jest odrzucany, zanim wystartuje `svn`.
+
+`log_dir` musi istnieć przed uruchomieniem i być zapisywalny dla konta
+wywołującego cron. Dziennik `wc-01.jsonl` ma uprawnienia 0600 i rotuje po
+5 MiB do jednej poprzedniej generacji. Zawiera czas, etap i wynik, bez
+sekretów, ścieżek plików i tekstów błędów. Przy braku zapisu sync odmawia
+przed dotknięciem SVN.
+
+Osobne artefakty Linux/OpenBSD buduje `packaging/build-filees-client.sh`.
+Skrypt nie publikuje ich do kanału i nie dodaje klienta do paczki serwera.
+Dump/load i Whale są nadal w opracowaniu; brak odpowiadających poleceń CLI.
 
 ## Sandbox
 

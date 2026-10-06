@@ -42,6 +42,7 @@ func publishProfile(cfg Config) (obsandbox.Profile, error) {
 		{Label: "tls", Name: "/etc/ssl", Perms: "r"},
 		{Label: "ssh-config", Name: "/etc/ssh", Perms: "r"},
 		{Label: "svn-temp", Name: "/tmp", Perms: "rwc"},
+		{Label: "journal", Name: cfg.effectiveLogDir(), Perms: "rwc"},
 	}
 	for id, spec := range cfg.allowed() {
 		paths = append(paths, obsandbox.Path{Label: "wc-" + id, Name: spec.Path, Perms: "rwc"})

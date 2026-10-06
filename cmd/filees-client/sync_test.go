@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,38 @@ func TestSyncPlanPublishesFilesAndStopsOnConflict(t *testing.T) {
 	}
 }
 
+func TestSyncWorkingCopyStagesMissingBeforeUpdate(t *testing.T) {
+	root := t.TempDir()
+	fake := &fakeWC{statuses: [][]client.StatusEntry{
+		{{Path: "gone.pdf", Item: "missing"}},
+		{{Path: "gone.pdf", Item: "deleted"}},
+	}}
+	if err := syncWorkingCopy(context.Background(), fake, root, "publish"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.deleted) != 1 || fake.deleted[0] != "gone.pdf" || !fake.updated {
+		t.Fatalf("fake = %+v", fake)
+	}
+}
+
+func TestSyncWorkingCopyRefusesPropertyConflictBeforeUpdate(t *testing.T) {
+	fake := &fakeWC{entries: []client.StatusEntry{{Path: "a.pdf", Item: "modified", Props: "conflicted"}}}
+	if err := syncWorkingCopy(context.Background(), fake, t.TempDir(), "publish"); err == nil || fake.updated {
+		t.Fatalf("err = %v, fake = %+v", err, fake)
+	}
+}
+
+func TestSyncPlanCommitsPropertyOnlyChangeAndDedupesMissingTree(t *testing.T) {
+	_, commit, err := syncPlan([]client.StatusEntry{{Path: "a.pdf", Item: "normal", Props: "modified"}})
+	if err != nil || len(commit) != 1 || commit[0] != "a.pdf" {
+		t.Fatalf("commit=%v err=%v", commit, err)
+	}
+	got := topLevelPaths([]string{"folder/a.pdf", "folder", "other.pdf"})
+	if len(got) != 2 || got[0] != "folder" || got[1] != "other.pdf" {
+		t.Fatalf("top-level=%v", got)
+	}
+}
+
 func TestExpandUnversionedDirectoryListsFiles(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "2026", "09")
@@ -54,10 +87,13 @@ func TestExpandUnversionedDirectoryListsFiles(t *testing.T) {
 }
 
 type fakeWC struct {
-	updated bool
-	added   []string
-	message string
-	entries []client.StatusEntry
+	updated     bool
+	added       []string
+	deleted     []string
+	message     string
+	entries     []client.StatusEntry
+	statuses    [][]client.StatusEntry
+	statusCalls int
 }
 
 func (f *fakeWC) Update(context.Context, string) (string, error) {
@@ -65,10 +101,22 @@ func (f *fakeWC) Update(context.Context, string) (string, error) {
 	return "At revision 3.\n", nil
 }
 func (f *fakeWC) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
+	if f.statusCalls < len(f.statuses) {
+		result := f.statuses[f.statusCalls]
+		f.statusCalls++
+		return result, nil
+	}
 	return f.entries, nil
 }
 func (f *fakeWC) Add(_ context.Context, _ string, paths []string) (string, error) {
 	f.added = append(f.added, paths...)
+	return "", nil
+}
+func (f *fakeWC) Delete(_ context.Context, _ string, paths []string) (string, error) {
+	if f.updated {
+		return "", fmt.Errorf("deletion staged after update")
+	}
+	f.deleted = append(f.deleted, paths...)
 	return "", nil
 }
 func (f *fakeWC) Commit(_ context.Context, _ string, paths []string, message string) (string, error) {

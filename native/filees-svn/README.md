@@ -10,7 +10,14 @@ with normal schedule and no copy/move/conflict is `excluded`; missing ordinary
 files and scheduled deletions are `not_excluded`. Unknown/new nodes refuse.
 This is a metadata snapshot, not permission to replace any filesystem object.
 An obstruction at the same path is preserved, even when SVN reports exclusion.
-The Go adapter checks the optional feature and receipt; no status/CLI fallback.
+Since base r1940, the receipt also requires no covering SVN write lock before
+and after the metadata read (`wc_idle: true`, optional feature
+`sparse_inspect_excluded_idle_v1`). A failed file removal can already expose
+excluded metadata while SVN still has a pending work item. That state refuses
+inspection; the read never performs cleanup or releases SVN locks. The Go
+adapter and private recovery require the newer proof and refuse older helpers.
+Idle is a snapshot, not a reservation against later external SVN operations.
+No status/CLI fallback.
 Tests inspect the native CFAPI/SVN cycle, including a restored remote seed,
 and a separate unavailable-repository fixture after discarding the mutation
 receipt. This does not implement process-kill recovery or a release coordinator.
@@ -25,6 +32,9 @@ EOL/keyword translation refuse. Windows admits ordinary local attributes
 before READ guards which deny writers; the retained copy also denies delete.
 Source deletion is allowed for SVN, so external rename/replacement is not
 fully fenced. The existing FileES writer lease does not fence arbitrary SVN.
+Wrapping normal SVN exclusion in a deny-delete handle is not a solution:
+the library can record exclusion before removal fails, leaving removal for
+future cleanup. This boundary still prevents wiring user-facing release.
 The operation preserves its backup and does not commit or create a CFAPI
 placeholder. It is not an idempotent transaction; errors after mutation must
 retain the backup for the future coordinator's inspection/recovery. No Go,

@@ -10,11 +10,15 @@ import (
 )
 
 // PathExclusion is a local SVN metadata snapshot, NOT a filesystem observation
-// or permission to overwrite a path. A release coordinator must compare the
+// or permission to overwrite a path. Idle requires an explicit observation
+// of no SVN write lock before and after reading the metadata; it is not a
+// reservation against another process starting work afterwards.
+// A release coordinator must compare the
 // repository UUID, URL and revision to its retained evidence and separately
 // inspect/fence the current disk object before any recovery action.
 type PathExclusion struct {
 	Excluded          bool
+	Idle              bool
 	Path              string
 	WC                string
 	URL               string
@@ -33,7 +37,7 @@ func (c *execClient) InspectPathExclusion(ctx context.Context, wc, rel string) (
 	if !nativeWCOps(c) {
 		return PathExclusion{}, errors.ErrUnsupported
 	}
-	if err := c.nativeRequireFeature(ctx, "sparse_inspect_excluded_v1"); err != nil {
+	if err := c.nativeRequireFeature(ctx, "sparse_inspect_excluded_idle_v1"); err != nil {
 		return PathExclusion{}, errors.Join(errors.ErrUnsupported, err)
 	}
 	wc = filepath.Clean(wc)
@@ -48,6 +52,9 @@ func parsePathExclusion(raw map[string]any, wc, rel string) (PathExclusion, erro
 	var out PathExclusion
 	if raw["schema"] != nativeSchema || raw["ok"] != true {
 		return out, errors.New("invalid exclusion inspection envelope")
+	}
+	if idle, ok := raw["wc_idle"].(bool); !ok || !idle {
+		return out, errors.New("exclusion inspection lacks an idle SVN observation")
 	}
 	state, _ := raw["state"].(string)
 	if state != "excluded" && state != "not_excluded" {
@@ -84,6 +91,6 @@ func parsePathExclusion(raw map[string]any, wc, rel string) (PathExclusion, erro
 	if err != nil || revision < 1 {
 		return PathExclusion{}, errors.New("exclusion inspection lacks a committed revision")
 	}
-	out.Revision, out.Excluded = revision, state == "excluded"
+	out.Revision, out.Excluded, out.Idle = revision, state == "excluded", true
 	return out, nil
 }

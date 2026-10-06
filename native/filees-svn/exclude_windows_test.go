@@ -111,3 +111,61 @@ func TestExcludeRetainedRefusesCaseAliasedWCBackup(t *testing.T) {
 		t.Fatal("case alias refusal changed WC")
 	}
 }
+
+// A pathname guard cannot simply surround ordinary SVN exclusion: SVN can
+// change WC metadata before failing to delete a protected file. Swallowing
+// that error would leave a destructive work item for a later cleanup.
+// This uses only a disposable ordinary file, never a replacement race.
+func TestSVNExclusionWithDeleteDeniedLeavesPendingRemoval(t *testing.T) {
+	f := newFixture(t, "chosen.txt")
+	if err := os.Mkdir(filepath.Join(f.wc, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(f.wc, "chosen.txt")
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.svnRun(t, "log", "--xml", f.repoURL)
+	wide, err := windows.UTF16PtrFromString(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := windows.CreateFile(wide, windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if handle != windows.InvalidHandle {
+			windows.CloseHandle(handle)
+		}
+	}()
+	out, err := execute(t, f.wc, f.svn, "--non-interactive", "--no-auth-cache",
+		"--config-dir", filepath.Join(f.root, "config"), "update", "--set-depth", "exclude", "--", "chosen.txt")
+	if err == nil {
+		t.Fatalf("SVN deleted a file protected against deletion: %s", out)
+	}
+	if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("protected source bytes changed: %v", err)
+	}
+	f.jsonCall(t, false, "inspect-excluded", "--wc", f.wc, "--", "chosen.txt")
+	if err := windows.CloseHandle(handle); err != nil {
+		t.Fatal(err)
+	}
+	handle = windows.InvalidHandle
+	// No substitute is ever placed here. Cleanup removes only our original
+	// disposable source, demonstrating the pending effect through public API.
+	f.svnRun(t, "cleanup")
+	if _, err := os.Lstat(file); !os.IsNotExist(err) {
+		t.Fatalf("cleanup did not finish the pending original-file removal: %v", err)
+	}
+	got := f.jsonCall(t, true, "inspect-excluded", "--wc", f.wc, "--", "chosen.txt")
+	if got["state"] != "excluded" || got["wc_idle"] != true {
+		t.Fatalf("completed cleanup did not give an idle exclusion receipt: %#v", got)
+	}
+	if after := f.svnRun(t, "log", "--xml", f.repoURL); !bytes.Equal(after, before) {
+		t.Fatal("local exclusion changed repository history")
+	}
+}

@@ -12,19 +12,19 @@ func TestPathExclusionRejectsIncompleteOrDifferentReceipts(t *testing.T) {
 	good := func() map[string]any {
 		return map[string]any{"schema": nativeSchema, "ok": true, "state": "excluded",
 			"path": "folder/a.txt", "wc": filepath.ToSlash(wc), "url": "file:///fixture/folder/a.txt",
-			"repos_root_url": "file:///fixture", "repos_uuid": "fixture-uuid", "revision": float64(3)}
+			"repos_root_url": "file:///fixture", "repos_uuid": "fixture-uuid", "revision": float64(3), "wc_idle": true}
 	}
 	for _, state := range []string{"excluded", "not_excluded"} {
 		raw := good()
 		raw["state"] = state
 		got, err := parsePathExclusion(raw, wc, "folder/a.txt")
-		if err != nil || got.Excluded != (state == "excluded") || got.Revision != 3 || got.RepositoryUUID != "fixture-uuid" {
+		if err != nil || !got.Idle || got.Excluded != (state == "excluded") || got.Revision != 3 || got.RepositoryUUID != "fixture-uuid" {
 			t.Fatalf("valid metadata: %+v %v", got, err)
 		}
 	}
 	for field, value := range map[string]any{"schema": "other", "ok": false, "state": "absent", "path": "other.txt",
 		"wc": filepath.ToSlash(filepath.Join(wc, "other")), "url": "file:///other/a.txt", "repos_root_url": "",
-		"repos_uuid": "", "revision": float64(-1)} {
+		"repos_uuid": "", "revision": float64(-1), "wc_idle": false} {
 		t.Run(field, func(t *testing.T) {
 			raw := good()
 			raw[field] = value
@@ -38,6 +38,13 @@ func TestPathExclusionRejectsIncompleteOrDifferentReceipts(t *testing.T) {
 		raw["revision"] = revision
 		if _, err := parsePathExclusion(raw, wc, "folder/a.txt"); err == nil {
 			t.Fatalf("invalid revision accepted: %v", revision)
+		}
+	}
+	for _, idle := range []any{nil, "true", float64(1), false} {
+		raw := good()
+		raw["wc_idle"] = idle
+		if _, err := parsePathExclusion(raw, wc, "folder/a.txt"); err == nil {
+			t.Fatalf("invalid idle observation accepted: %v", idle)
 		}
 	}
 	for field := range good() {
@@ -60,7 +67,7 @@ func TestPathExclusionHasNoStatusOrCLIFallback(t *testing.T) {
 		}
 	}
 	c = raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"state":"excluded"}`)
-	if _, err := c.InspectPathExclusion(t.Context(), t.TempDir(), "a.txt"); !errors.Is(err, errors.ErrUnsupported) || !strings.Contains(err.Error(), "sparse_inspect_excluded_v1") {
+	if _, err := c.InspectPathExclusion(t.Context(), t.TempDir(), "a.txt"); !errors.Is(err, errors.ErrUnsupported) || !strings.Contains(err.Error(), "sparse_inspect_excluded_idle_v1") {
 		t.Fatalf("older helper was not refused before inspection: %v", err)
 	}
 }

@@ -113,6 +113,19 @@ struct excluded_info {
     apr_pool_t *pool;
 };
 
+/* Excluded BASE metadata can precede removal by the durable work queue.
+ * SVN retains its write lock when work remains. Observe it through public
+ * API; never run cleanup or clear a lock as part of this read-only receipt.
+ * This is an idle snapshot, not an interprocess reservation. */
+static svn_error_t *require_exclusion_idle(svn_client_ctx_t *ctx,
+                                           const char *path, apr_pool_t *pool)
+{
+    svn_boolean_t locked;
+    SVN_ERR(svn_wc_locked2(NULL, &locked, ctx->wc_ctx, path, pool));
+    if (locked) return filees_refuse("exclusion inspection refuses an active or unfinished SVN operation");
+    return SVN_NO_ERROR;
+}
+
 static svn_error_t *collect_excluded_info(void *baton, const char *path,
                                          const svn_client_info2_t *info, apr_pool_t *pool)
 {
@@ -148,6 +161,7 @@ svn_error_t *filees_inspect_excluded(const char *wc_arg, const char *rel, apr_po
     SVN_ERR(filees_plain_node(svn_dirent_dirname(path, pool), APR_DIR, FALSE, pool));
     SVN_ERR(svn_client_get_wc_root(&root, path, ctx, pool, pool));
     if (strcmp(root, wc)) return filees_refuse("inspection target belongs to another WC");
+    SVN_ERR(require_exclusion_idle(ctx, path, pool));
     b.path = path; b.info = NULL; b.pool = pool;
     SVN_ERR(svn_client_info4(path, NULL, NULL, svn_depth_empty,
                              TRUE, FALSE, FALSE, NULL, collect_excluded_info, &b, ctx, pool));
@@ -162,6 +176,7 @@ svn_error_t *filees_inspect_excluded(const char *wc_arg, const char *rel, apr_po
     excluded = local->depth == svn_depth_exclude && local->schedule == svn_wc_schedule_normal &&
                !local->copyfrom_url && !local->moved_from_abspath && !local->moved_to_abspath &&
                (!local->conflicts || !local->conflicts->nelts);
+    SVN_ERR(require_exclusion_idle(ctx, path, pool));
     printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\",\"path\":",
            excluded ? "excluded" : "not_excluded");
     filees_json_string(rel);
@@ -169,7 +184,7 @@ svn_error_t *filees_inspect_excluded(const char *wc_arg, const char *rel, apr_po
     printf(",\"url\":"); filees_json_string(info->URL);
     printf(",\"repos_root_url\":"); filees_json_string(info->repos_root_URL);
     printf(",\"repos_uuid\":"); filees_json_string(info->repos_UUID);
-    printf(",\"revision\":%ld}\n", (long)info->rev);
+    printf(",\"revision\":%ld,\"wc_idle\":true}\n", (long)info->rev);
     return SVN_NO_ERROR;
 }
 

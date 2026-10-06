@@ -44,7 +44,7 @@ func checkAnchorReleaseExclusion(ctx context.Context, r anchorReleaseRecord, svn
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + r.Identity.Rel
 	u.RawPath = ""
-	if !got.Excluded || got.Path != r.Identity.Rel || got.WC != filepath.ToSlash(r.Identity.WC) ||
+	if !got.Excluded || !got.Idle || got.Path != r.Identity.Rel || got.WC != filepath.ToSlash(r.Identity.WC) ||
 		got.URL != u.String() || got.RepositoryUUID != r.Identity.RepoUUID || got.Revision != r.Identity.Revision {
 		return errors.New("release exclusion or repository identity is not confirmed; no destructive retry")
 	}

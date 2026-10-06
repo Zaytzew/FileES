@@ -21,7 +21,7 @@ func (f testReleaseExclusion) InspectPathExclusion(ctx context.Context, wc, rel 
 }
 
 func testReleaseSnapshot(j *anchorReleaseJournal) client.PathExclusion {
-	return client.PathExclusion{Excluded: true, WC: filepath.ToSlash(j.identity.WC), Path: j.identity.Rel,
+	return client.PathExclusion{Excluded: true, Idle: true, WC: filepath.ToSlash(j.identity.WC), Path: j.identity.Rel,
 		URL: j.identity.RepoURL + "/" + j.identity.Rel, RepositoryRootURL: j.identity.RepoURL,
 		RepositoryUUID: j.identity.RepoUUID, Revision: j.identity.Revision}
 }
@@ -36,7 +36,7 @@ func requestTestReleaseExclusion(t *testing.T, j *anchorReleaseJournal) {
 }
 
 func TestAnchorReleaseRecoveryRefusesWithoutChangingWork(t *testing.T) {
-	for _, name := range []string{"early", "not-excluded", "svn-error", "uuid", "url", "revision", "wc", "path", "new-work", "replaced-file", "directory", "cancelled", "changed-copy", "old-record"} {
+	for _, name := range []string{"early", "not-excluded", "svn-busy", "svn-error", "uuid", "url", "revision", "wc", "path", "new-work", "replaced-file", "directory", "cancelled", "changed-copy", "old-record"} {
 		t.Run(name, func(t *testing.T) {
 			j, body := newTestAnchorReleaseJournal(t)
 			if name != "early" {
@@ -82,6 +82,8 @@ func TestAnchorReleaseRecoveryRefusesWithoutChangingWork(t *testing.T) {
 			switch name {
 			case "not-excluded":
 				got.Excluded = false
+			case "svn-busy":
+				got.Idle = false
 			case "uuid":
 				got.RepositoryUUID = "another"
 			case "url":

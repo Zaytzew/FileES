@@ -1,4 +1,4 @@
-.Dd October 3, 2026
+.Dd October 6, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
@@ -71,6 +71,27 @@ Everywhere else the destination directory must already exist.
 .Pp
 The mobile projection does not receive
 .Ic editing_policy .
+.Pp
+A request may say that the upload is unattended: sent by a watched folder
+on the phone, not by a person choosing files.
+The commit log of such an upload opens with
+.Ql [!automatic@#!~] ,
+so unattended uploads can be told apart in the repository history.
+An unattended upload is refused, before anything is written, when a realm
+other than the installation's may also write to the repository: the
+installation is a guest with
+.Sy rw ,
+or its own repository has an active
+.Sy rw
+grant for another realm.
+The refusal carries the code
+.Ic automatic.shared_repository ;
+the phone keeps the upload and stops retrying it.
+An upload a person chose is not refused there.
+The grant records are read from
+.Pa admin/grants
+in the service working copy; a record that exists but cannot be read counts
+as shared.
 .Pp
 .Xr sshd 8
 uses the shared

@@ -131,7 +131,7 @@ func run(src, out, mandoc string) error {
 		}
 		written[p.file()] = true
 	}
-	if err := write(filepath.Join(out, "index.html"), frame("FileES manual pages", page{Source: src, Digest: indexDigest(pages)}, index(pages))); err != nil {
+	if err := write(filepath.Join(out, "index.html"), frame("FileES manual pages", page{Source: filepath.ToSlash(src), Digest: indexDigest(pages)}, index(pages))); err != nil {
 		return err
 	}
 	// Remove what this program generated earlier for a page that is gone.

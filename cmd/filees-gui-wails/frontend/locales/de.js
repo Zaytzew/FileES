@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "anchorConsent.title": "Automatische Downloads angehalten",
+  "anchorConsent.body": "Das Programm %s hat in kurzer Zeit %d verschiedene Dateien aus dem Ordner %s angefordert. Das ist die Zahl beobachteter Anfragen, nicht die gesamte Downloadgröße. Die Zustimmung erlaubt weitere Downloads ohne Schutzlimit bis zum Ende dieser Sitzung des virtuellen Ordners. Dabei kann das gesamte Repository heruntergeladen werden. Wiederholen Sie das abgewiesene Öffnen selbst.",
+  "anchorConsent.deny": "Gesperrt lassen",
+  "anchorConsent.allow": "Dieses Programm bis zum Sitzungsende zulassen",
+  "anchorConsent.confirm": "Anwenden",
+  "anchorConsent.cancel": "Nicht jetzt",
+  "anchorConsent.notConfirmed": "Die Entscheidung konnte nicht bestätigt werden. FileES wiederholt sie nicht automatisch.",
   "explorer.virtualUnavailable": "Wählen Sie einen Ordner in einem verbundenen virtuellen FileES-Ordner. Diese Aktion erfordert einen aktuellen Dienststatus und einen verfügbaren Helfer.",
   "locks.requestsCount": {"one": "{count} Anfrage zur Freigabe einer Sperre", "other": "{count} Anfragen zur Freigabe einer Sperre"},
   "locks.requestsNote": "Jemand möchte eine von Ihnen ausgeliehene Datei bearbeiten. Sie entscheiden.",

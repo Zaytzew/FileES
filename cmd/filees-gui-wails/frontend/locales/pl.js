@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "anchorConsent.title": "Wstrzymano automatyczne pobieranie",
+  "anchorConsent.body": "Program %s zażądał w krótkim czasie %d różnych plików z folderu %s. To liczba zaobserwowanych żądań, nie rozmiar całego pobrania. Zgoda pozwoli temu programowi pobierać także kolejne pliki, bez limitu strażnika, do końca sesji punktu zaczepienia. Może to pobrać całe repozytorium. Odrzucone otwarcie trzeba ponowić.",
+  "anchorConsent.deny": "Pozostaw blokadę",
+  "anchorConsent.allow": "Zezwól temu programowi do końca sesji",
+  "anchorConsent.confirm": "Zastosuj",
+  "anchorConsent.cancel": "Nie teraz",
+  "anchorConsent.notConfirmed": "Nie udało się potwierdzić decyzji. FileES nie ponowi jej automatycznie.",
   "explorer.virtualUnavailable": "Wybierz folder wewnątrz podłączonego folderu wirtualnego FileES. Działanie wymaga aktualnego stanu demona i dostępnego pomocnika.",
   "locks.requestsCount": {"one": "{count} prośba o zwolnienie blokady", "few": "{count} prośby o zwolnienie blokady", "many": "{count} próśb o zwolnienie blokady", "other": "{count} prośby o zwolnienie blokady"},
   "locks.requestsNote": "Ktoś chce edytować wypożyczony przez Ciebie plik. Decyzja należy do Ciebie.",

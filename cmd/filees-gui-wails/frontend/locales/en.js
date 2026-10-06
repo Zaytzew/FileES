@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "anchorConsent.title": "Automatic downloads paused",
+  "anchorConsent.body": "Program %s requested %d different files from folder %s in a short time. This is the number of observed requests, not the total download size. Consent lets this program download further files without the guard limit until this virtual-folder session ends. This may download the entire repository. Retry the rejected open yourself.",
+  "anchorConsent.deny": "Keep blocked",
+  "anchorConsent.allow": "Allow this program until the session ends",
+  "anchorConsent.confirm": "Apply",
+  "anchorConsent.cancel": "Not now",
+  "anchorConsent.notConfirmed": "The decision could not be confirmed. FileES will not retry it automatically.",
   "explorer.virtualUnavailable": "Select a folder inside an attached FileES virtual folder. This action requires current daemon state and an available helper.",
   "locks.requestsCount": {"one": "{count} lock release request", "other": "{count} lock release requests"},
   "locks.requestsNote": "Someone wants to edit a file you have borrowed. The decision is yours.",

@@ -5,6 +5,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/talk"
 )
 
@@ -531,8 +534,8 @@ func (bridge *anchorBridge) writeAnswers(writer io.Writer) {
 // open is a Subversion checkout. A person opening drawings asks for a few;
 // past the limit within the window, that program is refused for the rest of
 // the anchor's session. Refused means an error for the program, never an
-// empty file. (Owner's decision 2026-09-23; the question to the person is a
-// later step - this is the floor.)
+// empty file. Explicit consent is scoped to this guard's provider session;
+// only a decision on its current opaque refusal ID may admit a program.
 type anchorGuard struct {
 	limit  int
 	window time.Duration
@@ -542,6 +545,9 @@ type anchorGuard struct {
 	recent   map[string][]anchorAsk
 	refused  map[string]bool
 	explicit map[string]anchorApproval // only the current daemon helper and one approved path
+	allowed  map[string]bool
+	blocks   map[string]contract.AnchorDownloadBlock
+	changed  func() // never invoked while holding mu or waiting for GUI
 }
 
 type anchorAsk struct {
@@ -562,12 +568,26 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 	if guard == nil {
 		return nil
 	}
+	if len(process) > 32768 || len(identity) > 32768 || strings.ContainsAny(process+identity, "\x00\r\n\t") {
+		return errors.New("invalid automatic download identity")
+	}
 	if process == "" {
 		process = "?"
 	}
+	program := filepath.Base(process)
+	process = strings.ToLower(filepath.Clean(process))
 	guard.mu.Lock()
-	defer guard.mu.Unlock()
+	changed := false
+	defer func() {
+		guard.mu.Unlock()
+		if changed && guard.changed != nil {
+			guard.changed()
+		}
+	}()
 	if guard.explicit[anchorExplicitKey(process, identity)].count > 0 {
+		return nil
+	}
+	if guard.allowed[process] {
 		return nil
 	}
 	if guard.recent == nil {
@@ -576,10 +596,13 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 	if guard.refused[process] {
 		return fmt.Errorf("%s may not download from this anchor (too many files at once)", filepath.Base(process))
 	}
+	if _, exists := guard.recent[process]; !exists && len(guard.recent) >= 64 {
+		return errors.New("too many different programs requesting this anchor; automatic download refused")
+	}
 	kept := guard.recent[process][:0]
 	distinct := map[string]bool{identity: true}
 	for _, ask := range guard.recent[process] {
-		if now.Sub(ask.at) < guard.window {
+		if now.Sub(ask.at) < guard.window && ask.identity != identity {
 			kept = append(kept, ask)
 			distinct[ask.identity] = true
 		}
@@ -587,6 +610,18 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 	guard.recent[process] = append(kept, anchorAsk{identity: identity, at: now})
 	if len(distinct) > guard.limit {
 		guard.refused[process] = true
+		guard.recent[process] = nil
+		// Unknown requesters remain blocked: consent cannot identify them.
+		if filepath.IsAbs(process) && !strings.ContainsAny(process, "\x00\r\n\t") {
+			var token [16]byte
+			if _, err := rand.Read(token[:]); err == nil {
+				if guard.blocks == nil {
+					guard.blocks = make(map[string]contract.AnchorDownloadBlock)
+				}
+				guard.blocks[process] = contract.AnchorDownloadBlock{ID: hex.EncodeToString(token[:]), Program: program, Files: len(distinct)}
+				changed = true
+			}
+		}
 		guard.log.Warnf("explorer anchor: %s asked for %d files within %s; refusing further downloads for it", process, len(distinct), guard.window)
 		return fmt.Errorf("%s may not download from this anchor (too many files at once)", filepath.Base(process))
 	}

@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "anchorConsent.title": "Téléchargements automatiques suspendus",
+  "anchorConsent.body": "Le programme %s a demandé %d fichiers différents du dossier %s en peu de temps. Il s’agit du nombre de demandes observées, pas de la taille totale du téléchargement. L’autorisation permet les téléchargements suivants sans la limite de protection jusqu’à la fin de cette session du dossier virtuel. Cela peut télécharger tout le dépôt. Réessayez vous-même l’ouverture refusée.",
+  "anchorConsent.deny": "Maintenir le blocage",
+  "anchorConsent.allow": "Autoriser ce programme jusqu’à la fin de la session",
+  "anchorConsent.confirm": "Appliquer",
+  "anchorConsent.cancel": "Pas maintenant",
+  "anchorConsent.notConfirmed": "La décision n’a pas pu être confirmée. FileES ne la réessaiera pas automatiquement.",
   "explorer.virtualUnavailable": "Choisissez un dossier dans un dossier virtuel FileES connecté. Cette action nécessite un état du service à jour et un composant auxiliaire disponible.",
   "locks.requestsCount": {"one": "{count} demande de libération de verrou", "many": "{count} demandes de libération de verrou", "other": "{count} demandes de libération de verrou"},
   "locks.requestsNote": "Quelqu’un souhaite modifier un fichier que vous avez emprunté. La décision vous appartient.",

@@ -440,7 +440,10 @@ func main() {
 	// first gesture can open a prompt immediately, so wait for that window.
 	var explorerRuntimeOnce sync.Once
 	promptWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
-		explorerRuntimeOnce.Do(func() { go gui.runExplorerRequests(host.Context()) })
+		explorerRuntimeOnce.Do(func() {
+			go gui.runExplorerRequests(host.Context())
+			go gui.runAnchorConsents(host.Context(), daemon, prompts, actionPlatform)
+		})
 	})
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 		go gui.run(host.Context())

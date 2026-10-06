@@ -65,6 +65,10 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
 	anchors.wireRelease(ipc)
+	ipc.SetAnchorConsent(anchors.consent)
+	anchors.guardChanged = func(repoID string) {
+		ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvRepoStateChanged, nil))
+	}
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
 	return anchors.run
@@ -95,16 +99,19 @@ type anchorManager struct {
 	localIntentMu   *sync.Mutex
 	activity        *activity.Journal
 	activityChanged func(repoID string)
+	guardChanged    func(repoID string)
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
 }
 
 type anchorConnection struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	ctx    context.Context
-	bridge *anchorBridge
+	cancel      context.CancelFunc
+	done        chan struct{}
+	ctx         context.Context
+	providerCtx context.Context // ends on helper loss even while keep retries
+	bridge      *anchorBridge
+	repoURL     string // identity bound when this provider connection is published
 }
 
 // anchorHelperPath finds filees-cfapi next to the daemon. FILEES_CFAPI points a
@@ -361,11 +368,29 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 						m.observeLocalStates(ctx, record, bridge)
 					}
 				}
+				bridge.guard.changed = func() {
+					if m.guardChanged != nil {
+						m.guardChanged(record.RepoID)
+					}
+				}
 				bridge.onConnected = func(providerCtx context.Context) {
+					guard := bridge.guard // snapshot source retains no completed fetch queue
+					if m.repos != nil {
+						if repo := m.repos(record.ServerID, record.RepoID); repo != nil {
+							repo.SetAnchorBlocksSource(func() []contract.AnchorDownloadBlock {
+								if providerCtx.Err() != nil {
+									return nil
+								}
+								return guard.pending()
+							})
+						}
+					}
 					m.mu.Lock()
 					connection, ok := m.running[anchorKey(record)]
 					if ok && connection.ctx == ctx {
 						connection.bridge = bridge
+						connection.repoURL = record.RepoURL
+						connection.providerCtx = providerCtx
 						m.running[anchorKey(record)] = connection
 					}
 					m.mu.Unlock()

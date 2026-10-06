@@ -51,6 +51,7 @@ const (
 )
 
 type RepoStatus struct {
+	AnchorDownloadBlocks []AnchorDownloadBlock `json:"anchor_download_blocks,omitempty"`
 	// Current local uncertainty, not historical log errors. Empty after recovery.
 	PassportIssues   []PassportIssue `json:"passport_issues,omitempty"`
 	RepoID           string          `json:"repo_id"`

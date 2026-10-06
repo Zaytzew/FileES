@@ -68,6 +68,9 @@ svn_error_t *filees_ra_update(const char *wc, svn_boolean_t live,
                               svn_boolean_t depth_is_sticky,
                               svn_revnum_t revision, svn_boolean_t make_parents,
                               svn_boolean_t adopt, apr_pool_t *pool);
+/* One clean file with a verified retained copy outside WC. No backup retirement. */
+svn_error_t *filees_exclude_retained(const char *wc, const char *retained,
+                                    const char *rel, apr_pool_t *pool);
 /* commit --progress: stream per-file and byte progress on stderr. */
 void filees_ra_commit_progress(svn_boolean_t enabled);
 svn_error_t *filees_ra_commit(const char *wc, svn_boolean_t live,

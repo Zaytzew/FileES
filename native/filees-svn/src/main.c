@@ -22,7 +22,7 @@ static const char *const k_verbs[] = {
     "record-move", "unschedule-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "writer-inspect", "list",
-    "fetch-file", "list-tree", "fetch-tree", NULL
+    "fetch-file", "list-tree", "fetch-tree", "exclude-retained", NULL
 };
 
 static void print_ok_version(void)
@@ -36,7 +36,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\",\"commit_not_sent_v1\",\"writer_release_v1\",\"writer_inspect_v1\",\"status_conflicted_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\",\"commit_not_sent_v1\",\"writer_release_v1\",\"writer_inspect_v1\",\"status_conflicted_v1\",\"sparse_exclude_retained_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -563,6 +563,11 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "unlock")) return run_lock(argc, argv, FALSE, pool);
     if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
     if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
+    if (!strcmp(verb, "exclude-retained")) {
+        if (argc != 8 || strcmp(argv[2], "--wc") || strcmp(argv[4], "--retained") || strcmp(argv[6], "--"))
+            return filees_refuse("usage: filees-svn exclude-retained --wc WC --retained FILE -- REL");
+        return filees_exclude_retained(argv[3], argv[5], argv[7], pool);
+    }
     if (!strcmp(verb, "recover-commit")) return run_recover_commit(argc, argv, pool);
     if (!strcmp(verb, "writer-release") || !strcmp(verb, "writer-inspect")) return run_writer_release(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);

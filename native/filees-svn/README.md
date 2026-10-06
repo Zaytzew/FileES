@@ -1,5 +1,20 @@
 # FileES native SVN client — explicit platform integration
 
+Internal exclusion prerequisite, 2026-10-06, base r1935 plus working delta:
+`exclude-retained --wc WC --retained FILE -- REL` advertises optional
+`sparse_exclude_retained_v1`. It excludes exactly one clean committed file
+only with an equal, independent retained file outside WC. It verifies the
+full working bytes against pristine, not only cached size/mtime. Local and
+remote locks, properties/conflicts, missing evidence, special files and
+EOL/keyword translation refuse. Windows admits ordinary local attributes
+before READ guards which deny writers; the retained copy also denies delete.
+Source deletion is allowed for SVN, so external rename/replacement is not
+fully fenced. The existing FileES writer lease does not fence arbitrary SVN.
+The operation preserves its backup and does not commit or create a CFAPI
+placeholder. It is not an idempotent transaction; errors after mutation must
+retain the backup for the future coordinator's inspection/recovery. No Go,
+GUI or IPC entry calls it yet; normal update depth choices are unchanged.
+
 Windows adapter checkpoint 2026-09-08, base r995 plus working delta:
 `pkg/client/native_ra.go` routes managed-local info, checkout/update,
 commit, lock/unlock, bounded log and CatTo when the existing Windows opt-in

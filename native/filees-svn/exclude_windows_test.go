@@ -1,0 +1,113 @@
+//go:build native_svn_probe && windows
+
+package nativesvnprobe
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"golang.org/x/sys/windows"
+)
+
+func TestExcludeRetainedRefusesOpenWriter(t *testing.T) {
+	for _, which := range []string{"working", "retained"} {
+		t.Run(which, func(t *testing.T) {
+			f := newFixture(t, "chosen.txt")
+			if err := os.Mkdir(filepath.Join(f.wc, ".filees"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			file, backup := filepath.Join(f.wc, "chosen.txt"), filepath.Join(f.root, "retained.txt")
+			body, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(backup, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			opened := file
+			if which == "retained" {
+				opened = backup
+			}
+			wide, err := windows.UTF16PtrFromString(opened)
+			if err != nil {
+				t.Fatal(err)
+			}
+			handle, err := windows.CreateFile(wide, windows.GENERIC_READ|windows.GENERIC_WRITE,
+				windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+				nil, windows.OPEN_EXISTING, 0, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer windows.CloseHandle(handle)
+			before := f.status(t)
+			f.jsonCall(t, false, "exclude-retained", "--wc", f.wc, "--retained", backup, "--", "chosen.txt")
+			if !bytes.Equal(before, f.status(t)) {
+				t.Fatal("open-writer refusal changed WC")
+			}
+			for _, name := range []string{file, backup} {
+				got, err := os.ReadFile(name)
+				if err != nil || !bytes.Equal(got, body) {
+					t.Fatalf("lost bytes at %s: %v", name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestExcludeRetainedRefusesOfflineAttributes(t *testing.T) {
+	f := newFixture(t, "chosen.txt")
+	if err := os.Mkdir(filepath.Join(f.wc, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, backup := filepath.Join(f.wc, "chosen.txt"), filepath.Join(f.root, "retained.txt")
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backup, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	wide, err := windows.UTF16PtrFromString(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attributes, err := windows.GetFileAttributes(wide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetFileAttributes(wide, attributes|windows.FILE_ATTRIBUTE_OFFLINE); err != nil {
+		t.Fatal(err)
+	}
+	defer windows.SetFileAttributes(wide, attributes)
+	f.jsonCall(t, false, "exclude-retained", "--wc", f.wc, "--retained", backup, "--", "chosen.txt")
+	if got, err := windows.GetFileAttributes(wide); err != nil || got != attributes|windows.FILE_ATTRIBUTE_OFFLINE {
+		t.Fatalf("refusal changed availability attributes: %x %v", got, err)
+	}
+	if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("lost working bytes: %v", err)
+	}
+}
+
+func TestExcludeRetainedRefusesCaseAliasedWCBackup(t *testing.T) {
+	f := newFixture(t, "chosen.txt")
+	if err := os.Mkdir(filepath.Join(f.wc, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(f.wc, "chosen.txt")
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(f.wc, "inside.txt")
+	if err := os.WriteFile(backup, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := f.status(t)
+	f.jsonCall(t, false, "exclude-retained", "--wc", f.wc, "--retained", strings.ToUpper(backup), "--", "chosen.txt")
+	if !bytes.Equal(before, f.status(t)) {
+		t.Fatal("case alias refusal changed WC")
+	}
+}

@@ -297,6 +297,46 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if refresh.target == nil || refresh.cursor != 64 {
 		t.Fatal("remote turn was not bounded", refresh.cursor)
 	}
+	// Stop the actual fixture provider after the first bounded turn. Discard
+	// the manager, lifecycle handle and in-memory cursor, as on daemon restart;
+	// reconnect must replay the already effected metadata from the old receipt.
+	beforeRestart, err := os.ReadFile(anchorTreePath(point))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	<-done
+	store, err = localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err = activity.Open(filepath.Join(root, "activity.json"), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
+		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
+	}, log: talk.With("batch-native-restarted"), stateEvery: time.Hour, options: &anchorOptions{}}
+	m.options.enabled.Store(true)
+	ctx, cancel = context.WithCancel(t.Context())
+	done = make(chan struct{})
+	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
+	go func() { m.keep(ctx, record); close(done) }()
+	waitFor(t, 30*time.Second, "reconnected provider after partial tree turn", func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		bridge = m.running[anchorKey(record)].bridge
+		return bridge != nil
+	})
+	if after, err := os.ReadFile(anchorTreePath(point)); err != nil || string(after) != string(beforeRestart) {
+		t.Fatal("partial tree was prematurely confirmed", err)
+	}
+	refresh = &anchorTreeRefresh{}
+	waitFor(t, 10*time.Second, "bounded replay after startup observer releases the WC guard", func() bool {
+		refresh.next = time.Time{} // Explicit reception retry, not production cadence.
+		m.refreshRemoteTree(t.Context(), record, bridge, refresh)
+		return refresh.target != nil && refresh.cursor == 64
+	})
 	for range 4 {
 		if refresh.target == nil {
 			break

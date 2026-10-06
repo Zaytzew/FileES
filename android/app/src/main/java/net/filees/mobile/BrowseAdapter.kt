@@ -1,11 +1,14 @@
 package net.filees.mobile
 
 import android.text.format.DateUtils
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.appcompat.widget.TooltipCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 
@@ -197,9 +200,16 @@ class BrowseAdapter(
         private val icon: ImageView = itemView.findViewById(R.id.imageBrowseIcon)
         private val title: TextView = itemView.findViewById(R.id.textBrowseName)
         private val meta: TextView = itemView.findViewById(R.id.textBrowseMeta)
-        private val download: MaterialButton = itemView.findViewById(R.id.buttonDownload)
-        private val share: MaterialButton = itemView.findViewById(R.id.buttonShare)
+        private val download: ImageButton = itemView.findViewById(R.id.buttonDownload)
+        private val share: ImageButton = itemView.findViewById(R.id.buttonShare)
         private val divider: View = itemView.findViewById(R.id.dividerBrowse)
+        private val nameSize = title.textSize
+        private val metaSize = meta.textSize
+
+        init {
+            TooltipCompat.setTooltipText(share, itemView.context.getString(R.string.action_share))
+            TooltipCompat.setTooltipText(download, itemView.context.getString(R.string.action_download))
+        }
 
         fun bind(row: BrowseRow, onOpen: (BrowseRow) -> Unit, onDownload: (BrowseRow) -> Unit, onShare: (BrowseRow) -> Unit) {
             applyPanel(itemView, row.panel)
@@ -209,6 +219,11 @@ class BrowseAdapter(
                 BrowseRow.Panel.BOTTOM, BrowseRow.Panel.SINGLE -> View.GONE
                 else -> View.VISIBLE
             }
+            // Keep realm names at their original size. File and folder rows
+            // use 85% of the current themed size, including font scaling.
+            val scale = if (row.share) 1f else 0.85f
+            title.setTextSize(TypedValue.COMPLEX_UNIT_PX, nameSize * scale)
+            meta.setTextSize(TypedValue.COMPLEX_UNIT_PX, metaSize * scale)
             title.text = row.name
             if (row.directory || row.share) {
                 icon.setImageResource(R.drawable.ic_folder)

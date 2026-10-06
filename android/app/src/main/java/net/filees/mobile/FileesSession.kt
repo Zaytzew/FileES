@@ -18,6 +18,8 @@ data class PairedServer(
     val uploadRepoId: String = "",
     val uploadRepoName: String = "",
     val leadingColor: String = "",
+    val projectionJson: String = "",
+    val drawersJson: String = "",
 ) {
     fun label(): String {
         val name = displayName.ifBlank { address }
@@ -35,6 +37,8 @@ data class PairedServer(
         .put("upload_repo_id", uploadRepoId)
         .put("upload_repo_name", uploadRepoName)
         .put("leading_color", leadingColor)
+        .put("projection_json", projectionJson)
+        .put("drawers_json", drawersJson)
 
     companion object {
         fun fromJson(o: JSONObject): PairedServer? {
@@ -53,6 +57,8 @@ data class PairedServer(
                 uploadRepoId = o.optString("upload_repo_id"),
                 uploadRepoName = o.optString("upload_repo_name"),
                 leadingColor = o.optString("leading_color"),
+                projectionJson = o.optString("projection_json"),
+                drawersJson = o.optString("drawers_json"),
             )
         }
     }
@@ -139,8 +145,8 @@ object FileesSession {
     @Synchronized fun putAndSelect(prefs: SharedPreferences, address: String, hostKey: String): PairedServer {
         val list = servers(prefs).toMutableList()
         val index = list.indexOfFirst { it.address == address }
-        val server = if (index >= 0) {
-            list[index].copy(hostKey = hostKey)
+        val server = if (index >= 0 && list[index].hostKey == hostKey) {
+            list[index]
         } else {
             PairedServer(id = UUID.randomUUID().toString(), address = address, hostKey = hostKey)
         }
@@ -155,7 +161,13 @@ object FileesSession {
         write(prefs, all, id)
     }
 
-    @Synchronized fun rememberProjection(prefs: SharedPreferences, projection: RealmProjection, expectedServerId: String? = null) {
+    @Synchronized fun rememberProjection(
+        prefs: SharedPreferences,
+        projection: RealmProjection,
+        expectedServerId: String? = null,
+        projectionJson: String = "",
+        drawersJson: String = "",
+    ) {
         val cur = current(prefs) ?: return
         if (expectedServerId != null && cur.id != expectedServerId) return
         val uploadOk = cur.uploadRepoId.isBlank() ||
@@ -169,6 +181,8 @@ object FileesSession {
                 uploadRepoId = if (uploadOk) cur.uploadRepoId else "",
                 uploadRepoName = if (uploadOk) cur.uploadRepoName else "",
                 leadingColor = projection.leadingColor.ifBlank { cur.leadingColor },
+                projectionJson = projectionJson,
+                drawersJson = drawersJson,
             ),
         )
     }
@@ -176,6 +190,12 @@ object FileesSession {
     @Synchronized fun setSelectedRepo(prefs: SharedPreferences, repoId: String?) {
         val cur = current(prefs) ?: return
         replace(prefs, cur.copy(selectedRepoId = repoId.orEmpty()))
+    }
+
+    @Synchronized fun clearProjection(prefs: SharedPreferences, expectedServerId: String) {
+        val cur = current(prefs) ?: return
+        if (cur.id != expectedServerId) return
+        replace(prefs, cur.copy(projectionJson = "", drawersJson = "", selectedRepoId = ""))
     }
 
     @Synchronized fun setUploadTarget(prefs: SharedPreferences, repoId: String, repoName: String, expectedServerId: String? = null): Boolean {

@@ -29,8 +29,11 @@ built and verified.
   last page of each visited folder when another folder advances. Without a
   connection the list stays up and the screen marks it as last known state.
   An explicit server denial is shown as an error, not as an offline state.
-  A cold app start still needs LIST_REPOSITORIES before it can rebuild the
-  realm picker; offline cold start remains open.
+  The last successful realm projection and drawer layout are stored per
+  pairing, so a cold offline start can show the saved repository list and
+  last visited root page while marking them as last known. A new server
+  projection replaces them; an explicit denial clears the saved projection.
+  Host-key replacement creates a new pairing identity, isolating old pages.
 - In the repository browser, **Share** downloads one file or prepares a ZIP
   of a folder off the UI thread, then opens Android's app chooser. It uses the
   existing private download cache and `FileProvider` with a temporary read
@@ -44,6 +47,9 @@ built and verified.
   A server-side LIST_DIRECTORY guard still rejects a single directory with
   more than 1024 immediate entries.
   The ordinary Download action keeps its separate folder limits.
+  The row actions are 48 dp icon buttons with accessible Share and Download
+  labels. File and folder listing text uses 85% of its themed name and
+  metadata sizes; repository names keep their original size.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.

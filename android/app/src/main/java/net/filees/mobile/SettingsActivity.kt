@@ -601,16 +601,18 @@ class SettingsActivity : AppCompatActivity() {
                     }
                 }
                 try {
-                    val projection = RealmProjection.fromJson(client.listRepositoriesJSON())
-                    val drawers = try {
-                        DrawerFrame.fromJson(client.listDrawersJSON())
+                    val projectionJson = client.listRepositoriesJSON()
+                    val projection = RealmProjection.fromJson(projectionJson)
+                    val drawersJson = try {
+                        client.listDrawersJSON()
                     } catch (_: Exception) {
-                        DrawerFrame.empty()
+                        ""
                     }
+                    val drawers = DrawerFrame.fromJson(drawersJson)
                     val capturable = projection.shares.filter { it.canCapture }
                     val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
                     watchUi {
-                        FileesSession.rememberProjection(prefs, projection, watched.serverId)
+                        FileesSession.rememberProjection(prefs, projection, watched.serverId, projectionJson, drawersJson)
                         uploadRepos = capturable
                         drawerFrame = drawers
                         uploadReposReady = true

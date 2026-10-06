@@ -86,6 +86,7 @@
     <string name="browse_file_size">%1$d B</string>
     <string name="browse_empty">Esta carpeta está vacía.</string>
     <string name="browse_last_known">Último estado conocido. La cola se completará cuando vuelva la conexión.</string>
+    <string name="browse_projection_last_known">Última lista de repositorios guardada. El acceso se comprobará cuando vuelva la conexión.</string>
     <string name="settings_pairing">Emparejamiento (emergencia)</string>
     <string name="settings_device">Este dispositivo</string>
     <string name="settings_watched">Carpetas vigiladas</string>

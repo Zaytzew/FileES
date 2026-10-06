@@ -84,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var client: Client? = null
+    private var activeDialAddress: String? = null
     private var activeSession: Triple<String?, String?, String?>? = null
     private var selectedRepoId: String? = null
     private var selectedShareName: String = ""
@@ -98,6 +99,7 @@ class MainActivity : AppCompatActivity() {
     private var confirmedRevision: Long = 0
     private var confirmedGeneration: Long = 0
     private var browseOffline: Boolean = false
+    private var projectionOffline: Boolean = false
     private var pendingDecisions: List<PendingUpload> = emptyList()
     private val browseAdapter = BrowseAdapter(
         onOpen = { openRow(it) }, onDownload = { downloadRow(it) }, onShare = { shareRow(it) },
@@ -186,6 +188,13 @@ class MainActivity : AppCompatActivity() {
         if (sessionKey() != activeSession) {
             invalidateUiRequests()
             client = null
+            activeDialAddress = null
+            selectableShares = emptyList()
+            drawerFrame = DrawerFrame.empty()
+            manifestEntries = emptyList()
+            browsePrefix = ""
+            clearBrowseConfirmation()
+            projectionOffline = false
         }
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             if (client == null) {
@@ -202,6 +211,9 @@ class MainActivity : AppCompatActivity() {
                 // background upload watch, never the paired UI state.
                 showPaired(true)
                 scanWatchedFolders()
+                // Recheck grants after Settings or an external chooser returns.
+                // A stored projection keeps this refresh non-blocking offline.
+                loadRealmProjection()
                 refreshDecisions()
             }
         } else {
@@ -322,12 +334,18 @@ class MainActivity : AppCompatActivity() {
         val ticket = beginUiRequest("activation", getString(R.string.status_activating))
         io.execute {
             try {
-                val dial = DialAddress.resolve(address)
+                val serverId = FileesSession.current(prefs)?.id.orEmpty()
+                val dial = try {
+                    DialAddress.resolve(address)
+                } catch (_: java.net.UnknownHostException) {
+                    DialAddress.cached(this, serverId, address) ?: address
+                }
                 val newClient = Androidbind.newClient(filesDir.absolutePath, dial, FileesSession.MOBILE_USER, hostKey)
                 postCurrent(ticket) {
                     if (prefs.getString(FileesSession.PREF_ADDRESS, null) != address ||
                         prefs.getString(FileesSession.PREF_HOST_KEY, null) != hostKey) return@postCurrent
                     client = newClient
+                    activeDialAddress = dial
                     activeSession = session
                     watched = WatchedFolders(this)
                     showPaired(true)
@@ -341,6 +359,7 @@ class MainActivity : AppCompatActivity() {
                     if (prefs.getString(FileesSession.PREF_ADDRESS, null) != address ||
                         prefs.getString(FileesSession.PREF_HOST_KEY, null) != hostKey) return@postCurrent
                     client = null
+                    activeDialAddress = null
                     activeSession = null
                     showPaired(false)
                     failRequest(ticket, getString(R.string.error_connect), e)
@@ -351,36 +370,98 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadRealmProjection() {
         val active = client ?: return
-        val serverId = FileesSession.current(prefs)?.id
-        val ticket = beginUiRequest("projection", getString(R.string.status_refreshing))
+        val server = FileesSession.current(prefs) ?: return
+        val serverId = server.id
+        val cachedProjection = try {
+            server.projectionJson.takeIf { it.isNotBlank() }?.let { RealmProjection.fromJson(it) }
+        } catch (_: Exception) {
+            null
+        }
+        if (cachedProjection != null) {
+            val cachedDrawers = try {
+                DrawerFrame.fromJson(server.drawersJson)
+            } catch (_: Exception) {
+                DrawerFrame.empty()
+            }
+            applyProjection(cachedProjection, cachedDrawers)
+            projectionOffline = true
+            renderList()
+            // Paint the saved page before the network request enters the one-thread executor.
+            selectedRepoId?.let { repoId ->
+                val browseTicket = uiRequests.begin("browse")
+                io.execute {
+                    val page = try { active.cachedDirectoryJSON(repoId, "") } catch (_: Exception) { "" }
+                    if (page.isNotBlank()) postCurrent(browseTicket) {
+                        if (client === active && FileesSession.current(prefs)?.id == serverId && selectedRepoId == repoId) {
+                            applyDirectoryManifest(page)
+                        }
+                    }
+                }
+            }
+        }
+        val ticket = if (cachedProjection == null) beginUiRequest("projection", getString(R.string.status_refreshing))
+            else uiRequests.begin("projection")
         io.execute {
             try {
-                val projection = RealmProjection.fromJson(active.listRepositoriesJSON())
-                val drawers = try {
-                    DrawerFrame.fromJson(active.listDrawersJSON())
+                val projectionJson = active.listRepositoriesJSON()
+                val projection = RealmProjection.fromJson(projectionJson)
+                val drawersJson = try {
+                    active.listDrawersJSON()
                 } catch (_: Exception) {
-                    DrawerFrame.empty()
+                    ""
                 }
+                val drawers = DrawerFrame.fromJson(drawersJson)
                 postCurrent(ticket) {
                     if (client !== active || FileesSession.current(prefs)?.id != serverId) return@postCurrent
-                    drawerFrame = drawers
-                    FileesSession.rememberProjection(prefs, projection, serverId)
+                    FileesSession.rememberProjection(prefs, projection, serverId, projectionJson, drawersJson)
+                    DialAddress.remember(this, serverId, server.address, activeDialAddress ?: server.address)
                     bindServerLabel()
-                    selectableShares = projection.shares.filter { it.selectable }
-                    if (selectedRepoId != null && selectableShares.none { it.repoId == selectedRepoId }) {
-                        selectedRepoId = null
-                    }
+                    applyProjection(projection, drawers)
+                    projectionOffline = false
+                    if (selectedRepoId == null) browseOffline = false
                     renderList()
                     requestBusy(ticket, false, "")
+                    if (selectedRepoId != null) openDirectory(force = true)
                     refreshDecisions()
                 }
             } catch (e: Exception) {
                 postCurrent(ticket) {
-                    if (client !== active || FileesSession.current(prefs)?.id != serverId || !uiRequests.ownsBusy(ticket)) return@postCurrent
-                    if (looksRevoked(e)) showRevoked(e) else failBusy(getString(R.string.error_list), e)
+                    if (client !== active || FileesSession.current(prefs)?.id != serverId) return@postCurrent
+                    if (looksRevoked(e) || "host key mismatch" in (e.message ?: "").lowercase()) {
+                        FileesSession.clearProjection(prefs, serverId)
+                        selectableShares = emptyList()
+                        drawerFrame = DrawerFrame.empty()
+                        manifestEntries = emptyList()
+                        selectedRepoId = null
+                        clearBrowseConfirmation()
+                        projectionOffline = false
+                        renderList()
+                        requestBusy(ticket, false, "")
+                        if (looksRevoked(e)) showRevoked(e)
+                        else showTransportError(getString(R.string.error_list), e, server.address)
+                    } else if (cachedProjection != null && !requiresBrowseError(e)) {
+                        projectionOffline = true
+                        renderList()
+                    } else if (uiRequests.ownsBusy(ticket)) {
+                        failRequest(ticket, getString(R.string.error_list), e)
+                    } else {
+                        showTransportError(getString(R.string.error_list), e, server.address)
+                    }
                 }
             }
         }
+    }
+
+    private fun applyProjection(projection: RealmProjection, drawers: DrawerFrame) {
+        drawerFrame = drawers
+        selectableShares = projection.shares.filter { it.selectable }
+        if (selectedRepoId != null && selectableShares.none { it.repoId == selectedRepoId }) {
+            selectedRepoId = null
+            clearBrowseConfirmation()
+            manifestEntries = emptyList()
+            FileesSession.setSelectedRepo(prefs, null)
+        }
+        selectedShareName = selectableShares.firstOrNull { it.repoId == selectedRepoId }?.displayName.orEmpty()
     }
 
     private fun renderList() {
@@ -390,7 +471,7 @@ class MainActivity : AppCompatActivity() {
             browseAdapter.submit(homeRows())
             binding.toolbar.title = null
             binding.toolbar.subtitle = null
-            binding.textBrowseState.visibility = View.GONE
+            bindBrowseState()
             binding.brandLockup.visibility = View.VISIBLE
             binding.buttonAdd.visibility = View.GONE
             binding.barServerAddress.visibility = View.GONE
@@ -817,8 +898,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindBrowseState() {
-        if (selectedRepoId != null && browseOffline) {
-            binding.textBrowseState.text = getString(R.string.browse_last_known)
+        if (client != null && (browseOffline || projectionOffline)) {
+            binding.textBrowseState.text = getString(
+                if (selectedRepoId == null && projectionOffline) R.string.browse_projection_last_known
+                else R.string.browse_last_known,
+            )
             binding.textBrowseState.visibility = View.VISIBLE
         } else {
             binding.textBrowseState.visibility = View.GONE
@@ -1540,6 +1624,7 @@ class MainActivity : AppCompatActivity() {
         FileesSession.select(prefs, server.id)
         watched = WatchedFolders(this, server.id)
         client = null
+        activeDialAddress = null
         selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
         selectedShareName = ""
         browsePrefix = ""
@@ -1547,6 +1632,7 @@ class MainActivity : AppCompatActivity() {
         browseGeneration = 0
         legacyFullTree = false
         clearBrowseConfirmation()
+        projectionOffline = false
         selectableShares = emptyList()
         drawerFrame = DrawerFrame.empty()
         manifestEntries = emptyList()
@@ -1561,7 +1647,9 @@ class MainActivity : AppCompatActivity() {
         FileesSession.unpair(prefs)
         watched = WatchedFolders(this)
         client = null
+        activeDialAddress = null
         activeSession = null
+        projectionOffline = false
         selectedRepoId = null
         selectableShares = emptyList()
         drawerFrame = DrawerFrame.empty()

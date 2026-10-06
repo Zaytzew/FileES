@@ -86,6 +86,7 @@
     <string name="browse_file_size">%1$d o</string>
     <string name="browse_empty">Ce dossier est vide.</string>
     <string name="browse_last_known">Dernier état connu. La file sera traitée au rétablissement de la connexion.</string>
+    <string name="browse_projection_last_known">Dernière liste de dépôts enregistrée. L’accès sera vérifié au rétablissement de la connexion.</string>
     <string name="settings_pairing">Appariement (secours)</string>
     <string name="settings_device">Cet appareil</string>
     <string name="settings_watched">Dossiers surveillés</string>

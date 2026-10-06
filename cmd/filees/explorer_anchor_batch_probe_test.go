@@ -80,7 +80,6 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	helper, native := probeTool(t, "FILEES_CFAPI"), probeTool(t, "FILEES_SVN_PROBE")
 	helper = filepath.Clean(helper)
 	cli, admin := probeTool(t, "FILEES_PROBE_SVN"), probeTool(t, "FILEES_PROBE_SVNADMIN")
-	t.Setenv("FILEES_CFAPI_SHELL_PREVIEW", "1")
 	root := t.TempDir()
 	repo, source, point := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point")
 	probeRun(t, root, admin, "create", repo)
@@ -149,13 +148,18 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	}
 	m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
 		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
-	}, log: talk.With("batch-native"), stateEvery: time.Hour}
+	}, log: talk.With("batch-native"), stateEvery: time.Hour, options: &anchorOptions{}}
+	m.options.enabled.Store(true)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
 	go func() { m.keep(ctx, record); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	waitFor(t, 30*time.Second, "connected batch provider", func() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.running[anchorKey(record)].bridge != nil })
+	waitFor(t, 30*time.Second, "initial remote tree receipt", func() bool {
+		_, err := os.Stat(anchorTreePath(point))
+		return err == nil
+	})
 	// Admit real Cloud Files subdirectories only when the opened handle is
 	// bound to this exact point. Neither another registered root nor a
 	// junction inside the point acquires that permission.
@@ -249,7 +253,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	for i := range 24 {
 		rel := fmt.Sprintf("folder/file-%02d.txt", i)
 		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", rel)
-		if err != nil || !s.Partial || s.Local || s.Identity != rel {
+		if err != nil || !s.Partial || s.Local || !anchorRemoteMatches(s.Identity, rel) {
 			t.Fatal("not a remote seed", rel, s, err)
 		}
 		if v, err := svn.(anchorReleaseExclusionReader).InspectPathExclusion(t.Context(), point, rel); err != nil || !v.Excluded || !v.Idle {
@@ -258,5 +262,86 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	}
 	if revision, err := svn.Revision(t.Context(), uri); err != nil || revision != 1 {
 		t.Fatal("release changed repository", revision, err)
+	}
+
+	// The production remote observer runs in bounded turns under the real WC
+	// guard. Keep one adopted file local, then change a different unhydrated
+	// file, rename/delete entries and add more than one turn can hold.
+	if err := m.downloadFile(t.Context(), record, "folder/file-00.txt"); err != nil {
+		t.Fatal(err)
+	}
+	publisher := filepath.Join(root, "publisher")
+	probeRun(t, root, cli, "checkout", "-q", uri, publisher)
+	for _, item := range []struct{ rel, content string }{
+		{"folder/file-00.txt", "changed remotely, keep local"},
+		{"folder/file-01.txt", "new remote revision"},
+	} {
+		if err := os.WriteFile(filepath.Join(publisher, filepath.FromSlash(item.rel)), []byte(item.content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probeRun(t, publisher, cli, "move", "-q", "folder/file-02.txt", "folder/renamed.txt")
+	probeRun(t, publisher, cli, "delete", "-q", "folder/file-03.txt")
+	if err := os.Mkdir(filepath.Join(publisher, "new"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 80 {
+		if err := os.WriteFile(filepath.Join(publisher, "new", fmt.Sprintf("new-%02d.txt", i)), []byte("fresh remote"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probeRun(t, publisher, cli, "add", "-q", "new")
+	probeRun(t, publisher, cli, "commit", "-q", "-m", "remote tree revision")
+	refresh := &anchorTreeRefresh{}
+	m.refreshRemoteTree(t.Context(), record, bridge, refresh)
+	if refresh.target == nil || refresh.cursor != 64 {
+		t.Fatal("remote turn was not bounded", refresh.cursor)
+	}
+	for range 4 {
+		if refresh.target == nil {
+			break
+		}
+		m.refreshRemoteTree(t.Context(), record, bridge, refresh)
+	}
+	if refresh.target != nil {
+		t.Fatal("remote tree did not finish")
+	}
+	for _, gone := range []string{"folder/file-02.txt", "folder/file-03.txt"} {
+		if _, err := os.Lstat(filepath.Join(point, filepath.FromSlash(gone))); !os.IsNotExist(err) {
+			t.Fatal("remote deletion not applied", gone, err)
+		}
+	}
+	for _, rel := range []string{"folder/renamed.txt", "new/new-79.txt", "folder/file-01.txt"} {
+		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", rel)
+		_, revision, _, valid := parseAnchorRemoteIdentity(s.Identity)
+		if err != nil || !s.Partial || !valid || revision != 2 {
+			t.Fatal("remote metadata not current", rel, s, err)
+		}
+	}
+	if got, err := os.ReadFile(filepath.Join(point, "folder", "file-00.txt")); err != nil || string(got) != "approved bytes" {
+		t.Fatal("remote refresh changed adopted local bytes", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(point, "folder", "file-01.txt")); err != nil || string(got) != "new remote revision" {
+		t.Fatal("updated entry delivered wrong revision", string(got), err)
+	}
+	if err := m.downloadFile(t.Context(), record, "folder/file-01.txt"); err != nil {
+		t.Fatal("confirm updated entry adoption", err)
+	}
+	waitFor(t, 15*time.Second, "new revision local state", func() bool {
+		cursor = ""
+		if err := m.refreshLocalStates(t.Context(), record, bridge, &cursor); err != nil {
+			return false
+		}
+		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", "folder/file-01.txt")
+		return err == nil && s.Local && s.InSync && !s.Partial
+	})
+	if err := m.releaseFile(t.Context(), record, "folder/file-01.txt"); err != nil {
+		t.Fatal("release newer revision", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(point, "folder", "file-01.txt")); err != nil || string(got) != "new remote revision" {
+		t.Fatal("release returned to original seed revision", string(got), err)
+	}
+	if err := m.waitDownloaded(t.Context(), record, "folder/file-01.txt"); err != nil {
+		t.Fatal("read after release not adopted", err)
 	}
 }

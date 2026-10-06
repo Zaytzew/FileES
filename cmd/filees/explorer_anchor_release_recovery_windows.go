@@ -89,7 +89,9 @@ func observeAnchorReleaseSeed(ctx context.Context, r anchorReleaseRecord, inspec
 		return false, err
 	}
 	usn, tokenErr := strconv.ParseInt(state.USN, 10, 64)
-	if !state.OK || !state.Placeholder || state.Local || !state.InSync || state.Identity != r.Identity.Rel ||
+	rel, revision, size, identityOK := parseAnchorRemoteIdentity(state.Identity)
+	identityOK = identityOK && rel == r.Identity.Rel && (revision == 0 || (revision == r.Identity.Revision && size == r.Size))
+	if !state.OK || !state.Placeholder || state.Local || !state.InSync || !identityOK ||
 		state.Size == nil || *state.Size != r.Size || (!state.Partial && r.Size != 0) || tokenErr != nil || usn <= 0 {
 		return false, errors.New("release path is not the recorded remote seed")
 	}

@@ -21,11 +21,8 @@ func anchorReleaseLocation(r localrepo.Record) anchorReleaseIdentity {
 }
 
 func (m *anchorManager) wireRelease(ipc *ipcserver.Server) {
-	// The final durable user opt-in replaces this development gate later.
-	if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
-		ipc.SetAnchorRelease(m.release)
-		ipc.SetAnchorBatch(anchorBatchAdapter{manager: m})
-	}
+	ipc.SetAnchorRelease(m.release)
+	ipc.SetAnchorBatch(anchorBatchAdapter{manager: m})
 }
 
 func (m *anchorManager) enterReleaseIntent() (func(), error) {
@@ -116,7 +113,16 @@ func (m *anchorManager) releaseIO(record localrepo.Record, bridge *anchorBridge)
 		prepare: func(ctx context.Context, rel, usn string, id anchorReleaseFileID) error {
 			return bridge.prepareRelease(ctx, rel, usn, strconv.FormatUint(uint64(id.Volume), 10)+":"+strconv.FormatUint(id.Index, 10))
 		},
-		restore: bridge.restoreRelease,
+		restore: func(ctx context.Context, rel string, size int64) error {
+			base, err := excluder.InspectPathExclusion(ctx, record.LocalPath, rel)
+			if err != nil || !base.Excluded || !base.Idle || base.Revision <= 0 {
+				return errors.Join(err, errors.New("restoration revision unavailable"))
+			}
+			return bridge.restoreReleasePinned(ctx, rel, base.Revision, size)
+		},
+		remoteReceipt: func(ctx context.Context, r anchorReleaseRecord) error {
+			return m.noteReleasedRemote(ctx, record, r)
+		},
 	}
 	return ops, remote, nil
 }
@@ -166,6 +172,11 @@ func finishManagedAnchorRelease(ctx context.Context, j *anchorReleaseJournal, fe
 	}
 	if exists, err := observeAnchorReleaseSeed(ctx, r, ops.inspect); err != nil || !exists {
 		return errors.Join(err, errors.New("completed release seed changed"))
+	}
+	if ops.remoteReceipt != nil {
+		if err := ops.remoteReceipt(ctx, r); err != nil {
+			return err
+		}
 	}
 	return j.clearFence(ctx, fence)
 }

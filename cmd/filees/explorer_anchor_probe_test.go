@@ -128,7 +128,6 @@ func probeRun(t *testing.T, dir, program string, args ...string) {
 
 func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("FILEES_CFAPI_SHELL_PREVIEW", "1")
 	helper := probeTool(t, "FILEES_CFAPI")
 	native := probeTool(t, "FILEES_SVN_PROBE")
 	svnCLI := probeTool(t, "FILEES_PROBE_SVN")
@@ -207,7 +206,9 @@ func TestAnAnchorOpensAFileAndMakesItPartOfTheWorkingCopy(t *testing.T) {
 		repos:      func(string, string) *ipcserver.RepoState { return state },
 		newSVN:     func(string) (client.Client, error) { return svn, nil },
 		log:        talk.With("anchor-probe"),
+		options:    &anchorOptions{},
 	}
+	manager.options.enabled.Store(true)
 	record := localrepo.Record{ServerID: "lokalny", RepoID: "atlas", RepoURL: repoURL, LocalPath: anchor, Anchor: true, Sparse: true, State: localrepo.StateAttached}
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})

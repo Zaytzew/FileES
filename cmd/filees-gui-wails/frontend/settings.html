@@ -37,6 +37,11 @@
       <div class="setting-value"><strong id="timeout-value">—</strong><span>min</span><button id="change-timeout" type="button" data-i18n="action.change">Zmień</button></div>
     </section>
 
+    <section id="virtual-folders-card" class="setting-card" hidden>
+      <div class="setting-copy"><p class="eyebrow" data-i18n="virtualFolders.local">Ta aplikacja na tym komputerze</p><h2 data-i18n="virtualFolders.label">Używaj folderów wirtualnych</h2><p data-i18n="virtualFolders.help">Domyślnie wyłączone. Pliki są pobierane przy otwieraniu. Przed wyłączeniem odłącz punkty zaczepienia; zachowanie folderu zostawia tylko pobrane pliki. Ustawienie dotyczy wszystkich serwerów.</p></div>
+      <label class="setting-value virtual-folders-toggle"><input id="virtual-folders-enabled" type="checkbox"><span data-i18n="virtualFolders.label">Używaj folderów wirtualnych</span></label>
+    </section>
+
     <section id="server-actions-card" class="server-actions-card" hidden>
       <header><div><p class="eyebrow" data-i18n="settings.thisRealm">Ta strefa</p><h2 data-i18n="settings.actions">Dostępne działania</h2></div></header>
       <div id="server-actions" class="server-action-list"></div>

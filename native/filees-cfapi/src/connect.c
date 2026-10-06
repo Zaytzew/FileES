@@ -230,6 +230,41 @@ static void CALLBACK on_cancel_fetch_data(const CF_CALLBACK_INFO *info, const CF
 /* Unread/unadopted seeds cannot be deleted or renamed through Explorer.
  * Retained ALWAYS_FULL local files are ordinary WC work: pass the operation
  * to the existing watcher/publication policy, including replace-on-save. */
+/* A metadata-only removal is admitted solely for the connected provider's
+ * own process and the exact open object. Never relax Explorer's policy. The
+ * reader executes one command at a time; callbacks read this short-lived
+ * binding under a separate lock (no lock is held across the delete). */
+static SRWLOCK g_delete_lock = SRWLOCK_INIT;
+static DWORD g_delete_volume;
+static ULONGLONG g_delete_file;
+static int g_delete_active;
+
+void filees_remote_delete_begin(DWORD volume, ULONGLONG file_id)
+{
+    AcquireSRWLockExclusive(&g_delete_lock);
+    g_delete_volume = volume; g_delete_file = file_id; g_delete_active = 1;
+    ReleaseSRWLockExclusive(&g_delete_lock);
+}
+
+void filees_remote_delete_end(void)
+{
+    AcquireSRWLockExclusive(&g_delete_lock);
+    g_delete_active = 0;
+    ReleaseSRWLockExclusive(&g_delete_lock);
+}
+
+static int own_remote_delete(const CF_CALLBACK_INFO *info)
+{
+    int allowed;
+    AcquireSRWLockShared(&g_delete_lock);
+    allowed = g_delete_active && info->ProcessInfo &&
+        info->ProcessInfo->ProcessId == GetCurrentProcessId() &&
+        info->VolumeSerialNumber == g_delete_volume &&
+        (ULONGLONG)info->FileId.QuadPart == g_delete_file;
+    ReleaseSRWLockShared(&g_delete_lock);
+    return allowed;
+}
+
 static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
 {
     CF_OPERATION_INFO operation;
@@ -240,7 +275,7 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckDelete);
     answer.AckDelete.Flags = CF_OPERATION_ACK_DELETE_FLAG_NONE;
-    answer.AckDelete.CompletionStatus = filees_local_identity(info->FileIdentity, info->FileIdentityLength)
+    answer.AckDelete.CompletionStatus = (filees_local_identity(info->FileIdentity, info->FileIdentityLength) || own_remote_delete(info))
         ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
     trace("delete acknowledgement", hr);
@@ -326,7 +361,27 @@ int filees_cfapi_connect(const WCHAR *root)
         size_t length = strlen(line);
         while (length && (line[length - 1] == '\n' || line[length - 1] == '\r')) line[--length] = '\0';
         if (!length) continue;
-        if (!strncmp(line, "state-set\t", 10)) {
+        if (!strncmp(line, "tree-set\t", 9)) {
+            char *parts[7], *next = line + 9;
+            WCHAR rel[FILEES_CFAPI_MAX_PATH], old[FILEES_CFAPI_MAX_IDENTITY], identity[FILEES_CFAPI_MAX_IDENTITY];
+            LONGLONG size = 0;
+            int i;
+            hr = E_INVALIDARG;
+            for (i = 0; i < 7 && next; ++i) {
+                parts[i] = next; next = strchr(next, '\t');
+                if (next) *next++ = 0;
+            }
+            if (i == 7 && !next && *parts[0] &&
+                (!strcmp(parts[2], "f") || !strcmp(parts[2], "d")) &&
+                (!strcmp(parts[6], "0") || !strcmp(parts[6], "1")) &&
+                release_number(parts[3], &size, 1) &&
+                filees_cfapi_widen(parts[1], rel, FILEES_CFAPI_MAX_PATH) &&
+                filees_cfapi_widen(parts[4], old, FILEES_CFAPI_MAX_IDENTITY) &&
+                filees_cfapi_widen(parts[5], identity, FILEES_CFAPI_MAX_IDENTITY))
+                hr = filees_remote_tree(g_root, rel, old, identity, size, *parts[2] == 'd', *parts[6] == '1');
+            filees_bridge_say_tree_set(line + 9, hr);
+        }
+        else if (!strncmp(line, "state-set\t", 10)) {
             char *id = line + 10, *rel = strchr(id, '\t'), *token = NULL, *clean = NULL, *end = NULL;
             WCHAR wide[FILEES_CFAPI_MAX_PATH];
             LONGLONG usn = 0;
@@ -372,16 +427,19 @@ int filees_cfapi_connect(const WCHAR *root)
             filees_bridge_say_release_prepared(id, hr);
         }
         else if (!strncmp(line, "restore-release\t", 16)) {
-            char *id = line + 16, *rel = strchr(id, '\t'), *token = NULL;
-            WCHAR wide[FILEES_CFAPI_MAX_PATH];
+            char *id = line + 16, *rel = strchr(id, '\t'), *token = NULL, *identity = NULL;
+            WCHAR wide[FILEES_CFAPI_MAX_PATH], remote_identity[FILEES_CFAPI_MAX_IDENTITY];
             LONGLONG size = -1;
             hr = E_INVALIDARG;
             if (rel) { *rel++ = '\0'; token = strchr(rel, '\t'); }
             if (token) {
                 *token++ = '\0';
+                identity = strchr(token, '\t');
+                if (identity) *identity++ = '\0';
                 if (*id && release_number(token, &size, 1) &&
-                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH))
-                    hr = filees_restore_release(g_root, wide, size);
+                    filees_cfapi_widen(rel, wide, FILEES_CFAPI_MAX_PATH) &&
+                    (!identity || (*identity && !strchr(identity, '\t') && filees_cfapi_widen(identity, remote_identity, FILEES_CFAPI_MAX_IDENTITY))))
+                    hr = filees_restore_release(g_root, wide, size, identity ? remote_identity : NULL);
             }
             filees_bridge_say_release_restored(id, hr);
         }

@@ -60,6 +60,7 @@ type Server struct {
 	anchorRelease        AnchorRelease
 	anchorBatch          AnchorBatchService
 	anchorConsent        AnchorConsent
+	virtualFolders       VirtualFoldersService
 	partialAnchor        bool
 	historySnaps         historySnapshotStore
 	historyExports       HistoryExportService
@@ -412,6 +413,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.anchorPrecheck() != nil {
 		caps = append(caps, contract.CapRepoExplorerAnchor)
+	}
+	if s.virtualFoldersService() != nil {
+		caps = append(caps, contract.CapVirtualFolders)
 	}
 	if s.anchorReleaseHandler() != nil {
 		caps = append(caps, contract.CapRepoAnchorRelease)

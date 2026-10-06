@@ -292,11 +292,19 @@ wykluczeniem i wznowieniem. Zbuduj go przez
 przekaż do `stage-native-runtime.ps1`. Nie zmieniaj zainstalowanego SDK.
 Składanie alfy uruchamia kontrolę `--anchor-release`: pełny inwentarz i źródła
 C, oba aktualne źródła modyfikacji biblioteki oraz rzeczywiste odpowiedzi
-helperów. Brak funkcji bound/resume/Idle albo niezgodna wersja CFAPI przerywa
+helperów. Brak funkcji bound/resume/Idle, wymaganej cechy CFAPI
+`remote_tree_v1` albo niezgodna wersja CFAPI przerywa
 budowę przed spakowaniem nowego demona. Beta/Store/Linux nie wymagają tej
 biblioteki; jeśli staging zawiera modyfikację, jej źródła także muszą być
 aktualne. Próby przerwania `filees-release-probe.exe` nie należą do payloadu.
 To kontrola zgodności zestawu, nie zastępstwo podpisu wydania lub odbioru live.
+
+Po domknięciu kodu 2026-10-06 foldery wirtualne wymagają świadomego włączenia
+w ustawieniach aplikacji i są domyślnie wyłączone. Stara zmienna
+`FILEES_CFAPI_SHELL_PREVIEW` ani zastane punkty nie włączają preferencji.
+Przy odbiorze nowej alfy należy sprawdzić tę bramkę i przejście przez istniejące
+punkty. Wyłączenie wymaga wcześniejszego odłączenia wszystkich punktów;
+nie może po cichu usuwać placeholderów ani zastępować ich pełną WC.
 
 ## „Co nowego” na kartach pobrań (od 2026-09-29)
 

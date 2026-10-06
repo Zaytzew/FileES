@@ -19,7 +19,7 @@ var requiredAnchorFeatures = []string{
 	"sync_root_v1", "shell_sync_root_v1", "placeholders_v1",
 	"refuse_delete_rename_v1", "fetch_bridge_v1", "revert_placeholder_v1",
 	"local_state_usn_v1", "local_states_batch_v1", "batch_release_observation_v1",
-	"explicit_hydrate_v1",
+	"explicit_hydrate_v1", "remote_tree_v1",
 }
 
 type cfapiVersion struct {

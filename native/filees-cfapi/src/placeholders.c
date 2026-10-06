@@ -124,31 +124,30 @@ int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative)
     }
 
     hr = CfCreatePlaceholders(directory, infos, count, CF_CREATE_FLAG_NONE, &processed);
-    if (FAILED(hr)) {
-        /* Name the first entry the filter refused. Without it the caller sees
-         * one HRESULT for a listing of hundreds and has nothing to look at. */
-        for (i = 0; i < count; ++i) {
-            if (FAILED(infos[i].Result)) { hr = infos[i].Result; break; }
+    for (i = 0; i < count; ++i) {
+        /* A crash may leave a partly seeded directory. Never replace or
+         * silently skip an obstruction. Resume only an exact own, clean,
+         * byte-free identity, using the same proof as remote reconciliation.
+         * If the batch itself failed, recheck every entry (Result alone is
+         * not proof that the filter processed an entry). */
+        if (FAILED(hr) || processed != count || FAILED(infos[i].Result)) {
+            WCHAR rel[FILEES_CFAPI_MAX_PATH];
+            HRESULT retry = E_INVALIDARG;
+            if (swprintf_s(rel, FILEES_CFAPI_MAX_PATH, relative && relative[0] ? L"%s/%s" : L"%s",
+                           relative && relative[0] ? relative : entries[i].name, entries[i].name) >= 0)
+                retry = filees_remote_tree(root, rel, entries[i].identity, entries[i].identity,
+                                           entries[i].size, entries[i].directory, 0);
+            if (retry != S_OK) {
+                filees_cfapi_fail("create_placeholders", retry);
+                status = 1;
+                break;
+            }
         }
-        filees_cfapi_fail("create_placeholders", hr);
-        status = 1;
-    } else {
-        /* Per-entry results matter: one name already on disk must not look
-         * like a failed listing, and must not be silently skipped either. */
-        unsigned refused = 0;
-        for (i = 0; i < count; ++i) {
-            if (FAILED(infos[i].Result)) ++refused;
-        }
-        if (refused) {
-            char detail[64];
-            _snprintf_s(detail, sizeof detail, _TRUNCATE, "created %lu of %u, %u refused",
-                        (unsigned long)processed, count, refused);
-            filees_cfapi_ok(detail);
-        } else {
-            char detail[32];
-            _snprintf_s(detail, sizeof detail, _TRUNCATE, "created %u", count);
-            filees_cfapi_ok(detail);
-        }
+    }
+    if (!status) {
+        char detail[32];
+        _snprintf_s(detail, sizeof detail, _TRUNCATE, "created %u", count);
+        filees_cfapi_ok(detail);
     }
     free(entries);
     free(infos);

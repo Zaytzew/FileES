@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "virtualFolders.local": "This application on this computer",
+  "virtualFolders.label": "Use virtual folders",
+  "virtualFolders.help": "Off by default. Files are downloaded when opened. Detach all points before disabling; keeping a folder preserves only downloaded files. This setting applies to all servers.",
+  "virtualFolders.unavailable": "This setting is currently unavailable. Refresh the status and try again.",
+  "virtualFolders.notConfirmed": "The setting change was not confirmed. It will not be retried automatically. Detach all virtual folders before disabling. Refresh to check the saved preference.",
   "anchorConsent.title": "Automatic downloads paused",
   "anchorConsent.body": "Program %s requested %d different files from folder %s in a short time. This is the number of observed requests, not the total download size. Consent lets this program download further files without the guard limit until this virtual-folder session ends. This may download the entire repository. Retry the rejected open yourself.",
   "anchorConsent.deny": "Keep blocked",

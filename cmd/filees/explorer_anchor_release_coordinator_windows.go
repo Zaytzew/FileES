@@ -38,6 +38,9 @@ type anchorReleaseIO struct {
 	// Production admission persists the WC fence after retaining bytes and
 	// BEFORE any mutating request. Private native probes may leave this nil.
 	retained func(context.Context, *anchorReleaseJournal) error
+	// Persist the restored revision identity in the tree before clearing the
+	// release fence. The observer cannot race this receipt under WC/intent locks.
+	remoteReceipt func(context.Context, anchorReleaseRecord) error
 }
 
 type anchorReleaseResumer interface {

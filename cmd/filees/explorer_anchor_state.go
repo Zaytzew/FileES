@@ -16,9 +16,10 @@ import (
 	"filees/pkg/localrepo"
 )
 
-// A bounded experimental observer, not a second synchronizer. It only reads
+// A bounded metadata observer, not a second synchronizer. It reads
 // local availability/USN and SVN status; the connected helper compares the
-// token before updating metadata. No server read, hydration or publication.
+// token before updating local metadata. A complete pass also schedules the
+// bounded remote listing; neither pass hydrates bytes or publishes changes.
 // Dirty files are never promoted on the absence of a status row or an error.
 func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge) {
 	period := m.stateEvery
@@ -26,10 +27,14 @@ func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo
 		period = 3 * time.Second
 	}
 	cursor := ""
+	remote := &anchorTreeRefresh{}
 	for ctx.Err() == nil {
 		more := anchorLocalStateTurn(ctx, &cursor, func(ctx context.Context) error {
 			return m.refreshLocalStates(ctx, record, bridge, &cursor)
 		})
+		if !more {
+			m.refreshRemoteTree(ctx, record, bridge, remote)
+		}
 		delay := period
 		if more {
 			delay = min(period, 250*time.Millisecond)

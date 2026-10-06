@@ -177,6 +177,7 @@ func main() {
 	// from the catalogue rather than from a second copy compiled in here.
 	gui.setDomainCatalogues(newDomainCatalogues(daemon))
 	settings := newSettingsService()
+	settings.virtualClient, settings.gui = daemon, gui
 	repository := newRepositoryService()
 	// Names shown for repositories belong to this client alone; see repo_names.go.
 	repoNames, repoNamesErr := reponames.Open(filepath.Join(filepath.Dir(*activationRoot), "gui", "repo-names.json"))

@@ -45,7 +45,7 @@ func TestConditionalRuntimeSourcesMustBothMatch(t *testing.T) {
 func TestAnchorReleaseReceiptRequiresSchemaVersionAndAllFeatures(t *testing.T) {
 	for _, scenario := range []string{"valid", "old-helper", "wrong-schema", "wrong-version", "not-ok", "malformed"} {
 		t.Run(scenario, func(t *testing.T) {
-			v := map[string]any{"ok": true, "schema": "filees.cfapi/v1", "version": "0.1.18", "features": []string{"prepare_release_bound_v1", "restore_release_v1", "release_observation_v1"}}
+			v := map[string]any{"ok": true, "schema": "filees.cfapi/v1", "version": "0.1.18", "features": []string{"prepare_release_bound_v1", "restore_release_v1", "release_observation_v1", "remote_tree_v1"}}
 			switch scenario {
 			case "old-helper":
 				v["features"] = []string{"restore_release_v1"}
@@ -60,7 +60,7 @@ func TestAnchorReleaseReceiptRequiresSchemaVersionAndAllFeatures(t *testing.T) {
 			if scenario == "malformed" {
 				raw = []byte("not json")
 			}
-			err := verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", "0.1.18", "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1")
+			err := verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", "0.1.18", "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1", "remote_tree_v1")
 			if (err == nil) != (scenario == "valid") {
 				t.Fatalf("err=%v", err)
 			}

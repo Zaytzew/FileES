@@ -40,6 +40,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleHello(req)
 	case contract.CmdSystemStatus:
 		return s.handleSystemStatus(req)
+	case contract.CmdVirtualFolders:
+		return s.handleVirtualFolders(req)
 	case contract.CmdSystemRestart:
 		return s.handleSystemLifecycle(req, true)
 	case contract.CmdSystemShutdown:
@@ -1710,6 +1712,11 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 		Repos:               len(s.allRepos()),
 		Activations:         s.allActivations(),
 		LockReleaseRequests: s.allLockReleaseRequests(),
+	}
+	if service := s.virtualFoldersService(); service != nil {
+		if state, err := service.VirtualFolders(context.Background(), nil); err == nil {
+			result.VirtualFolders = &state
+		}
 	}
 	if source := s.detachmentSource(); source != nil {
 		result.Detachments = source.List()

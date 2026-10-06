@@ -372,6 +372,7 @@ func (s appState) viewModel() ViewModel {
 		caps[k] = v
 	}
 	vm := ViewModel{
+		VirtualFolders:      s.system.VirtualFolders,
 		Connected:           s.connected,
 		Stale:               s.stale,
 		DaemonState:         s.system.State,

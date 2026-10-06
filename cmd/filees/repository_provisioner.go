@@ -39,6 +39,7 @@ type daemonProvisioner struct {
 	detachMu         sync.Mutex
 	localIntentMu    sync.Mutex // lifecycle intent admission versus explicit CFAPI actions
 	detachAnchor     func(context.Context, localrepo.Record) error
+	anchorEnabled    func() bool // immutable wiring; reads durable atomic preference
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
 	attachments      chan<- provisionedAttachment

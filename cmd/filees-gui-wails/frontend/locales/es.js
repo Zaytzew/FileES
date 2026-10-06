@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "virtualFolders.local": "Esta aplicación en este equipo",
+  "virtualFolders.label": "Usar carpetas virtuales",
+  "virtualFolders.help": "Desactivado de forma predeterminada. Los archivos se descargan al abrirlos. Desconecte todas las carpetas virtuales antes de desactivar; conservar la carpeta mantiene solo los archivos descargados. Se aplica a todos los servidores.",
+  "virtualFolders.unavailable": "Este ajuste no está disponible ahora. Actualice el estado e inténtelo de nuevo.",
+  "virtualFolders.notConfirmed": "No se confirmó el cambio y no se repetirá automáticamente. Desconecte todas las carpetas virtuales antes de desactivar. Actualice el estado para comprobar el ajuste guardado.",
   "anchorConsent.title": "Descargas automáticas suspendidas",
   "anchorConsent.body": "El programa %s solicitó %d archivos distintos de la carpeta %s en poco tiempo. Es el número de solicitudes observadas, no el tamaño total de la descarga. El permiso permite más descargas sin el límite de protección hasta que termine esta sesión de la carpeta virtual. Puede descargar todo el repositorio. Vuelva a intentar abrir el archivo rechazado.",
   "anchorConsent.deny": "Mantener el bloqueo",

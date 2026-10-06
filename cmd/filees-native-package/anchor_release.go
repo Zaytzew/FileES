@@ -118,5 +118,5 @@ func verifyAnchorReleaseSet(source, stage, cfapi string) error {
 	if err != nil {
 		return fmt.Errorf("load CFAPI helper: %w", err)
 	}
-	return verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", strings.TrimSpace(string(base)), "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1")
+	return verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", strings.TrimSpace(string(base)), "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1", "remote_tree_v1")
 }

@@ -266,6 +266,7 @@ func runDaemon() {
 	ipc.SetLockReleaseService(realmAliases)
 	lifecycleService := repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue, onRepair: provisioner.RepairLifecycle, importProgress: provisioner.ImportProgress}
 	lifecycleService.localIntentMu = &provisioner.localIntentMu
+	lifecycleService.anchorEnabled = func() bool { return provisioner.anchorEnabled != nil && provisioner.anchorEnabled() }
 	ipc.SetRepositoryLifecycleService(lifecycleService)
 	history := historyService{root: clientprofile.DefaultRoot(), helper: nativeSVNPath}
 	ipc.SetHistoryService(history)

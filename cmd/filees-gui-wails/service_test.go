@@ -722,6 +722,14 @@ func TestAnchorIsOfferedOnlyWhereTheDaemonCanMakeIt(t *testing.T) {
 		t.Fatal("anchor intent accepted without the helper")
 	}
 	vm.Capabilities[contract.CapRepoExplorerAnchor] = true
+	vm.VirtualFolders = &contract.VirtualFoldersStatus{}
+	if projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
+		t.Fatal("point offered while virtual folders are disabled")
+	}
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentCreateAnchor), RepoID: "oppo"}); allowed {
+		t.Fatal("point intent accepted while disabled")
+	}
+	vm.VirtualFolders.Enabled = true
 	if !projectViewModel(vm, journal.Texts{}).Repositories[0].CanCreateAnchor {
 		t.Fatal("anchor not offered with the helper")
 	}

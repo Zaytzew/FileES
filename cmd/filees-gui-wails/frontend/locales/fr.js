@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "virtualFolders.local": "Cette application sur cet ordinateur",
+  "virtualFolders.label": "Utiliser les dossiers virtuels",
+  "virtualFolders.help": "Désactivé par défaut. Les fichiers sont téléchargés à l’ouverture. Détachez tous les dossiers virtuels avant de désactiver ; conserver le dossier garde uniquement les fichiers téléchargés. Ce réglage concerne tous les serveurs.",
+  "virtualFolders.unavailable": "Ce réglage est actuellement indisponible. Actualisez l’état et réessayez.",
+  "virtualFolders.notConfirmed": "Le changement n’a pas été confirmé et ne sera pas réessayé automatiquement. Détachez tous les dossiers virtuels avant de désactiver. Actualisez l’état pour vérifier le réglage enregistré.",
   "anchorConsent.title": "Téléchargements automatiques suspendus",
   "anchorConsent.body": "Le programme %s a demandé %d fichiers différents du dossier %s en peu de temps. Il s’agit du nombre de demandes observées, pas de la taille totale du téléchargement. L’autorisation permet les téléchargements suivants sans la limite de protection jusqu’à la fin de cette session du dossier virtuel. Cela peut télécharger tout le dépôt. Réessayez vous-même l’ouverture refusée.",
   "anchorConsent.deny": "Maintenir le blocage",

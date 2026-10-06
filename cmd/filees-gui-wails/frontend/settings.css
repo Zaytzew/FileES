@@ -16,6 +16,7 @@
   --shadow: var(--theme-shadow);
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { min-height: 100%; scrollbar-width: none; }
 body { min-width: 740px; min-height: 100vh; margin: 0; overflow-x: hidden; background: var(--background); }
 html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
@@ -53,6 +54,11 @@ h1 { margin-bottom: 10px; font-size: clamp(32px,5vw,49px); line-height: 1; lette
 .setting-value { display: flex; align-items: baseline; gap: 6px; }
 .setting-value strong { font-size: 27px; letter-spacing: -.04em; }
 .setting-value span { margin-right: 8px; color: var(--muted); font-size: 10px; }
+.virtual-folders-toggle { align-items: center; gap: 10px; cursor: pointer; }
+.virtual-folders-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--teal); }
+.virtual-folders-toggle input:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.virtual-folders-toggle input:disabled { opacity: .4; cursor: wait; }
+.virtual-folders-toggle span { max-width: 170px; margin: 0; color: var(--text); font-size: 12px; line-height: 1.5; }
 .setting-value button,#settings-done { min-height: 36px; padding: 9px 14px; border: 1px solid rgba(255,106,0,.28); border-radius: 9px; color: #ff9a52; background: rgba(255,106,0,.08); font-size: 12px; font-weight: 800; cursor: pointer; }
 .setting-value button:hover,#settings-done:hover { border-color: rgba(255,106,0,.45); background: rgba(255,106,0,.14); }
 .setting-value button:disabled { opacity: .35; cursor: not-allowed; }

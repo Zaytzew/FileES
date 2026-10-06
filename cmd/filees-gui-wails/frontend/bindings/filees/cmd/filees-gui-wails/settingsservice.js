@@ -50,6 +50,10 @@ export function Snapshot() {
     }));
 }
 
+export function VirtualFolders(enabled, revision) {
+    return $Call.ByID(3115120472, enabled, revision).then($$createType0);
+}
+
 // Private type creation functions
 const $$createType0 = $models.SettingsAcceptance.createFrom;
 const $$createType1 = $models.SettingsSnapshot.createFrom;

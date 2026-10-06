@@ -911,6 +911,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 // canCreateAnchor: a repository without a copy here, on a daemon that can make
 // Explorer anchors (helper present).
 func canCreateAnchor(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
+	if vm.VirtualFolders != nil && !vm.VirtualFolders.Enabled {
+		return false
+	}
 	return repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository() && vm.HasCap(contract.CapRepoExplorerAnchor)
 }
 

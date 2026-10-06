@@ -83,13 +83,14 @@ static HRESULT belongs_to_point(HANDLE file, const WCHAR *root)
 
 struct state {
     FILE_ATTRIBUTE_TAG_INFO attributes;
-    int placeholder, partial, clean, local;
+    int placeholder, partial, clean, local, directory;
+    LONGLONG on_disk, modified;
     USN usn;
     LONGLONG size;
     char identity[FILEES_CFAPI_MAX_IDENTITY * 4];
 };
 
-static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
+static HRESULT inspect_tree(HANDLE file, const WCHAR *root, struct state *out)
 {
     BYTE data[sizeof(CF_PLACEHOLDER_STANDARD_INFO) + 4096];
     CF_PLACEHOLDER_STANDARD_INFO *info = (CF_PLACEHOLDER_STANDARD_INFO *)data;
@@ -101,11 +102,13 @@ static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
     if (!GetFileInformationByHandleEx(file, FileAttributeTagInfo, &out->attributes, sizeof out->attributes) ||
         !GetFileInformationByHandleEx(file, FileStandardInfo, &standard, sizeof standard))
         return HRESULT_FROM_WIN32(GetLastError());
-    if (out->attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) return E_INVALIDARG;
+    out->directory = (out->attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     out->size = standard.EndOfFile.QuadPart;
     hr = CfGetPlaceholderInfo(file, CF_PLACEHOLDER_INFO_STANDARD, info, sizeof data, &returned);
     if (SUCCEEDED(hr)) {
         out->placeholder = 1;
+        out->on_disk = info->OnDiskDataSize.QuadPart;
+        out->modified = info->ModifiedDataSize.QuadPart;
         out->partial = info->OnDiskDataSize.QuadPart < standard.EndOfFile.QuadPart;
         out->clean = info->InSyncState == CF_IN_SYNC_STATE_IN_SYNC;
         if (info->FileIdentityLength > 4096 ||
@@ -132,6 +135,98 @@ static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
     out->partial |= (out->attributes.FileAttributes &
                     (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN)) != 0;
     return file_usn(file, &out->usn);
+}
+
+static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
+{
+    HRESULT hr = inspect_tree(file, root, out);
+    return SUCCEEDED(hr) && out->directory ? E_INVALIDARG : hr;
+}
+
+/* Only remote, clean, byte-free placeholders can change. No READ_DATA,
+ * DEHYDRATE, convert/revert or recursive delete is used. A share-none handle
+ * excludes readers, writes and replacement from the final proof to effect.
+ * S_FALSE means a protected local obstruction, not successful mutation. */
+HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
+                           const WCHAR *identity, LONGLONG size, int directory, int remove)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH], *name;
+    char old_utf8[FILEES_CFAPI_MAX_IDENTITY * 4], new_utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
+    struct state before;
+    CF_FS_METADATA metadata;
+    BY_HANDLE_FILE_INFORMATION object;
+    HANDLE file;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || size < 0 || !*identity ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, previous, -1, old_utf8, sizeof old_utf8, NULL, NULL) ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, new_utf8, sizeof new_utf8, NULL, NULL))
+        return FAILED(hr) ? hr : E_INVALIDARG;
+    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC | (remove ? DELETE : 0), 0,
+                       NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return HRESULT_FROM_WIN32(error);
+        if (remove) return S_OK; /* An acknowledged delete may be replayed. */
+        /* Keep parent from being renamed, and prove the actual point. Caller
+         * additionally retains every ancestor handle during this command. */
+        for (name = path; *name; ++name) if (*name == L'/') *name = L'\\';
+        name = wcsrchr(path, L'\\');
+        if (!name) return E_INVALIDARG;
+        *name++ = 0;
+        file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+        hr = belongs_to_point(file, root);
+        if (SUCCEEDED(hr)) {
+            CF_PLACEHOLDER_CREATE_INFO entry;
+            DWORD processed = 0;
+            ZeroMemory(&entry, sizeof entry);
+            entry.RelativeFileName = name;
+            entry.FileIdentity = identity;
+            entry.FileIdentityLength = (DWORD)((wcslen(identity) + 1) * sizeof(WCHAR));
+            entry.FsMetadata.FileSize.QuadPart = directory ? 0 : size;
+            entry.FsMetadata.BasicInfo.FileAttributes = directory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
+            entry.Flags = CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC |
+                (directory ? CF_PLACEHOLDER_CREATE_FLAG_DISABLE_ON_DEMAND_POPULATION : 0);
+            hr = CfCreatePlaceholders(path, &entry, 1, CF_CREATE_FLAG_STOP_ON_ERROR, &processed);
+            if (SUCCEEDED(hr) && (processed != 1 || FAILED(entry.Result)))
+                hr = FAILED(entry.Result) ? entry.Result : E_FAIL;
+        }
+        CloseHandle(file);
+        return hr;
+    }
+    hr = inspect_tree(file, root, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || before.local || !before.clean ||
+        before.on_disk != 0 || before.modified != 0 || before.directory != directory ||
+        (strcmp(before.identity, old_utf8) && strcmp(before.identity, new_utf8)))) hr = S_FALSE;
+    if (hr == S_OK && !GetFileInformationByHandle(file, &object)) hr = HRESULT_FROM_WIN32(GetLastError());
+    if (hr == S_OK && object.nNumberOfLinks != 1) hr = S_FALSE;
+    if (hr == S_OK && !remove && !strcmp(before.identity, new_utf8) &&
+        (directory || before.size == size)) {
+        CloseHandle(file);
+        return S_OK; /* Exact no-op: also supports a partly seeded restart. */
+    }
+    if (hr == S_OK && remove) {
+        FILE_DISPOSITION_INFO disposition = { TRUE };
+        /* Bound admission stays until closing the deletion handle. A folder
+         * with any retained child is refused by the filesystem, never recursed. */
+        filees_remote_delete_begin(object.dwVolumeSerialNumber,
+            ((ULONGLONG)object.nFileIndexHigh << 32) | object.nFileIndexLow);
+        if (!SetFileInformationByHandle(file, FileDispositionInfo, &disposition, sizeof disposition))
+            hr = HRESULT_FROM_WIN32(GetLastError());
+        CloseHandle(file);
+        filees_remote_delete_end();
+        return hr;
+    }
+    if (hr == S_OK && (strcmp(before.identity, new_utf8) || (!directory && before.size != size))) {
+        ZeroMemory(&metadata, sizeof metadata);
+        metadata.FileSize.QuadPart = directory ? 0 : size;
+        metadata.BasicInfo.FileAttributes = before.attributes.FileAttributes;
+        hr = CfUpdatePlaceholder(file, &metadata, identity, (DWORD)((wcslen(identity) + 1) * sizeof(WCHAR)),
+            NULL, 0, CF_UPDATE_FLAG_VERIFY_IN_SYNC | CF_UPDATE_FLAG_MARK_IN_SYNC, NULL, NULL);
+    }
+    CloseHandle(file);
+    return hr;
 }
 
 static HRESULT read_state(const WCHAR *root, const WCHAR *relative, struct state *state)
@@ -229,7 +324,7 @@ HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative,
  * or replace an obstruction; the transaction supplies trusted repository
  * size/path metadata and retains its backup until a separate verified receipt.
  * Parent identity is checked by handle, including intermediate junctions. */
-HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size)
+HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size, const WCHAR *remote_identity)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH], identity[FILEES_CFAPI_MAX_IDENTITY];
     WCHAR *name, *p;
@@ -240,7 +335,8 @@ HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLON
     HRESULT hr = local_path(root, relative, path);
     if (FAILED(hr) || size < 0 || wcslen(relative) + 1 > FILEES_CFAPI_MAX_IDENTITY)
         return FAILED(hr) ? hr : E_INVALIDARG;
-    wcscpy_s(identity, FILEES_CFAPI_MAX_IDENTITY, relative);
+    if (remote_identity && (!remote_identity[0] || wcslen(remote_identity) >= FILEES_CFAPI_MAX_IDENTITY)) return E_INVALIDARG;
+    wcscpy_s(identity, FILEES_CFAPI_MAX_IDENTITY, remote_identity ? remote_identity : relative);
     for (p = identity; *p; ++p) if (*p == L'\\') *p = L'/';
     for (p = path; *p; ++p) if (*p == L'/') *p = L'\\';
     name = wcsrchr(path, L'\\');

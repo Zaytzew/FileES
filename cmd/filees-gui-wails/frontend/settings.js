@@ -43,6 +43,8 @@ function render(snapshot) {
   const contextChanged = currentSnapshot?.revision !== snapshot.revision;
   currentSnapshot = snapshot;
   const server = snapshot.server;
+	$("#virtual-folders-card").hidden = !snapshot.virtual_folders;
+	$("#virtual-folders-enabled").checked = snapshot.virtual_folders?.enabled === true;
   $("#window-context").textContent = server.name || server.id;
   $("#server-name").textContent = server.name || server.id;
   $("#settings-copy").textContent = snapshot.text_key ? t(snapshot.text_key) : snapshot.text || t("settings.copy");
@@ -97,6 +99,17 @@ async function closeSettings() {
 
 Events.On("filees:settings-snapshot", (event) => render(event?.data ?? event));
 $("#change-timeout").addEventListener("click", chooseTimeout);
+$("#virtual-folders-enabled").addEventListener("change", async (event) => {
+  const input = event.target;
+  if (!currentSnapshot?.virtual_folders) return;
+  const previous = currentSnapshot.virtual_folders.enabled;
+  input.disabled = true;
+  try {
+    const result = await SettingsService.VirtualFolders(input.checked, currentSnapshot.revision);
+    if (!result.accepted) { input.checked = previous; showToast(t("ui.unavailable"), t(result.code || "virtualFolders.notConfirmed")); }
+  } catch { input.checked = previous; showToast(t("ui.unavailable"), t("virtualFolders.notConfirmed")); }
+  finally { input.disabled = false; }
+});
 $("#server-actions").addEventListener("click", (event) => {
 	const button = event.target.closest("[data-server-action]");
 	if (button) chooseServerAction(button.dataset.serverAction, button);

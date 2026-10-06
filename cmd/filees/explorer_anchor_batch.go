@@ -110,7 +110,7 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 				State cfapiAnswer
 			}{batch[i], state})
 			if state.Partial {
-				if !state.Placeholder || state.Local || state.Identity != batch[i] || *state.Size != sizes[batch[i]] {
+				if !state.Placeholder || state.Local || !anchorRemoteMatches(state.Identity, batch[i]) || *state.Size != sizes[batch[i]] {
 					return result, errors.New("unrecognised remote placeholder")
 				}
 				if action == "release" {

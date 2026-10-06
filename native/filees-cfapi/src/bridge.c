@@ -202,3 +202,11 @@ void filees_bridge_say_release_restored(const char *id, HRESULT hr)
     fflush(stdout);
     LeaveCriticalSection(&g_lock);
 }
+
+void filees_bridge_say_tree_set(const char *id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("tree-set\t%s\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}

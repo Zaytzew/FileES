@@ -323,6 +323,7 @@ func (update *UpdateViewModel) Available() bool {
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
+	VirtualFolders      *contract.VirtualFoldersStatus
 	SyncPause           contract.SyncPauseStatus
 	MemorySafety        *contract.MemorySafetyStatus
 	Connected           bool

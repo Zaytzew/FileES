@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "virtualFolders.local": "Ta aplikacja na tym komputerze",
+  "virtualFolders.label": "Używaj folderów wirtualnych",
+  "virtualFolders.help": "Domyślnie wyłączone. Pliki są pobierane przy otwieraniu. Przed wyłączeniem odłącz punkty zaczepienia; zachowanie folderu zostawia tylko pobrane pliki. Ustawienie dotyczy wszystkich serwerów.",
+  "virtualFolders.unavailable": "Ustawienie jest teraz niedostępne. Odśwież stan i spróbuj ponownie.",
+  "virtualFolders.notConfirmed": "Nie potwierdzono zmiany ustawienia. Nie ponawiamy jej automatycznie. Przed wyłączeniem trzeba odłączyć wszystkie punkty zaczepienia. Odśwież stan, aby sprawdzić zapisane ustawienie.",
   "anchorConsent.title": "Wstrzymano automatyczne pobieranie",
   "anchorConsent.body": "Program %s zażądał w krótkim czasie %d różnych plików z folderu %s. To liczba zaobserwowanych żądań, nie rozmiar całego pobrania. Zgoda pozwoli temu programowi pobierać także kolejne pliki, bez limitu strażnika, do końca sesji punktu zaczepienia. Może to pobrać całe repozytorium. Odrzucone otwarcie trzeba ponowić.",
   "anchorConsent.deny": "Pozostaw blokadę",

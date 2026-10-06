@@ -193,7 +193,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		switch {
-		case strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"):
+		case strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"):
 			fields := strings.Split(line, "\t")
 			if len(fields) == 3 {
 				bridge.stateMu.Lock()
@@ -403,6 +403,14 @@ func (bridge *anchorBridge) restoreRelease(ctx context.Context, rel string, size
 	return bridge.connectedCommand(ctx, "restore-release", "release-restored", rel, strconv.FormatInt(size, 10))
 }
 
+func (bridge *anchorBridge) restoreReleasePinned(ctx context.Context, rel string, revision, size int64) error {
+	identity, err := anchorRemoteIdentity(rel, revision, size)
+	if err != nil {
+		return err
+	}
+	return bridge.connectedCommand(ctx, "restore-release", "release-restored", rel, strconv.FormatInt(size, 10), identity)
+}
+
 // Caller retains the WC guard through the ACK or through process exit. A
 // timeout/cancel reaps the actual provider before a second writer may enter.
 func (bridge *anchorBridge) connectedCommand(ctx context.Context, command, prefix string, args ...string) error {
@@ -451,7 +459,11 @@ func (bridge *anchorBridge) connectedCommand(ctx context.Context, command, prefi
 }
 
 func (bridge *anchorBridge) sendRevert(id, identity string) {
-	path := filepath.Join(bridge.root, filepath.FromSlash(identity))
+	rel, _, _, ok := parseAnchorRemoteIdentity(identity)
+	if !ok {
+		return
+	}
+	path := filepath.Join(bridge.root, filepath.FromSlash(rel))
 	bridge.enqueue("revert\t" + id + "\t" + path)
 }
 
@@ -629,6 +641,9 @@ func (guard *anchorGuard) allow(process, identity string, now time.Time) error {
 }
 
 func anchorExplicitKey(process, identity string) string {
+	if rel, _, _, ok := parseAnchorRemoteIdentity(identity); ok {
+		identity = rel
+	}
 	return strings.ToLower(filepath.Clean(process)) + "\x00" + identity
 }
 

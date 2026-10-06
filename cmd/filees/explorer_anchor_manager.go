@@ -64,6 +64,9 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
+	anchors.options = loadAnchorOptions(filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "virtual-folders.json"))
+	provisioner.anchorEnabled = anchors.virtualEnabled
+	ipc.SetVirtualFoldersService(anchors)
 	anchors.wireRelease(ipc)
 	ipc.SetAnchorConsent(anchors.consent)
 	anchors.guardChanged = func(repoID string) {
@@ -100,6 +103,7 @@ type anchorManager struct {
 	activity        *activity.Journal
 	activityChanged func(repoID string)
 	guardChanged    func(repoID string)
+	options         *anchorOptions
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -173,6 +177,9 @@ func (m *anchorManager) call(ctx context.Context, stdin string, args ...string) 
 // does not nest sync roots: a folder inside Nextcloud or OneDrive cannot be an
 // anchor, and saying so here is kinder than a raw error from the filter later.
 func (m *anchorManager) precheck(localPath string) error {
+	if m.options != nil && !m.virtualEnabled() {
+		return errors.New("enable virtual folders in FileES settings first")
+	}
 	local := filepath.Clean(strings.TrimSpace(localPath))
 	if !filepath.IsAbs(local) {
 		return errors.New("the anchor folder must be an absolute path")
@@ -233,7 +240,7 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 	defer m.mu.Unlock()
 	wanted := map[string]localrepo.Record{}
 	for _, record := range m.lifecycle.List() {
-		if record.Anchor && record.State == localrepo.StateAttached && filepath.IsAbs(record.LocalPath) {
+		if m.virtualEnabled() && record.Anchor && record.State == localrepo.StateAttached && filepath.IsAbs(record.LocalPath) {
 			wanted[anchorKey(record)] = record
 		}
 	}
@@ -362,7 +369,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					guard: newAnchorGuard(log),
 					log:   log,
 				}
-				if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
+				if m.virtualEnabled() {
 					bridge.retainLocal = true
 					bridge.observe = func(ctx context.Context, bridge *anchorBridge) {
 						m.observeLocalStates(ctx, record, bridge)
@@ -459,7 +466,7 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 		talk.With("anchor").Warnf("prepare folder icon: %v", err)
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
-	} else if os.Getenv("FILEES_CFAPI_SHELL_PREVIEW") == "1" {
+	} else if m.virtualEnabled() {
 		// Opt-in until visual/large-tree acceptance and the remaining sparse
 		// operations are complete. Metadata observations share the WC guard.
 		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)
@@ -504,7 +511,24 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 		return err
 	}
 	levels := map[string][]client.HistoryTreeNode{}
+	var validated []anchorRemoteNode
+	pathBytes := 0
 	if err := client.EachHistoryTreeNode(plan, func(node client.HistoryTreeNode) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		pathBytes += len(node.Path)
+		if len(validated) >= anchorBatchFileLimit || pathBytes > anchorBatchPathBytes {
+			return errors.New("seed tree too large")
+		}
+		size := node.Size
+		if node.Kind == "dir" {
+			size = 0
+		}
+		if _, err := anchorRemoteIdentity(node.Path, revision, size); err != nil {
+			return err
+		}
+		validated = append(validated, anchorRemoteNode{node, node.Path})
 		parent := path.Dir(node.Path)
 		if parent == "." {
 			parent = ""
@@ -512,6 +536,9 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 		levels[parent] = append(levels[parent], node)
 		return nil
 	}); err != nil {
+		return err
+	}
+	if err := validateAnchorRemoteNodes(validated); err != nil {
 		return err
 	}
 	parents := make([]string, 0, len(levels))
@@ -547,7 +574,12 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 			if parent != "" {
 				args = append(args, "--rel", filepath.FromSlash(parent))
 			}
-			answer, err := m.call(ctx, listing.String(), args...)
+			var answer cfapiAnswer
+			err := guardAnchorSeedDirectory(record.LocalPath, parent, func() error {
+				var callErr error
+				answer, callErr = m.call(ctx, listing.String(), args...)
+				return callErr
+			})
 			if err != nil {
 				return err
 			}
@@ -568,8 +600,9 @@ type anchorFileReader interface {
 	HistoryFetchFile(context.Context, string, int64, string) (int64, error)
 }
 
-// materialize reads one file at HEAD into a temporary file and says at which
-// revision. The file is removed later: the helper reads it after the answer.
+// materialize reads the opened entry's pinned revision into a temporary file.
+// Legacy entries use the durable seed revision, never a newly observed HEAD.
+// The file is removed later: the helper reads it after the answer.
 func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record, identity string) (string, int64, error) {
 	return m.materializeAt(ctx, record, identity, 0, -1)
 }
@@ -578,9 +611,22 @@ func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Reco
 	if commit.HasPendingFileRelease(record.LocalPath) {
 		return "", 0, commit.ErrFileReleasePending
 	}
-	rel, ok := cleanAnchorIdentity(identity)
+	rel, pinned, pinnedSize, ok := parseAnchorRemoteIdentity(identity)
 	if !ok {
 		return "", 0, fmt.Errorf("unsafe anchor path %q", identity)
+	}
+	if pinned > 0 {
+		if revision > 0 && (revision != pinned || expectedSize != pinnedSize) {
+			return "", 0, errors.New("remote entry differs from confirmed revision")
+		}
+		revision, expectedSize = pinned, pinnedSize
+	} else if revision == 0 {
+		raw, err := os.ReadFile(anchorSeedPath(record.LocalPath))
+		var seed anchorSeed
+		if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &seed) != nil || seed.Schema != anchorSeedSchema || seed.Revision <= 0 {
+			return "", 0, errors.New("legacy remote entry has no confirmed seed revision")
+		}
+		revision = seed.Revision
 	}
 	svn, err := m.svn(record.ServerID)
 	if err != nil {
@@ -620,7 +666,7 @@ func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Reco
 // adopt takes the opened path into the working copy through its running
 // commit service. Right after attach the service may still be starting.
 func (m *anchorManager) adopt(ctx context.Context, record localrepo.Record, identity string, revision int64) error {
-	rel, ok := cleanAnchorIdentity(identity)
+	rel, _, _, ok := parseAnchorRemoteIdentity(identity)
 	if !ok {
 		return fmt.Errorf("unsafe anchor path %q", identity)
 	}

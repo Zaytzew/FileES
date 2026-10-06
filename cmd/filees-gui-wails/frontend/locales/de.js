@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "virtualFolders.local": "Diese Anwendung auf diesem Computer",
+  "virtualFolders.label": "Virtuelle Ordner verwenden",
+  "virtualFolders.help": "Standardmäßig deaktiviert. Dateien werden beim Öffnen heruntergeladen. Vor dem Deaktivieren alle virtuellen Ordner trennen; beim Behalten bleiben nur heruntergeladene Dateien. Gilt für alle Server.",
+  "virtualFolders.unavailable": "Diese Einstellung ist derzeit nicht verfügbar. Status aktualisieren und erneut versuchen.",
+  "virtualFolders.notConfirmed": "Die Änderung wurde nicht bestätigt und wird nicht automatisch wiederholt. Vor dem Deaktivieren alle virtuellen Ordner trennen. Den Status aktualisieren, um die gespeicherte Einstellung zu prüfen.",
   "anchorConsent.title": "Automatische Downloads angehalten",
   "anchorConsent.body": "Das Programm %s hat in kurzer Zeit %d verschiedene Dateien aus dem Ordner %s angefordert. Das ist die Zahl beobachteter Anfragen, nicht die gesamte Downloadgröße. Die Zustimmung erlaubt weitere Downloads ohne Schutzlimit bis zum Ende dieser Sitzung des virtuellen Ordners. Dabei kann das gesamte Repository heruntergeladen werden. Wiederholen Sie das abgewiesene Öffnen selbst.",
   "anchorConsent.deny": "Gesperrt lassen",

@@ -19,6 +19,7 @@ import (
 
 type repositoryLifecycleService struct {
 	localIntentMu *sync.Mutex
+	anchorEnabled func() bool
 	store         *localrepo.Store
 	provisioning  *provisioning.Store
 	clientID      func(string) string
@@ -334,6 +335,14 @@ func (service repositoryLifecycleService) BeginSparseAttach(serverID, repoID, lo
 // lifecycle: an empty root, nothing chosen, placeholders seeded afterwards by
 // the anchor manager.
 func (service repositoryLifecycleService) BeginAnchorAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.anchorEnabled != nil && !service.anchorEnabled() {
+		return contract.RepoLifecycleResult{}, errors.New("virtual folders are disabled")
+	}
 	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err

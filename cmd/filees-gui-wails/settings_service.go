@@ -6,21 +6,26 @@ import (
 	"sync"
 
 	"filees/internal/gui/platform"
+	contract "filees/pkg/contract/v1"
 )
 
 const settingsSnapshotEvent = "filees:settings-snapshot"
 
 // SettingsService is the browser-facing half of the Wails settings window.
 // It only projects choices already authorised by the shared action model and
-// returns opaque IDs to the controller. It never calls daemon IPC itself.
+// returns opaque IDs to the controller. The separately fenced virtual-folders
+// preference is the sole direct local IPC mutation; server actions stay intents.
 type SettingsService struct {
-	mu       sync.RWMutex
-	snapshot SettingsSnapshot
-	emitter  snapshotEmitter
-	show     func()
-	hide     func()
-	active   *settingsSession
-	revision uint64
+	mu            sync.RWMutex
+	snapshot      SettingsSnapshot
+	emitter       snapshotEmitter
+	show          func()
+	hide          func()
+	active        *settingsSession
+	revision      uint64
+	virtualClient virtualFolderDaemon
+	gui           *GUIService
+	virtualBusy   bool
 }
 
 type settingsSession struct {
@@ -31,11 +36,12 @@ type settingsSession struct {
 type settingsBrowserAdapter struct{ service *SettingsService }
 
 type SettingsSnapshot struct {
-	TextKey  string                   `json:"text_key,omitempty"`
-	Revision uint64                   `json:"revision"`
-	Title    string                   `json:"title"`
-	Text     string                   `json:"text"`
-	Server   SettingsServerProjection `json:"server"`
+	VirtualFolders *contract.VirtualFoldersStatus `json:"virtual_folders,omitempty"`
+	TextKey        string                         `json:"text_key,omitempty"`
+	Revision       uint64                         `json:"revision"`
+	Title          string                         `json:"title"`
+	Text           string                         `json:"text"`
+	Server         SettingsServerProjection       `json:"server"`
 }
 
 type SettingsServerProjection struct {
@@ -165,6 +171,13 @@ func (service *SettingsService) showSettings(ctx context.Context, request platfo
 	projection, ok := projectSettingsRequest(request)
 	if !ok {
 		return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+	}
+	if service.gui != nil {
+		vm := service.gui.viewModel()
+		if vm.Connected && !vm.Stale && vm.HasCap(contract.CapVirtualFolders) && vm.VirtualFolders != nil {
+			state := *vm.VirtualFolders
+			projection.VirtualFolders = &state
+		}
 	}
 	session := &settingsSession{result: make(chan platform.SettingsDialogResult, 1)}
 

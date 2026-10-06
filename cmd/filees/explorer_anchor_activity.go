@@ -14,7 +14,7 @@ func (m *anchorManager) recordHydration(record localrepo.Record, identity string
 	if m.activity == nil {
 		return
 	}
-	rel, ok := cleanAnchorIdentity(identity)
+	rel, _, _, ok := parseAnchorRemoteIdentity(identity)
 	if !ok || revision <= 0 {
 		return
 	}

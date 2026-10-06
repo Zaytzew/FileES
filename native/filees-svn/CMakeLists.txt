@@ -22,6 +22,17 @@ if(MSVC)
 else()
   target_compile_options(filees-svn PRIVATE -Wall -Wextra -Werror)
 endif()
+
+# Local crash/cancel fixture only; stage-native-runtime never copies it.
+option(FILEES_SVN_BUILD_RELEASE_PROBE "Build disposable conditional-exclusion probe" OFF)
+if(FILEES_SVN_BUILD_RELEASE_PROBE)
+  if(NOT WIN32)
+    message(FATAL_ERROR "Conditional-exclusion probe is Windows-only")
+  endif()
+  add_executable(filees-release-probe src/release_probe.c)
+  target_include_directories(filees-release-probe PRIVATE "${SVN_INCLUDE_DIR}" "${APR_INCLUDE_DIR}")
+  target_link_libraries(filees-release-probe PRIVATE "${SVN_CLIENT_LIBRARY}" "${SVN_WC_LIBRARY}" "${SVN_SUBR_LIBRARY}" "${APR_LIBRARY}")
+endif()
 # DT_RPATH applies to the transitive private library closure too. Do not export
 # LD_LIBRARY_PATH: the helper may launch the host's SSH client.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -1,7 +1,8 @@
 /* Internal sparse-WC release primitive. The caller must preserve an exact
  * copy outside WC and serialize its transaction under the WC guard. This
- * does not coordinate external editors, restore CFAPI identity or retire
- * any backup. A failure (even after mutation) must retain that copy. */
+ * Windows requires a conditional-removal runtime; its durable work item
+ * validates the object again and deletes by handle, not pathname. This does
+ * not restore CFAPI identity or retire any backup. Failure retains the copy. */
 #include "filees_svn.h"
 
 #include <stdio.h>
@@ -21,9 +22,10 @@ static apr_status_t close_retained_guard(void *baton)
 /* Admit ordinary local attributes before opening a data-read guard. Windows
  * does not enforce sharing for an attributes-only handle: GENERIC_READ is
  * needed to deny concurrent writes; the retained copy also denies deletion.
- * The source allows deletion for SVN. This is not a lock on its directory
- * entry: rename/replacement races still belong to the transaction caller. */
-static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_pool_t *pool)
+ * The source permits DELETE access by the conditional runtime. This handle
+ * pins the original identity; the runtime compares it before the BASE change
+ * and fences/rechecks the actual object on each durable removal attempt. */
+static svn_error_t *guard_file(const char *path, svn_boolean_t retained, HANDLE *out, apr_pool_t *pool)
 {
     int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
     WCHAR *wide;
@@ -57,8 +59,21 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_poo
         info.nFileIndexHigh != guarded_info.nFileIndexHigh ||
         info.nFileIndexLow != guarded_info.nFileIndexLow)
         return filees_refuse("release file identity changed during admission");
+    apr_pool_cleanup_run(pool, handle, close_retained_guard);
+    if (out) *out = read_guard;
     return SVN_NO_ERROR;
 }
+
+typedef svn_error_t *(*conditional_exclude_fn)(svn_wc_context_t *, const char *,
+    const char *, void *, svn_cancel_func_t, void *, apr_pool_t *);
+
+static conditional_exclude_fn conditional_exclude(void)
+{
+    HMODULE wc = GetModuleHandleW(L"libsvn_wc-1.dll");
+    return wc ? (conditional_exclude_fn)GetProcAddress(wc, "svn_wc__filees_exclude_retained_v1") : NULL;
+}
+
+int filees_conditional_exclusion_available(void) { return conditional_exclude() != NULL; }
 #else
 /* FileES writer/WC guards are not a lock against arbitrary external Unix
  * editors. The CFAPI coordinator is Windows-only and not wired here yet. */
@@ -67,6 +82,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_poo
     (void)path; (void)retained; (void)pool;
     return SVN_NO_ERROR;
 }
+int filees_conditional_exclusion_available(void) { return 0; }
 #endif
 
 struct exclude_observation {
@@ -200,11 +216,20 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     const svn_string_t *property;
     svn_stream_t *pristine, *working;
     struct exclude_observation observed;
-    apr_array_header_t *paths, *results;
+    apr_array_header_t *paths;
+#ifndef _WIN32
+    apr_array_header_t *results;
+#endif
     svn_node_kind_t kind;
     svn_boolean_t same;
     apr_finfo_t source_info, retained_info;
     apr_status_t info_status;
+#ifdef _WIN32
+    HANDLE source_guard = INVALID_HANDLE_VALUE;
+    svn_error_t *exclude_error;
+    conditional_exclude_fn exclude_fn = conditional_exclude();
+    if (!exclude_fn) return filees_refuse("guarded exclusion requires the FileES conditional SVN runtime");
+#endif
 
     if (!filees_safe_relative(rel)) return filees_refuse("exclude requires one canonical data path");
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, TRUE, pool));
@@ -219,8 +244,13 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
     SVN_ERR(filees_abs_paths(&paths, wc, rels, 1, pool));
     path = APR_ARRAY_IDX(paths, 0, const char *);
     SVN_ERR(filees_plain_node(path, APR_REG, FALSE, pool));
+#ifdef _WIN32
+    SVN_ERR(guard_file(path, FALSE, &source_guard, pool));
+    SVN_ERR(guard_file(retained, TRUE, NULL, pool));
+#else
     SVN_ERR(guard_file(path, FALSE, pool));
     SVN_ERR(guard_file(retained, TRUE, pool));
+#endif
     info_status = apr_stat(&source_info, path, APR_FINFO_IDENT | APR_FINFO_LINK, pool);
     if (info_status) return svn_error_wrap_apr(info_status, "cannot inspect source identity");
     info_status = apr_stat(&retained_info, retained, APR_FINFO_IDENT | APR_FINFO_LINK, pool);
@@ -264,8 +294,15 @@ svn_error_t *filees_exclude_retained(const char *wc_arg, const char *retained_ar
      * force, adopt, externals or parent expansion. No server write occurs. */
     revision.kind = svn_opt_revision_number;
     revision.value.number = s->revision;
+#ifdef _WIN32
+    exclude_error = exclude_fn(ctx->wc_ctx, path, retained, source_guard,
+                              ctx->cancel_func, ctx->cancel_baton, pool);
+    apr_pool_cleanup_run(pool, source_guard, close_retained_guard);
+    SVN_ERR(exclude_error);
+#else
     SVN_ERR(svn_client_update4(&results, paths, &revision, svn_depth_exclude,
                                TRUE, TRUE, FALSE, FALSE, FALSE, ctx, pool));
+#endif
     SVN_ERR(filees_plain_node(path, APR_REG, TRUE, pool));
     SVN_ERR(svn_wc_read_kind2(&kind, ctx->wc_ctx, path, FALSE, FALSE, pool));
     if (kind != svn_node_none) return filees_refuse("exclude did not remove the visible WC node");

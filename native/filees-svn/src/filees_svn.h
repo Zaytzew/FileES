@@ -73,6 +73,7 @@ svn_error_t *filees_exclude_retained(const char *wc, const char *retained,
                                     const char *rel, apr_pool_t *pool);
 /* Offline WC metadata only; not permission to replace a path or retire bytes. */
 svn_error_t *filees_inspect_excluded(const char *wc, const char *rel, apr_pool_t *pool);
+int filees_conditional_exclusion_available(void);
 /* commit --progress: stream per-file and byte progress on stderr. */
 void filees_ra_commit_progress(svn_boolean_t enabled);
 svn_error_t *filees_ra_commit(const char *wc, svn_boolean_t live,

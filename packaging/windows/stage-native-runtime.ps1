@@ -28,7 +28,8 @@ $build = Join-Path $parent ('.native-build-' + [guid]::NewGuid().ToString('N'))
 & $cmakePath -S (Join-Path $source 'native/filees-svn') -B $build -G 'Visual Studio 17 2022' -A x64 `
     "-DSVN_INCLUDE_DIR=$SvnPrefix/include/subversion-1" "-DAPR_INCLUDE_DIR=$VcpkgPrefix/include" `
     "-DSVN_CLIENT_LIBRARY=$SvnPrefix/lib/libsvn_client-1.lib" "-DSVN_WC_LIBRARY=$SvnPrefix/lib/libsvn_wc-1.lib" `
-    "-DSVN_SUBR_LIBRARY=$SvnPrefix/lib/libsvn_subr-1.lib" "-DAPR_LIBRARY=$VcpkgPrefix/lib/libapr-1.lib"
+    "-DSVN_SUBR_LIBRARY=$SvnPrefix/lib/libsvn_subr-1.lib" "-DSVN_RA_LIBRARY=$SvnPrefix/lib/libsvn_ra-1.lib" `
+    "-DAPR_LIBRARY=$VcpkgPrefix/lib/libapr-1.lib"
 if ($LASTEXITCODE -ne 0) { throw 'Native CMake configuration failed' }
 & $cmakePath --build $build --config RelWithDebInfo
 if ($LASTEXITCODE -ne 0) { throw 'Native helper build failed' }
@@ -69,6 +70,11 @@ $notices = [ordered]@{
     'Subversion-NOTICE.txt' = (Join-Path $SvnSource 'NOTICE')
     'MSVC-Redist.txt' = $RedistNotice
     'RUNTIME-NOTICE.txt' = (Join-Path $PSScriptRoot 'native-runtime-NOTICE.txt')
+}
+$svnModification = Join-Path $SvnPrefix 'FileES-SVN-modification.inc'
+if (Test-Path -LiteralPath $svnModification -PathType Leaf) {
+    $notices['FileES-SVN-modification.inc'] = $svnModification
+    $notices['FileES-SVN-transformation.cjs'] = Join-Path $SvnPrefix 'FileES-SVN-transformation.cjs'
 }
 # serf is linked into SVN RA even when it has no separate imported DLL.
 foreach ($port in @('apr','apr-util','expat','openssl','serf','sqlite3','zlib')) {
@@ -113,6 +119,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Packaged helper loader failed: $LASTEXITCODE" }
         $receipt = $version | ConvertFrom-Json
         if ($receipt.ok -ne $true -or $receipt.svn_runtime -ne $receipt.svn_headers) { throw "Invalid helper version receipt: $version" }
+        if ($receipt.features -contains 'sparse_exclude_conditional_v1' -and -not $notices.Contains('FileES-SVN-modification.inc')) {
+            throw 'Conditional Subversion runtime has no modification notice/source'
+        }
         foreach ($feature in @('update_changes','commit_targets_stdin_v1','info_inspect_remote_v1','status_remote_locks_v1')) {
             if ($receipt.features -notcontains $feature) { throw "Helper missing required feature: $feature" }
         }

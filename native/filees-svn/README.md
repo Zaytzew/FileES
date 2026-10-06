@@ -30,15 +30,34 @@ full working bytes against pristine, not only cached size/mtime. Local and
 remote locks, properties/conflicts, missing evidence, special files and
 EOL/keyword translation refuse. Windows admits ordinary local attributes
 before READ guards which deny writers; the retained copy also denies delete.
-Source deletion is allowed for SVN, so external rename/replacement is not
-fully fenced. The existing FileES writer lease does not fence arbitrary SVN.
-Wrapping normal SVN exclusion in a deny-delete handle is not a solution:
-the library can record exclusion before removal fails, leaving removal for
-future cleanup. This boundary still prevents wiring user-facing release.
+On Windows, since base r1941 plus delta, mutation requires private runtime
+feature `sparse_exclude_conditional_v1`, detected in the actually loaded WC
+library. Unmodified runtime refuses before writer/WC mutation. The source
+guard pins its verified identity while allowing the runtime to acquire DELETE
+access. A durable conditional work item rechecks directory/file IDs and full
+SHA-256 before each removal by handle, including cleanup after process death.
+Full pristine comparison is repeated under the SVN write lock. This covers
+ordinary single-link NTFS files, not translated files or redirected/network
+paths. Unix retains the earlier primitive; equivalent fencing is not claimed.
+The FileES writer lease does not fence arbitrary SVN. Wrapping stock exclusion
+in deny-delete and swallowing the error is still prohibited: it can leave an
+unconditional pending removal. Old SVN cleanup refuses the NEW private work
+item; retain the modified runtime while it remains pending. Never erase the
+work queue or locks as a workaround.
 The operation preserves its backup and does not commit or create a CFAPI
 placeholder. It is not an idempotent transaction; errors after mutation must
 retain the backup for the future coordinator's inspection/recovery. No Go,
 GUI or IPC entry calls it yet; normal update depth choices are unchanged.
+
+The isolated builder is `packaging/windows/build-conditional-svn-runtime.ps1`.
+It accepts only the reviewed 1.14.5 archive and a new workspace `tmp` output;
+`native/subversion-filees/apply-runtime.cjs` checks upstream hashes/unique
+anchors, then modifies the copied source. The existing SDK is never edited.
+Staging requires modification source/transform notices for the optional ABI.
+`FILEES_SVN_BUILD_RELEASE_PROBE=ON` builds a separate disposable probe for
+cancel/process exit after the BASE transaction; it is OFF by default and not
+staged. Native tests additionally require `FILEES_SVN_RELEASE_PROBE` and
+`FILEES_SVN_UNMODIFIED_PROBE` (fresh helper with stock libraries).
 
 Windows adapter checkpoint 2026-09-08, base r995 plus working delta:
 `pkg/client/native_ra.go` routes managed-local info, checkout/update,

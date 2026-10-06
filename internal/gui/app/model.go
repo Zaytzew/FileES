@@ -483,6 +483,38 @@ func (vm ViewModel) CanReviewQuarantine() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoQuarantineList) && vm.HasCap(contract.CapRepoQuarantineHide) && vm.HasCap(contract.CapRepoQuarantineFetch)
 }
 
+// ShelfParent authorises the same owned parent as shelf settings, without
+// confusing the shelf's read-only projection with an ordinary working copy.
+func (vm ViewModel) ShelfParent(serverID, shelfID string) (RepoViewModel, bool) {
+	if !vm.CanManageUploadChannels() || !vm.HasCap(contract.CapRepoShelfList) {
+		return RepoViewModel{}, false
+	}
+	var shelf RepoViewModel
+	found := false
+	for _, repo := range vm.Repos {
+		if repo.ID == shelfID && repo.ServerID == serverID {
+			if found {
+				return RepoViewModel{}, false
+			}
+			shelf, found = repo, true
+		}
+	}
+	if !found || shelf.Purpose != "upload_shelf" || shelf.ParentRepoID == "" || shelf.ServerDeleted {
+		return RepoViewModel{}, false
+	}
+	for _, server := range vm.Servers {
+		if server.ID != serverID || !server.CanOfferRepositoryCreation() {
+			continue
+		}
+		for _, parent := range vm.Repos {
+			if parent.ServerID == serverID && parent.ID == shelf.ParentRepoID && parent.Purpose == "" && !parent.ServerDeleted && server.Owns(parent) {
+				return parent, true
+			}
+		}
+	}
+	return RepoViewModel{}, false
+}
+
 // CanBrowseHistory is the daemon's offer of Wehikuł czasu. Ownership is a
 // separate, per-repository question, and the daemon checks it again per call.
 func (vm ViewModel) CanBrowseHistory() bool {

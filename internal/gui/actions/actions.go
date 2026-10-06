@@ -22,6 +22,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	"filees/pkg/localpin"
+	"filees/pkg/portablepath"
 	"filees/pkg/realmbranding"
 )
 
@@ -629,6 +630,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID, true)
 	case tray.IntentBrowseHistory:
 		c.startBrowseHistory(ctx, intent.ServerID, intent.RepoID)
+	case tray.IntentBrowseShelf:
+		c.startBrowseShelf(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentRenameUnportable:
 		c.startRenameUnportable(ctx, intent.ServerID, intent.RepoID, intent.Path)
 	}
@@ -1235,13 +1238,24 @@ func (c *Controller) startMoveRepository(ctx context.Context, serverID, repoID s
 		}
 		pickedPath := filepath.Clean(picked.Path)
 		base := filepath.Base(filepath.Clean(repo.LocalPath))
-		if strings.EqualFold(filepath.Base(pickedPath), base) {
+		if strings.EqualFold(pickedPath, filepath.Clean(repo.LocalPath)) {
 			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), fmt.Sprintf(c.uiText("feedback.moveSelectParent", "Wskaż folder nadrzędny, np. „%s”, a nie przygotowany folder „%s”. FileES sam przeniesie do niego cały folder."), filepath.Dir(pickedPath), base))
 			return
 		}
-		target := filepath.Join(pickedPath, base)
+		folderName, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.localFolderName", Title: "Nazwa lokalnego folderu", Text: "Zachowaj obecną nazwę albo wpisz nową. Nazwa repozytorium na serwerze pozostanie bez zmian.", Label: "Nazwa folderu", Default: base})
+		if err != nil || folderName.Cancelled {
+			if err != nil {
+				c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.actionErrorBody(err))
+			}
+			return
+		}
+		if portablepath.SegmentProblem(folderName.Value) != nil {
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.uiText("feedback.localFolderNameInvalid", "Wpisz pojedynczą nazwę folderu bez znaków niedozwolonych przez system."))
+			return
+		}
+		target := filepath.Join(pickedPath, folderName.Value)
 		if !filepath.IsAbs(target) || filepath.Clean(target) == filepath.Clean(repo.LocalPath) {
-			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.uiText("feedback.moveSame", "Wybierz inny folder nadrzędny."))
+			c.reportActionError(ctx, key, c.uiText("feedback.moveFailed", "Nie udało się przenieść folderu"), c.uiText("feedback.moveSame", "Wybierz inny folder nadrzędny lub zmień lokalną nazwę."))
 			return
 		}
 		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.moveFolder", PresentationArgs: map[string]string{"name": name, "source": repo.LocalPath, "target": target}, Title: "Przenieś folder FileES", Text: "FileES zatrzyma synchronizację, przeniesie cały folder wraz z lokalnymi zmianami i wznowi pracę w nowej lokalizacji.", ConfirmText: "Przenieś", CancelText: "Anuluj"})
@@ -2436,6 +2450,42 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			}
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n045", "Półka została zaktualizowana"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
 		}
+	}()
+}
+
+// startBrowseShelf reaches the existing browser directly from the shelf row.
+// Resolve the exact channel on the server; never substitute the first shelf.
+func (c *Controller) startBrowseShelf(ctx context.Context, serverID, shelfID string) {
+	parent, ok := c.cfg.ViewModel().ShelfParent(serverID, shelfID)
+	key := "upload-channels." + serverID + "." + parent.ID
+	if !ok || c.cfg.UploadChannels == nil || c.cfg.Shelf == nil || c.cfg.ShelfBrowser == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		listed, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, parent.ID)
+		if err != nil {
+			c.reportActionError(ctx, key, c.uiText("feedback.n127", "Nie udało się pobrać półek przyjęcia"), c.actionErrorBody(err))
+			return
+		}
+		freshParent, allowed := c.cfg.ViewModel().ShelfParent(serverID, shelfID)
+		if !allowed || freshParent.ID != parent.ID {
+			return
+		}
+		var selected UploadChannelSummary
+		matches := 0
+		for _, channel := range listed.Channels {
+			if channel.UploadRepoID == shelfID && channel.ChannelID != "" {
+				selected, matches = channel, matches+1
+			}
+		}
+		if matches != 1 {
+			c.reportActionError(ctx, key, c.uiText("feedback.n043", "Nieprawidłowa półka"), c.uiText("feedback.n029", "Wybrany kanał nie pochodzi z aktualnej listy."))
+			return
+		}
+		c.showShelf(ctx, serverID, parent.ID, selected)
 	}()
 }
 

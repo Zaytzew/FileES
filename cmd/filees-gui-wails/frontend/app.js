@@ -1,6 +1,7 @@
 import { Browser, Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowserservice.js";
+import * as SettingsService from "./bindings/filees/cmd/filees-gui-wails/settingsservice.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
@@ -605,6 +606,7 @@ function renderRepo(repo) {
     ? `${repo.local_path || t("repo.folder")} · ${t("repo.sparse")}`
     : repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
+    repo.can_browse_shelf ? repoAction("browse_shelf", t("action.browseShelf"), repoIcons.browse, "browse") : "",
     repo.can_browse_head ? repoAction("browse_head", t("repo.browseHead"), repoIcons.browse, "browse") : "",
     deleted && repo.local_copy_preserved ? `<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="${escapeHTML(t("copy.info"))}" aria-label="${escapeHTML(t("copy.info"))}" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">` + repoIcons.info + `</button>` : "",
     repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
@@ -693,6 +695,25 @@ function serverHealthPresentation(value) {
   }
 }
 
+let virtualFoldersBusy = false;
+async function toggleVirtualFolders() {
+  const snapshot = currentSnapshot;
+  if (virtualFoldersBusy || !snapshot?.virtual_folders) return;
+  virtualFoldersBusy = true;
+  renderRepositories(currentSnapshot);
+  try {
+    const result = await SettingsService.DashboardVirtualFolders(!snapshot.virtual_folders.enabled, snapshot.revision);
+    if (!result.accepted) showToast({ title: t("virtualFolders.label"), message: t(result.code || "virtualFolders.notConfirmed"), level: "critical" });
+  } catch {
+    showToast({ title: t("virtualFolders.label"), message: t("virtualFolders.notConfirmed"), level: "critical" });
+  } finally {
+    // The daemon's next snapshot owns the icon. No optimistic state or retry.
+    virtualFoldersBusy = false;
+    renderRepositories(currentSnapshot);
+    GUIService.Refresh().catch(() => {});
+  }
+}
+
 // After a demo realm expires the client has no server left, and the panel used
 // to say only that there were no folders - a dead end (owner's acceptance,
 // Windows Sandbox, 2026-09-24). It now says what happened, where the files
@@ -770,6 +791,9 @@ function renderRepositories(snapshot) {
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
             ${demo ? `<span class="demo-badge ${demo.ended ? "is-ended" : ""}" title="${escapeHTML(demo.title)}">${escapeHTML(demo.text)}</span>` : ""}
+            ${snapshot.virtual_folders ? `<button class="server-settings virtual-folders-control ${snapshot.virtual_folders.enabled ? "is-enabled" : ""}" type="button" data-virtual-folders ${virtualFoldersBusy ? "disabled" : ""} aria-pressed="${snapshot.virtual_folders.enabled}" title="${escapeHTML(t("virtualFolders.help"))}" aria-label="${escapeHTML(t("virtualFolders.label"))}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12a4 4 0 0 0 .4-8 6.5 6.5 0 0 0-12.6-1A4.5 4.5 0 0 0 6 18Z"></path>${snapshot.virtual_folders.enabled ? "" : '<path d="M3 3l18 18"></path>'}</svg>
+            </button>` : ""}
             <button class="server-settings" type="button" data-action="settings" title="${escapeHTML(t("server.settings"))}" aria-label="${escapeHTML(t("server.settingsName", { name: server.display_name || server.id }))}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
             </button>
@@ -1619,6 +1643,11 @@ $("#repositories").addEventListener("change",event=>{
   modifyDrawers(event.target.closest("[data-server-id]").dataset.serverId,{type:"assign",repo:event.target.dataset.drawerRepo,id:event.target.value});
 });
 $("#repositories").addEventListener("click", (event) => {
+  if (event.target.closest("[data-virtual-folders]")) {
+    event.preventDefault();
+    toggleVirtualFolders();
+    return;
+  }
   const remove=event.target.closest("[data-drawer-delete]");
   if (remove) { event.preventDefault(); modifyDrawers(remove.closest("[data-server-id]").dataset.serverId,{type:"delete",id:remove.dataset.drawerDelete}); return; }
   const info = event.target.closest("[data-copy-info]");

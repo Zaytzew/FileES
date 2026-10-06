@@ -714,10 +714,18 @@ func TestDaemonProvisionerRelocatesOnlyAfterQuiesce(t *testing.T) {
 }
 
 func TestDaemonProvisionerMovesExistingWorkingCopyAfterQuiesce(t *testing.T) {
+	t.Run("move", func(t *testing.T) { testExistingWorkingCopyRelocation(t, false) })
+	t.Run("rename-local-root", func(t *testing.T) { testExistingWorkingCopyRelocation(t, true) })
+}
+
+func testExistingWorkingCopyRelocation(t *testing.T, rename bool) {
 	local, journal, profile, record := relocationFixture(t)
 	// Convert the existing relocation fixture into the user-requested move
 	// variant while retaining the same durable operation identity.
 	target := record.PendingLocalPath
+	if rename {
+		target = filepath.Join(filepath.Dir(record.LocalPath), "Łódź 東京 nowa nazwa")
+	}
 	if _, err := local.FailRelocation(record.OperationID, errors.New("prepare move fixture")); err != nil {
 		t.Fatal(err)
 	}

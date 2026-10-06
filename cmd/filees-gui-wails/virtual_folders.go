@@ -23,6 +23,28 @@ func (service *SettingsService) VirtualFolders(enabled bool, revision uint64) Se
 	session := service.active
 	service.mu.Unlock()
 	defer func() { service.mu.Lock(); service.virtualBusy = false; service.mu.Unlock() }()
+	return service.applyVirtualFolders(enabled, revision, session)
+}
+
+// DashboardVirtualFolders shares the checkbox's daemon call and mutation
+// fence. Its revision is the main panel's, not an inactive settings session's.
+func (service *SettingsService) DashboardVirtualFolders(enabled bool, revision uint64) SettingsAcceptance {
+	service.mu.Lock()
+	if service.active != nil || service.virtualBusy || service.virtualClient == nil || service.gui == nil {
+		service.mu.Unlock()
+		return SettingsAcceptance{Code: "virtualFolders.unavailable"}
+	}
+	service.virtualBusy = true
+	service.mu.Unlock()
+	defer func() { service.mu.Lock(); service.virtualBusy = false; service.mu.Unlock() }()
+	current := service.gui.Snapshot()
+	if current.Revision != revision || current.VirtualFolders == nil || current.VirtualFolders.Enabled == enabled {
+		return SettingsAcceptance{Code: "virtualFolders.unavailable"}
+	}
+	return service.applyVirtualFolders(enabled, revision, nil)
+}
+
+func (service *SettingsService) applyVirtualFolders(enabled bool, revision uint64, session *settingsSession) SettingsAcceptance {
 	vm := service.gui.viewModel()
 	if !vm.Connected || vm.Stale || !vm.HasCap(contract.CapVirtualFolders) || vm.VirtualFolders == nil {
 		return SettingsAcceptance{Code: "virtualFolders.unavailable"}
@@ -40,13 +62,13 @@ func (service *SettingsService) VirtualFolders(enabled bool, revision uint64) Se
 		return SettingsAcceptance{Code: "virtualFolders.notConfirmed"}
 	}
 	service.mu.Lock()
-	if service.active == session && service.snapshot.Revision == revision {
+	if session != nil && service.active == session && service.snapshot.Revision == revision {
 		state := *result
 		service.snapshot.VirtualFolders = &state
 	}
 	projection, emitter := service.snapshot, service.emitter
 	service.mu.Unlock()
-	if emitter != nil {
+	if session != nil && emitter != nil {
 		emitter.Emit(settingsSnapshotEvent, projection)
 	}
 	if service.gui.runner != nil {

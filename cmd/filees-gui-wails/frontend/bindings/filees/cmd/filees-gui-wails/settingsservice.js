@@ -54,6 +54,11 @@ export function VirtualFolders(enabled, revision) {
     return $Call.ByID(3115120472, enabled, revision).then($$createType0);
 }
 
+/** Main-panel shortcut; generated method ID from Wails bindings. */
+export function DashboardVirtualFolders(enabled, revision) {
+    return $Call.ByID(785526804, enabled, revision).then($$createType0);
+}
+
 // Private type creation functions
 const $$createType0 = $models.SettingsAcceptance.createFrom;
 const $$createType1 = $models.SettingsSnapshot.createFrom;

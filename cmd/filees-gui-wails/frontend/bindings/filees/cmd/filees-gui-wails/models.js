@@ -1160,6 +1160,7 @@ export class RepoProjection {
      * @param {Partial<RepoProjection>} [$$source = {}] - The source object to create the RepoProjection.
      */
     constructor($$source = {}) {
+		if (!("can_browse_shelf" in $$source)) this["can_browse_shelf"] = false;
         /** @type {string | undefined} */
         this["parent_repo_id"] = undefined;
         if (!("id" in $$source)) {
@@ -2358,6 +2359,8 @@ export class Snapshot {
      * @param {Partial<Snapshot>} [$$source = {}] - The source object to create the Snapshot.
      */
     constructor($$source = {}) {
+		/** @type {object | undefined} */
+		this["virtual_folders"] = undefined;
         if (!("revision" in $$source)) {
             /**
              * @member

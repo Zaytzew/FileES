@@ -183,6 +183,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .server-settings { width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center; border:1px solid var(--line); border-radius:10px; color:var(--soft-text); background:rgba(255,255,255,.035); cursor:pointer; transition:.16s ease; }
 .server-settings:hover { border-color:color-mix(in srgb,var(--realm-accent) 38%,transparent); color:color-mix(in srgb,var(--realm-accent) 75%,white); background:color-mix(in srgb,var(--realm-accent) 9%,transparent); }
 .server-settings:disabled { opacity:.35; cursor:wait; } .server-settings svg { width:17px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
+.virtual-folders-control.is-enabled { color:var(--teal); }
 .server-folders { --repo-title-min:240px; --repo-queue-column:155px; --repo-actions-column:44px; --repo-size-column:105px; min-width:0; max-width:100%; display:grid; gap:17px; overflow-x:auto; overflow-y:hidden; padding:17px 18px 19px; scrollbar-width:thin; scrollbar-color:rgba(154,167,232,.31) transparent; }
 .server-folders[hidden] { display:none; }
 .server-empty { margin:0; padding:18px 20px; color:var(--muted); font-size:12px; }

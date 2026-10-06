@@ -12,6 +12,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/platform/platformtest"
 	"filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
 )
 
 type recordingShelf struct {
@@ -86,7 +87,7 @@ type oneChannel struct{}
 
 func (oneChannel) ListUploadChannels(context.Context, string, string) (actions.UploadChannelList, error) {
 	return actions.UploadChannelList{Channels: []actions.UploadChannelSummary{{
-		ChannelID: "channel-1", Slug: "oferta-a", State: "active",
+		ChannelID: "channel-1", Slug: "oferta-a", State: "active", UploadRepoID: "shelf",
 	}}}, nil
 }
 
@@ -186,5 +187,66 @@ func TestControllerSkipsBrowsingWhenTheShelfIsNotWired(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if requests := fake.Snapshot().ShelfRequests; len(requests) != 0 {
 		t.Fatalf("shelf requests=%+v", requests)
+	}
+}
+
+type shelfChannelList struct {
+	oneChannel
+	channels []actions.UploadChannelSummary
+}
+
+func (s shelfChannelList) ListUploadChannels(context.Context, string, string) (actions.UploadChannelList, error) {
+	return actions.UploadChannelList{Channels: s.channels}, nil
+}
+
+func TestMainRowBrowsesExactShelfWithoutSettings(t *testing.T) {
+	for _, variant := range []string{"exact", "missing", "ambiguous", "guest", "stale", "wrong-server", "deleted", "missing-parent", "unsupported", "read-error"} {
+		t.Run(variant, func(t *testing.T) {
+			vm := lifecycleView(append(uploadChannelCaps(), contract.CapRepoShelfList)...)
+			vm.Repos = append(vm.Repos, app.RepoViewModel{ID: "shelf", ServerID: "office", Purpose: "upload_shelf", ParentRepoID: "repo-1"})
+			manager := shelfChannelList{channels: []actions.UploadChannelSummary{
+				{ChannelID: "other", UploadRepoID: "other-shelf"},
+				{ChannelID: "selected", UploadRepoID: "shelf", Slug: "oferta"},
+			}}
+			shelf := &recordingShelf{list: actions.ShelfList{ChannelID: "selected"}}
+			serverID := "office"
+			switch variant {
+			case "missing":
+				manager.channels = manager.channels[:1]
+			case "ambiguous":
+				manager.channels = append(manager.channels, manager.channels[1])
+			case "guest":
+				vm.Repos[0].OwnerRealmID = "guest"
+			case "stale":
+				vm.Stale = true
+			case "wrong-server":
+				serverID = "another"
+			case "deleted":
+				vm.Repos[1].ServerDeleted = true
+			case "missing-parent":
+				vm.Repos[1].ParentRepoID = "absent"
+			case "unsupported":
+				delete(vm.Capabilities, contract.CapRepoShelfList)
+			case "read-error":
+				shelf.err = errors.New("unavailable")
+			}
+			fake := &platformtest.Fake{}
+			intents := make(chan tray.Intent, 1)
+			intents <- tray.Intent{Kind: tray.IntentBrowseShelf, ServerID: serverID, RepoID: "shelf"}
+			close(intents)
+			c := actions.New(actions.Config{Intents: intents, ViewModel: viewCopy(vm), UploadChannels: manager, Shelf: shelf, ShelfBrowser: fake, Notifier: fake})
+			c.Run(context.Background())
+			requests := fake.Snapshot()
+			if len(requests.SettingsRequests) != 0 || len(requests.UploadChannelRequests) != 0 {
+				t.Fatal("shortcut opened settings")
+			}
+			if variant == "exact" {
+				if len(requests.ShelfRequests) != 1 || requests.ShelfRequests[0].ChannelID != "selected" || requests.ShelfRequests[0].RepoID != "repo-1" {
+					t.Fatal(requests.ShelfRequests)
+				}
+			} else if len(requests.ShelfRequests) != 0 {
+				t.Fatal("opened invalid shelf", requests.ShelfRequests)
+			}
+		})
 	}
 }

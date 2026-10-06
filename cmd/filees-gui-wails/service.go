@@ -62,6 +62,7 @@ type GUIService struct {
 }
 
 type Snapshot struct {
+	VirtualFolders      *contract.VirtualFoldersStatus    `json:"virtual_folders,omitempty"`
 	SyncPause           contract.SyncPauseStatus          `json:"sync_pause"`
 	MemorySafety        *contract.MemorySafetyStatus      `json:"memory_safety,omitempty"`
 	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
@@ -185,7 +186,8 @@ type RepoProjection struct {
 	CanCreateAnchor bool `json:"can_create_anchor,omitempty"`
 	// CanBrowseHead offers "Browse on the server": a repository with no copy
 	// yet, or one holding only chosen paths (implementation notes (not distributed)).
-	CanBrowseHead bool `json:"can_browse_head"`
+	CanBrowseHead  bool `json:"can_browse_head"`
+	CanBrowseShelf bool `json:"can_browse_shelf"`
 	// Sparse: attached, but only chosen paths are on this computer.
 	Sparse              bool            `json:"sparse,omitempty"`
 	CanOpen             bool            `json:"can_open"`
@@ -763,6 +765,9 @@ func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
 
 func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
 	switch request.Kind {
+	case string(tray.IntentBrowseShelf):
+		_, allowed := vm.ShelfParent(request.ServerID, request.RepoID)
+		return tray.Intent{Kind: tray.IntentBrowseShelf, ServerID: request.ServerID, RepoID: request.RepoID}, allowed
 	case string(tray.IntentPauseSync), string(tray.IntentResumeSync):
 		return tray.Intent{Kind: tray.IntentKind(request.Kind)}, vm.Connected && !vm.Stale && vm.Capabilities[contract.CapSyncPause]
 	case string(tray.IntentActivate):
@@ -1059,6 +1064,10 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		ReservationStatus:       projectReservationAvailability(vm),
 		DemoActivationAvailable: vm.CanActivateDemo(),
 	}
+	if vm.Connected && !vm.Stale && vm.HasCap(contract.CapVirtualFolders) && vm.VirtualFolders != nil {
+		state := *vm.VirtualFolders
+		result.VirtualFolders = &state
+	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
 	}
@@ -1127,8 +1136,13 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			}
 		}
 		problem, _ := vm.FolderProblem(repo.ID)
+		canBrowseShelf := false
+		if repo.Purpose == "upload_shelf" {
+			_, canBrowseShelf = vm.ShelfParent(repo.ServerID, repo.ID)
+		}
 		result.Repositories = append(result.Repositories, RepoProjection{
 			Problem:            problem.Kind,
+			CanBrowseShelf:     canBrowseShelf,
 			CanDetachLocalCopy: vm.CanDetachDeletedCopy(repo),
 			ID:                 repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached, LocalProvisioning: repo.LocallyProvisioning(),

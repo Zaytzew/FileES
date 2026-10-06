@@ -25,6 +25,12 @@ type HeadService interface {
 	HeadCat(ctx context.Context, serverID, repoURL, path string) (string, error)
 }
 
+// Optional read-only extension of the anchor service. Uses its bound tree and
+// filesystem metadata, never its mutating Plan/Execute or a recursive SVN read.
+type HeadAvailabilityService interface {
+	HeadAvailability(context.Context, string, string, string, []contract.RepoHeadEntry) (map[string]contract.RepoHeadAvailability, bool, error)
+}
+
 // SparseAttacher is the lifecycle's sparse entry point. It is optional on
 // RepositoryLifecycleService so existing implementations need not change.
 type SparseAttacher interface {
@@ -89,8 +95,19 @@ func markLocal(localPath, dir string, entries []contract.RepoHeadEntry) {
 	}
 	base := filepath.Join(localPath, filepath.FromSlash(dir))
 	for i := range entries {
-		if info, err := os.Lstat(filepath.Join(base, entries[i].Name)); err == nil && !cloudfiles.RecallsOnRead(info) {
-			entries[i].Local = true
+		entries[i].Local = false
+		entries[i].Availability = ""
+		info, err := os.Lstat(filepath.Join(base, entries[i].Name))
+		if os.IsNotExist(err) {
+			entries[i].Availability = contract.HeadRemote
+		} else if err == nil && info.Mode()&os.ModeSymlink == 0 {
+			entries[i].Local = !cloudfiles.RecallsOnRead(info)
+			if entries[i].Kind == "file" && info.Mode().IsRegular() {
+				entries[i].Availability = contract.HeadRemote
+				if entries[i].Local {
+					entries[i].Availability = contract.HeadLocal
+				}
+			}
 		}
 	}
 }
@@ -123,6 +140,30 @@ func (s *Server) handleHeadList(req contract.Request) contract.Response {
 	}
 	if summary.Attached {
 		markLocal(summary.LocalPath, path, entries)
+		if availability, ok := s.anchorBatchService().(HeadAvailabilityService); ok {
+			probeCtx, stop := context.WithTimeout(ctx, 3*time.Second)
+			states, handled, err := availability.HeadAvailability(probeCtx, p.ServerID, p.RepoID, path, entries)
+			stop()
+			if handled {
+				for i := range entries {
+					if entries[i].Kind != "dir" {
+						continue
+					}
+					entries[i].Availability = ""
+					if err == nil {
+						switch value := states[entries[i].Name]; value {
+						case contract.HeadRemote, contract.HeadHybrid, contract.HeadLocal:
+							entries[i].Availability = value
+						}
+					}
+				}
+			}
+		}
+	} else {
+		for i := range entries {
+			entries[i].Local = false
+			entries[i].Availability = contract.HeadRemote
+		}
 	}
 	return contract.OKResponse(req.RequestID, contract.RepoHeadListResult{Path: path, Entries: entries})
 }

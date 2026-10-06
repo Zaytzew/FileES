@@ -25,9 +25,11 @@ func anchorFolderIconBytes() ([]byte, error) {
 
 // Supersampled vector strokes keep the same glyph at every embedded ICO size.
 // White anchor, navy disk and orange rim reuse FileES colours, without fonts.
+const anchorBadgeRadius = .235 * 1.5
+
 func drawAnchorBadge(canvas *image.NRGBA) {
 	b := canvas.Bounds()
-	r := float64(b.Dx()) * .235
+	r := float64(b.Dx()) * anchorBadgeRadius
 	cx, cy := float64(b.Max.X)-r-.5, float64(b.Max.Y)-r-.5
 	segments := [][4]float64{
 		{0, -.25, 0, .62}, {-.34, -.05, .34, -.05},

@@ -20,6 +20,56 @@ import (
 
 type anchorBatchAdapter struct{ manager *anchorManager }
 
+// HeadAvailability is a bounded, read-only projection. No SVN network read,
+// hydration, adoption or release is performed while inspecting these badges.
+func (a anchorBatchAdapter) HeadAvailability(ctx context.Context, serverID, repoID, dir string,
+	entries []contract.RepoHeadEntry) (map[string]contract.RepoHeadAvailability, bool, error) {
+	m := a.manager
+	if m.lifecycle == nil {
+		return nil, false, nil
+	}
+	for _, record := range m.lifecycle.List() {
+		if record.ServerID != serverID || record.RepoID != repoID || !record.Anchor || record.State != localrepo.StateAttached {
+			continue
+		}
+		if err := m.currentReleaseRecord(record); err != nil {
+			return nil, true, err
+		}
+		guards, err := guardAnchorReleaseDirectories(record.LocalPath, record.LocalPath)
+		if err != nil {
+			return nil, true, err
+		}
+		defer closeAnchorReleaseGuards(guards)
+		var root windows.ByHandleFileInformation
+		if err := windows.GetFileInformationByHandle(guards[len(guards)-1], &root); err != nil {
+			return nil, true, err
+		}
+		tree, err := loadAnchorRemoteTree(record, anchorReleaseID(root))
+		if err != nil {
+			return nil, true, err
+		}
+		// Never label a folder local from a manifest older than its HEAD entry.
+		known := make([]contract.RepoHeadEntry, 0, len(entries))
+		for _, entry := range entries {
+			if entry.Kind == "dir" && entry.Revision <= tree.Revision {
+				known = append(known, entry)
+			}
+		}
+		states, err := anchorFolderAvailability(ctx, tree.Nodes, dir, known, func(paths []string) ([]cfapiAnswer, error) {
+			answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
+			if err == nil && !answer.OK {
+				err = errors.New("availability metadata inspection failed")
+			}
+			return answer.States, err
+		})
+		if err == nil {
+			err = m.currentReleaseRecord(record)
+		}
+		return states, true, err
+	}
+	return nil, false, nil
+}
+
 func (a anchorBatchAdapter) record(p contract.RepoAnchorPlanPayload) (localrepo.Record, error) {
 	m := a.manager
 	if m.lifecycle == nil {

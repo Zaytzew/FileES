@@ -16,6 +16,9 @@ import (
 )
 
 func TestAnchorFolderIconPreservesFramesAndBaseArtwork(t *testing.T) {
+	if anchorBadgeRadius < .235*1.5 {
+		t.Fatal("anchor badge must be at least 1.5 times the original diameter")
+	}
 	base := append([]byte(nil), managedFolderIcon...)
 	icon, err := anchorFolderIconBytes()
 	if err != nil {
@@ -57,7 +60,7 @@ func TestAnchorFolderIconPreservesFramesAndBaseArtwork(t *testing.T) {
 				br, bg, bb, ba := original.At(x, y).RGBA()
 				if r != br || g != bg || b != bb || a != ba {
 					changed = true
-					if x < img.Bounds().Dx()/2 || y < img.Bounds().Dy()/2 {
+					if x < int(float64(img.Bounds().Dx())*(1-2*anchorBadgeRadius))-1 || y < int(float64(img.Bounds().Dy())*(1-2*anchorBadgeRadius))-1 {
 						t.Fatal("badge changed artwork outside lower-right corner")
 					}
 				}
@@ -65,6 +68,22 @@ func TestAnchorFolderIconPreservesFramesAndBaseArtwork(t *testing.T) {
 		}
 		if !changed {
 			t.Fatalf("frame %d has no badge", i)
+		}
+		if preview := os.Getenv("FILEES_ICON_PREVIEW"); preview != "" && img.Bounds().Dx() == 256 {
+			if err := os.MkdirAll(preview, 0700); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.Create(filepath.Join(preview, "anchor-folder-256.png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := png.Encode(file, img); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }

@@ -3,7 +3,7 @@ import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowser
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, getLocale } from "./i18n.js";
 import { formatBytes, breadcrumb, joinPath, parentPath } from "./timemachine-view.js";
-import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed } from "./headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed, availabilityKey } from "./headbrowser-view.js";
 
 // Przeglądaj na serwerze (implementation notes (not distributed)). The page
 // asks the daemon for everything through HeadBrowserService: the folder at
@@ -60,7 +60,7 @@ async function open(context) {
   if (state.repo) await list("");
 }
 
-async function list(path) {
+async function list(path, quiet = false) {
   const token = ++state.token;
   state.loading = true;
   state.path = path;
@@ -68,8 +68,10 @@ async function list(path) {
   // left clickable while the request is in flight, a fast second click reads
   // a stale row's name against the new path and asks for a path that was
   // never a child of it (2026-09-26, reported from real use).
-  state.entries = [];
-  renderEntries();
+  if (!quiet) {
+    state.entries = [];
+    renderEntries();
+  }
   try {
     const result = await HeadBrowser.List(path);
     if (token !== state.token) return;
@@ -77,7 +79,8 @@ async function list(path) {
     state.entries = sortEntries(result.entries ?? []);
   } catch (error) {
     if (token !== state.token) return;
-    state.entries = [];
+    if (!quiet) state.entries = [];
+    else state.entries = state.entries.map(entry => ({ ...entry, availability: "unknown" }));
     toast(errorText(error));
   } finally {
     if (token === state.token) {
@@ -120,14 +123,16 @@ function renderEntries() {
   listNode.innerHTML = up + state.entries.map(entry => {
     const path = joinPath(state.path, entry.name);
     const dir = entry.kind === "dir";
+    const availability = availabilityKey(entry);
+    const contentState = availability ? availability.split(".").at(-1) : "unknown";
     const badge = dir
-      ? `<span class="hb-folder${entry.local ? " is-local" : ""}" title="${escapeHTML(t("headBrowser.folder"))}">${FOLDER_ICON}</span>`
+      ? `<span class="hb-folder is-${contentState}" title="${escapeHTML(t("headBrowser.folder"))}">${FOLDER_ICON}</span>`
       : `<span class="hb-type">${escapeHTML(entryType(entry.name))}</span>`;
     const name = dir
       ? `<button type="button" class="hb-open" data-open-path="${escapeHTML(path)}">${escapeHTML(entry.name)}</button>`
       : `<button type="button" class="hb-open" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}">${escapeHTML(entry.name)}</button>`;
     const size = dir ? "" : escapeHTML(formatBytes(entry.size ?? 0, getLocale()));
-    const local = entry.local ? `<span class="hb-local">${escapeHTML(t("headBrowser.local"))}</span>` : "<span></span>";
+    const local = availability ? `<span class="hb-local is-${contentState}">${escapeHTML(t(availability))}</span>` : "<span></span>";
     const actions = [
       dir ? "" : `<button type="button" class="quiet-button" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}"${disabled}>${escapeHTML(t("headBrowser.preview"))}</button>`,
       entry.local ? `<button type="button" class="quiet-button" data-open-local="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.openLocal"))}</button>` : "",
@@ -212,6 +217,12 @@ $("#hb-fill").addEventListener("click", () => fill());
 $("#hb-open-copy").addEventListener("click", () => HeadBrowser.OpenLocal("").catch(error => toast(errorText(error))));
 $("#hb-minimise").addEventListener("click", () => Window.Minimise());
 $("#hb-close").addEventListener("click", () => HeadBrowser.Close());
+
+// Explorer can hydrate/release while this window remains open. Refresh when
+// returning to it, without a timer, overlapping calls or a flashing list.
+window.addEventListener("focus", () => {
+  if (state.repo && !state.busy && !state.loading) return list(state.path, true);
+});
 
 Events.On("filees:head-browser-context", event => open(event?.data ?? event));
 HeadBrowser.Context().then(context => {

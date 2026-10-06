@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed } from "../frontend/headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed, availabilityKey } from "../frontend/headbrowser-view.js";
+
+test("directory badges describe content, never just the local skeleton", () => {
+  for (const value of ["remote", "hybrid", "local"]) {
+    assert.equal(availabilityKey({ kind: "dir", local: true, availability: value }), `headBrowser.availability.${value}`);
+  }
+  assert.equal(availabilityKey({ kind: "dir", local: true }), "");
+  assert.equal(availabilityKey({ kind: "dir", local: true, availability: "invalid" }), "");
+  assert.equal(availabilityKey({ kind: "file", local: true }), "headBrowser.availability.local");
+  assert.equal(availabilityKey({ kind: "file", local: false }), "headBrowser.availability.remote");
+  assert.equal(availabilityKey(null), "");
+});
 
 test("a file's badge is its extension, never a guess from content", () => {
   assert.equal(entryType("model.blend"), "BLEND");

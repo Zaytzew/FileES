@@ -12,8 +12,12 @@
 .hb-folder { justify-self: center; display: inline-flex; width: 26px; height: 22px; color: var(--orange); }
 .hb-folder svg { width: 100%; height: 100%; fill: rgba(255, 106, 0, .18); stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
 .hb-folder.is-local svg { fill: rgba(46, 160, 100, .22); stroke: #7fd9a8; }
+.hb-folder.is-remote svg { fill: rgba(78, 167, 224, .15); stroke: #4ea7e0; }
+.hb-folder.is-hybrid svg { fill: rgba(255, 170, 60, .18); stroke: #d99535; }
 .hb-row.is-dir .hb-open { font-weight: 600; }
 .hb-local { padding: 2px 8px; border-radius: 999px; color: #b8f0cf; background: rgba(46, 160, 100, .16); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.hb-local.is-remote { color: var(--text); background: rgba(78, 167, 224, .18); }
+.hb-local.is-hybrid { color: var(--text); background: rgba(255, 170, 60, .18); }
 .hb-actions { display: flex; gap: 6px; }
 .hb-actions button { padding: 5px 10px; font-size: 12px; }
 .hb-loading { display: flex; align-items: center; gap: 8px; }

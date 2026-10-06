@@ -26,6 +26,17 @@ export function copyStatusKey(repo) {
   return repo.sparse ? "headBrowser.statusSparse" : "headBrowser.statusFull";
 }
 
+// A directory's presence is not proof that its content has been downloaded.
+// Older daemons cannot supply a directory badge; never guess one from local.
+export function availabilityKey(entry) {
+  const value = entry?.availability;
+  if (["remote", "hybrid", "local"].includes(value)) return `headBrowser.availability.${value}`;
+  if (!value && entry?.kind === "file") {
+    return `headBrowser.availability.${entry.local ? "local" : "remote"}`;
+  }
+  return "";
+}
+
 // Folder release always goes through the daemon's preview/confirmation flow.
 export function releaseAllowed(repo, entry) {
   return Boolean(repo?.attached && repo?.sparse && repo?.can_release &&

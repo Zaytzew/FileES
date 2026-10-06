@@ -9,6 +9,17 @@ import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("content availability has all three labels in every language", () => {
+  for (const language of languages) {
+    for (const state of ["remote", "hybrid", "local"]) {
+      assert.ok(language.messages[`headBrowser.availability.${state}`], `${language.code}: ${state}`);
+    }
+  }
+  assert.equal(catalogues.pl["headBrowser.availability.remote"], "Zdalny");
+  assert.equal(catalogues.pl["headBrowser.availability.hybrid"], "Hybrydowy");
+  assert.equal(catalogues.pl["headBrowser.availability.local"], "Lokalny");
+});
+
 test("canonical reconstruction warns about the whole folder without claiming no effect", () => {
   for (const language of languages) {
     const body = promptDetailText("details.canonicalRecovery", {headRevision:"264",copy:"!kolizje/conflicted-copy-opaque",archive:"F:/wc-original"}, (key,args) => translate(catalogues,language.code,key,args));

@@ -192,6 +192,14 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		t.Fatal("junction inside own point admitted")
 	}
 	adapter := anchorBatchAdapter{manager: m}
+	checkAvailability := func(want contract.RepoHeadAvailability) {
+		t.Helper()
+		states, handled, err := adapter.HeadAvailability(t.Context(), "server", "repo", "", []contract.RepoHeadEntry{{Name: "folder", Kind: "dir", Local: true, Revision: 1}})
+		if err != nil || !handled || states["folder"] != want {
+			t.Fatal("native content availability", states, handled, err)
+		}
+	}
+	checkAvailability(contract.HeadRemote)
 	p := contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: "folder", Action: "download"}
 	plan, err := adapter.Plan(t.Context(), p)
 	if err != nil || !plan.Directory || plan.Files != 24 || plan.Bytes != 24*14 {
@@ -205,6 +213,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if err != nil || result.State != "attached" || result.Completed != 24 {
 		t.Fatal(result, err)
 	}
+	checkAvailability(contract.HeadLocal)
 	for i := range 24 {
 		if b, err := os.ReadFile(filepath.Join(point, "folder", fmt.Sprintf("file-%02d.txt", i))); err != nil || string(b) != "approved bytes" {
 			t.Fatal(i, string(b), err)
@@ -250,6 +259,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if err != nil || result.State != "attached" || result.Completed != 24 || commit.HasPendingFileRelease(point) {
 		t.Fatal("release folder", result, err)
 	}
+	checkAvailability(contract.HeadRemote)
 	for i := range 24 {
 		rel := fmt.Sprintf("folder/file-%02d.txt", i)
 		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", rel)
@@ -270,6 +280,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if err := m.downloadFile(t.Context(), record, "folder/file-00.txt"); err != nil {
 		t.Fatal(err)
 	}
+	checkAvailability(contract.HeadHybrid)
 	publisher := filepath.Join(root, "publisher")
 	probeRun(t, root, cli, "checkout", "-q", uri, publisher)
 	for _, item := range []struct{ rel, content string }{

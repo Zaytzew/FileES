@@ -99,7 +99,18 @@ type RepoHeadEntry struct {
 	Revision int64  `json:"revision,omitempty"`
 	// Local: the entry is present in this repository's sparse working copy.
 	Local bool `json:"local,omitempty"`
+	// Availability describes content, not directory existence. Empty means the
+	// daemon cannot establish it; it must never be inferred from Local for dirs.
+	Availability RepoHeadAvailability `json:"availability,omitempty"`
 }
+
+type RepoHeadAvailability string
+
+const (
+	HeadRemote RepoHeadAvailability = "remote"
+	HeadHybrid RepoHeadAvailability = "hybrid"
+	HeadLocal  RepoHeadAvailability = "local"
+)
 
 type RepoHeadListResult struct {
 	Path    string          `json:"path"`

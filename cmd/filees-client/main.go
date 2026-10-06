@@ -34,6 +34,10 @@ func main() {
 		code = cmdCheckout(os.Args[2:])
 	case "sync":
 		code = cmdSync(os.Args[2:])
+	case "dump-load":
+		code = cmdDumpLoad(os.Args[2:])
+	case "whale-put", "whale-get-quote", "whale-get-confirm", "whale-status", "whale-retry", "whale-resume":
+		code = cmdWhale(os.Args[1], os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		code = 0
@@ -54,6 +58,13 @@ commands:
   activate-resume   resume an OTP-authorized activation
   checkout          create or resume one configured working copy
   sync              update that copy, then publish local file changes
+  dump-load         create a new repository from a SVN dump and new WC
+  whale-put         send one large file through the Whale channel
+  whale-get-quote   prepare a large-file download for confirmation
+  whale-get-confirm confirm a quoted download by operation ID
+  whale-status      inspect one durable Whale operation
+  whale-retry       retry a failed or paused Whale operation
+  whale-resume      resume pending Whale operations after a restart
 
 checkout and sync read a config. Tool paths default to /usr/local/bin/svn
 and /usr/bin/ssh. only=!wc-01 !wc-02 limits which realm copies may be named.

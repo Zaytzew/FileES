@@ -7,7 +7,10 @@ import (
 )
 
 func acquireCopyLock(wc string) (*os.File, error) {
-	path := filepath.Join(wc, ".svn", "filees-client.lock")
+	return acquireFileLock(filepath.Join(wc, ".svn", "filees-client.lock"))
+}
+
+func acquireFileLock(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("working-copy lock: %w", err)

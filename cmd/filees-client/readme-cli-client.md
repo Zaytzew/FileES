@@ -80,9 +80,47 @@ sekretów, ścieżek plików i tekstów błędów. Przy braku zapisu sync odmawi
 przed dotknięciem SVN. Na OpenBSD ten katalog jest również prywatnym `HOME`
 procesu SVN, więc może zawierać jego `.subversion`.
 
-Osobne artefakty Linux/OpenBSD buduje `packaging/build-filees-client.sh`.
+Osobne artefakty Linux/OpenBSD buduje `cmd/filees-client/build.sh`.
 Skrypt nie publikuje ich do kanału i nie dodaje klienta do paczki serwera.
-Dump/load i Whale są nadal w opracowaniu; brak odpowiadających poleceń CLI.
+
+## Import dumpa do nowego repo
+
+```
+filees-client dump-load --profile /var/lib/filees/servers/ID/client-profile.json \
+  --dump /abs/archive.dump --name NoweRepo --target /home/user/nowe-wc \
+  --state /var/lib/filees-client/import-001
+```
+
+`--state` to prywatny katalog jednej operacji. Jego rodzic musi istnieć, a
+sam katalog powinien być nowy. W razie przerwania ponawia się **dokładnie te
+same flagi**; zapisany identyfikator żądania odtwarza wynik serwera, zamiast
+tworzyć drugie repo. Klient kopiuje źródłowy dump do nośnika, tworzy nowe
+repo przez istniejący kanał sterowania, publikuje jeden commit z dumpem,
+wywołuje `LOAD_REPOSITORY_DUMP` i dopiero po potwierdzeniu nowej generacji
+zakłada nową WC w `--target`. Ścieżka docelowa musi być wolna. Istniejące
+repo i WC nie są nadpisywane. Konto musi mieć serwerowe prawo tworzenia repo.
+
+Ten przebieg przeszedł syntetyczny test natywny OpenBSD z utratą odpowiedzi
+po podmianie generacji, ale nie jest jeszcze odebrany z rzeczywistą aktywacją
+FileES na serwerze. Szczegóły i granice są w raporcie.
+
+## Whale
+
+```
+filees-client whale-put --profile /abs/client-profile.json --state /abs/whales \
+  --repo UUID --path katalog/duzy.bin --source /abs/duzy.bin
+filees-client whale-get-quote --profile /abs/client-profile.json --state /abs/whales \
+  --repo UUID --path katalog/duzy.bin --revision 12 --dest /abs/nowy.bin
+filees-client whale-get-confirm --profile /abs/client-profile.json --state /abs/whales --id OPERATION_ID
+```
+
+Quote podaje rozmiar i ID, nie uruchamia pobrania bez `whale-get-confirm`.
+`whale-status --id`, `whale-retry --id` i `whale-resume --id` korzystają z
+tego samego `--profile` oraz `--state`; resume uruchamia wszystkie niedokończone
+operacje w tym katalogu i czeka na wskazaną. Polecenia nie uruchamiają demona.
+Trwały stan transferu pozostaje w prywatnym katalogu `--state`. Transport
+Whale korzysta z przypiętego klucza i `known_hosts` profilu aktywacji.
+Odbiór z rzeczywistym serwerem FileES pozostaje do wykonania.
 
 ## Sandbox
 

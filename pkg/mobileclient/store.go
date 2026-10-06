@@ -87,8 +87,12 @@ type directoryListing struct {
 }
 
 func (s Store) dirListingPath(repoID, path string, gen, rev int64) string {
+	return filepath.Join(s.Root, "dir-listings", repoID, strconv.FormatInt(gen, 10), strconv.FormatInt(rev, 10), directoryListingName(path))
+}
+
+func directoryListingName(path string) string {
 	sum := sha256.Sum256([]byte(path))
-	return filepath.Join(s.Root, "dir-listings", repoID, strconv.FormatInt(gen, 10), strconv.FormatInt(rev, 10), hex.EncodeToString(sum[:])+".json")
+	return hex.EncodeToString(sum[:]) + ".json"
 }
 
 // LoadDirectory returns a cached one-level listing, or (nil, nil) on miss.
@@ -177,7 +181,13 @@ func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
 	for _, pair := range pairs {
 		if pair.gen >= m.ViewGeneration && pair.rev >= m.RepoRevision &&
 			(pair.gen != m.ViewGeneration || pair.rev != m.RepoRevision) {
-			return nil // A late old reply may be displayed, but must not evict newer cache.
+			newer, err := s.readDirectory(m.RepoID, path, pair.gen, pair.rev)
+			if err != nil {
+				return err
+			}
+			if newer != nil {
+				return nil // A late old reply must not evict this path's newer page.
+			}
 		}
 	}
 	d := directoryListing{
@@ -191,7 +201,7 @@ func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
 	if err := atomicWriteJSON(s.dirListingPath(m.RepoID, path, m.ViewGeneration, m.RepoRevision), d); err != nil {
 		return err
 	}
-	s.pruneListingPairs(pairs, m.ViewGeneration, m.RepoRevision)
+	s.pruneListingPairs(pairs, path, m.ViewGeneration, m.RepoRevision)
 	return nil
 }
 

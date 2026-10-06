@@ -751,15 +751,24 @@ class MainActivity : AppCompatActivity() {
                     requestBusy(ticket, false, "")
                 }
             } catch (e: Exception) {
-                if (cached.isNotBlank()) {
-                    postCurrent(ticket) {
-                        browseOffline = true
-                        applyDirectoryManifest(cached)
-                    }
-                    return@execute
-                }
                 if (!isUnsupported(e)) {
-                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e) }
+                    if (cached.isNotBlank() && !requiresBrowseError(e)) {
+                        postCurrent(ticket) {
+                            browseOffline = true
+                            applyDirectoryManifest(cached)
+                        }
+                    } else {
+                        postCurrent(ticket) {
+                            if (cached.isNotBlank()) {
+                                clearBrowseConfirmation()
+                                manifestEntries = emptyList()
+                                renderList()
+                                requestBusy(ticket, false, "")
+                                if (looksRevoked(e)) showRevoked(e)
+                                else showTransportError(getString(R.string.error_refresh), e, prefs.getString(FileesSession.PREF_ADDRESS, null))
+                            } else failRequest(ticket, getString(R.string.error_refresh), e)
+                        }
+                    }
                     return@execute
                 }
                 try {
@@ -775,7 +784,12 @@ class MainActivity : AppCompatActivity() {
                         requestBusy(ticket, false, "")
                     }
                 } catch (e2: Exception) {
-                    postCurrent(ticket) { failRequest(ticket, getString(R.string.error_refresh), e2) }
+                    postCurrent(ticket) {
+                        if (cached.isNotBlank()) {
+                            requestBusy(ticket, false, "")
+                            showTransportError(getString(R.string.error_refresh), e2, prefs.getString(FileesSession.PREF_ADDRESS, null))
+                        } else failRequest(ticket, getString(R.string.error_refresh), e2)
+                    }
                 }
             }
         }
@@ -822,6 +836,12 @@ class MainActivity : AppCompatActivity() {
     private fun isUnsupported(e: Exception): Boolean {
         val text = (e.message ?: "").lowercase()
         return "op.unsupported" in text || "operation not supported" in text
+    }
+
+    private fun requiresBrowseError(e: Exception): Boolean {
+        val text = (e.message ?: "").lowercase()
+        return looksRevoked(e) || "mobile operation failed:" in text ||
+            "host key mismatch" in text || "manifest rollback rejected" in text
     }
 
     private fun refreshManifest() {

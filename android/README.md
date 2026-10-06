@@ -23,11 +23,14 @@ built and verified.
   the operational screen. After pairing, the phone loads the realm
   projection (`LIST_REPOSITORIES`) and offers a share picker. Mobile never
   creates repositories and never asks the operator to type a repo UUID.
-- Folder browse paints the cached directory manifest immediately, directories
-  then path, and refreshes that manifest in the background only when the page
-  is missing or behind. Without a connection the list stays up and the screen
-  says this is the last known state and that the queue will be carried out
-  when connectivity returns.
+- In an active realm session, folder browse paints the cached directory
+  manifest immediately, directories then path, and refreshes it in the
+  background only when the page is missing or behind. The cache retains the
+  last page of each visited folder when another folder advances. Without a
+  connection the list stays up and the screen marks it as last known state.
+  An explicit server denial is shown as an error, not as an offline state.
+  A cold app start still needs LIST_REPOSITORIES before it can rebuild the
+  realm picker; offline cold start remains open.
 - In the repository browser, **Share** downloads one file or prepares a ZIP
   of a folder off the UI thread, then opens Android's app chooser. It uses the
   existing private download cache and `FileProvider` with a temporary read

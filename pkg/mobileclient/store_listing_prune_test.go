@@ -26,10 +26,11 @@ func TestDirectoryCachePrunesOnlyDominatedPairs(t *testing.T) {
 	save("a", "", 2, 6)
 	save("a", "docs", 2, 6)
 	save("a", "late", 1, 5)
-	for _, path := range []string{"", "late"} {
-		if got, err := s.LoadDirectory("a", path, 1, 5); err != nil || got != nil {
-			t.Fatalf("old pair retained %v %v", got, err)
-		}
+	if got, err := s.LoadDirectory("a", "", 1, 5); err != nil || got != nil {
+		t.Fatalf("old root retained %v %v", got, err)
+	}
+	if got, err := s.LoadNewestDirectory("a", "late"); err != nil || got == nil || got.RepoRevision != 5 {
+		t.Fatalf("unrefreshed folder lost its offline page: %+v %v", got, err)
 	}
 	for _, path := range []string{"", "docs"} {
 		if got, err := s.LoadDirectory("a", path, 2, 6); err != nil || got == nil {
@@ -52,6 +53,27 @@ func TestDirectoryCachePrunesOnlyDominatedPairs(t *testing.T) {
 	}
 	if err := s.SaveDirectory("", &v1.Manifest{Schema: v1.ManifestSchema, RepoID: "../outside", ViewGeneration: 1, RepoRevision: 1}); err == nil {
 		t.Fatal("unsafe repo accepted")
+	}
+}
+
+func TestDirectoryCacheKeepsLastPagePerPath(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	save := func(path string, rev int64) {
+		t.Helper()
+		if err := s.SaveDirectory(path, &v1.Manifest{Schema: v1.ManifestSchema, RepoID: "repo-1", ViewGeneration: 1, RepoRevision: rev}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save("", 4)
+	save("docs", 4)
+	save("", 5) // A new root page must not erase the last known docs page.
+	page, err := s.LoadNewestDirectory("repo-1", "docs")
+	if err != nil || page == nil || page.RepoRevision != 4 {
+		t.Fatalf("offline docs page: %+v %v", page, err)
+	}
+	save("docs", 5)
+	if old, err := s.LoadDirectory("repo-1", "docs", 1, 4); err != nil || old != nil {
+		t.Fatalf("replaced docs page retained: %+v %v", old, err)
 	}
 }
 

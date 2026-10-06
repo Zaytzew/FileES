@@ -58,19 +58,18 @@ func (s Store) listingPairs(repoID string) []listingPair {
 	return pairs
 }
 
-// Called under Store's lock after a durable save. Incomparable pairs remain;
-// an older reply cannot remove a newer generation OR revision. Cache GC is
-// best effort; never recursively delete unknown content from these directories.
-func (s Store) pruneListingPairs(pairs []listingPair, gen, rev int64) {
+// Called under Store's lock after a durable save. Retire older pages only for
+// this path: an unrefreshed sibling remains available for offline browsing.
+// Incomparable pairs remain. Never recursively delete unknown content.
+func (s Store) pruneListingPairs(pairs []listingPair, path string, gen, rev int64) {
+	pageName := directoryListingName(path)
 	for _, pair := range pairs {
 		if pair.gen > gen || pair.rev > rev || (pair.gen == gen && pair.rev == rev) {
 			continue
 		}
-		pages, _ := os.ReadDir(pair.dir)
-		for _, page := range pages {
-			if page.Type().IsRegular() && listingPage(page.Name()) {
-				_ = os.Remove(filepath.Join(pair.dir, page.Name()))
-			}
+		pagePath := filepath.Join(pair.dir, pageName)
+		if info, err := os.Lstat(pagePath); err == nil && info.Mode().IsRegular() {
+			_ = os.Remove(pagePath)
 		}
 		_ = os.Remove(pair.dir)
 		_ = os.Remove(filepath.Dir(pair.dir))

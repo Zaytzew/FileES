@@ -36,6 +36,49 @@ type anchorReleaseIO struct {
 	restore func(context.Context, string, int64) error
 }
 
+type anchorReleaseResumer interface {
+	RequireRetainedResumeSupport(context.Context) error
+	ResumeRetainedPath(context.Context, string, string, string, client.RetainedPathBinding) error
+}
+
+func anchorReleaseBinding(r anchorReleaseRecord) (client.RetainedPathBinding, error) {
+	u, err := anchorReleaseURL(r)
+	return client.RetainedPathBinding{SourceVolume: r.Source.Volume, SourceIndex: r.Source.Index,
+		RepositoryUUID: r.Identity.RepoUUID, URL: u, Revision: r.Identity.Revision}, err
+}
+
+// Called under the process/directory guard and while retained bytes are pinned.
+// A read failure is not authority: the private runtime independently checks the
+// one exact pending item, repository, source and backup before doing anything.
+func resumeAnchorReleaseExclusion(ctx context.Context, j *anchorReleaseJournal, r anchorReleaseRecord, svn anchorReleaseExcluder) error {
+	if err := checkAnchorReleaseExclusion(ctx, r, svn); err == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	resume, ok := svn.(anchorReleaseResumer)
+	if !ok {
+		return errors.New("conditional release recovery unavailable; preserve retained copy")
+	}
+	if err := resume.RequireRetainedResumeSupport(ctx); err != nil {
+		return err
+	}
+	binding, err := anchorReleaseBinding(r)
+	if err != nil {
+		return err
+	}
+	resumeErr := resume.ResumeRetainedPath(ctx, r.Identity.WC, r.Identity.Rel,
+		filepath.Join(j.store, j.id, "data.bin"), binding)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := checkAnchorReleaseExclusion(ctx, r, svn); err != nil {
+		return errors.Join(resumeErr, err)
+	}
+	return nil
+}
+
 func requireAnchorReleaseHelper(ctx context.Context, helper string) error {
 	if !filepath.IsAbs(helper) || filepath.Clean(helper) != helper {
 		return errors.New("release helper needs an explicit canonical path")
@@ -160,6 +203,13 @@ func startAnchorRelease(ctx context.Context, store string, identity anchorReleas
 	if err := ops.svn.RequireRetainedPathSupport(ctx); err != nil {
 		return nil, anchorReleaseRecovery{}, err
 	}
+	resume, ok := ops.svn.(anchorReleaseResumer)
+	if !ok {
+		return nil, anchorReleaseRecovery{}, errors.New("conditional release recovery unavailable")
+	}
+	if err := resume.RequireRetainedResumeSupport(ctx); err != nil {
+		return nil, anchorReleaseRecovery{}, err
+	}
 	if err := checkAnchorReleaseBase(ctx, anchorReleaseRecord{Identity: identity}, ops.svn); err != nil {
 		return nil, anchorReleaseRecovery{}, err
 	}
@@ -172,8 +222,8 @@ func startAnchorRelease(ctx context.Context, store string, identity anchorReleas
 }
 
 // No generic cleanup or blind destructive replay. After exclude_requested,
-// recovery is read-only SVN inspection plus no-replace seed restoration.
-// A pending SVN work item remains HOLD until separately verified cleanup.
+// recovery admits only the runtime's exact conditional work item, followed by
+// independent idle exclusion inspection and no-replace seed restoration.
 func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorReleaseIO) (anchorReleaseRecovery, error) {
 	var out anchorReleaseRecovery
 	if ops.svn == nil || ops.inspect == nil || ops.prepare == nil || ops.restore == nil {
@@ -194,9 +244,6 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		if err != nil {
 			return err
 		}
-		if r.Phase == "exclude_requested" || r.Phase == "restore_requested" {
-			return nil
-		}
 		if err := requireAnchorReleaseHelper(ctx, ops.helper); err != nil {
 			return err
 		}
@@ -211,6 +258,9 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		digest, err := hashAnchorRelease(ctx, copyFile, nil, r.Size)
 		if err != nil || digest != r.SHA256 {
 			return errors.Join(err, errors.New("release copy changed"))
+		}
+		if r.Phase == "exclude_requested" || r.Phase == "restore_requested" {
+			return resumeAnchorReleaseExclusion(ctx, j, r, ops.svn)
 		}
 		if err := checkAnchorReleaseBase(ctx, r, ops.svn); err != nil {
 			return err
@@ -256,12 +306,10 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		if err := j.request(ctx, "exclude_requested"); err != nil {
 			return err
 		}
-		u, err := anchorReleaseURL(r)
+		binding, err := anchorReleaseBinding(r)
 		if err != nil {
 			return err
 		}
-		binding := client.RetainedPathBinding{SourceVolume: r.Source.Volume, SourceIndex: r.Source.Index,
-			RepositoryUUID: r.Identity.RepoUUID, URL: u, Revision: r.Identity.Revision}
 		// Helper binds its acquired source handle to this record, and runtime
 		// repeats repo/revision checks UNDER its SVN write lock. This earlier
 		// Go snapshot alone does not authorize a pathname deletion.

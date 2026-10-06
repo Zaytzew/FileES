@@ -17,6 +17,7 @@ const upstream = {
   'subversion/libsvn_wc/wc_db.c': '9fdb9e705b2958b16866ac07a1b9e9ae13e8edf4ff1f371da356c5cfbccd89d4',
   'subversion/libsvn_wc/wc_db.h': '561cec5f4da317d944b701d0c4b294313517e7d0dcebf50450d50dbeb89d3d1b',
   'subversion/include/private/svn_wc_private.h': '5f3b7aec691d061c0adfc88bd7df68d84b9671a4ee258f64871d53de152827e6',
+  'subversion/libsvn_wc/wc-queries.sql': 'c828ef8fb39487fb43ca36554c504ce65a77609d9e145289953660457799b3c9',
 };
 function load(p) {
   const s = read(p);
@@ -61,6 +62,71 @@ svn_wc__db_filees_exclude(svn_wc__db_t *db, const char *local_abspath,
 svn_error_t *
 svn_wc__db_base_get_info_internal(`);
 files.set('subversion/libsvn_wc/wc_db.c', db);
+// Only this library owns DB access. Recovery processes exactly one private
+// item in one immediate transaction; it never executes unrelated work/cleanup.
+db += `
+static svn_error_t *
+filees_resume_txn(svn_wc__db_wcroot_t *wcroot, svn_wc__db_t *db,
+    const char *path, const char *rel, svn_wc__db_filees_resume_cb_t callback,
+    void *baton, apr_pool_t *pool)
+{
+  svn_sqlite__stmt_t *stmt;
+  svn_boolean_t row, extra;
+  apr_uint64_t id;
+  apr_size_t size;
+  const void *raw;
+  svn_skel_t *item;
+  const char *parent = svn_relpath_dirname(rel, pool);
+  SVN_ERR(svn_sqlite__get_statement(&stmt, wcroot->sdb, STMT_FILEES_WORK_ITEMS));
+  SVN_ERR(svn_sqlite__step(&row, stmt));
+  if (!row) { SVN_ERR(svn_sqlite__reset(stmt));
+    return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL, "FileES recovery has no pending private item"); }
+  id = svn_sqlite__column_int64(stmt, 0);
+  raw = svn_sqlite__column_blob(stmt, 1, &size, pool);
+  item = svn_skel__parse(raw, size, pool);
+  SVN_ERR(svn_sqlite__step(&extra, stmt));
+  SVN_ERR(svn_sqlite__reset(stmt));
+  if (extra || !item) return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL, "FileES recovery refuses mixed work queues");
+  SVN_ERR(svn_sqlite__get_statement(&stmt, wcroot->sdb, STMT_FILEES_WC_LOCKS));
+  SVN_ERR(svn_sqlite__bind_int64(stmt, 1, wcroot->wc_id));
+  SVN_ERR(svn_sqlite__step(&row, stmt));
+  if (!row || strcmp(svn_sqlite__column_text(stmt, 0, pool), parent)
+      || svn_sqlite__column_int(stmt, 1) != -1)
+    { SVN_ERR(svn_sqlite__reset(stmt)); return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL, "FileES recovery refuses an unrelated WC lock"); }
+  SVN_ERR(svn_sqlite__step(&extra, stmt));
+  SVN_ERR(svn_sqlite__reset(stmt));
+  if (extra) return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL, "FileES recovery refuses additional WC locks");
+  SVN_ERR(callback(baton, db, path, item, pool));
+  SVN_ERR(svn_sqlite__get_statement(&stmt, wcroot->sdb, STMT_DELETE_WORK_ITEM));
+  SVN_ERR(svn_sqlite__bind_int64(stmt, 1, id));
+  SVN_ERR(svn_sqlite__step_done(stmt));
+  SVN_ERR(svn_sqlite__get_statement(&stmt, wcroot->sdb, STMT_DELETE_WC_LOCK));
+  SVN_ERR(svn_sqlite__bindf(stmt, "is", wcroot->wc_id, parent));
+  return svn_sqlite__step_done(stmt);
+}
+
+svn_error_t *
+svn_wc__db_filees_resume(svn_wc__db_t *db, const char *path,
+    svn_wc__db_filees_resume_cb_t callback, void *baton, apr_pool_t *pool)
+{
+  svn_wc__db_wcroot_t *wcroot;
+  const char *rel;
+  SVN_ERR(svn_wc__db_wcroot_parse_local_abspath(&wcroot, &rel, db, path, pool, pool));
+  VERIFY_USABLE_WCROOT(wcroot);
+  SVN_SQLITE__WITH_IMMEDIATE_TXN(filees_resume_txn(wcroot, db, path, rel, callback, baton, pool), wcroot->sdb);
+  return SVN_NO_ERROR;
+}
+`;
+files.set('subversion/libsvn_wc/wc_db.c', db);
+let queries = load('subversion/libsvn_wc/wc-queries.sql');
+queries += `
+-- STMT_FILEES_WORK_ITEMS
+SELECT id, work FROM work_queue ORDER BY id LIMIT 2
+
+-- STMT_FILEES_WC_LOCKS
+SELECT local_dir_relpath, locked_levels FROM wc_lock WHERE wc_id = ?1 LIMIT 2
+`;
+files.set('subversion/libsvn_wc/wc-queries.sql', queries);
 let h = load('subversion/libsvn_wc/wc_db.h');
 h = replace(h, '\nsvn_error_t *\nsvn_wc__db_base_remove(', `
 /* Private FileES guarded file exclusion; work item is created by runtime. */
@@ -71,6 +137,16 @@ svn_wc__db_filees_exclude(svn_wc__db_t *db, const char *local_abspath,
 
 svn_error_t *
 svn_wc__db_base_remove(`);
+files.set('subversion/libsvn_wc/wc_db.h', h);
+h = replace(h, '\n#ifdef __cplusplus\n}\n#endif /* __cplusplus */', `
+typedef svn_error_t *(*svn_wc__db_filees_resume_cb_t)(void *, svn_wc__db_t *,
+    const char *, const svn_skel_t *, apr_pool_t *);
+svn_error_t *svn_wc__db_filees_resume(svn_wc__db_t *, const char *,
+    svn_wc__db_filees_resume_cb_t, void *, apr_pool_t *);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */`);
 files.set('subversion/libsvn_wc/wc_db.h', h);
 let wq = load('subversion/libsvn_wc/workqueue.c');
 wq = replace(wq, 'static const struct work_item_dispatch dispatch_table[] = {',
@@ -93,6 +169,13 @@ svn_error_t *
 svn_wc__filees_exclude_bound_v1(svn_wc_context_t *wc_ctx,
     const char *local_abspath, const char *retained_abspath, void *expected_source_handle,
     svn_revnum_t expected_revision, const char *expected_uuid, const char *expected_url,
+    svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);
+
+svn_error_t *
+svn_wc__filees_resume_bound_v1(svn_wc_context_t *wc_ctx,
+    const char *local_abspath, const char *retained_abspath,
+    const char *expected_source_id, svn_revnum_t expected_revision,
+    const char *expected_uuid, const char *expected_url,
     svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);
 
 #ifdef __cplusplus

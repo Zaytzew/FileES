@@ -145,6 +145,112 @@ func TestConditionalExclusionReadOnly(t *testing.T) {
 	}
 }
 
+// The production recovery entry is narrower than cleanup: exact retained
+// binding and one private work item, no processing/clearing of other WC work.
+func TestConditionalBoundResume(t *testing.T) {
+	probe := tool(t, "FILEES_SVN_RELEASE_PROBE", "")
+	for _, mode := range []string{"defer", "crash"} {
+		for _, change := range []string{"none", "missing", "bytes", "replacement", "parent", "copy", "source-id", "revision", "uuid", "url", "other-file", "no-pending", "foreign-lock"} {
+			t.Run(mode+"/"+change, func(t *testing.T) {
+				f := newFixture(t, "chosen.txt")
+				f.svnRun(t, "move", "chosen.txt", "folder/chosen.txt")
+				f.svnRun(t, "commit", "--username", "creator", "-m", "bound recovery fixture")
+				f.svnRun(t, "update")
+				if err := os.Mkdir(filepath.Join(f.wc, ".filees"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				rel := "folder/chosen.txt"
+				file, backup := filepath.Join(f.wc, filepath.FromSlash(rel)), filepath.Join(f.root, "retained.txt")
+				body, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(backup, body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				wide, _ := windows.UTF16PtrFromString(file)
+				h, err := windows.CreateFile(wide, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var id windows.ByHandleFileInformation
+				err = windows.GetFileInformationByHandle(h, &id)
+				windows.CloseHandle(h)
+				if err != nil {
+					t.Fatal(err)
+				}
+				source := fmt.Sprintf("%d:%d", id.VolumeSerialNumber, uint64(id.FileIndexHigh)<<32|uint64(id.FileIndexLow))
+				info := f.jsonCall(t, true, "inspect-excluded", "--wc", f.wc, "--", rel)
+				revision, uuid, uri := fmt.Sprint(info["revision"]), fmt.Sprint(info["repos_uuid"]), fmt.Sprint(info["url"])
+				if change != "no-pending" {
+					out, err := execute(t, f.wc, probe, file, backup, mode)
+					if err == nil || (mode == "defer" && !strings.Contains(string(out), "deferred verified removal")) {
+						t.Fatalf("not interrupted: %v %s", err, out)
+					}
+				}
+				want := append([]byte(nil), body...)
+				switch change {
+				case "missing":
+					rename(t, file, filepath.Join(f.root, "saved.txt"))
+				case "bytes":
+					want[0] ^= 32
+					if err := os.WriteFile(file, want, 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "replacement":
+					rename(t, file, filepath.Join(f.root, "saved.txt"))
+					if err := os.WriteFile(file, body, 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "parent":
+					rename(t, filepath.Dir(file), filepath.Join(f.root, "saved-folder"))
+					if err := os.Mkdir(filepath.Dir(file), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(file, body, 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "copy":
+					if err := os.WriteFile(backup, []byte("wrong retained bytes"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "source-id":
+					source = "0:1"
+				case "revision":
+					revision = "999"
+				case "uuid":
+					uuid = "11111111-1111-1111-1111-111111111111"
+				case "url":
+					uri += "-other"
+				case "other-file":
+					rel = "other.txt"
+				case "foreign-lock":
+					if out, err := execute(t, f.wc, f.svn, "cleanup", f.wc); err == nil || !strings.Contains(string(out), "filees-remove-verified-v1") {
+						t.Fatalf("foreign lock fixture: %v %s", err, out)
+					}
+				}
+				ok := change == "none" || change == "missing"
+				got := f.jsonCall(t, ok, "resume-bound", "--wc", f.wc, "--retained", backup, "--source-id", source, "--revision", revision, "--uuid", uuid, "--url", uri, "--", rel)
+				if ok {
+					if got["wc_idle"] != true || got["state"] != "excluded" {
+						t.Fatalf("not idle: %#v", got)
+					}
+					if _, err := os.Stat(file); !os.IsNotExist(err) {
+						t.Fatalf("source not removed: %v", err)
+					}
+				} else if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, want) {
+					t.Fatalf("refusal changed source: %v", err)
+				}
+				if change != "copy" {
+					if got, err := os.ReadFile(backup); err != nil || !bytes.Equal(got, body) {
+						t.Fatalf("copy lost: %v", err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestConditionalExclusionUnavailableRefusesBeforeMutation(t *testing.T) {
 	f := newFixture(t, "chosen.txt")
 	f.probe = tool(t, "FILEES_SVN_UNMODIFIED_PROBE", "")

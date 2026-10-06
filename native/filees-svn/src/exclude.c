@@ -98,6 +98,14 @@ static bound_exclude_fn bound_exclude(void)
     return wc ? (bound_exclude_fn)GetProcAddress(wc, "svn_wc__filees_exclude_bound_v1") : NULL;
 }
 int filees_bound_exclusion_available(void) { return bound_exclude() != NULL; }
+typedef svn_error_t *(*bound_resume_fn)(svn_wc_context_t *, const char *, const char *, const char *,
+    svn_revnum_t, const char *, const char *, svn_cancel_func_t, void *, apr_pool_t *);
+static bound_resume_fn bound_resume(void)
+{
+    HMODULE wc = GetModuleHandleW(L"libsvn_wc-1.dll");
+    return wc ? (bound_resume_fn)GetProcAddress(wc, "svn_wc__filees_resume_bound_v1") : NULL;
+}
+int filees_bound_resume_available(void) { return bound_resume() != NULL; }
 #else
 /* FileES writer/WC guards are not a lock against arbitrary external Unix
  * editors. The CFAPI coordinator is Windows-only and not wired here yet. */
@@ -108,6 +116,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_poo
 }
 int filees_conditional_exclusion_available(void) { return 0; }
 int filees_bound_exclusion_available(void) { return 0; }
+int filees_bound_resume_available(void) { return 0; }
 #endif
 
 struct exclude_observation {
@@ -366,4 +375,44 @@ svn_error_t *filees_exclude_bound(const char *wc, const char *retained, const ch
     if (!source_id || !*source_id || strlen(source_id) > 32 || revision < 1 || !uuid || !*uuid || !url || !svn_path_is_url(url))
         return filees_refuse("bound exclusion needs exact retained evidence");
     return exclude_retained(wc, retained, rel, source_id, revision, uuid, url, pool);
+}
+
+/* Offline, one exact pending FileES work item. The OS writer lease excludes
+ * surviving FileES helpers. The private library checks/executes/retires the
+ * matching item and its exact parent lock in one DB transaction. No cleanup,
+ * depth fallback, network, processing of other work or clearing wider locks. */
+svn_error_t *filees_resume_bound(const char *wc_arg, const char *retained_arg, const char *rel,
+    const char *source_id, svn_revnum_t revision, const char *uuid, const char *url, apr_pool_t *pool)
+{
+#ifdef _WIN32
+    const char *wc, *root, *retained, *path;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    const char *rels[1];
+    bound_resume_fn resume = bound_resume();
+    if (!resume) return filees_refuse("bound recovery requires the FileES recovery SVN runtime");
+    if (!filees_safe_relative(rel) || !source_id || !*source_id || strlen(source_id) > 32
+        || revision < 1 || !uuid || !*uuid || !url || !svn_path_is_url(url))
+        return filees_refuse("bound recovery needs exact retained evidence");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, TRUE, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
+    if (!retained_arg || !svn_dirent_is_absolute(svn_dirent_internal_style(retained_arg, pool)))
+        return filees_refuse("recovery requires an absolute retained copy");
+    SVN_ERR(svn_dirent_get_absolute(&retained, svn_dirent_internal_style(retained_arg, pool), pool));
+    if (retained_inside_wc(wc, retained, pool)) return filees_refuse("recovery copy must be outside WC");
+    SVN_ERR(filees_plain_node(retained, APR_REG, FALSE, pool));
+    SVN_ERR(guard_file(retained, TRUE, NULL, pool));
+    rels[0] = rel;
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, 1, pool));
+    path = APR_ARRAY_IDX(paths, 0, const char *);
+    SVN_ERR(svn_client_get_wc_root(&root, path, ctx, pool, pool));
+    if (strcmp(root, wc)) return filees_refuse("recovery belongs to another WC");
+    SVN_ERR(resume(ctx->wc_ctx, path, retained, source_id, revision, uuid, url,
+                  ctx->cancel_func, ctx->cancel_baton, pool));
+    return filees_inspect_excluded(wc, rel, pool);
+#else
+    (void)wc_arg; (void)retained_arg; (void)rel; (void)source_id;
+    (void)revision; (void)uuid; (void)url; (void)pool;
+    return filees_refuse("bound recovery is Windows-only");
+#endif
 }

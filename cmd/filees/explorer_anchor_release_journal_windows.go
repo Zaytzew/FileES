@@ -243,7 +243,11 @@ func hashAnchorRelease(ctx context.Context, src io.Reader, dst io.Writer, size i
 }
 
 func writeAnchorReleaseRecord(dir string, index int, record anchorReleaseRecord) error {
-	raw, err := json.Marshal(record)
+	return writeAnchorReleaseJSON(dir, index, record)
+}
+
+func writeAnchorReleaseJSON(dir string, index int, value any) error {
+	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -400,6 +404,33 @@ func readAnchorReleaseRecord(ctx context.Context, path string) (anchorReleaseRec
 // A fresh journal object after process restart still requires the caller's
 // expected identity. Stored paths never authorize access to another WC.
 func (j *anchorReleaseJournal) inspect(ctx context.Context) (anchorReleaseRecord, error) {
+	record, err := j.inspectRecords(ctx)
+	if err != nil {
+		return record, err
+	}
+	guards, err := guardAnchorReleaseDirectories(filepath.Join(j.store, j.id), "")
+	if err != nil {
+		return record, err
+	}
+	defer closeAnchorReleaseGuards(guards)
+	data, _, err := openAnchorReleaseFile(filepath.Join(j.store, j.id, "data.bin"), false)
+	if err != nil {
+		return record, err
+	}
+	defer data.Close()
+	digest, err := hashAnchorRelease(ctx, data, nil, record.Size)
+	if err != nil {
+		return record, err
+	}
+	if digest != record.SHA256 {
+		return record, errors.New("retained bytes do not match the release evidence")
+	}
+	return record, ctx.Err()
+}
+
+// Metadata-only variant used solely to finish an already verified retirement
+// after deletion. It never authorizes any prepare/exclude/restore operation.
+func (j *anchorReleaseJournal) inspectRecords(ctx context.Context) (anchorReleaseRecord, error) {
 	if err := j.validate(); err != nil {
 		return anchorReleaseRecord{}, err
 	}
@@ -454,18 +485,6 @@ func (j *anchorReleaseJournal) inspect(ctx context.Context) (anchorReleaseRecord
 			return record, errors.New("release phase identity changed")
 		}
 		record = next
-	}
-	data, _, err := openAnchorReleaseFile(filepath.Join(dir, "data.bin"), false)
-	if err != nil {
-		return record, err
-	}
-	defer data.Close()
-	digest, err := hashAnchorRelease(ctx, data, nil, record.Size)
-	if err != nil {
-		return record, err
-	}
-	if digest != record.SHA256 {
-		return record, errors.New("retained bytes do not match the release evidence")
 	}
 	return record, ctx.Err()
 }

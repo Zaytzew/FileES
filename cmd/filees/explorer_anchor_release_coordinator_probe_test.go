@@ -41,9 +41,55 @@ func (p releaseProbeExcluder) ExcludeRetainedPath(ctx context.Context, wc, rel, 
 	return p.exclude(ctx, wc, rel, retained, b)
 }
 
+func (p releaseProbeExcluder) RequireRetainedResumeSupport(ctx context.Context) error {
+	r, ok := p.anchorReleaseExcluder.(anchorReleaseResumer)
+	if !ok {
+		return errors.New("fixture runtime lacks recovery")
+	}
+	return r.RequireRetainedResumeSupport(ctx)
+}
+
+func (p releaseProbeExcluder) ResumeRetainedPath(ctx context.Context, wc, rel, retained string, b client.RetainedPathBinding) error {
+	r, ok := p.anchorReleaseExcluder.(anchorReleaseResumer)
+	if !ok {
+		return errors.New("fixture runtime lacks recovery")
+	}
+	return r.ResumeRetainedPath(ctx, wc, rel, retained, b)
+}
+
+type retirementProbeRemote struct {
+	anchorReleaseRemoteReader
+	bad string
+}
+
+func (p retirementProbeRemote) InspectRetainedRemote(ctx context.Context, target string) (client.RetainedRemoteIdentity, error) {
+	v, err := p.anchorReleaseRemoteReader.InspectRetainedRemote(ctx, target)
+	if p.bad == "uuid" {
+		v.RepositoryUUID = "11111111-1111-1111-1111-111111111111"
+	}
+	return v, err
+}
+
+func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target string, revision int64, out string) (int64, error) {
+	n, err := p.anchorReleaseRemoteReader.HistoryFetchFile(ctx, target, revision, out)
+	if err == nil && p.bad == "bytes" {
+		b, e := os.ReadFile(out)
+		if e != nil {
+			return n, e
+		}
+		if len(b) == 0 {
+			b = []byte("other")
+		} else {
+			b[0] ^= 32
+		}
+		err = os.WriteFile(out, b, 0600)
+	}
+	return n, err
+}
+
 // Actual CFAPI and SVN in owned fixtures. No production pair, GUI or copy retirement.
 func TestAnchorReleaseCoordinatorNative(t *testing.T) {
-	for _, name := range []string{"normal", "empty", "lost-prepare-ack", "lost-exclude-ack", "cancel-after-prepare", "cancel-after-exclude", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
+	for _, name := range []string{"normal", "empty", "lost-prepare-ack", "lost-exclude-ack", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			repo, source, point, store := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point"), filepath.Join(root, "evidence")
@@ -125,6 +171,17 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}}
 			ops.svn = releaseProbeExcluder{anchorReleaseExcluder: svn, exclude: func(ctx context.Context, wc, rel, retained string, b client.RetainedPathBinding) error {
 				excludes++
+				if name == "defer-after-base" || name == "crash-after-base" {
+					mode := "defer"
+					if name == "crash-after-base" {
+						mode = "crash"
+					}
+					out, err := exec.CommandContext(ctx, probeTool(t, "FILEES_SVN_RELEASE_PROBE"), path, retained, mode).CombinedOutput()
+					if err == nil {
+						t.Fatalf("probe did not stop: %s", out)
+					}
+					return err
+				}
 				switch name {
 				case "same-bytes-replacement":
 					if err := os.Rename(path, path+".saved"); err != nil {
@@ -201,10 +258,10 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			if got, err := os.ReadFile(filepath.Join(store, j.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
 				t.Fatal("retained bytes lost")
 			}
-			if name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
+			if name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
 				fresh := &anchorReleaseJournal{store: store, identity: identity, id: j.id}
 				out, err = fresh.advanceRelease(t.Context(), ops)
-				want := name == "cancel-after-prepare" || name == "cancel-after-exclude"
+				want := name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base"
 				if want && (err != nil || !out.seedObserved) {
 					t.Fatalf("fresh resume: %+v %v", out, err)
 				}
@@ -230,6 +287,38 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			case request := <-p.fetch:
 				t.Fatalf("release hydrated data: %v", request)
 			default:
+			}
+			if name == "normal" || name == "empty" {
+				remote := c.(anchorReleaseRemoteReader)
+				recovery := anchorReleaseRecoveryIO{svn: ops.svn, inspect: ops.inspect, restore: ops.restore}
+				for _, bad := range []string{"uuid", "bytes"} {
+					if err := j.retireCopy(t.Context(), recovery, retirementProbeRemote{anchorReleaseRemoteReader: remote, bad: bad}); err == nil {
+						t.Fatal("unsafe retirement", bad)
+					}
+					if got, err := os.ReadFile(filepath.Join(store, j.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
+						t.Fatal("refused retirement lost copy")
+					}
+				}
+				if err := j.retireCopy(t.Context(), recovery, remote); err != nil {
+					t.Fatal("retirement", err)
+				}
+				if _, err := os.Stat(filepath.Join(store, j.id, "data.bin")); !os.IsNotExist(err) {
+					t.Fatal("verified copy not retired", err)
+				}
+				fresh := &anchorReleaseJournal{store: store, identity: identity, id: j.id}
+				if err := fresh.retireCopy(t.Context(), recovery, remote); err != nil {
+					t.Fatal("retirement receipt replay", err)
+				}
+				// A subsequent same-content object is not the retired copy.
+				if err := os.WriteFile(filepath.Join(store, j.id, "data.bin"), body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := fresh.retireCopy(t.Context(), recovery, remote); err == nil {
+					t.Fatal("completed retirement accepted replacement")
+				}
+				if got, err := os.ReadFile(filepath.Join(store, j.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
+					t.Fatal("replacement copy lost")
+				}
 			}
 		})
 	}

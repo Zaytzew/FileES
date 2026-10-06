@@ -385,6 +385,92 @@ svn_error_t *svn_wc__filees_exclude_bound_v1(svn_wc_context_t *ctx, const char *
     return fr_refuse("FileES release requires exact repository evidence");
   return fr_exclude(ctx, path, retained, expected, cancel_func, cancel_baton, revision, uuid, url, pool);
 }
+
+struct fr_resume_baton {
+  svn_wc_context_t *ctx;
+  const char *retained, *source_id, *uuid, *url;
+  svn_revnum_t revision;
+  svn_cancel_func_t cancel_func;
+  void *cancel_baton;
+};
+
+/* Executed inside the library's DB transaction, AFTER exact single-item and
+ * single-parent-lock admission. The caller holds the native OS writer lease;
+ * never run generic cleanup, steal an ancestor lock or dispatch other work.
+ * Byte guards and original durable parent/source proof are rechecked by the
+ * same removal implementation as the first attempt. Failure rolls back DB
+ * retirement, even if deletion already happened before a lost response. */
+static svn_error_t *fr_resume_item(void *baton, svn_wc__db_t *db,
+    const char *path, const svn_skel_t *item, apr_pool_t *pool)
+{
+  struct fr_resume_baton *b = baton;
+  const svn_skel_t *arg;
+  const char *rel, *source, *saved_digest, *digest;
+  const char *root, *path_rel, *repos_rel, *repos_url, *repos_uuid, *copy_ids;
+  svn_wc__db_status_t status;
+  svn_node_kind_t kind;
+  svn_revnum_t revision;
+  HANDLE retained;
+  unsigned long volume, high, low;
+  char canonical[64];
+  int used = 0;
+  if (!item || item->is_atom || !item->children ||
+      !svn_skel__matches_atom(item->children, "filees-remove-verified-v1"))
+    return fr_refuse("FileES recovery refuses another work item");
+  arg = item->children->next;
+  if (!arg || !arg->is_atom) return fr_refuse("FileES recovery malformed path");
+  rel = apr_pstrmemdup(pool, arg->data, arg->len);
+  arg = arg->next;
+  if (!arg || !arg->is_atom) return fr_refuse("FileES recovery malformed parents");
+  arg = arg->next;
+  if (!arg || !arg->is_atom || arg->len > 128) return fr_refuse("FileES recovery malformed source");
+  source = apr_pstrmemdup(pool, arg->data, arg->len);
+  arg = arg->next;
+  if (!arg || !arg->is_atom || arg->len != 64 || arg->next)
+    return fr_refuse("FileES recovery malformed digest");
+  saved_digest = apr_pstrmemdup(pool, arg->data, arg->len);
+  SVN_ERR(svn_wc__db_get_wcroot(&root, db, path, pool, pool));
+  path_rel = svn_dirent_skip_ancestor(root, path);
+  if (!path_rel || !*path_rel || strcmp(path_rel, rel))
+    return fr_refuse("FileES recovery item belongs to another file");
+  if (sscanf(source, "%8lx:%8lx%8lx:%n", &volume, &high, &low, &used) != 3 || used != 26)
+    return fr_refuse("FileES recovery source identity is malformed");
+  apr_snprintf(canonical, sizeof canonical, "%lu:%" APR_UINT64_T_FMT, volume,
+      ((apr_uint64_t)high << 32) | low);
+  if (strcmp(canonical, b->source_id)) return fr_refuse("FileES recovery source differs from journal");
+  SVN_ERR(svn_wc__db_base_get_info(&status, &kind, &revision, &repos_rel, &repos_url, &repos_uuid,
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      db, path, pool, pool));
+  if (status != svn_wc__db_status_excluded || kind != svn_node_file || revision != b->revision
+      || !repos_uuid || !repos_url || !repos_rel || strcmp(repos_uuid, b->uuid)
+      || strcmp(svn_path_url_add_component2(repos_url, repos_rel, pool), b->url))
+    return fr_refuse("FileES recovery repository or revision changed");
+  SVN_ERR(fr_parents(&copy_ids, b->retained, "", pool));
+  SVN_ERR(fr_open(&retained, b->retained, FALSE, FALSE, TRUE, pool));
+  SVN_ERR(fr_digest(&digest, retained, b->cancel_func, b->cancel_baton, pool));
+  if (strcmp(digest, saved_digest)) return fr_refuse("FileES recovery retained bytes differ");
+  return run_filees_remove(NULL, db, item, path, b->cancel_func, b->cancel_baton, pool);
+}
+
+svn_error_t *svn_wc__filees_resume_bound_v1(svn_wc_context_t *ctx,
+    const char *path, const char *retained, const char *source_id,
+    svn_revnum_t revision, const char *uuid, const char *url,
+    svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *pool)
+{
+  struct fr_resume_baton b;
+  apr_pool_t *guards;
+  svn_error_t *err;
+  if (!svn_dirent_is_absolute(path) || !svn_dirent_is_absolute(retained)
+      || !source_id || !*source_id || revision < 1 || !uuid || !*uuid
+      || !url || !svn_path_is_url(url)) return fr_refuse("FileES recovery needs exact retained evidence");
+  b.ctx = ctx; b.retained = retained; b.source_id = source_id;
+  b.revision = revision; b.uuid = uuid; b.url = url;
+  b.cancel_func = cancel_func; b.cancel_baton = cancel_baton;
+  guards = svn_pool_create(pool);
+  err = svn_wc__db_filees_resume(ctx->db, path, fr_resume_item, &b, guards);
+  svn_pool_destroy(guards);
+  return err;
+}
 #else
 svn_error_t *svn_wc__filees_exclude_retained_v1(svn_wc_context_t *ctx, const char *path,
     const char *retained, void *expected, svn_cancel_func_t cancel_func,

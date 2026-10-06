@@ -75,6 +75,9 @@ svn_error_t *filees_exclude_retained(const char *wc, const char *retained,
 svn_error_t *filees_inspect_excluded(const char *wc, const char *rel, apr_pool_t *pool);
 int filees_conditional_exclusion_available(void);
 int filees_bound_exclusion_available(void);
+int filees_bound_resume_available(void);
+svn_error_t *filees_resume_bound(const char *wc, const char *retained, const char *rel,
+    const char *source_id, svn_revnum_t revision, const char *uuid, const char *url, apr_pool_t *pool);
 svn_error_t *filees_exclude_bound(const char *wc, const char *retained, const char *rel,
     const char *source_id, svn_revnum_t revision, const char *uuid, const char *url, apr_pool_t *pool);
 /* commit --progress: stream per-file and byte progress on stderr. */

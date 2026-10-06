@@ -16,6 +16,10 @@ import (
 
 func fakeNativeRA() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		if os.Getenv("FILEES_TEST_RA_BOUND_RESUME") == "1" {
+			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["sparse_exclude_bound_v1","sparse_resume_bound_v1"]}`)
+			return
+		}
 		if os.Getenv("FILEES_TEST_RA_OLD_HELPER") == "1" {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return

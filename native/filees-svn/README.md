@@ -1,5 +1,20 @@
 # FileES native SVN client — explicit platform integration
 
+Internal effect inspection prerequisite, 2026-10-06, base r1938 plus delta:
+`inspect-excluded --wc WC -- REL` advertises optional
+`sparse_inspect_excluded_v1`. It reads exactly one committed file through
+public `svn_client_info4`, with both revisions NULL and fetch_excluded TRUE.
+No network, byte read, SQL, writer record or WC mutation. The receipt includes
+WC/path, URL, repository root/UUID and revision. Only an exact excluded node
+with normal schedule and no copy/move/conflict is `excluded`; missing ordinary
+files and scheduled deletions are `not_excluded`. Unknown/new nodes refuse.
+This is a metadata snapshot, not permission to replace any filesystem object.
+An obstruction at the same path is preserved, even when SVN reports exclusion.
+The Go adapter checks the optional feature and receipt; no status/CLI fallback.
+Tests inspect the native CFAPI/SVN cycle, including a restored remote seed,
+and a separate unavailable-repository fixture after discarding the mutation
+receipt. This does not implement process-kill recovery or a release coordinator.
+
 Internal exclusion prerequisite, 2026-10-06, base r1935 plus working delta:
 `exclude-retained --wc WC --retained FILE -- REL` advertises optional
 `sparse_exclude_retained_v1`. It excludes exactly one clean committed file

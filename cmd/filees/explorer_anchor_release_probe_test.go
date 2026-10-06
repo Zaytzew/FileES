@@ -327,6 +327,38 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 	adopt := svn.(interface {
 		UpdateAdoptPath(context.Context, string, string, int64) (string, error)
 	})
+	inspection := svn.(interface {
+		InspectPathExclusion(context.Context, string, string) (client.PathExclusion, error)
+	})
+	consumeExpectedHydration := func() {
+		t.Helper()
+		select {
+		case request := <-p.fetch:
+			if len(request) < 5 || request[4] != "drawing.dwg" {
+				t.Fatalf("wrong explicit hydration: %v", request)
+			}
+		default:
+			t.Fatal("explicit hydration did not reach the provider")
+		}
+	}
+	var repositoryID string
+	observeExclusion := func(excluded bool) {
+		t.Helper()
+		got, err := inspection.InspectPathExclusion(t.Context(), point, "drawing.dwg")
+		if err != nil || got.Excluded != excluded || got.Revision != 1 || got.URL != uri+"/drawing.dwg" || got.RepositoryRootURL != uri {
+			t.Fatalf("SVN effect inspection: %+v %v", got, err)
+		}
+		if repositoryID == "" {
+			repositoryID = got.RepositoryUUID
+		} else if got.RepositoryUUID != repositoryID {
+			t.Fatal("SVN repository identity changed")
+		}
+		select {
+		case <-p.fetch:
+			t.Fatal("SVN metadata inspection requested remote hydration")
+		default:
+		}
+	}
 	if got, err := os.ReadFile(local); err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("initial hydration: %v", err)
 	}
@@ -334,6 +366,8 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.accept("drawing.dwg", true)
+	consumeExpectedHydration()
+	observeExclusion(false)
 	readLog := func() string {
 		raw, err := exec.CommandContext(t.Context(), cli, "log", "--xml", uri).CombinedOutput()
 		if err != nil {
@@ -374,6 +408,7 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		t.Fatalf("not ordinary/local: %+v", s)
 	}
 	reload("prepare_requested")
+	observeExclusion(false)
 	if err := journal.request(t.Context(), "exclude_requested"); err != nil {
 		t.Fatal(err)
 	}
@@ -399,6 +434,7 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		}
 	}
 	reload("exclude_requested")
+	observeExclusion(true)
 	if err := journal.request(t.Context(), "restore_requested"); err != nil {
 		t.Fatal(err)
 	}
@@ -409,6 +445,7 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		t.Fatalf("not remote seed: %+v", s)
 	}
 	reload("restore_requested")
+	observeExclusion(true)
 	// The restored identity persists across provider restart without consuming
 	// the retained copy. This is not transaction recovery after an interruption.
 	p.stop()
@@ -428,6 +465,8 @@ func TestAnchorReleasePrerequisitesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.accept("drawing.dwg", true)
+	consumeExpectedHydration()
+	observeExclusion(false)
 	if got, err := os.ReadFile(local); err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("roundtrip lost bytes: %v", err)
 	}

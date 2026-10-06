@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <apr_strings.h>
 #include <svn_dirent_uri.h>
 #include <svn_props.h>
 #ifdef _WIN32
@@ -103,6 +104,72 @@ static svn_error_t *exclude_status(void *baton, const char *path,
     (void)path; (void)pool;
     if (!strcmp(b->path, status->local_abspath))
         b->status = svn_client_status_dup(status, b->pool);
+    return SVN_NO_ERROR;
+}
+
+struct excluded_info {
+    const char *path;
+    svn_client_info2_t *info;
+    apr_pool_t *pool;
+};
+
+static svn_error_t *collect_excluded_info(void *baton, const char *path,
+                                         const svn_client_info2_t *info, apr_pool_t *pool)
+{
+    struct excluded_info *b = baton;
+    (void)pool;
+    if (strcmp(path, b->path) || b->info)
+        return filees_refuse("exclusion inspection returned another or duplicate node");
+    b->info = svn_client_info2_dup(info, b->pool);
+    return SVN_NO_ERROR;
+}
+
+/* No data handles, status scan, writer record, authentication or RA. The
+ * public info API exposes excluded BASE nodes only with fetch_excluded.
+ * Both revisions MUST be NULL: even WORKING would select a network branch.
+ * This receipt describes WC metadata, not the current filesystem object.
+ * A replacement/placeholder at the path is never opened or removed here. */
+svn_error_t *filees_inspect_excluded(const char *wc_arg, const char *rel, apr_pool_t *pool)
+{
+    const char *wc, *path, *root;
+    const char *rels[1];
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    struct excluded_info b;
+    const svn_client_info2_t *info;
+    const svn_wc_info_t *local;
+    svn_boolean_t excluded;
+
+    if (!filees_safe_relative(rel)) return filees_refuse("inspection requires one canonical data path");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, TRUE, pool));
+    rels[0] = rel;
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, 1, pool));
+    path = APR_ARRAY_IDX(paths, 0, const char *);
+    SVN_ERR(filees_plain_node(svn_dirent_dirname(path, pool), APR_DIR, FALSE, pool));
+    SVN_ERR(svn_client_get_wc_root(&root, path, ctx, pool, pool));
+    if (strcmp(root, wc)) return filees_refuse("inspection target belongs to another WC");
+    b.path = path; b.info = NULL; b.pool = pool;
+    SVN_ERR(svn_client_info4(path, NULL, NULL, svn_depth_empty,
+                             TRUE, FALSE, FALSE, NULL, collect_excluded_info, &b, ctx, pool));
+    info = b.info;
+    if (!info || !info->wc_info || info->kind != svn_node_file ||
+        !info->URL || !info->repos_root_URL || !info->repos_UUID ||
+        !SVN_IS_VALID_REVNUM(info->rev))
+        return filees_refuse("inspection requires an exact committed file with known identity and revision");
+    local = info->wc_info;
+    if (!local->wcroot_abspath || strcmp(local->wcroot_abspath, wc))
+        return filees_refuse("inspection WC identity changed");
+    excluded = local->depth == svn_depth_exclude && local->schedule == svn_wc_schedule_normal &&
+               !local->copyfrom_url && !local->moved_from_abspath && !local->moved_to_abspath &&
+               (!local->conflicts || !local->conflicts->nelts);
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\",\"path\":",
+           excluded ? "excluded" : "not_excluded");
+    filees_json_string(rel);
+    printf(",\"wc\":"); filees_json_string(wc);
+    printf(",\"url\":"); filees_json_string(info->URL);
+    printf(",\"repos_root_url\":"); filees_json_string(info->repos_root_URL);
+    printf(",\"repos_uuid\":"); filees_json_string(info->repos_UUID);
+    printf(",\"revision\":%ld}\n", (long)info->rev);
     return SVN_NO_ERROR;
 }
 

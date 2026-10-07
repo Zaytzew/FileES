@@ -68,6 +68,8 @@ func (service *HeadBrowserService) explorerFolder(request explorermenu.Request) 
 	// borrowing, changing or racing the user's currently open browser window.
 	operation := newHeadBrowserService(service.daemon, service.projection, service.render, service.text)
 	operation.confirm = service.confirm
+	operation.showProgress = service.showProgress
+	operation.folderComplete = service.folderComplete
 	operation.focus = HeadBrowserContext{ServerID: match.ServerID, RepoID: match.RepoID}
 	_, handled, err := operation.folderAction(match, relative, action)
 	if err != nil {

@@ -53,6 +53,21 @@ func TestExplorerVirtualFolderUsesConfirmedBatchWithoutChangingBrowser(t *testin
 					snapshot.Repositories = append(snapshot.Repositories, snapshot.Repositories[1])
 				}
 				prompts := 0
+				progress := newProgressService()
+				shown, completed := 0, 0
+				service.showProgress = func(ctx context.Context, p platform.ProgressRequest) (func(), error) {
+					shown++
+					if prompts != 1 || p.PresentationArgs["files"] != "3" {
+						t.Fatal("spinner before confirmed plan", p)
+					}
+					return progress.ShowProgress(ctx, p)
+				}
+				service.folderComplete = func(_ context.Context, action string, done, total int64) {
+					completed++
+					if len(progress.Snapshot().Items) != 0 || done != 3 || total != 3 {
+						t.Fatal("completion shown before closing spinner", done, total)
+					}
+				}
 				service.confirm = func(_ context.Context, p platform.ConfirmRequest) (bool, error) {
 					prompts++
 					action := "download"
@@ -102,6 +117,19 @@ func TestExplorerVirtualFolderUsesConfirmedBatchWithoutChangingBrowser(t *testin
 				}
 				if service.Context() != focus {
 					t.Fatal("Explorer changed visible browser focus")
+				}
+				if len(progress.Snapshot().Items) != 0 {
+					t.Fatal("spinner left open")
+				}
+				wantShown, wantCompleted := 0, 0
+				if variant == "root" || variant == "child" {
+					wantShown, wantCompleted = 1, 1
+				}
+				if variant == "partial" {
+					wantShown = 1
+				}
+				if shown != wantShown || completed != wantCompleted {
+					t.Fatal("incorrect wait/result", shown, completed)
 				}
 				if len(d.materialized) != 0 || len(d.fills) != 0 || len(d.releases) != 0 || len(d.anchors) != 0 {
 					t.Fatal("alternate SVN/lifecycle mutation")

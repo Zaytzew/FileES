@@ -3,7 +3,7 @@ import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowser
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, getLocale } from "./i18n.js";
 import { formatBytes, breadcrumb, joinPath, parentPath } from "./timemachine-view.js";
-import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed, availabilityKey } from "./headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey } from "./headbrowser-view.js";
 
 // Przeglądaj na serwerze (implementation notes (not distributed)). The page
 // asks the daemon for everything through HeadBrowserService: the folder at
@@ -137,8 +137,8 @@ function renderEntries() {
       dir ? "" : `<button type="button" class="quiet-button" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}"${disabled}>${escapeHTML(t("headBrowser.preview"))}</button>`,
       entry.local ? `<button type="button" class="quiet-button" data-open-local="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.openLocal"))}</button>` : "",
       materializeAllowed(state.repo, entry) ? `<button type="button" class="primary-button" data-materialize="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.materialize"))}</button>` : "",
-      releaseAllowed(state.repo, entry)
-        ? `<button type="button" class="quiet-button" data-release="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.releaseHint"))}"${disabled}>${escapeHTML(t("headBrowser.release"))}</button>`
+      releaseOffered(state.repo, entry)
+        ? `<button type="button" class="quiet-button" data-release="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.releaseHint"))}"${state.busy || !releaseAllowed(state.repo, entry) ? " disabled" : ""}>${escapeHTML(t("headBrowser.release"))}</button>`
         : "",
     ].join("");
     return `<div class="hb-row${dir ? " is-dir" : ""}">${badge}${name}<small>${size}</small>${local}<span class="hb-actions">${actions}</span></div>`;

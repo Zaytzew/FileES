@@ -97,6 +97,10 @@ func TestProgressOverlayIsWiredAndTranslated(t *testing.T) {
 		"progress.createRepository.server.title", "progress.createRepository.server.text",
 		"progress.createRepository.import.title", "progress.createRepository.import.text",
 		"progress.attach.title", "progress.attach.text",
+		"progress.anchorFolder.release.title", "progress.anchorFolder.release.text",
+		"progress.anchorFolder.download.title", "progress.anchorFolder.download.text",
+		"info.anchorFolder.release.title", "info.anchorFolder.release.text",
+		"info.anchorFolder.download.title", "info.anchorFolder.download.text",
 		"progress.queue", "progress.published", "progress.elapsed", "progress.background", "progress.show",
 	}
 	for _, locale := range []string{"pl", "en", "de", "fr", "es"} {

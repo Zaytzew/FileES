@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"filees/internal/explorermenu"
@@ -11,13 +15,45 @@ import (
 // A bounded launch queue survives cold startup without persisting/replaying
 // gestures. The singleton forwards subsequent launches to this same queue.
 var explorerRequests = make(chan explorermenu.Request, 16)
+var explorerVirtualPending = struct {
+	sync.Mutex
+	paths map[string]bool
+}{paths: make(map[string]bool)}
+
+func explorerVirtualKey(request explorermenu.Request) string {
+	if request.Verb != explorermenu.Download && request.Verb != explorermenu.Release {
+		return ""
+	}
+	path := filepath.Clean(request.Path)
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
+}
+
+func finishExplorerRequest(request explorermenu.Request) {
+	explorerVirtualPending.Lock()
+	delete(explorerVirtualPending.paths, explorerVirtualKey(request))
+	explorerVirtualPending.Unlock()
+}
 
 func queueExplorerRequest(request explorermenu.Request) bool {
 	if _, err := explorermenu.Parse([]string{request.Verb, request.Path}); err != nil {
 		return false
 	}
+	// A second click must not become a queued retry of a long batch, nor an
+	// opposite action on that same folder. A new gesture is allowed after end.
+	explorerVirtualPending.Lock()
+	defer explorerVirtualPending.Unlock()
+	key := explorerVirtualKey(request)
+	if key != "" && explorerVirtualPending.paths[key] {
+		return false
+	}
 	select {
 	case explorerRequests <- request:
+		if key != "" {
+			explorerVirtualPending.paths[key] = true
+		}
 		return true
 	default:
 		return false
@@ -44,6 +80,7 @@ func (service *GUIService) runExplorerRequests(ctx context.Context) {
 				case <-ctx.Done():
 					deadline.Stop()
 					poll.Stop()
+					finishExplorerRequest(request)
 					return
 				case <-deadline.C:
 					ready = true
@@ -62,6 +99,7 @@ func (service *GUIService) runExplorerRequests(ctx context.Context) {
 				if handler != nil {
 					handler(ctx, request)
 				}
+				finishExplorerRequest(request)
 				continue
 			}
 			service.actionAdmission.RLock()

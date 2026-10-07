@@ -17,9 +17,13 @@ func TestExplorerGesturesWaitForPromptRuntime(t *testing.T) {
 	source := readMainSource(t)
 	applicationStarted := strings.Index(source, "host.Event.OnApplicationEvent(events.Common.ApplicationStarted")
 	runtimeReady := strings.Index(source, "promptWindow.OnWindowEvent(events.Common.WindowRuntimeReady")
-	runner := strings.Index(source, "go gui.runExplorerRequests(host.Context())")
+	runner := strings.Index(source, "gui.runExplorerRequests(host.Context())")
 	if runtimeReady < 0 || runner < runtimeReady || runner > applicationStarted {
 		t.Fatal("Explorer gestures must wait for the prompt WebView runtime, not merely ApplicationStarted")
+	}
+	gate := strings.Index(source, "case <-mainProgressReady:")
+	if gate < runtimeReady || gate > runner || !strings.Contains(source, "mainProgressReadyOnce.Do(func() { close(mainProgressReady) })") {
+		t.Fatal("Explorer folder gestures must also wait for the main progress WebView")
 	}
 }
 
@@ -42,10 +46,41 @@ func resetExplorerQueue(t *testing.T) {
 	t.Helper()
 	for {
 		select {
-		case <-explorerRequests:
+		case request := <-explorerRequests:
+			finishExplorerRequest(request)
 		default:
 			return
 		}
+	}
+}
+
+func TestExplorerVirtualRepeatIsNotQueuedWhileFolderActionRuns(t *testing.T) {
+	resetExplorerQueue(t)
+	t.Cleanup(func() { resetExplorerQueue(t) })
+	path := t.TempDir()
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	service := &GUIService{view: guiapp.ViewModel{Connected: true}, explorerFolder: func(context.Context, explorermenu.Request) {
+		entered <- struct{}{}
+		<-release
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() { service.runExplorerRequests(ctx); close(finished) }()
+	defer func() { close(release); cancel(); <-finished }()
+	request := explorermenu.Request{Verb: explorermenu.Release, Path: path}
+	if !queueExplorerRequest(request) {
+		t.Fatal("first gesture refused")
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("handler not started")
+	}
+	if queueExplorerRequest(request) || queueExplorerRequest(explorermenu.Request{Verb: explorermenu.Download, Path: filepath.Join(path, ".")}) {
+		t.Fatal("repeat or opposite operation queued while busy")
+	}
+	if len(explorerRequests) != 0 {
+		t.Fatal("duplicate survived in queue")
 	}
 }
 
@@ -64,10 +99,12 @@ func TestExplorerVirtualRequestsNeverBecomeOrdinaryAdd(t *testing.T) {
 	go func() { service.runExplorerRequests(ctx); close(finished) }()
 	defer func() { cancel(); <-finished }()
 	for _, verb := range []string{explorermenu.Download, explorermenu.Release} {
-		singleInstanceOptions().OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"gui", verb, path}})
+		// Distinct selections test routing, not the same-folder busy guard.
+		selection := filepath.Join(path, strings.TrimPrefix(verb, "--"))
+		singleInstanceOptions().OnSecondInstanceLaunch(application.SecondInstanceData{Args: []string{"gui", verb, selection}})
 		select {
 		case r := <-delivered:
-			if r.Verb != verb || r.Path != path {
+			if r.Verb != verb || r.Path != selection {
 				t.Fatal(r)
 			}
 		case <-time.After(time.Second):

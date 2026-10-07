@@ -55,6 +55,8 @@ type HeadBrowserService struct {
 	render           func(code, key string, details map[string]string) string
 	text             func(key, fallback string) string
 	confirm          func(context.Context, platform.ConfirmRequest) (bool, error)
+	showProgress     func(context.Context, platform.ProgressRequest) (func(), error)
+	folderComplete   func(context.Context, string, int64, int64)
 
 	mu      sync.RWMutex
 	emitter snapshotEmitter
@@ -225,14 +227,37 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 	if service.Context() != focus || !current.CanBatch || current.LocalPath != repo.LocalPath || current.ServerID != repo.ServerID || current.RepoID != repo.RepoID {
 		return zero, true, errors.New(service.render("HEAD-2001", "head.forbidden", nil))
 	}
+	// Explain the entire confirmed batch, not a guessed percentage or the
+	// repository's unrelated publication queue. Closing the wait never cancels
+	// work in the daemon; every return path must remove the spinner.
+	closeProgress := func() {}
+	if service.showProgress != nil {
+		title := "Pobieranie plików…"
+		if action == "release" {
+			title = "Zwalnianie miejsca…"
+		}
+		closeProgress, err = service.showProgress(ctx, platform.ProgressRequest{
+			PresentationKey:  "progress.anchorFolder." + action,
+			PresentationArgs: map[string]string{"files": fmt.Sprint(plan.Files), "path": repo.Name},
+			Title:            title, Text: fmt.Sprintf("%s — %d plików. Poczekaj na zakończenie działania.", repo.Name, plan.Files),
+		})
+		if err != nil {
+			return zero, true, err
+		}
+		defer closeProgress()
+	}
 	result, err := headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoAnchorBatchResult, error) {
 		return daemon.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: payload, Fingerprint: plan.Fingerprint})
 	})
+	closeProgress()
 	if err != nil {
 		return zero, true, err
 	}
 	if result.State != "attached" || result.Completed != result.Total || result.Total != plan.Files {
 		return zero, true, fmt.Errorf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
+	}
+	if service.folderComplete != nil {
+		service.folderComplete(ctx, action, result.Completed, result.Total)
 	}
 	return contract.RepoHeadWriteResult{LocalPath: result.LocalPath, Path: result.Path, State: result.State}, true, nil
 }

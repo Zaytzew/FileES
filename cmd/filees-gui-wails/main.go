@@ -266,6 +266,22 @@ func main() {
 			NonClientRegionSupport: true,
 		},
 	})
+	headBrowser.showProgress = func(ctx context.Context, request platform.ProgressRequest) (func(), error) {
+		close, err := progress.ShowProgress(ctx, request)
+		if err == nil {
+			mainWindow.Show()
+			mainWindow.UnMinimise()
+			mainWindow.Focus()
+		}
+		return close, err
+	}
+	headBrowser.folderComplete = func(ctx context.Context, action string, completed, total int64) {
+		_ = prompts.ShowInfo(ctx, platform.InfoRequest{
+			PresentationKey:  "info.anchorFolder." + action,
+			PresentationArgs: map[string]string{"done": fmt.Sprint(completed), "total": fmt.Sprint(total)},
+			Title:            "Folder FileES", Text: fmt.Sprintf("Działanie zakończone: %d z %d plików.", completed, total),
+		})
+	}
 	settingsWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "filees-settings",
 		Title:            "Ustawienia FileES",
@@ -441,9 +457,19 @@ func main() {
 	// ApplicationStarted precedes WebView2 controller creation. Explorer's
 	// first gesture can open a prompt immediately, so wait for that window.
 	var explorerRuntimeOnce sync.Once
+	mainProgressReady := make(chan struct{})
+	var mainProgressReadyOnce sync.Once
 	promptWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
 		explorerRuntimeOnce.Do(func() {
-			go gui.runExplorerRequests(host.Context())
+			go func() {
+				// Folder actions also raise the main window's progress overlay.
+				// Do not start a cold Explorer gesture before its WebView exists.
+				select {
+				case <-mainProgressReady:
+					gui.runExplorerRequests(host.Context())
+				case <-host.Context().Done():
+				}
+			}()
 			go gui.runAnchorConsents(host.Context(), daemon, prompts, actionPlatform)
 		})
 	})
@@ -493,6 +519,7 @@ func main() {
 	// for twenty minutes with the reason known and written to nothing.
 	var smallIconOnce sync.Once
 	mainWindow.RegisterHook(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
+		mainProgressReadyOnce.Do(func() { close(mainProgressReady) })
 		smallIconOnce.Do(func() {
 			if err := applySmallWindowIcon(mainWindow, appIcon); err != nil {
 				opjournal.RecordFailure("interface", "Okno nie dostało małej ikony (Alt-Tab, pasek tytułu)", err)

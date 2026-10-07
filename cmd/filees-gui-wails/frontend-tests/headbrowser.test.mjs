@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entryType, sortEntries, copyStatusKey, releaseAllowed, materializeAllowed, availabilityKey } from "../frontend/headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey } from "../frontend/headbrowser-view.js";
 
 test("directory badges describe content, never just the local skeleton", () => {
   for (const value of ["remote", "hybrid", "local"]) {
@@ -23,12 +23,24 @@ test("a file's badge is its extension, never a guess from content", () => {
 
 test("folder actions require the batch capability even on a partly local folder", () => {
   const repo = { attached: true, sparse: true, can_release: true, can_batch: true };
-  const folder = { kind: "dir", local: true };
+  const folder = { kind: "dir", local: true, availability: "hybrid" };
   assert.equal(releaseAllowed(repo, folder), true);
   assert.equal(materializeAllowed(repo, folder), true);
   assert.equal(releaseAllowed({ ...repo, can_batch: false }, folder), false);
   assert.equal(materializeAllowed({ ...repo, can_batch: false }, folder), false);
   assert.equal(materializeAllowed(repo, { kind: "file", local: true }), false);
+});
+
+test("remote and unknown folders keep a disabled release button", () => {
+  const repo = { attached: true, sparse: true, can_release: true, can_batch: true };
+  for (const availability of ["remote", "unknown", undefined, "invalid"]) {
+    const folder = { kind: "dir", local: true, availability };
+    assert.equal(releaseOffered(repo, folder), true);
+    assert.equal(releaseAllowed(repo, folder), false);
+  }
+  for (const availability of ["hybrid", "local"]) {
+    assert.equal(releaseAllowed(repo, { kind: "dir", local: true, availability }), true);
+  }
 });
 
 test("folders come first, then files, in natural order", () => {

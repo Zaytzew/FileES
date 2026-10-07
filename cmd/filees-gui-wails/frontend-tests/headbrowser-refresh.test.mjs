@@ -27,7 +27,7 @@ test("returning from Explorer refreshes content without clearing rows or overlap
   runInNewContext(source + "\nglobalThis.browser = { state, renderEntries, list };", sandbox);
   await Promise.resolve();
   const { state, renderEntries, list } = sandbox.browser;
-  state.repo = { attached: true, sparse: true };
+  state.repo = { attached: true, sparse: true, can_release: true, can_batch: true };
   state.entries = [{ name: "folder", kind: "dir", local: true, availability: "hybrid" }];
   renderEntries();
   const before = node("#hb-entries").innerHTML;
@@ -38,6 +38,7 @@ test("returning from Explorer refreshes content without clearing rows or overlap
   complete({ path: "", entries: [{ name: "folder", kind: "dir", local: true, availability: "remote" }] });
   await refresh;
   assert.match(node("#hb-entries").innerHTML, /availability.remote/);
+  assert.match(node("#hb-entries").innerHTML, /data-release="folder"[^>]* disabled/);
   state.busy = "headBrowser.releasing";
   events.get("focus")();
   assert.equal(requests, 1);

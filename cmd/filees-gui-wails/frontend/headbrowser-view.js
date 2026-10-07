@@ -38,9 +38,16 @@ export function availabilityKey(entry) {
 }
 
 // Folder release always goes through the daemon's preview/confirmation flow.
-export function releaseAllowed(repo, entry) {
+export function releaseOffered(repo, entry) {
   return Boolean(repo?.attached && repo?.sparse && repo?.can_release &&
     ((entry?.local && entry?.kind === "file") || (repo?.can_batch && entry?.kind === "dir")));
+}
+
+export function releaseAllowed(repo, entry) {
+  if (!releaseOffered(repo, entry)) return false;
+  // A local directory skeleton contains no releasable bytes by itself.
+  // Unknown metadata must not enable an action on stale/older projections.
+  return entry.kind !== "dir" || ["hybrid", "local"].includes(entry.availability);
 }
 
 export function materializeAllowed(repo, entry) {

@@ -281,11 +281,37 @@ func (s *Store) MarkFullDepth(serverID, repoID string) (Record, error) {
 // upload shelf. The server URL and read-only access must already have been
 // checked against the authoritative client view by the caller.
 func (s *Store) BeginShelfAttach(serverID, repoID, repoURL, localPath string) (Record, error) {
-	return s.begin(Record{
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The caller has verified the current server projection is a read-only
+	// upload shelf. Old clients recorded an unapproved ordinary attach intent
+	// for these shelves. Retire only that unstarted intent, never an approved
+	// WC, an anchor, a policy request or a withdrawn repository. Keep its path
+	// as history; neither the old folder nor its contents are adopted/deleted.
+	retired := make(map[string]Record)
+	for id, existing := range s.records {
+		if existing.ServerID == serverID && existing.RepoID == repoID &&
+			existing.State == StateUnattached && existing.Purpose == "" &&
+			existing.RepoURL == "" && existing.Access == "" &&
+			!existing.Anchor && !existing.Sparse && existing.SparsePath == "" &&
+			!existing.RemoteDeletionObserved && !existing.RemoteCleanupStarted &&
+			existing.PendingLocalPath == "" && existing.ShelfFetch == (ShelfFetch{}) {
+			retired[id] = existing
+			existing.State, existing.UpdatedAt = StateAbandoned, s.now().UTC()
+			s.records[id] = existing
+		}
+	}
+	record, err := s.beginLocked(Record{
 		ServerID: serverID, RepoID: repoID, RepoURL: repoURL, Access: "r",
 		Purpose: clientview.PurposeUploadShelf, LocalPath: localPath,
 		DisplayName: folderName(localPath), State: StateAttaching,
 	})
+	if err != nil {
+		for id, previous := range retired {
+			s.records[id] = previous
+		}
+	}
+	return record, err
 }
 
 // folderName is the presentable name of a working copy, or empty when the path

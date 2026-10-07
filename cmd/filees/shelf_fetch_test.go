@@ -264,15 +264,128 @@ func TestShelfAutomaticCacheDoesNotAdoptUnrelatedFolder(t *testing.T) {
 	if err := os.WriteFile(userFile, []byte("preserve"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("existing folder accepted: %v", err)
+	result, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(store.List()) != 0 {
-		t.Fatal("unrelated cache folder recorded as an attachment")
+	if result.LocalPath == path || filepath.Dir(result.LocalPath) != filepath.Dir(path) {
+		t.Fatal("unrelated cache folder adopted instead of reserving a fresh folder")
 	}
 	data, err := os.ReadFile(userFile)
 	if err != nil || string(data) != "preserve" {
 		t.Fatal("unrelated data changed")
+	}
+}
+
+func TestShelfImportMigratesLegacyIntentAndSkipsOrphanCache(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataRoot)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	store, err := localrepo.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	oldPath := t.TempDir()
+	oldFile := filepath.Join(oldPath, "keep.txt")
+	if err := os.WriteFile(oldFile, []byte("old folder data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := store.BeginAttach("office", repoID, oldPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := sha256.Sum256([]byte("office\x00" + repoID))
+	orphan := filepath.Join(dataRoot, "filees", "shelf-cache", fmt.Sprintf("%x", id))
+	if err := os.MkdirAll(orphan, 0700); err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: store, onCreate: func(string) {}}
+	parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: t.TempDir()}
+	item := contract.ShelfItem{UploadID: "upload", RepoPath: "test.txt", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+	result, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.LocalPath == oldPath || result.LocalPath == orphan || result.OperationID == legacy.OperationID {
+		t.Fatalf("adopted old intent or orphan: %+v", result)
+	}
+	old, _ := store.Get(legacy.OperationID)
+	if old.State != localrepo.StateAbandoned || old.LocalPath != oldPath || old.Purpose != "" {
+		t.Fatalf("legacy intent not safely retired: %+v", old)
+	}
+	if data, err := os.ReadFile(oldFile); err != nil || string(data) != "old folder data" {
+		t.Fatal("old folder changed")
+	}
+	if entries, err := os.ReadDir(orphan); err != nil || len(entries) != 0 {
+		t.Fatal("orphan cache changed")
+	}
+	if _, err := store.MarkAttached(result.OperationID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := store.Get(result.OperationID)
+	if _, err := store.SetShelfFetchState(current.OperationID, current.ShelfFetch.ID, "complete", nil); err != nil {
+		t.Fatal(err)
+	}
+	store, err = localrepo.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.store = store
+	retry, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil || retry.OperationID != current.OperationID || retry.LocalPath != current.LocalPath {
+		t.Fatalf("restart did not reuse durable shelf: %+v %v", retry, err)
+	}
+}
+
+func TestShelfImportRetriesAfterFailedCacheReservation(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataRoot)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	store, err := localrepo.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	// A protected policy request makes lifecycle persistence refuse the
+	// first new cache reservation. It must never be silently migrated.
+	blocked, err := store.BeginAttach("office", repoID, t.TempDir(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{store: store, onCreate: func(string) {}}
+	parent := contract.RepoSummary{ID: uuid.NewString(), URL: "svn+ssh://example/parent", LocalPath: t.TempDir()}
+	item := contract.ShelfItem{UploadID: "upload", RepoPath: "test.txt", SHA256: fmt.Sprintf("%x", sha256.Sum256(nil))}
+	if _, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath); err == nil {
+		t.Fatal("protected intent migrated")
+	}
+	cache := filepath.Join(dataRoot, "filees", "shelf-cache")
+	entries, err := os.ReadDir(cache)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("reservation: %v %v", entries, err)
+	}
+	orphan := filepath.Join(cache, entries[0].Name())
+	// End the synthetic policy request explicitly, reopen the store and retry.
+	if _, err := store.MarkError(blocked.OperationID, errors.New("synthetic failed request")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Abandon(blocked.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	store, err = localrepo.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.store = store
+	result, err := service.BeginShelfImport("office", repoID, "svn+ssh://example/shelf", "", item, parent, parent.LocalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.LocalPath == orphan {
+		t.Fatal("retry adopted an unrecorded reservation")
+	}
+	if entries, err := os.ReadDir(orphan); err != nil || len(entries) != 0 {
+		t.Fatal("failed reservation was modified")
 	}
 }
 

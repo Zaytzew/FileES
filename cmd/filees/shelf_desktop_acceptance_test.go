@@ -163,14 +163,18 @@ func (s shelfDesktopSVN) GetInfo(ctx context.Context, path string) (string, erro
 // Exercise recovered metadata through actual IPC, native sparse fetch and
 // verified no-replace placement in an isolated real parent working copy.
 func TestShelfNativeImportRecoveredReceiptAcceptance(t *testing.T) {
-	shelfNativeImportAcceptance(t, false)
+	shelfNativeImportAcceptance(t, false, false)
 }
 
 func TestShelfNativeImportFreshHTTPUploadAcceptance(t *testing.T) {
-	shelfNativeImportAcceptance(t, true)
+	shelfNativeImportAcceptance(t, true, false)
 }
 
-func shelfNativeImportAcceptance(t *testing.T, fresh bool) {
+func TestShelfNativeImportLegacyIntentAcceptance(t *testing.T) {
+	shelfNativeImportAcceptance(t, false, true)
+}
+
+func shelfNativeImportAcceptance(t *testing.T, fresh, legacy bool) {
 	helper := os.Getenv("FILEES_TEST_NATIVE_SPARSE")
 	if helper == "" {
 		t.Skip("native helper required")
@@ -211,6 +215,18 @@ func shelfNativeImportAcceptance(t *testing.T, fresh bool) {
 	run("svn", "checkout", "-q", parentURL, parentRoot)
 	store, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
 	must(err)
+	var old localrepo.Record
+	orphan := ""
+	if legacy {
+		oldPath := filepath.Join(root, "old-shelf")
+		must(os.Mkdir(oldPath, 0700))
+		must(os.WriteFile(filepath.Join(oldPath, "preserve.txt"), []byte("user data"), 0600))
+		old, err = store.BeginAttach("shelf-lab", "shelf", oldPath, false)
+		must(err)
+		identity := sha256.Sum256([]byte("shelf-lab\x00shelf"))
+		orphan = filepath.Join(root, "data", "filees", "shelf-cache", fmt.Sprintf("%x", identity))
+		must(os.MkdirAll(orphan, 0700))
+	}
 	provisioningStore, err := provisioning.NewStore(filepath.Join(root, "provisioning"))
 	must(err)
 	p := newDaemonProvisioner(store, provisioningStore, nil)
@@ -246,6 +262,22 @@ func shelfNativeImportAcceptance(t *testing.T, fresh bool) {
 			t.Fatalf("import failed: %s", got.ShelfFetch.Error)
 		}
 		if ok && got.ShelfFetch.State == "complete" {
+			if legacy {
+				retired, _ := store.Get(old.OperationID)
+				if retired.State != localrepo.StateAbandoned || got.LocalPath == old.LocalPath || got.LocalPath == orphan {
+					t.Fatal("legacy intent or orphan adopted")
+				}
+				preserved, err := os.ReadFile(filepath.Join(old.LocalPath, "preserve.txt"))
+				must(err)
+				if string(preserved) != "user data" {
+					t.Fatal("old folder data changed")
+				}
+				entries, err := os.ReadDir(orphan)
+				must(err)
+				if len(entries) != 0 {
+					t.Fatal("orphan modified")
+				}
+			}
 			actual, err := os.ReadFile(filepath.Join(parentRoot, "photo-1.jpg"))
 			must(err)
 			if string(actual) != string(data) {

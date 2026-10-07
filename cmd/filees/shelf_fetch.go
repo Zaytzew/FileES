@@ -20,6 +20,7 @@ import (
 	"filees/pkg/privatefile"
 	"filees/pkg/provisioning"
 	"filees/pkg/talk"
+	"github.com/google/uuid"
 )
 
 func (service repositoryLifecycleService) BeginShelfFetch(serverID, repoID, repoURL, localPath string, item contract.ShelfItem) (contract.RepoLifecycleResult, error) {
@@ -62,7 +63,11 @@ func (service repositoryLifecycleService) BeginShelfImport(serverID, repoID, rep
 				return contract.RepoLifecycleResult{}, err
 			}
 			identity := sha256.Sum256([]byte(serverID + "\x00" + repoID))
-			localPath = filepath.Join(cache, hex.EncodeToString(identity[:]))
+			// Only a persisted shelf record can prove ownership of an existing
+			// cache. Give every first-use attempt a fresh no-replace reservation:
+			// a crash before lifecycle persistence (including old deterministic
+			// cache leftovers) must not block retries or justify adopting data.
+			localPath = filepath.Join(cache, hex.EncodeToString(identity[:])+"-"+uuid.NewString())
 			if _, err := os.Lstat(localPath); err == nil {
 				return contract.RepoLifecycleResult{}, os.ErrExist
 			} else if !errors.Is(err, os.ErrNotExist) {

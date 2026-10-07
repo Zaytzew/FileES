@@ -367,6 +367,108 @@ func TestShelfAttachPurposeAndReadonlySurviveRestart(t *testing.T) {
 	}
 }
 
+func TestShelfAttachMigratesOnlyUnstartedLegacyIntent(t *testing.T) {
+	for _, variant := range []string{"legacy", "ordinary", "approved", "anchor", "sparse", "policy", "revoked"} {
+		t.Run(variant, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.json")
+			store, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldPath := filepath.Join(t.TempDir(), "old")
+			old, err := store.BeginAttach("office", "shelf-1", oldPath, variant == "policy")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch variant {
+			case "approved":
+				_, err = store.ApproveAttach(old.OperationID, "office", "shelf-1", "svn+ssh://example/ordinary", "rw")
+			case "anchor", "sparse", "revoked":
+				r := store.records[old.OperationID]
+				r.Anchor = variant == "anchor"
+				r.Sparse = variant == "anchor" || variant == "sparse"
+				r.RemoteDeletionObserved = variant == "revoked"
+				store.records[old.OperationID] = r
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var next Record
+			newPath := filepath.Join(t.TempDir(), "cache")
+			if variant == "ordinary" {
+				next, err = store.BeginAttach("office", "shelf-1", newPath, false)
+			} else {
+				next, err = store.BeginShelfAttach("office", "shelf-1", "svn+ssh://example/shelf", newPath)
+			}
+			if variant != "legacy" {
+				if err == nil || len(store.List()) != 1 {
+					t.Fatalf("unsafe migration: %+v %v", next, err)
+				}
+				if got, _ := store.Get(old.OperationID); got.State == StateAbandoned {
+					t.Fatal("protected intent retired")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if next.Purpose != clientview.PurposeUploadShelf || next.Access != "r" || next.State != StateAttaching || next.OperationID == old.OperationID {
+				t.Fatalf("new shelf: %+v", next)
+			}
+			reopened, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			retired, _ := reopened.Get(old.OperationID)
+			if retired.State != StateAbandoned || retired.LocalPath != oldPath || retired.Purpose != "" || len(reopened.List()) != 2 {
+				t.Fatalf("migration not durable: %+v", retired)
+			}
+		})
+	}
+}
+
+func TestShelfAttachFailedMigrationPreservesLegacyIntent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := store.BeginAttach("office", "shelf-1", filepath.Join(t.TempDir(), "old"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Existing ordinary roots still fence migration after the old intent is retired.
+	blocker := filepath.Join(t.TempDir(), "blocked")
+	if _, err := store.BeginAttach("other", "other", blocker, false); err != nil {
+		t.Fatal(err)
+	}
+	before, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginShelfAttach("office", "shelf-1", "svn+ssh://example/shelf", filepath.Join(blocker, "cache")); err == nil {
+		t.Fatal("overlap accepted")
+	}
+	if got, _ := store.Get(old.OperationID); got != old {
+		t.Fatal("failed migration changed old intent")
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != string(before) {
+		t.Fatal("failed migration changed disk state")
+	}
+	// An actual persistence failure must not leave the old entry abandoned in memory.
+	store.path = filepath.Join(path, "not-a-directory.json")
+	if _, err := store.BeginShelfAttach("office", "shelf-1", "svn+ssh://example/shelf", filepath.Join(t.TempDir(), "cache")); err == nil {
+		t.Fatal("persistence failure accepted")
+	}
+	if got, _ := store.Get(old.OperationID); got != old || len(store.List()) != 2 {
+		t.Fatal("failed persist lost legacy state")
+	}
+}
+
 func TestCreatedRepositoryBoundarySurvivesFailureAndResumes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)

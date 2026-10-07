@@ -57,7 +57,7 @@ commands:
   activate-finish   read one OTP from stdin and finish activation
   activate-resume   resume an OTP-authorized activation
   checkout          create or resume one configured working copy
-  sync              update that copy, then publish local file changes
+  sync              update WC and publish changes; -nwc publishes without WC
   dump-load         create a new repository from a SVN dump and new WC
   whale-put         send one large file through the Whale channel
   whale-get-quote   prepare a large-file download for confirmation
@@ -73,8 +73,9 @@ On OpenBSD the process and the svn/ssh it execs are pledged to those paths.
 }
 
 type runFlags struct {
-	config, wc, message string
-	timeout             time.Duration
+	config, wc, message                            string
+	timeout                                        time.Duration
+	noWorkingCopy, restoreSet, reverseReconcileSet bool
 }
 
 func addRunFlags(flags *flag.FlagSet, values *runFlags, checkout bool) {
@@ -83,6 +84,10 @@ func addRunFlags(flags *flag.FlagSet, values *runFlags, checkout bool) {
 	flags.DurationVar(&values.timeout, "timeout", 30*time.Minute, "per-command SVN timeout")
 	if !checkout {
 		flags.StringVar(&values.message, "message", "FileES sync", "commit message when local files changed")
+		flags.BoolVar(&values.noWorkingCopy, "nwc", false, "publish without a working copy")
+		flags.BoolVar(&values.noWorkingCopy, "no-working-copy", false, "publish without a working copy")
+		flags.BoolVar(&values.restoreSet, "restore-set", false, "restore source paths deleted in the repository (requires -nwc)")
+		flags.BoolVar(&values.reverseReconcileSet, "reverse-reconcile-set", false, "make the local directory match the repository without a WC (requires -nwc)")
 	}
 }
 
@@ -179,10 +184,21 @@ func cmdSync(args []string) int {
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 2
 	}
+	if (values.restoreSet || values.reverseReconcileSet) && !values.noWorkingCopy {
+		fmt.Fprintln(os.Stderr, "sync: -restore-set and -reverse-reconcile-set require -nwc")
+		return 2
+	}
+	if values.restoreSet && values.reverseReconcileSet {
+		fmt.Fprintln(os.Stderr, "sync: -restore-set and -reverse-reconcile-set cannot be combined")
+		return 2
+	}
 	cfg, spec, err := values.open()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sync:", err)
 		return 2
+	}
+	if values.noWorkingCopy {
+		return cmdSyncNoWC(cfg, spec, values)
 	}
 	if err := lockPublishSandbox(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "sync:", err)

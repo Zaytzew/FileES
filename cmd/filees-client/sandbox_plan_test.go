@@ -7,7 +7,7 @@ import (
 
 func TestPublishProfileUsesConfigToolsAndAllowedCopies(t *testing.T) {
 	cfg := Config{
-		SVN: defaultSVN, SSH: defaultSSH, Port: 22,
+		SVN: defaultSVN, SVNMucc: defaultSVNMucc, SSH: defaultSSH, Port: 22,
 		Identity: "/var/filees/id_ed25519", KnownHosts: "/var/filees/known_hosts",
 		Copies: map[string]workingCopySpec{
 			"wc-01": {ID: "wc-01", Path: "/home/ksef/books", URL: "svn+ssh://example/books"},

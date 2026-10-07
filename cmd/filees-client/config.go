@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	defaultSVN    = "/usr/local/bin/svn"
-	defaultSSH    = "/usr/bin/ssh"
-	defaultLogDir = "/var/log/filees-client"
+	defaultSVN     = "/usr/local/bin/svn"
+	defaultSVNMucc = "/usr/local/bin/svnmucc"
+	defaultSSH     = "/usr/bin/ssh"
+	defaultLogDir  = "/var/log/filees-client"
 )
 
 // Config is the closed invocation profile. Tool paths default to the
@@ -21,7 +22,7 @@ const (
 // here are the realm set. only=!wc-01 !wc-02 narrows that set; without
 // only, every listed copy is reachable and no other path is.
 type Config struct {
-	SVN, SSH             string
+	SVN, SVNMucc, SSH    string
 	Identity, KnownHosts string
 	Host                 string
 	Port                 int
@@ -43,7 +44,7 @@ func loadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	defer file.Close()
-	cfg := Config{SVN: defaultSVN, SSH: defaultSSH, Port: 22, LogDir: defaultLogDir, Copies: map[string]workingCopySpec{}}
+	cfg := Config{SVN: defaultSVN, SVNMucc: defaultSVNMucc, SSH: defaultSSH, Port: 22, LogDir: defaultLogDir, Copies: map[string]workingCopySpec{}}
 	section := ""
 	wcID := ""
 	scanner := bufio.NewScanner(file)
@@ -73,6 +74,8 @@ func loadConfig(path string) (Config, error) {
 			switch key {
 			case "svn":
 				cfg.SVN = value
+			case "svnmucc":
+				cfg.SVNMucc = value
 			case "ssh":
 				cfg.SSH = value
 			case "log_dir":
@@ -172,8 +175,8 @@ func parseOnly(value string) ([]string, error) {
 }
 
 func (cfg Config) validate() error {
-	if !configAbs(cfg.SVN) || !configAbs(cfg.SSH) || !configAbs(cfg.Identity) || !configAbs(cfg.KnownHosts) {
-		return errors.New("svn, ssh, identity and known_hosts must be absolute")
+	if !configAbs(cfg.SVN) || !configAbs(cfg.SVNMucc) || !configAbs(cfg.SSH) || !configAbs(cfg.Identity) || !configAbs(cfg.KnownHosts) {
+		return errors.New("svn, svnmucc, ssh, identity and known_hosts must be absolute")
 	}
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return errors.New("port must be 1-65535")

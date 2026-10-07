@@ -1,15 +1,15 @@
 # filees-client
 
-Jednorazowy klient kopii roboczej. Nie jest demonem. Nie zna półek, szuflad,
+Jednorazowy klient. Nie jest demonem. Nie zna półek, szuflad,
 udziałów ani wehikułu czasu. Wehikuł czasu jest osobnym, późniejszym krokiem.
 
-Służy temu, żeby katalog opublikowany przez `ksefpuck` (`target.root`, układ
-`YYYY/MM/…pdf`) był kopią roboczą FileES w realmie właściciela. `ksefpuck`
-zostaje przy plikach i nie uruchamia FileES. Cron robi to sam, na końcu
-istniejącego łańcucha:
+Katalog opublikowany przez `ksefpuck` (`target.root`, np.
+`Faktury/YYYY/MM/…pdf`) może być zwykłym katalogiem bez `.svn`.
+`ksefpuck` zostaje przy plikach i nie uruchamia FileES. Cron robi to sam,
+na końcu istniejącego łańcucha:
 
 ```
-0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 --message ksefpuck
+0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 -nwc --message ksefpuck
 ```
 
 `&&` zostaje. Sync rusza tylko wtedy, gdy `ksefpuck` skończy z kodem 0.
@@ -27,13 +27,38 @@ filees-client activate-resume --server-id ID --server HOST --known-hosts /abs/kn
 
 `activate-finish` czyta jedno hasło jednorazowe ze standardowego wejścia.
 
-Checkout i sync nie przyjmują ścieżki kopii ani URL z linii poleceń. `--wc`
-to identyfikator z configu:
+Checkout i sync nie przyjmują ścieżki źródłowej ani URL z linii poleceń.
+`--wc` to identyfikator z configu. Bez `-nwc` jego `path` musi być WC:
 
 ```
 filees-client checkout --config /etc/filees/filees-client.conf --wc wc-01
 filees-client sync --config /etc/filees/filees-client.conf --wc wc-01
 ```
+
+Zwykła aktywacja desktopowa wystarcza dla trybu bez WC:
+
+```
+filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 -nwc
+filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 -nwc -restore-set
+filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 -nwc -reverse-reconcile-set
+```
+
+`-nwc` (alias `--no-working-copy`) odczytuje zwykły katalog z `path`.
+Przez `svnmucc` dodaje pliki nowe, aktualizuje istniejące o innej treści
+i tworzy brakujące katalogi. Identyczne bajty pomija. Nie pobiera zmian i
+nie propaguje lokalnych usunięć. Jeśli ścieżka pliku lub jej katalog
+nadrzędny była usunięta z repo, domyślnie jej nie przywraca.
+`-restore-set` pozwala ponownie dodać takie pliki, o ile nadal są w
+źródle. `-reverse-reconcile-set` robi przeciwny kierunek: pobiera jedną
+rewizję repo i doprowadza lokalne `path` do jej stanu, włącznie z
+nadpisaniem różnych plików i usunięciem lokalnych ścieżek nieobecnych w
+repo. Obie dodatkowe flagi wymagają `-nwc` i nie mogą być łączone.
+Żaden z tych przebiegów nie tworzy `.svn`.
+
+To zachowanie programu, nie osobne prawo serwera. Klucz normalnej
+aktywacji desktopowej zachowuje wszystkie swoje uprawnienia. Dla `-nwc`
+URL ma wskazywać korzeń repozytorium danych, a `log_dir` musi leżeć poza
+źródłem. Pliki symboliczne i nieregularne kończą przebieg błędem.
 
 `sync` najpierw rozpoznaje i planuje lokalne usunięcia, potem robi `svn update`,
 dodaje nowe pliki (także całe nowe `YYYY/MM/`) i commituje zmiany. Domyślny
@@ -48,6 +73,7 @@ Blokada `.svn/filees-client.lock` odmawia równoległego przebiegu tej samej WC.
 ```
 [tools]
 svn=/usr/local/bin/svn
+svnmucc=/usr/local/bin/svnmucc
 ssh=/usr/bin/ssh
 log_dir=/var/log/filees-client
 
@@ -67,7 +93,7 @@ path=/home/ksefUCK/other
 url=svn+ssh://_filees-client@host/other
 ```
 
-`svn` i `ssh` mają te domyślne ścieżki, gdy kluczy nie ma. Nie są brane z
+`svn`, `svnmucc` i `ssh` mają te domyślne ścieżki, gdy kluczy nie ma. Nie są brane z
 odziedziczonego `PATH`: przed wywołaniem SVN klient ogranicza `PATH` do
 katalogu skonfigurowanego pliku `ssh`. Sekcje `[wc "…"]` są kopiami realmu. Bez `only` dozwolone są wszystkie
 wpisane kopie i żadna inna. `only=!wc-01 !wc-02` zostawia tylko te dwie.

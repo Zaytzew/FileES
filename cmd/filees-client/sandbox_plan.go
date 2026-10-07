@@ -31,6 +31,7 @@ func publishProfile(cfg Config) (obsandbox.Profile, error) {
 		{Label: "identity", Name: cfg.Identity, Perms: "r"},
 		{Label: "known-hosts", Name: cfg.KnownHosts, Perms: "r"},
 		{Label: "svn", Name: cfg.SVN, Perms: "rx"},
+		{Label: "svnmucc", Name: cfg.SVNMucc, Perms: "rx"},
 		{Label: "ssh", Name: cfg.SSH, Perms: "rx"},
 		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
 		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},

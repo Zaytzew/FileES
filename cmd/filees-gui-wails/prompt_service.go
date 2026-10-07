@@ -55,6 +55,15 @@ type PromptOption struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// A five-line editor needs room for both its explanatory text and actions.
+// Other prompts keep their established compact geometry.
+func promptWindowHeight(snapshot PromptSnapshot) int {
+	if snapshot.Mode == "text" && snapshot.Multiline && !snapshot.Secret {
+		return 560
+	}
+	return 430
+}
+
 type PromptSelectRequest struct {
 	// Only GUI-authored chrome is localized; option labels and IDs are data.
 	PresentationKey             string

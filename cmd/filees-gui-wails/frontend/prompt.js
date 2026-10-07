@@ -116,7 +116,9 @@ function render(next) {
   }
   if (next.max_length > 0) input.maxLength = next.max_length;
   else input.removeAttribute("maxlength");
-  input.type = next.secret ? "password" : "text";
+  // Textarea.type is read-only; assigning it in this ES module would abort
+  // the render before restoring the saved message and localizing its labels.
+  if (tag === "INPUT") input.type = next.secret ? "password" : "text";
   input.placeholder = next.placeholder || "";
   input.value = next.default || "";
   const select = $("#prompt-select");

@@ -2383,7 +2383,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				c.reportActionError(ctx, key, c.uiText("feedback.n127", "Nie udało się pobrać półek przyjęcia"), err.Error())
 				return
 			}
-			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", TextKey: "view.uploads", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji. Odrzuty AV oglądasz z folderu Kwarantanna, w projekcji FileES."}
+			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", TextKey: "view.uploads", Text: "Półka jest zawsze zamknięta: wnoszący otrzymują osobne zaproszenia i przesyłają pliki przy pomocy przeglądarki. Domyślnie to zwykła półka, bez preselekcji. Pliki z negatywną rekomendacją antywirusową znajdziesz w folderze Kwarantanna, widocznym w FileES."}
 			request.DirectEntry = directEntry
 			request.CanManageInvitations = listed.CanManageInvitations
 			request.ServerID, request.RepoID, request.RepositoryName = serverID, repoID, repo.DisplayName
@@ -2585,7 +2585,7 @@ func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID
 			vm := c.cfg.ViewModel()
 			repo, ok := managedQuarantineRepository(vm, serverID, repoID)
 			if !ok {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n048", "Kwarantanna jest niedostępna"), Body: c.uiText("feedback.n049", "Przegląd odrzutów AV jest tylko dla właściciela i tylko z projekcji FileES."), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n048", "Kwarantanna jest niedostępna"), Body: c.uiText("feedback.n049", "Pliki z negatywną rekomendacją antywirusową może przeglądać tylko właściciel, w aplikacji FileES."), Urgency: platform.UrgencyCritical})
 				return
 			}
 			listed, err := c.cfg.Quarantine.ListQuarantine(ctx, serverID)
@@ -2593,7 +2593,7 @@ func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID
 				c.reportActionError(ctx, key, c.uiText("feedback.n128", "Nie udało się pobrać kwarantanny"), err.Error())
 				return
 			}
-			text := "Odrzuty antywirusa z półek przyjęcia. Pobierz kopię na dysk albo ukryj pozycję. Zamknięcie okna nic nie kasuje. Po 48 godzinach serwer sam usuwa plik."
+			text := "Pliki z negatywną rekomendacją antywirusową z półek przyjęcia. Pobierz kopię na dysk albo ukryj pozycję. Zamknięcie okna nic nie kasuje. Po 48 godzinach serwer sam usuwa plik."
 			if listed.Message != "" {
 				text = listed.Message + " " + text
 				if !announcedPurge {

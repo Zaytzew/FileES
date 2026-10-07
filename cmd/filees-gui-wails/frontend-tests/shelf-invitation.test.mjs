@@ -3,6 +3,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
+test("Polish shelf description uses the agreed file transfer and antivirus wording", () => {
+  const locale = readFileSync(new URL("../frontend/locales/pl.js", import.meta.url), "utf8");
+  const actions = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../frontend/repository.html", import.meta.url), "utf8");
+  for (const source of [locale, actions]) {
+    assert.ok(source.includes("przesyłają pliki przy pomocy przeglądarki"));
+    assert.ok(source.includes("Pliki z negatywną rekomendacją antywirusową"));
+    assert.ok(!source.includes("kładą plik przeglądarką"));
+    assert.doesNotMatch(source, /odrzut\S*\s+(?:AV|antywir)/iu);
+  }
+  assert.ok(html.includes("Pliki z negatywną rekomendacją antywirusową"));
+});
+
 test("shelf resend button follows server-authorized projection", () => {
   const source = readFileSync(new URL("../frontend/repository.js", import.meta.url), "utf8");
   const begin = source.indexOf("function uploadCard("), end = source.indexOf("\n}", begin) + 2;
@@ -16,11 +29,17 @@ test("shelf resend button follows server-authorized projection", () => {
 
 test("multiline invitation prompt retains newlines and edits during translation", async () => {
   const nodes=new Map(), listeners=new Map();
-  const makeNode=tag => ({tagName:tag.toUpperCase(), value:"", disabled:false, addEventListener(){}, replaceChildren(){}, focus(){}, select(){}, removeAttribute(){}, replaceWith(next){nodes.set("#prompt-value",next);}});
+  const makeNode=tag => {
+    const element={tagName:tag.toUpperCase(), value:"", disabled:false, addEventListener(){}, replaceChildren(){}, focus(){}, select(){}, removeAttribute(){}, replaceWith(next){nodes.set("#prompt-value",next);}};
+    // HTMLTextAreaElement.type is a getter-only property. Browser ES modules
+    // are strict: assigning it aborts render before default text and labels.
+    if (element.tagName === "TEXTAREA") Object.defineProperty(element,"type",{get:()=>"textarea"});
+    return element;
+  };
   const node=id => {if(!nodes.has(id)) nodes.set(id,makeNode("input")); return nodes.get(id);};
   let sent;
   const source=readFileSync(new URL("../frontend/prompt.js",import.meta.url),"utf8").replace(/^import .*;\r?\n/gm,"").replace(/try \{ render\(await PromptService\.Snapshot\(\)\); \} catch[^\n]*/,"");
-  const api=runInNewContext(`${source}\n({render,resolve,refreshPromptLabels})`,{
+  const api=runInNewContext(`"use strict";\n${source}\n({render,resolve,refreshPromptLabels})`,{
     initializeTheme(){},initializeLanguage(){},t:key=>key,
     document:{querySelector:node,addEventListener(){},createElement:makeNode},
     window:{addEventListener:(key,fn)=>listeners.set(key,fn),setTimeout(){}},

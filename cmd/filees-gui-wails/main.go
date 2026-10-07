@@ -369,6 +369,7 @@ func main() {
 		repository.Cancel()
 	})
 	prompts.attachPresentation(func() {
+		promptWindow.SetSize(640, promptWindowHeight(prompts.Snapshot()))
 		promptWindow.Show()
 		promptWindow.Center()
 		promptWindow.Focus()

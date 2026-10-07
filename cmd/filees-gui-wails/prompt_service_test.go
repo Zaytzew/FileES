@@ -297,6 +297,27 @@ func TestInfoPromptPreservesLiteralDiagnostic(t *testing.T) {
 	}
 }
 
+// The multiline editor must not collapse the explanation; subsequent compact
+// prompts restore their old height rather than inheriting the larger editor.
+func TestPromptWindowHeight(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		snapshot PromptSnapshot
+		want     int
+	}{
+		{"multiline text", PromptSnapshot{Mode: "text", Multiline: true}, 560},
+		{"single line", PromptSnapshot{Mode: "text"}, 430},
+		{"secret stays compact", PromptSnapshot{Mode: "text", Multiline: true, Secret: true}, 430},
+		{"confirmation", PromptSnapshot{Mode: "confirm", Multiline: true}, 430},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := promptWindowHeight(tc.snapshot); got != tc.want {
+				t.Fatalf("height=%d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPromptFrontendLeavesVisibilityToPromptService(t *testing.T) {
 	source, err := frontend.ReadFile("frontend/prompt.js")
 	if err != nil {

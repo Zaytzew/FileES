@@ -11,12 +11,42 @@ import (
 	"testing"
 	"time"
 
+	"filees/internal/svnurl"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	control "filees/pkg/control/v1"
 
 	"github.com/google/uuid"
 )
+
+// The installed Windows SVN writes CRLF in `svn info`. A successfully
+// checked-out imported generation must pass the same identity check as Unix.
+func TestVerifyDumpCheckoutNativeSVNInfo(t *testing.T) {
+	svn, err := exec.LookPath("svn")
+	if err != nil {
+		t.Skip("svn unavailable")
+	}
+	if _, err := exec.LookPath("svnadmin"); err != nil {
+		t.Skip("svnadmin unavailable")
+	}
+	if _, err := exec.LookPath("svnlook"); err != nil {
+		t.Skip("svnlook unavailable")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	mustSVN(t, "svnadmin", "create", repo)
+	url := svnurl.File(repo)
+	checkout := exec.Command(svn, "checkout", url, "wc")
+	checkout.Dir = root
+	if out, err := checkout.CombinedOutput(); err != nil {
+		t.Fatalf("svn checkout: %v: %s", err, out)
+	}
+	uuid := strings.TrimSpace(mustSVN(t, "svnlook", "uuid", repo))
+	canonicalURL := strings.TrimSpace(mustSVN(t, "svn", "info", "--show-item", "url", filepath.Join(root, "wc")))
+	if err := verifyDumpCheckout(context.Background(), client.New(client.Options{SvnPath: svn, Timeout: time.Minute}), filepath.Join(root, "wc"), canonicalURL, uuid); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // The local transport models a lost LOAD receipt after the server has
 // atomically installed a new FSFS generation. It exercises the CLI's durable

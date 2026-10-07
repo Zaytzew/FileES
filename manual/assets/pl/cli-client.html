@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Jednorazowy klient CLI — Podręcznik FileES</title>
+<link rel="alternate" hreflang="pl" href="cli-client.html"/>
+<link rel="alternate" hreflang="en" href="../en/cli-client.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead"><div class="brand-lockup"><div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div><div class="brand-copy"><strong class="brand-name">filees<span class="colon">:</span>space</strong><span class="brand-subtitle">dokumentacja systemu FileES</span></div></div>
+<nav class="lang-switch" aria-label="Język"><a href="../../index.html" class="lang-home">filees:space</a><a href="../en/cli-client.html" lang="en" hreflang="en">EN</a><a href="cli-client.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a></nav></header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika"><a href="index.html">Przegląd</a><span class="nav-group" aria-label="Obsługa"><span class="nav-pillar">Obsługa</span><a href="user-guide.html">Pulpit</a><a href="android.html">Android</a><a href="cli-client.html" class="is-current">Klient CLI</a><a href="public-shares.html">Udziały</a><a href="administration.html">Administracja</a></span><span class="nav-group" aria-label="Technika"><span class="nav-pillar">Technika</span><a href="architecture.html">Architektura</a><a href="install.html">Instalacja</a><a href="operations.html">Eksploatacja</a><a href="security.html">Bezpieczeństwo</a><a href="man-pages.html">Polecenia</a></span></nav>
+<div class="manual-layout"><nav aria-label="Spis treści strony" id="toc"><div class="toc-head"><span class="toc-kicker">filees:space / ta strona</span><h2>Na tej stronie</h2></div><ol><li><a href="#cli-purpose">Cel i zakres</a></li><li><a href="#cli-config">Konfiguracja i aktywacja</a></li><li><a href="#cli-sync">Dwa tryby synchronizacji</a></li><li><a href="#cli-cron">Producent i cron</a></li><li><a href="#cli-extra">Import i Whale</a></li><li><a href="#cli-limits">Dowody i granice</a></li></ol></nav><div class="manual-content">
+<h1 id="cli-purpose">Jednorazowy klient CLI</h1>
+<p><span class="status status-implemented">Zaimplementowane</span> <code>filees-client</code> wykonuje jedną operację i kończy pracę. To osobne binarium dla Linux/OpenBSD, uruchamiane przez użytkownika albo jego cron. Nie wymaga demona desktopowego i nie wchodzi do paczki serwera. Źródło strony man to <code>cmd/filees-client/man/filees-client.1</code>; samodzielne archiwum zawiera ją w <code>share/man/man1/</code>.</p>
+<p>Klient używa aktywowanej tożsamości FileES i przypiętego klucza hosta SSH. Tożsamość, konfigurację, dziennik i stan operacji trzymaj poza folderami publikowanymi. Dla ścisłej izolacji lokalnej użyj odrębnego konta systemowego. Program nie obsługuje półek, szuflad, udziałów publicznych ani Maszyny czasu.</p>
+<h2 id="cli-config">Konfiguracja i aktywacja</h2>
+<p>Aktywacja przebiega przez <code>activate-begin</code>, <code>activate-finish</code> (jedno OTP ze standardowego wejścia) i <code>activate-resume</code>. Przenoszenie profilu aktywacji wymaga świadomie uprawnionego procesu. Do synchronizacji plik INI wskazuje dokładne ścieżki narzędzi, tożsamość, <code>known_hosts</code>, prywatny <code>log_dir</code> i nazwane sekcje <code>[wc "id"]</code>. Parametr <code>--wc</code> wybiera identyfikator, nigdy dowolną ścieżkę ani URL. Opcjonalne <code>only=!id</code> ogranicza dozwolone wpisy. Dziennik jest prywatny, rotuje po 5 MiB i musi dać się zapisać przed rozpoczęciem synchronizacji.</p>
+<pre><code>[tools]
+svn=/usr/local/bin/svn
+svnmucc=/usr/local/bin/svnmucc
+ssh=/usr/bin/ssh
+log_dir=/var/log/filees-client
+[realm]
+identity=/home/user/.filees/identity
+known_hosts=/home/user/.filees/known_hosts
+host=server.example
+port=22
+only=!invoices
+[wc "invoices"]
+path=/home/user/published
+url=svn+ssh://_filees-data@server.example/UUID_REPO</code></pre>
+<h2 id="cli-sync">Dwa tryby synchronizacji</h2>
+<p><code>checkout --config … --wc invoices</code> zakłada zwykłą kopię roboczą SVN. Późniejsze <code>sync --config … --wc invoices</code> aktualizuje ją, dodaje nowe pliki, przenosi lokalne usunięcia i commituje; konflikt zatrzymuje publikację do ręcznego rozstrzygnięcia.</p>
+<p><code>sync --config … --wc invoices -nwc</code> traktuje wskazany katalog jako zwykły folder bez <code>.svn</code>. Tworzy potrzebne katalogi, dodaje nowe pliki i aktualizuje zmienione jednym commitem przez <code>svnmucc</code>. Nie wysyła lokalnych usunięć. Ścieżkę skasowaną w repo domyślnie pomija; <code>-restore-set</code> pozwala ją jawnie przywrócić, gdy nadal istnieje lokalnie. <code>-reverse-reconcile-set</code> zamiast tego doprowadza lokalny folder do jednej dostępnej rewizji repo, również usuwając lokalny nadmiar, bez commitu. Obie dodatkowe flagi wykluczają się i wymagają <code>-nwc</code>. Faza lokalnego zastosowania odwrotnego uzgodnienia nie jest atomowa; po przerwaniu uruchom ją ponownie.</p>
+<p>To zachowanie programu, a nie zawężenie praw na serwerze. Zwykła aktywacja desktopowa zachowuje nadane prawa także wtedy, gdy jej klucz wykorzysta inny klient. Dla <code>-nwc</code> URL w konfiguracji musi wskazywać korzeń repo. Dowiązania symboliczne i pliki nieregularne w źródle są odrzucane.</p>
+<h2 id="cli-cron">Producent i cron</h2>
+<p>Klienta uruchamiaj po pomyślnym zakończeniu programu tworzącego pliki. Zachowaj łańcuch <code>&amp;&amp;</code>, żeby błąd producenta nie uruchomił FileES. Cron użytkownika może wykonać jeden przebieg według harmonogramu; dodatkowy demon nie jest potrzebny.</p>
+<pre><code>ksefuck &amp;&amp; filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc --message ksefuck</code></pre>
+<p>Ścieżki i harmonogram trzeba dopasować do wdrożenia. Syntetyczny przebieg na OpenBSD z prawdziwą testową aktywacją opublikował jeden PDF raz; błąd producenta i powtórka bez zmian nie zmieniły rewizji. Nie stanowi to odbioru produkcyjnego potoku KSEFUCK.</p>
+<h2 id="cli-extra">Import i Whale</h2>
+<p><code>dump-load --profile PROFIL --dump DUMP --name NAZWA --target NOWA_WC --state PRYWATNY_STAN</code> tworzy nowe repozytorium i nową kopię roboczą. Aktywacja musi mieć prawo tworzenia repo. Gdy wynik jest niepewny, ponów dokładnie te same argumenty i katalog stanu; zapisane ID operacji wznawia ten sam import. Istniejącego celu program nie nadpisuje.</p>
+<p><code>whale-put</code> publikuje duży plik. Przy pobieraniu <code>whale-get-quote</code> podaje rozmiar i ID operacji, a <code>whale-get-confirm --id ID</code> jawnie uruchamia transfer. <code>whale-status</code>, <code>whale-retry</code> i <code>whale-resume</code> korzystają z tego samego prywatnego katalogu stanu.</p>
+<h2 id="cli-limits">Dowody i granice</h2>
+<p>Odbiór kodu i syntetycznej VM opisuje <code>implementation notes (not distributed)</code>. Obejmuje windowsowy import przez testową aktywację, rzeczywisty testowy transfer Whale i natywną publikację na OpenBSD w stylu crona. Nie potwierdza zgodności z najnowszą paczką serwera, produkcyjnego potoku KSEFUCK, czasu dla dużego drzewa ani odporności na przerwanie w każdej fazie Whale. Osobna strona man podaje składnię poleceń, a ten rozdział wyjaśnia przepływ.</p>
+</div><nav class="page-nav"><a href="android.html">← Android</a><a href="public-shares.html">Udziały →</a></nav></div></div>
+<footer class="manual-footer">FileES</footer></main></body></html>

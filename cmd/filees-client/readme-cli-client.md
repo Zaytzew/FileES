@@ -86,11 +86,11 @@ only=!wc-01 !wc-02
 
 [wc "wc-01"]
 path=/home/ksefUCK/published
-url=svn+ssh://_filees-client@host/books
+url=svn+ssh://_filees-data@host/books
 
 [wc "wc-02"]
 path=/home/ksefUCK/other
-url=svn+ssh://_filees-client@host/other
+url=svn+ssh://_filees-data@host/other
 ```
 
 `svn`, `svnmucc` i `ssh` mają te domyślne ścieżki, gdy kluczy nie ma. Nie są brane z
@@ -107,6 +107,7 @@ przed dotknięciem SVN. Na OpenBSD ten katalog jest również prywatnym `HOME`
 procesu SVN, więc może zawierać jego `.subversion`.
 
 Osobne artefakty Linux/OpenBSD buduje `cmd/filees-client/build.sh`.
+Każde archiwum zawiera binarium, ten opis i `share/man/man1/filees-client.1`.
 Skrypt nie publikuje ich do kanału i nie dodaje klienta do paczki serwera.
 
 ## Import dumpa do nowego repo
@@ -126,9 +127,9 @@ wywołuje `LOAD_REPOSITORY_DUMP` i dopiero po potwierdzeniu nowej generacji
 zakłada nową WC w `--target`. Ścieżka docelowa musi być wolna. Istniejące
 repo i WC nie są nadpisywane. Konto musi mieć serwerowe prawo tworzenia repo.
 
-Ten przebieg przeszedł syntetyczny test natywny OpenBSD z utratą odpowiedzi
-po podmianie generacji, ale nie jest jeszcze odebrany z rzeczywistą aktywacją
-FileES na serwerze. Szczegóły i granice są w raporcie.
+Ten przebieg przeszedł próbę z rzeczywistą testową aktywacją FileES na
+OpenBSD: nowy repo, nowa WC i powtórka z tym samym stanem bez drugiego repo.
+Szczegóły i granice są w `implementation notes (not distributed)`.
 
 ## Whale
 
@@ -146,7 +147,10 @@ tego samego `--profile` oraz `--state`; resume uruchamia wszystkie niedokończon
 operacje w tym katalogu i czeka na wskazaną. Polecenia nie uruchamiają demona.
 Trwały stan transferu pozostaje w prywatnym katalogu `--state`. Transport
 Whale korzysta z przypiętego klucza i `known_hosts` profilu aktywacji.
-Odbiór z rzeczywistym serwerem FileES pozostaje do wykonania.
+PUT oraz quote/confirm GET przeszły na rzeczywistym testowym serwerze
+FileES. Trwałość zwolnienia serwerowej rezerwacji po zakończeniu GET nadal
+ma znany problem WH-CLI-01; nie uznawać samego lokalnego pliku za dowód
+zamknięcia całej operacji serwera.
 
 ## Sandbox
 
@@ -155,8 +159,11 @@ Na Windowsie nie ma `pledge` ani `unveil`. Lista z configu i tak obowiązuje.
 Na OpenBSD, po sprawdzeniu `--wc`, proces i wywołane przez niego `svn` oraz
 `ssh` dostają `pledge` (`ApplyForExec`, obietnice potomka obejmują `prot_exec`).
 `unveil` obejmuje skonfigurowane binarki, klucz, `known_hosts`, dozwolone
-kopie oraz odczyt ich katalogów nadrzędnych. Systemowy SVN wymaga odczytu
-tych rodziców przy kanonizacji WC. Dlatego inne pliki pod takim rodzicem
+kopie, publiczną bazę kont wymaganą przez systemowy SSH oraz odczyt
+katalogów nadrzędnych WC. Poacme SSH wymaga dodatkowo obietnic `unix tty`.
+Przy checkout brakujący katalog docelowy jest zakładany przed zamknięciem
+profilu; rodzic nie dostaje prawa zapisu w trakcie pracy SVN. Systemowy SVN
+wymaga odczytu rodziców przy kanonizacji WC. Dlatego inne pliki pod takim rodzicem
 mogą być czytelne dla procesu działającego jako to samo konto; konfiguracja
 CLI nadal nie pozwala wybrać ich jako celu sync. Dla ścisłej lokalnej
 izolacji należy uruchamiać klienta na dedykowanym koncie i trzymać jego WC

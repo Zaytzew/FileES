@@ -406,6 +406,8 @@ func verifyDumpCheckout(ctx context.Context, svn client.Client, path, repoURL, r
 	if err != nil {
 		return err
 	}
+	// The native Windows svn CLI emits CRLF, while Unix emits LF.
+	info = strings.ReplaceAll(info, "\r\n", "\n")
 	if !strings.Contains(info, "URL: "+repoURL+"\n") || !strings.Contains(info, "Repository UUID: "+repoUUID+"\n") {
 		return errors.New("working copy URL or UUID differs from imported generation")
 	}

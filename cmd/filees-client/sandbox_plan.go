@@ -15,8 +15,10 @@ import (
 const publishPromises = "stdio rpath wpath cpath fattr flock inet dns proc exec"
 
 // publishChildPromises is what svn, and the ssh it execs, keep after exec.
-// prot_exec is the dynamic linker; filees-client-entry grants the same to svn.
-const publishChildPromises = publishPromises + " prot_exec"
+// prot_exec is the dynamic linker. OpenBSD ssh narrows its own pledge to
+// "stdio unix inet dns proc tty" in client_loop, so the child needs both
+// unix and tty even though the parent CLI does not.
+const publishChildPromises = publishPromises + " prot_exec unix tty"
 
 const activationPromises = "stdio rpath wpath cpath fattr flock inet dns"
 
@@ -43,6 +45,9 @@ func publishProfile(cfg Config) (obsandbox.Profile, error) {
 		{Label: "hosts", Name: "/etc/hosts", Perms: "r"},
 		{Label: "tls", Name: "/etc/ssl", Perms: "r"},
 		{Label: "ssh-config", Name: "/etc/ssh", Perms: "r"},
+		// OpenBSD's getpwuid(3), used by ssh, reads the public account DB.
+		{Label: "account-db", Name: "/etc/pwd.db", Perms: "r"},
+		{Label: "group-db", Name: "/etc/group", Perms: "r"},
 		{Label: "svn-temp", Name: "/tmp", Perms: "rwc"},
 		{Label: "journal", Name: cfg.effectiveLogDir(), Perms: "rwc"},
 	}

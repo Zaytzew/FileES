@@ -152,6 +152,13 @@ func cmdCheckout(args []string) int {
 		fmt.Fprintln(os.Stderr, "checkout:", err)
 		return 2
 	}
+	// The configured destination may not exist yet. Create only that leaf
+	// before unveil; SVN needs to write .svn inside it, while its parent stays
+	// read-only in the exec profile.
+	if err := os.Mkdir(spec.Path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		fmt.Fprintln(os.Stderr, "checkout:", err)
+		return 1
+	}
 	if err := lockPublishSandbox(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "checkout:", err)
 		return 1

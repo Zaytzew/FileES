@@ -13,7 +13,7 @@ esac
 mkdir -p "$dist"
 stage=$(mktemp -d "$dist/.filees-client-$target.XXXXXX")
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-mkdir -p "$stage/bin" "$stage/share/doc/filees-client"
+mkdir -p "$stage/bin" "$stage/share/doc/filees-client" "$stage/share/man/man1"
 (
 	cd "$root"
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
@@ -25,6 +25,7 @@ metadata=$(go version -m "$stage/bin/filees-client")
 printf '%s\n' "$metadata" | grep -F "GOOS=$goos" >/dev/null
 printf '%s\n' "$metadata" | grep -F "GOARCH=$goarch" >/dev/null
 cp "$root/cmd/filees-client/readme-cli-client.md" "$stage/share/doc/filees-client/README.md"
+cp "$root/cmd/filees-client/man/filees-client.1" "$stage/share/man/man1/filees-client.1"
 archive="$dist/filees-client-$target.tar.gz"
 tar -czf "$archive" -C "$stage" .
 printf '%s\n' "$archive"

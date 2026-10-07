@@ -20,6 +20,7 @@ func TestPublishProfileUsesConfigToolsAndAllowedCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	sawBooks, sawOther := false, false
+	sawAccountDB, sawGroupDB := false, false
 	for _, path := range profile.Paths {
 		if path.Name == "/home/ksef/books" && path.Perms == "rwc" {
 			sawBooks = true
@@ -30,9 +31,18 @@ func TestPublishProfileUsesConfigToolsAndAllowedCopies(t *testing.T) {
 		if path.Name == defaultSVN && path.Perms != "rx" {
 			t.Fatalf("svn perms = %s", path.Perms)
 		}
+		if path.Name == "/etc/pwd.db" && path.Perms == "r" {
+			sawAccountDB = true
+		}
+		if path.Name == "/etc/group" && path.Perms == "r" {
+			sawGroupDB = true
+		}
 	}
 	if !sawBooks || sawOther {
 		t.Fatalf("books=%v other=%v", sawBooks, sawOther)
+	}
+	if !sawAccountDB || !sawGroupDB {
+		t.Fatalf("account-db=%v group-db=%v", sawAccountDB, sawGroupDB)
 	}
 }
 
@@ -40,6 +50,11 @@ func TestPublishPromisesKeepKsefpuckBase(t *testing.T) {
 	for _, promise := range strings.Fields("stdio rpath wpath cpath fattr flock") {
 		if !strings.Contains(publishPromises, promise) {
 			t.Fatalf("missing ksefpuck promise %s in %q", promise, publishPromises)
+		}
+	}
+	for _, promise := range strings.Fields("unix tty") {
+		if !strings.Contains(publishChildPromises, promise) {
+			t.Fatalf("missing SSH child promise %s in %q", promise, publishChildPromises)
 		}
 	}
 }

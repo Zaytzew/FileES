@@ -1,0 +1,195 @@
+.Dd October 7, 2026
+.Dt FILEES-CLIENT 1
+.Os
+.Sh NAME
+.Nm filees-client
+.Nd run one FileES client operation without a background daemon
+.Sh SYNOPSIS
+.Nm
+.Cm activate-begin
+.Fl -server-id Ar id
+.Fl -server Ar address
+.Fl -known-hosts Ar path
+.Fl -state-root Ar path
+.Fl -email Ar address
+.Nm
+.Cm activate-finish | activate-resume
+.Fl -server-id Ar id
+.Fl -server Ar address
+.Fl -known-hosts Ar path
+.Fl -state-root Ar path
+.Op Fl -remote-port Ar port
+.Nm
+.Cm checkout
+.Fl -config Ar path
+.Fl -wc Ar id
+.Op Fl -timeout Ar duration
+.Nm
+.Cm sync
+.Fl -config Ar path
+.Fl -wc Ar id
+.Op Fl -timeout Ar duration
+.Op Fl -message Ar text
+.Op Fl -nwc
+.Op Fl -restore-set | Fl -reverse-reconcile-set
+.Nm
+.Cm dump-load
+.Fl -profile Ar path
+.Fl -dump Ar path
+.Fl -name Ar name
+.Fl -target Ar path
+.Fl -state Ar path
+.Op Fl -svn Ar path
+.Op Fl -ssh Ar path
+.Op Fl -timeout Ar duration
+.Nm
+.Cm whale-put | whale-get-quote | whale-get-confirm | whale-status | whale-retry | whale-resume
+.Fl -profile Ar path
+.Fl -state Ar path
+.Op Fl -id Ar uuid
+.Op Fl -repo Ar uuid
+.Op Fl -path Ar repository-path
+.Op Fl -source Ar path
+.Op Fl -dest Ar path
+.Op Fl -revision Ar number
+.Op Fl -timeout Ar duration
+.Sh DESCRIPTION
+.Nm
+is a one-shot FileES client for Linux and
+.Ox .
+It exits after one operation and may be called by a user's cron job.
+It uses an activated FileES identity and a pinned SSH host key.
+It is distributed separately from the desktop daemon and the server bundle.
+.Pp
+.Cm checkout
+creates a working copy at the path selected by
+.Fl -wc .
+Without
+.Fl -nwc ,
+.Cm sync
+requires that working copy.
+It updates, adds new files, propagates local deletions, and commits changes.
+Conflicts stop the operation for manual resolution.
+.Pp
+.Cm sync Fl -nwc
+uses a plain directory and commits new or changed files through
+.Xr svnmucc 1 .
+The long alias is
+.Fl -no-working-copy .
+It never propagates local deletions.
+By default it does not restore paths deleted from the repository;
+.Fl -restore-set
+explicitly enables restoration of source-present paths.
+.Fl -reverse-reconcile-set
+instead downloads one repository revision into the plain directory,
+overwrites changed files and removes local paths absent from the accessible
+repository view, without committing.
+The two set flags are mutually exclusive and require
+.Fl -nwc .
+No form of
+.Fl -nwc
+creates a
+.Pa .svn
+directory.
+These are client behaviours, not server-enforced permissions:
+the activation retains its ordinary grants.
+.Pp
+.Cm dump-load
+imports one Subversion dump into a newly created repository and a new working
+copy.
+Both
+.Fl -target
+and the private
+.Fl -state
+directory must be dedicated to this import.
+On an uncertain result, repeat exactly the same command with the same
+.Fl -state ;
+the stored operation ID prevents creating another repository.
+The existing repository and working copy are never overwritten.
+The activation needs permission to create repositories.
+.Pp
+.Cm whale-put
+publishes a source file through FileES Whale.
+.Cm whale-get-quote
+returns an operation ID and size without downloading.
+After reviewing the quote,
+.Cm whale-get-confirm
+with that ID starts the download to a new destination.
+.Cm whale-status ,
+.Cm whale-retry ,
+and
+.Cm whale-resume
+read or continue operations in the same private state directory.
+No Whale command starts a daemon.
+The quote reports size and operation ID; downloading requires a separate
+explicit confirmation.
+.Sh CONFIGURATION
+The INI file named by
+.Fl -config
+contains
+.Sq tools
+(absolute paths for
+.Sy svn , svnmucc , ssh
+and
+.Sy log_dir ) ,
+.Sq realm
+(identity, known_hosts, host, port and optional
+.Sy only ) ,
+and one or more
+.Sq wc "id"
+sections (path and repository-root URL).
+The optional
+.Sy only
+value is an explicit allow-list such as
+.Dq !invoices !archive .
+The journal directory must exist and be outside a
+.Fl -nwc
+source.
+The CLI never takes an arbitrary source directory or repository URL from a
+.Cm sync
+command line.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/filees-client.conf
+Example invocation profile; the actual path is supplied by
+.Fl -config .
+.It Pa /var/log/filees-client
+Default private journal directory; create it before running the client.
+.It Pa state/job.json
+Durable
+.Cm dump-load
+identity, stored below the chosen
+.Fl -state
+directory.
+.El
+.Sh EXIT STATUS
+.Ex -std
+Usage errors return 2.
+Transport, repository, journal and interrupted-operation errors return 1.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -restore-set
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -reverse-reconcile-set
+filees-client dump-load --profile /home/user/.filees/client-profile.json \\
+  --dump /home/user/archive.dump --name Invoices-Archive \\
+  --target /home/user/archive-wc --state /home/user/.filees/import-001
+.Ed
+.Pp
+After a producer has completed successfully, cron may call the client with
+.Cm &&
+so a failed producer cannot publish a partial output.
+.Sh SEE ALSO
+.Xr ssh 1 ,
+.Xr svn 1 ,
+.Xr svnmucc 1 ,
+.Xr crontab 5
+.Sh CAVEATS
+The repository path in a
+.Fl -nwc
+profile must be its root.
+Symbolic links and non-regular source files are refused.
+Reverse reconciliation stages downloaded files before changing the local
+directory, but application of the complete tree is not atomic; rerun it after
+an interruption.
+Keep activation keys, profiles and operation state outside published folders.

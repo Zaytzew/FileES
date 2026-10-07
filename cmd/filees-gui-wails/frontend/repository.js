@@ -170,9 +170,11 @@ function render(snapshot) {
 	const shelfMode = snapshot.mode === "shelf";
 	const detailMode = sharesMode || grantsMode || uploadsMode || quarantineMode || shelfMode;
 
-  $("#window-context").textContent = context.name || context.repo_id;
+  // A direct shelf shortcut has no preceding repository settings context.
+  const displayName = shelfMode ? (snapshot.shelf_name || t("shelf.title")) : (context.name || context.repo_id);
+  $("#window-context").textContent = displayName;
 	$("#scope-label").textContent = sharesMode ? t("repository.sharesScope") : grantsMode ? t("repository.grantsScope") : uploadsMode ? t("repository.uploadScope") : quarantineMode ? t("repository.quarantineScope") : shelfMode ? t("repository.uploadScope") : t("repository.defaultScope");
-  $("#repository-name").textContent = context.name || context.repo_id;
+  $("#repository-name").textContent = displayName;
   $("#repository-copy").textContent = snapshot.text_key ? (snapshot.text_prefix ? snapshot.text_prefix + " " : "") + t(snapshot.text_key) : snapshot.text || t("repository.copy");
   $("#repository-server").textContent = context.server_name || context.server_id;
   $("#repository-state").innerHTML = context.state_key ? labelHTML(context.state_key) : escapeHTML(context.state || "—");

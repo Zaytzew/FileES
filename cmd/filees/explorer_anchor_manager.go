@@ -114,6 +114,7 @@ type anchorManager struct {
 }
 
 type anchorConnection struct {
+	root        string // lifecycle location captured by keep, not the repository key
 	cancel      context.CancelFunc
 	done        chan struct{}
 	ctx         context.Context
@@ -249,8 +250,21 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 		m.running = map[string]anchorConnection{}
 	}
 	for key, connection := range m.running {
-		if _, ok := wanted[key]; !ok {
+		// A point can return to attached before its retiring helper finishes.
+		// Reap completed connections even when the same repository is wanted:
+		// the repository key alone does not prove that its provider is alive.
+		select {
+		case <-connection.done:
+			delete(m.running, key)
+			continue
+		default:
+		}
+		record, wantedNow := wanted[key]
+		if !wantedNow || connection.ctx.Err() != nil || connection.root != record.LocalPath {
 			connection.cancel()
+			// Never start the replacement before callbacks and local writers
+			// of the old location have drained. The next pass reaps it even if
+			// the lifecycle has already completed the move or rolled it back.
 			select {
 			case <-connection.done:
 				delete(m.running, key)
@@ -264,7 +278,7 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 		}
 		anchorCtx, stop := context.WithCancel(ctx)
 		done := make(chan struct{})
-		m.running[key] = anchorConnection{cancel: stop, done: done, ctx: anchorCtx}
+		m.running[key] = anchorConnection{root: record.LocalPath, cancel: stop, done: done, ctx: anchorCtx}
 		go func() {
 			defer close(done)
 			m.keep(anchorCtx, record)

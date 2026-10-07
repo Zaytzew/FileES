@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "action.resendShelf": "Renvoyer l’invitation",
+  "input.shelfMessage.title": "Message d’invitation",
+  "input.shelfMessage.text": "Texte facultatif pour les destinataires (2000 caractères maximum). Sa modification ne renvoie pas les invitations — utilisez le bouton dédié.",
+  "input.shelfMessage.label": "Message",
+  "input.shelfMessage.confirm": "Enregistrer",
+  "input.shelfMessage.cancel": "Annuler",
+  "dialog.resendShelf.text": "Renvoyer les invitations avec le message enregistré à tous les destinataires actuels ? Les liens existants resteront valides.",
+  "dialog.resendShelf.confirm": "Renvoyer",
+  "feedback.shelfInvitationsQueued": "Invitations mises en attente d’envoi",
+  "feedback.shelfInvitationsQueuedBody": "Le serveur utilise sa file d’envoi. La mise en attente ne confirme pas la réception.",
+  "dialog.resendShelf.title": "Renvoyer l’invitation",
+  "dialog.resendShelf.cancel": "Annuler",
   "input.localFolderName.title": "Nom du dossier local",
   "input.localFolderName.text": "Gardez le nom actuel ou saisissez-en un nouveau. Le nom du dépôt sur le serveur reste inchangé.",
   "input.localFolderName.label": "Nom du dossier",

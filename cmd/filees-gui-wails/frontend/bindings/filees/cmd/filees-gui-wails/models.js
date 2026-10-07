@@ -808,6 +808,10 @@ export class PromptSnapshot {
      * @param {Partial<PromptSnapshot>} [$$source = {}] - The source object to create the PromptSnapshot.
      */
     constructor($$source = {}) {
+        /** @type {boolean | undefined} */
+        this["multiline"] = undefined;
+        /** @type {number | undefined} */
+        this["max_length"] = undefined;
         if (/** @type {any} */(false)) {
             /**
              * @member
@@ -2663,6 +2667,8 @@ export class UploadChannelProjection {
      * @param {Partial<UploadChannelProjection>} [$$source = {}] - The source object to create the UploadChannelProjection.
      */
     constructor($$source = {}) {
+        /** @type {boolean} */
+        this["can_resend"] = false;
         /** @type {string | undefined} */
         this["state_key"] = undefined;
         if (!("channel_id" in $$source)) {

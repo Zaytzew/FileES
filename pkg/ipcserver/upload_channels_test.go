@@ -78,13 +78,13 @@ func TestUploadChannelIPCListsAndMutatesOwnedRepository(t *testing.T) {
 		t.Fatalf("list response=%+v result=%+v stub=%+v", response, list, stub)
 	}
 
-	declaration := contract.UploadChannelDeclaration{AuthorityRepoID: "repo-1", Slug: "oferta-a", Recipients: []string{"a@example.com"}}
+	declaration := contract.UploadChannelDeclaration{AuthorityRepoID: "repo-1", Slug: "oferta-a", Recipients: []string{"a@example.com"}, ManageInvitations: true, InvitationMessage: "Proszę o pliki"}
 	response = server.dispatch(lifecycleRequest(contract.CmdRepoUploadChannelCreate, contract.UploadChannelCreatePayload{ServerID: "office", UploadChannelDeclaration: declaration}))
 	if response.Status != contract.StatusOK || stub.action != "create" {
 		t.Fatalf("create response=%+v stub=%+v", response, stub)
 	}
 	response = server.dispatch(lifecycleRequest(contract.CmdRepoUploadChannelUpdate, contract.UploadChannelUpdatePayload{ServerID: "office", ChannelID: "channel-1", UploadChannelDeclaration: declaration}))
-	if response.Status != contract.StatusOK || stub.action != "update" {
+	if response.Status != contract.StatusOK || stub.action != "update" || stub.declaration.InvitationMessage != declaration.InvitationMessage || !stub.declaration.ManageInvitations {
 		t.Fatalf("update response=%+v stub=%+v", response, stub)
 	}
 	response = server.dispatch(lifecycleRequest(contract.CmdRepoUploadChannelRevoke, contract.UploadChannelChannelPayload{ServerID: "office", RepoID: "repo-1", ChannelID: "channel-1"}))

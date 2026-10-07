@@ -168,6 +168,7 @@ type RealmGrantProjection struct {
 }
 
 type UploadChannelProjection struct {
+	CanResend  bool   `json:"can_resend"`
 	StateKey   string `json:"state_key,omitempty"`
 	ChannelID  string `json:"channel_id"`
 	Address    string `json:"address"`
@@ -1072,6 +1073,7 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 		snapshot.Uploads = append(snapshot.Uploads, UploadChannelProjection{
 			ChannelID: channelID, Address: channel.Address, State: channel.State, StateKey: channel.StateKey, Recipients: channel.Recipients,
 			RequireOTP: channel.RequireOTP, CanEdit: active, CanRevoke: active, CanDelete: true,
+			CanResend: active && request.CanManageInvitations,
 		})
 	}
 	return snapshot, true
@@ -1233,6 +1235,8 @@ func uploadChoiceAllowed(channels []UploadChannelProjection, action platform.Upl
 			return true
 		case platform.UploadChannelDialogEdit:
 			return channel.CanEdit
+		case platform.UploadChannelDialogResend:
+			return channel.CanResend
 		case platform.UploadChannelDialogRevoke:
 			return channel.CanRevoke
 		case platform.UploadChannelDialogDelete:

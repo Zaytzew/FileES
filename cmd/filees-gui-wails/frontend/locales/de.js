@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "action.resendShelf": "Einladung erneut senden",
+  "input.shelfMessage.title": "Nachricht zur Einladung",
+  "input.shelfMessage.text": "Optionaler Text für Empfänger (bis zu 2000 Zeichen). Bearbeiten sendet keine Einladungen erneut — dafür gibt es eine eigene Schaltfläche.",
+  "input.shelfMessage.label": "Nachricht",
+  "input.shelfMessage.confirm": "Speichern",
+  "input.shelfMessage.cancel": "Abbrechen",
+  "dialog.resendShelf.text": "Einladungen mit der gespeicherten Nachricht erneut an alle aktuellen Empfänger senden? Bestehende Links bleiben gültig.",
+  "dialog.resendShelf.confirm": "Erneut senden",
+  "feedback.shelfInvitationsQueued": "Einladungen zum Versand vorgemerkt",
+  "feedback.shelfInvitationsQueuedBody": "Der Server sendet sie über seine Mail-Warteschlange. Die Vormerkung bestätigt keine Zustellung.",
+  "dialog.resendShelf.title": "Einladung erneut senden",
+  "dialog.resendShelf.cancel": "Abbrechen",
   "input.localFolderName.title": "Name des lokalen Ordners",
   "input.localFolderName.text": "Behalten Sie den Namen bei oder geben Sie einen neuen ein. Der Repositoryname auf dem Server bleibt unverändert.",
   "input.localFolderName.label": "Ordnername",

@@ -238,19 +238,23 @@ type PublicShareManager interface {
 }
 
 type UploadChannelSummary struct {
+	InvitationMessage                                      string
 	ChannelID, Alias, Slug, State, UploadRepoID, UpdatedAt string
 	Recipients                                             []string
 	RequireOTP                                             bool
 }
 
 type UploadChannelDeclaration struct {
-	AuthorityRepoID, Slug, Kind string
-	Recipients                  []string
-	RequireOTP                  bool
+	InvitationMessage                    string
+	ManageInvitations, ResendInvitations bool
+	AuthorityRepoID, Slug, Kind          string
+	Recipients                           []string
+	RequireOTP                           bool
 }
 
 type UploadChannelList struct {
-	Channels []UploadChannelSummary
+	CanManageInvitations bool
+	Channels             []UploadChannelSummary
 }
 
 type UploadChannelManager interface {
@@ -2381,6 +2385,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			}
 			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", TextKey: "view.uploads", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji. Odrzuty AV oglądasz z folderu Kwarantanna, w projekcji FileES."}
 			request.DirectEntry = directEntry
+			request.CanManageInvitations = listed.CanManageInvitations
 			request.ServerID, request.RepoID, request.RepositoryName = serverID, repoID, repo.DisplayName
 			directEntry = false
 			known := make(map[string]UploadChannelSummary, len(listed.Channels))
@@ -2417,7 +2422,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.inactiveShelf", Title: "Półka nie jest aktywna", Text: "Cofniętej półki nie można edytować. Wystaw nową pod nowym adresem."})
 					continue
 				}
-				declaration, accepted := c.collectUploadChannelDeclaration(ctx, repo, current)
+				declaration, accepted := c.collectUploadChannelDeclaration(ctx, repo, current, listed.CanManageInvitations)
 				if !accepted {
 					continue
 				}
@@ -2426,6 +2431,15 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				} else {
 					err = c.cfg.UploadChannels.UpdateUploadChannel(ctx, serverID, current.ChannelID, declaration)
 				}
+			case platform.UploadChannelDialogResend:
+				if !listed.CanManageInvitations || current.State != "active" {
+					continue
+				}
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.resendShelf", Title: "Ponów zaproszenie", Text: "Wysłać ponownie zaproszenia wszystkim obecnym odbiorcom, z zapisaną wiadomością? Dotychczasowe linki pozostaną ważne.", ConfirmText: "Wyślij ponownie", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.UploadChannels.UpdateUploadChannel(ctx, serverID, current.ChannelID, UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: current.Slug, Recipients: append([]string(nil), current.Recipients...), RequireOTP: current.RequireOTP, InvitationMessage: current.InvitationMessage, ManageInvitations: true, ResendInvitations: true})
 			case platform.UploadChannelDialogRevoke:
 				if current.State != "active" {
 					continue
@@ -2448,7 +2462,13 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n044", "Nie udało się zmienić półki"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				continue
 			}
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n045", "Półka została zaktualizowana"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
+			title := c.uiText("feedback.n045", "Półka została zaktualizowana")
+			body := repo.DisplayName
+			if choice.Action == platform.UploadChannelDialogResend {
+				title = c.uiText("feedback.shelfInvitationsQueued", "Zaproszenia przekazano do wysyłki")
+				body = c.uiText("feedback.shelfInvitationsQueuedBody", "Serwer wysyła je przez swoją kolejkę poczty. Przyjęcie do kolejki nie potwierdza doręczenia.")
+			}
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
 		}
 	}()
 }
@@ -2699,7 +2719,7 @@ func (c *Controller) remainingHoursText(n int) string {
 	}
 }
 
-func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary) (UploadChannelDeclaration, bool) {
+func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary, canManageInvitations bool) (UploadChannelDeclaration, bool) {
 	declaration := UploadChannelDeclaration{AuthorityRepoID: repo.ID}
 	if current == nil {
 		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.uploadSlug", Title: "Adres półki", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
@@ -2731,6 +2751,18 @@ func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo a
 		return UploadChannelDeclaration{}, false
 	}
 	declaration.RequireOTP = otp
+	if canManageInvitations {
+		initial := ""
+		if current != nil {
+			initial = current.InvitationMessage
+		}
+		message, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.shelfMessage", Title: "Wiadomość do zaproszenia", Text: "Opcjonalny tekst dla odbiorców (do 2000 znaków). Edycja wiadomości nie ponawia zaproszeń — służy do tego osobny przycisk.", Default: initial, Multiline: true, MaxLength: 2000})
+		if err != nil || message.Cancelled {
+			return UploadChannelDeclaration{}, false
+		}
+		declaration.ManageInvitations = true
+		declaration.InvitationMessage = message.Value
+	}
 	return declaration, true
 }
 

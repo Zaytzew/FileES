@@ -161,6 +161,7 @@ type UploadChannelBrowser interface {
 }
 
 type UploadChannelDialogRequest struct {
+	CanManageInvitations bool
 	// DirectEntry carries an already-authorized parent context from a shelf action.
 	DirectEntry                      bool
 	ServerID, RepoID, RepositoryName string
@@ -184,6 +185,7 @@ const (
 	UploadChannelDialogEdit   UploadChannelDialogAction = "edit"
 	UploadChannelDialogRevoke UploadChannelDialogAction = "revoke"
 	UploadChannelDialogDelete UploadChannelDialogAction = "delete"
+	UploadChannelDialogResend UploadChannelDialogAction = "resend"
 	// Browse opens one shelf's contents. It is the only entry: a shelf is
 	// reached through the channel that owns it, never guessed from a
 	// repository row, because the channel is what names it.
@@ -572,6 +574,8 @@ type ChoiceRequest struct {
 }
 
 type PromptTextRequest struct {
+	Multiline bool
+	MaxLength int
 	// PresentationKey marks a GUI-owned template; defaults remain literal input.
 	PresentationKey  string
 	PresentationArgs map[string]string

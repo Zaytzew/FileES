@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "action.resendShelf": "Resend invitation",
+  "input.shelfMessage.title": "Invitation message",
+  "input.shelfMessage.text": "Optional text for recipients (up to 2000 characters). Editing it does not resend invitations — use the separate button.",
+  "input.shelfMessage.label": "Message",
+  "input.shelfMessage.confirm": "Save",
+  "input.shelfMessage.cancel": "Cancel",
+  "dialog.resendShelf.text": "Resend invitations with the saved message to all current recipients? Existing links will remain valid.",
+  "dialog.resendShelf.confirm": "Resend",
+  "feedback.shelfInvitationsQueued": "Invitations queued for sending",
+  "feedback.shelfInvitationsQueuedBody": "The server sends them through its mail queue. Queuing does not confirm delivery.",
+  "dialog.resendShelf.title": "Resend invitation",
+  "dialog.resendShelf.cancel": "Cancel",
   "input.localFolderName.title": "Local folder name",
   "input.localFolderName.text": "Keep the current name or enter a new one. The repository name on the server will not change.",
   "input.localFolderName.label": "Folder name",

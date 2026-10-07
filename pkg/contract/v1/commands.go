@@ -843,11 +843,14 @@ type PublicShareResult struct {
 // the daemon and server treat absence as shelf. RequireOTP asks the contributor
 // for a mailbox and a one-time mail code before the file form.
 type UploadChannelDeclaration struct {
-	AuthorityRepoID string   `json:"authority_repo_id"`
-	Slug            string   `json:"slug"`
-	Kind            string   `json:"kind,omitempty"`
-	Recipients      []string `json:"recipients"`
-	RequireOTP      bool     `json:"require_otp,omitempty"`
+	ManageInvitations bool     `json:"manage_invitations,omitempty"`
+	InvitationMessage string   `json:"invitation_message,omitempty"`
+	ResendInvitations bool     `json:"resend_invitations,omitempty"`
+	AuthorityRepoID   string   `json:"authority_repo_id"`
+	Slug              string   `json:"slug"`
+	Kind              string   `json:"kind,omitempty"`
+	Recipients        []string `json:"recipients"`
+	RequireOTP        bool     `json:"require_otp,omitempty"`
 }
 
 type UploadChannelListPayload struct {
@@ -873,19 +876,21 @@ type UploadChannelChannelPayload struct {
 }
 
 type UploadChannelSummary struct {
-	ChannelID       string   `json:"channel_id"`
-	AuthorityRepoID string   `json:"authority_repo_id"`
-	UploadRepoID    string   `json:"upload_repo_id"`
-	Alias           string   `json:"alias"`
-	Slug            string   `json:"slug"`
-	Kind            string   `json:"kind,omitempty"`
-	State           string   `json:"state"`
-	Recipients      []string `json:"recipients"`
-	RequireOTP      bool     `json:"require_otp,omitempty"`
-	UpdatedAt       string   `json:"updated_at"`
+	InvitationMessage string   `json:"invitation_message,omitempty"`
+	ChannelID         string   `json:"channel_id"`
+	AuthorityRepoID   string   `json:"authority_repo_id"`
+	UploadRepoID      string   `json:"upload_repo_id"`
+	Alias             string   `json:"alias"`
+	Slug              string   `json:"slug"`
+	Kind              string   `json:"kind,omitempty"`
+	State             string   `json:"state"`
+	Recipients        []string `json:"recipients"`
+	RequireOTP        bool     `json:"require_otp,omitempty"`
+	UpdatedAt         string   `json:"updated_at"`
 }
 
 type UploadChannelListResult struct {
+	CanManageInvitations bool                   `json:"can_manage_invitations,omitempty"`
 	Channels             []UploadChannelSummary `json:"channels"`
 	QuarantineAlias      string                 `json:"quarantine_alias,omitempty"`
 	QuarantineSlug       string                 `json:"quarantine_slug,omitempty"`

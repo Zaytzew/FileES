@@ -36,18 +36,20 @@ func TrashRepositoryID(realmID string) string {
 // public-share records so both machines share slug/address tombstones without
 // sharing a manifest type.
 type UploadRecord struct {
-	Schema     string                `json:"schema"`
-	ChannelID  string                `json:"channel_id"`
-	OwnerRealm string                `json:"owner_realm"`
-	Alias      string                `json:"alias"`
-	Slug       string                `json:"slug"`
-	State      string                `json:"state"`
-	Manifest   *manifest.Upload      `json:"manifest,omitempty"`
-	Recipients []RecipientCredential `json:"recipient_credentials,omitempty"`
-	CreatedAt  time.Time             `json:"created_at"`
-	UpdatedAt  time.Time             `json:"updated_at"`
-	RevokedAt  *time.Time            `json:"revoked_at,omitempty"`
-	DeletedAt  *time.Time            `json:"deleted_at,omitempty"`
+	// MailOperationID distinguishes an explicit resend, without rotating tokens.
+	MailOperationID string                `json:"-"`
+	Schema          string                `json:"schema"`
+	ChannelID       string                `json:"channel_id"`
+	OwnerRealm      string                `json:"owner_realm"`
+	Alias           string                `json:"alias"`
+	Slug            string                `json:"slug"`
+	State           string                `json:"state"`
+	Manifest        *manifest.Upload      `json:"manifest,omitempty"`
+	Recipients      []RecipientCredential `json:"recipient_credentials,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	RevokedAt       *time.Time            `json:"revoked_at,omitempty"`
+	DeletedAt       *time.Time            `json:"deleted_at,omitempty"`
 }
 
 // ReserveAddress binds alias/slug to channelID under the shared Public Shares
@@ -171,6 +173,41 @@ func (s *Store) UpdateUpload(operationID, requesterRealm, channelID string, decl
 	if err := atomicJSON(s.uploadRecordPath(channelID), 0600, record); err != nil {
 		return UploadRecord{}, nil, err
 	}
+	return record, deliveries, nil
+}
+
+// ResendUpload retains every credential and returns only current recipients.
+// A stale or edited declaration cannot turn a resend into a policy mutation.
+func (s *Store) ResendUpload(operationID, requesterRealm, channelID string, declaration manifest.Upload) (UploadRecord, []Delivery, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.validate(); err != nil {
+		return UploadRecord{}, nil, err
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return UploadRecord{}, nil, errors.New("upload channel operation_id must be UUID")
+	}
+	record, err := s.loadUpload(channelID)
+	if err != nil {
+		return UploadRecord{}, nil, err
+	}
+	if record.Manifest == nil || record.OwnerRealm != requesterRealm || record.Manifest.OwnerRealm != requesterRealm {
+		return UploadRecord{}, nil, ErrForbidden
+	}
+	if record.State != StateActive {
+		return UploadRecord{}, nil, ErrInactive
+	}
+	if err := s.Authority.OwnsActiveRepository(requesterRealm, record.Manifest.AuthorityRepoID); err != nil {
+		return UploadRecord{}, nil, ErrForbidden
+	}
+	if !sameUpload(*record.Manifest, declaration) {
+		return UploadRecord{}, nil, ErrRecordConflict
+	}
+	deliveries := make([]Delivery, 0, len(record.Recipients))
+	for _, credential := range record.Recipients {
+		deliveries = append(deliveries, Delivery{Email: credential.Email, Token: s.uploadRecipientToken(channelID, credential.Epoch, credential.Email)})
+	}
+	record.MailOperationID = operationID
 	return record, deliveries, nil
 }
 

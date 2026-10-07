@@ -679,12 +679,13 @@ func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serv
 	if result == nil {
 		return actions.UploadChannelList{}, errors.New("daemon returned an empty upload channel list")
 	}
-	listed := actions.UploadChannelList{Channels: make([]actions.UploadChannelSummary, 0, len(result.Channels))}
+	listed := actions.UploadChannelList{CanManageInvitations: result.CanManageInvitations, Channels: make([]actions.UploadChannelSummary, 0, len(result.Channels))}
 	for _, channel := range result.Channels {
 		listed.Channels = append(listed.Channels, actions.UploadChannelSummary{
 			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
 			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
-			RequireOTP: channel.RequireOTP,
+			RequireOTP:        channel.RequireOTP,
+			InvitationMessage: channel.InvitationMessage,
 		})
 	}
 	return listed, nil
@@ -708,6 +709,9 @@ func (adapter uploadChannelAdapter) UpdateUploadChannel(ctx context.Context, ser
 	}
 	if result == nil || result.ChannelID != channelID || result.State != "active" {
 		return errors.New("daemon returned an invalid upload channel update result")
+	}
+	if declaration.ResendInvitations && result.RecipientDeliveries != len(declaration.Recipients) {
+		return errors.New("daemon did not confirm queuing invitations")
 	}
 	return nil
 }
@@ -857,7 +861,7 @@ func (adapter shelfAdapter) ListShelf(ctx context.Context, serverID, channelID s
 }
 
 func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {
-	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
+	return contract.UploadChannelDeclaration{ManageInvitations: declaration.ManageInvitations, InvitationMessage: declaration.InvitationMessage, ResendInvitations: declaration.ResendInvitations, AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
 }
 
 func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {

@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -76,7 +78,8 @@ type Share struct {
 
 // Upload is the declaration of intent to accept data.
 type Upload struct {
-	OwnerRealm string `json:"owner_realm"`
+	InvitationMessage string `json:"invitation_message,omitempty"`
+	OwnerRealm        string `json:"owner_realm"`
 
 	// AuthorityRepoID is the project repository whose owner may open this
 	// channel. It is never written to. UploadRepoID does not serve here: it
@@ -218,6 +221,9 @@ func (s Share) Frozen() (int64, bool) {
 
 // Validate reports whether the upload declaration is internally consistent.
 func (u Upload) Validate() error {
+	if err := ValidateInvitationMessage(u.InvitationMessage); err != nil {
+		return err
+	}
 	if err := validUUID("owner_realm", u.OwnerRealm); err != nil {
 		return err
 	}
@@ -267,6 +273,19 @@ func validUUID(field, value string) error {
 	parsed, err := uuid.Parse(value)
 	if err != nil || parsed.String() != value {
 		return fmt.Errorf("%s: not a UUID", field)
+	}
+	return nil
+}
+
+// ValidateInvitationMessage bounds plain mail body text, never mail headers.
+func ValidateInvitationMessage(text string) error {
+	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > 2000 {
+		return errors.New("invitation message must be UTF-8 and at most 2000 characters")
+	}
+	for _, r := range text {
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return errors.New("invitation message contains a control character")
+		}
 	}
 	return nil
 }

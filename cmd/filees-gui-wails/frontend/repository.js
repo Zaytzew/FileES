@@ -103,6 +103,7 @@ function uploadCard(channel) {
 	const controls = [
 		`<button type="button" data-upload-action="browse" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.browseShelf")}</button>`,
 		channel.can_edit ? `<button type="button" data-upload-action="edit" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.edit")}</button>` : "",
+		channel.can_resend ? `<button type="button" data-upload-action="resend" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.resendShelf")}</button>` : "",
 		channel.can_revoke ? `<button type="button" data-upload-action="revoke" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
 		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.delete")}</button>` : "",
 	].join("");

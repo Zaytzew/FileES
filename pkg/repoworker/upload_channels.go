@@ -26,17 +26,19 @@ type UploadTokenDeliverer interface {
 const uploadChannelMailSchema = "filees.upload-channel-mail/v1"
 
 type UploadChannelMailJob struct {
-	Schema          string    `json:"schema"`
-	MessageID       string    `json:"message_id"`
-	ChannelID       string    `json:"channel_id"`
-	Alias           string    `json:"alias"`
-	Slug            string    `json:"slug"`
-	DeliveryAddress string    `json:"delivery_address"`
-	Invitation      string    `json:"invitation"`
-	State           string    `json:"state"`
-	AttemptID       string    `json:"attempt_id,omitempty"`
-	LeaseUntil      time.Time `json:"lease_until,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	InvitationMessage string    `json:"invitation_message,omitempty"`
+	ResendOperationID string    `json:"resend_operation_id,omitempty"`
+	Schema            string    `json:"schema"`
+	MessageID         string    `json:"message_id"`
+	ChannelID         string    `json:"channel_id"`
+	Alias             string    `json:"alias"`
+	Slug              string    `json:"slug"`
+	DeliveryAddress   string    `json:"delivery_address"`
+	Invitation        string    `json:"invitation"`
+	State             string    `json:"state"`
+	AttemptID         string    `json:"attempt_id,omitempty"`
+	LeaseUntil        time.Time `json:"lease_until,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type UploadChannelOutbox struct {
@@ -58,7 +60,14 @@ func (o UploadChannelOutbox) DeliverUploadTokens(_ context.Context, record chann
 			return errors.New("upload channel delivery is invalid")
 		}
 		digest := sha256.Sum256([]byte(record.ChannelID + "\x00upload\x00" + email + "\x00" + delivery.Token))
+		if record.MailOperationID != "" {
+			digest = sha256.Sum256([]byte(record.ChannelID + "\x00resend\x00" + record.MailOperationID + "\x00" + email))
+		}
 		job := UploadChannelMailJob{Schema: uploadChannelMailSchema, MessageID: uuid.NewSHA1(uuid.NameSpaceOID, digest[:]).String(), ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, DeliveryAddress: email, Invitation: delivery.Token, State: "pending", CreatedAt: now}
+		job.ResendOperationID = record.MailOperationID
+		if record.Manifest != nil {
+			job.InvitationMessage = record.Manifest.InvitationMessage
+		}
 		if err := o.queue(job); err != nil {
 			return err
 		}
@@ -93,7 +102,7 @@ func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoI
 	if err != nil {
 		return control.ListUploadChannelsResult{}, classifyUploadError(err)
 	}
-	listed := control.ListUploadChannelsResult{Channels: make([]control.UploadChannelSummary, 0, len(records))}
+	listed := control.ListUploadChannelsResult{CanManageInvitations: s.Deliverer != nil, Channels: make([]control.UploadChannelSummary, 0, len(records))}
 	for _, record := range records {
 		if record.Manifest == nil {
 			return control.ListUploadChannelsResult{}, errors.New("upload channel record is incomplete")
@@ -102,7 +111,8 @@ func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoI
 			ChannelID: record.ChannelID, AuthorityRepoID: record.Manifest.AuthorityRepoID, UploadRepoID: record.Manifest.UploadRepoID,
 			Alias: record.Alias, Slug: record.Slug, Kind: manifest.NormalizeKind(record.Manifest.Kind), State: record.State, Recipients: append([]string(nil), record.Manifest.Recipients...),
 			RequireOTP: record.Manifest.RequireOTP, CollisionPolicy: string(record.Manifest.CollisionPolicy),
-			UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			InvitationMessage: record.Manifest.InvitationMessage,
+			UpdatedAt:         record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 	return listed, nil
@@ -196,6 +206,12 @@ func (s ChannelUploadService) FetchQuarantine(_ context.Context, _, uploadID str
 }
 
 func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerRealm string, declaration control.UploadChannelDeclaration) (control.UploadChannelResult, error) {
+	if err := manifest.ValidateInvitationMessage(declaration.InvitationMessage); err != nil {
+		return control.UploadChannelResult{}, fmt.Errorf("%w: %v", ErrUploadChannelRejected, err)
+	}
+	if declaration.ResendInvitations {
+		return control.UploadChannelResult{}, ErrUploadChannelRejected
+	}
 	if s.Channels == nil || s.Backend == nil {
 		return control.UploadChannelResult{}, errors.New("upload channel service is incomplete")
 	}
@@ -251,6 +267,9 @@ func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerReal
 }
 
 func (s ChannelUploadService) Update(ctx context.Context, operationID, ownerRealm, channelID string, declaration control.UploadChannelDeclaration) (control.UploadChannelResult, error) {
+	if !declaration.ManageInvitations && (declaration.InvitationMessage != "" || declaration.ResendInvitations) {
+		return control.UploadChannelResult{}, ErrUploadChannelRejected
+	}
 	if s.Channels == nil {
 		return control.UploadChannelResult{}, errors.New("upload channel store is unavailable")
 	}
@@ -268,11 +287,20 @@ func (s ChannelUploadService) Update(ctx context.Context, operationID, ownerReal
 		return control.UploadChannelResult{}, fmt.Errorf("%w: %v", ErrUploadChannelRejected, manifest.ErrKind)
 	}
 	declaration.Kind = currentKind
+	if !declaration.ManageInvitations {
+		declaration.InvitationMessage = current.Manifest.InvitationMessage
+	}
 	if declaration.CollisionPolicy == "" {
 		declaration.CollisionPolicy = string(manifest.CollisionDeny)
 	}
 	body := toUploadManifest(ownerRealm, current.Manifest.UploadRepoID, declaration)
-	record, deliveries, err := s.Channels.UpdateUpload(operationID, ownerRealm, channelID, body)
+	var record channel.UploadRecord
+	var deliveries []channel.Delivery
+	if declaration.ResendInvitations {
+		record, deliveries, err = s.Channels.ResendUpload(operationID, ownerRealm, channelID, body)
+	} else {
+		record, deliveries, err = s.Channels.UpdateUpload(operationID, ownerRealm, channelID, body)
+	}
 	if err != nil {
 		return control.UploadChannelResult{}, classifyUploadError(err)
 	}
@@ -322,6 +350,7 @@ func toUploadManifest(ownerRealm, uploadRepoID string, declaration control.Uploa
 		OwnerRealm: ownerRealm, AuthorityRepoID: declaration.AuthorityRepoID, UploadRepoID: uploadRepoID,
 		Slug: declaration.Slug, Kind: kind, Recipients: append([]string(nil), declaration.Recipients...),
 		RequireOTP: declaration.RequireOTP, CollisionPolicy: policy,
+		InvitationMessage: declaration.InvitationMessage,
 	}
 }
 
@@ -345,6 +374,17 @@ func uploadResult(record channel.UploadRecord, uploadURL string, trash Repositor
 	result.TrashRepoID = trash.RepoID
 	result.TrashRepoURL = trash.URL
 	return result
+}
+
+func uploadChannelListForClient(listed control.ListUploadChannelsResult, includeInvitations bool) control.ListUploadChannelsResult {
+	if !includeInvitations {
+		listed.CanManageInvitations = false
+		listed.Channels = append(make([]control.UploadChannelSummary, 0, len(listed.Channels)), listed.Channels...)
+		for i := range listed.Channels {
+			listed.Channels[i].InvitationMessage = ""
+		}
+	}
+	return listed
 }
 
 func classifyUploadError(err error) error {
@@ -383,7 +423,9 @@ func (w *Worker) uploadChannel(ctx context.Context, session Session, ticket cont
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 			return control.Result{}, err
 		}
-		response, err = w.UploadChannels.List(ctx, session.RealmID, payload.AuthorityRepoID)
+		listed, listErr := w.UploadChannels.List(ctx, session.RealmID, payload.AuthorityRepoID)
+		// Legacy consumers strictly decode the old response; new fields are opt-in.
+		response, err = uploadChannelListForClient(listed, payload.IncludeInvitations), listErr
 	case control.TicketCreateUploadChannel:
 		var payload control.CreateUploadChannelPayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {

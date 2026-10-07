@@ -328,12 +328,15 @@ type PublicShareResult struct {
 // realm and upload_repo_id are never client-chosen: the worker derives the
 // former from the session and allocates the latter as a normal repository.
 type UploadChannelDeclaration struct {
-	AuthorityRepoID string   `json:"authority_repo_id"`
-	Slug            string   `json:"slug"`
-	Kind            string   `json:"kind,omitempty"`
-	Recipients      []string `json:"recipients"`
-	RequireOTP      bool     `json:"require_otp,omitempty"`
-	CollisionPolicy string   `json:"collision_policy,omitempty"`
+	ManageInvitations bool     `json:"manage_invitations,omitempty"`
+	InvitationMessage string   `json:"invitation_message,omitempty"`
+	ResendInvitations bool     `json:"resend_invitations,omitempty"`
+	AuthorityRepoID   string   `json:"authority_repo_id"`
+	Slug              string   `json:"slug"`
+	Kind              string   `json:"kind,omitempty"`
+	Recipients        []string `json:"recipients"`
+	RequireOTP        bool     `json:"require_otp,omitempty"`
+	CollisionPolicy   string   `json:"collision_policy,omitempty"`
 }
 
 type CreateUploadChannelPayload struct{ UploadChannelDeclaration }
@@ -342,7 +345,8 @@ type UpdateUploadChannelPayload struct {
 	UploadChannelDeclaration
 }
 type ListUploadChannelsPayload struct {
-	AuthorityRepoID string `json:"authority_repo_id"`
+	IncludeInvitations bool   `json:"include_invitations,omitempty"`
+	AuthorityRepoID    string `json:"authority_repo_id"`
 }
 type RevokeUploadChannelPayload struct {
 	ChannelID string `json:"channel_id"`
@@ -352,20 +356,22 @@ type DeleteUploadChannelPayload struct {
 }
 
 type UploadChannelSummary struct {
-	ChannelID       string   `json:"channel_id"`
-	AuthorityRepoID string   `json:"authority_repo_id"`
-	UploadRepoID    string   `json:"upload_repo_id"`
-	Alias           string   `json:"alias"`
-	Slug            string   `json:"slug"`
-	Kind            string   `json:"kind,omitempty"`
-	State           string   `json:"state"`
-	Recipients      []string `json:"recipients"`
-	RequireOTP      bool     `json:"require_otp,omitempty"`
-	CollisionPolicy string   `json:"collision_policy"`
-	UpdatedAt       string   `json:"updated_at"`
+	InvitationMessage string   `json:"invitation_message,omitempty"`
+	ChannelID         string   `json:"channel_id"`
+	AuthorityRepoID   string   `json:"authority_repo_id"`
+	UploadRepoID      string   `json:"upload_repo_id"`
+	Alias             string   `json:"alias"`
+	Slug              string   `json:"slug"`
+	Kind              string   `json:"kind,omitempty"`
+	State             string   `json:"state"`
+	Recipients        []string `json:"recipients"`
+	RequireOTP        bool     `json:"require_otp,omitempty"`
+	CollisionPolicy   string   `json:"collision_policy"`
+	UpdatedAt         string   `json:"updated_at"`
 }
 
 type ListUploadChannelsResult struct {
+	CanManageInvitations bool                   `json:"can_manage_invitations,omitempty"`
 	Channels             []UploadChannelSummary `json:"channels"`
 	QuarantineAlias      string                 `json:"quarantine_alias,omitempty"`
 	QuarantineSlug       string                 `json:"quarantine_slug,omitempty"`
@@ -846,6 +852,9 @@ func (t Ticket) Validate() error {
 		if err := validateUploadChannelDeclaration(p.UploadChannelDeclaration); err != nil {
 			return fmt.Errorf("CREATE_UPLOAD_CHANNEL payload: %w", err)
 		}
+		if p.ResendInvitations {
+			return errors.New("resend requires an existing shelf")
+		}
 	case TicketUpdateUploadChannel:
 		var p UpdateUploadChannelPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -1257,7 +1266,7 @@ func validateSuccessPayload(r Result) error {
 			if item.State != "active" && item.State != "revoked" {
 				return errors.New("upload channel summary state is invalid")
 			}
-			if err := validateUploadChannelDeclaration(UploadChannelDeclaration{AuthorityRepoID: item.AuthorityRepoID, Slug: item.Slug, Recipients: item.Recipients, RequireOTP: item.RequireOTP, CollisionPolicy: item.CollisionPolicy}); err != nil {
+			if err := validateUploadChannelDeclaration(UploadChannelDeclaration{ManageInvitations: true, InvitationMessage: item.InvitationMessage, AuthorityRepoID: item.AuthorityRepoID, Slug: item.Slug, Recipients: item.Recipients, RequireOTP: item.RequireOTP, CollisionPolicy: item.CollisionPolicy}); err != nil {
 				return fmt.Errorf("upload channel summary: %w", err)
 			}
 			if _, err := time.Parse(time.RFC3339Nano, item.UpdatedAt); err != nil {
@@ -1535,6 +1544,12 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 }
 
 func validateUploadChannelDeclaration(p UploadChannelDeclaration) error {
+	if !p.ManageInvitations && (p.InvitationMessage != "" || p.ResendInvitations) {
+		return errors.New("invitation options require explicit support")
+	}
+	if err := publicmanifest.ValidateInvitationMessage(p.InvitationMessage); err != nil {
+		return err
+	}
 	if err := validateUUID("authority_repo_id", p.AuthorityRepoID); err != nil {
 		return err
 	}

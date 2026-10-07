@@ -294,19 +294,33 @@ func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, re
 	if !ok {
 		return contract.UploadChannelListResult{}, fmt.Errorf("no activated profile for server %q", serverID)
 	}
-	result, err := s.exchange(ctx, profile, control.TicketListUploadChannels, control.ListUploadChannelsPayload{AuthorityRepoID: repoID})
+	payload, err := listUploadChannelsWithOptions(ctx, repoID, func(p control.ListUploadChannelsPayload) (control.Result, error) {
+		return s.exchange(ctx, profile, control.TicketListUploadChannels, p)
+	})
 	if err != nil {
-		return contract.UploadChannelListResult{}, err
-	}
-	var payload control.ListUploadChannelsResult
-	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
 		return contract.UploadChannelListResult{}, err
 	}
 	channels := make([]contract.UploadChannelSummary, 0, len(payload.Channels))
 	for _, channel := range payload.Channels {
 		channels = append(channels, uploadChannelSummaryFromControl(channel))
 	}
-	return contract.UploadChannelListResult{Channels: channels, QuarantineAlias: payload.QuarantineAlias, QuarantineSlug: payload.QuarantineSlug, QuarantineInvitation: payload.QuarantineInvitation}, nil
+	return contract.UploadChannelListResult{CanManageInvitations: payload.CanManageInvitations, Channels: channels, QuarantineAlias: payload.QuarantineAlias, QuarantineSlug: payload.QuarantineSlug, QuarantineInvitation: payload.QuarantineInvitation}, nil
+}
+
+func listUploadChannelsWithOptions(ctx context.Context, repoID string, exchange func(control.ListUploadChannelsPayload) (control.Result, error)) (control.ListUploadChannelsResult, error) {
+	result, err := exchange(control.ListUploadChannelsPayload{AuthorityRepoID: repoID, IncludeInvitations: true})
+	if err != nil && ctx.Err() == nil {
+		// Only listing may fall back. Mutations are never replayed this way.
+		result, err = exchange(control.ListUploadChannelsPayload{AuthorityRepoID: repoID})
+	}
+	if err != nil {
+		return control.ListUploadChannelsResult{}, err
+	}
+	var listed control.ListUploadChannelsResult
+	if err := control.DecodeResultPayload(result.Result, &listed); err != nil {
+		return control.ListUploadChannelsResult{}, err
+	}
+	return listed, nil
 }
 
 func (s *realmAliasService) CreateUploadChannel(ctx context.Context, serverID string, declaration contract.UploadChannelDeclaration) (contract.UploadChannelResult, error) {
@@ -423,14 +437,14 @@ func (s *realmAliasService) uploadChannelExchange(ctx context.Context, serverID 
 }
 
 func uploadChannelDeclarationToControl(declaration contract.UploadChannelDeclaration) control.UploadChannelDeclaration {
-	return control.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
+	return control.UploadChannelDeclaration{ManageInvitations: declaration.ManageInvitations, InvitationMessage: declaration.InvitationMessage, ResendInvitations: declaration.ResendInvitations, AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
 }
 
 func uploadChannelSummaryFromControl(channel control.UploadChannelSummary) contract.UploadChannelSummary {
 	return contract.UploadChannelSummary{
 		ChannelID: channel.ChannelID, AuthorityRepoID: channel.AuthorityRepoID, UploadRepoID: channel.UploadRepoID,
 		Alias: channel.Alias, Slug: channel.Slug, Kind: channel.Kind, State: channel.State,
-		Recipients: append([]string(nil), channel.Recipients...), RequireOTP: channel.RequireOTP, UpdatedAt: channel.UpdatedAt,
+		Recipients: append([]string(nil), channel.Recipients...), RequireOTP: channel.RequireOTP, UpdatedAt: channel.UpdatedAt, InvitationMessage: channel.InvitationMessage,
 	}
 }
 

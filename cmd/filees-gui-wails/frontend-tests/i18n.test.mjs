@@ -490,7 +490,7 @@ test("public share renderer translates chrome but preserves names and permission
 test("marked text forms have reviewed fixed text and never translate defaults", () => {
   const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"(input\.[^"]+)"([\s\S]*?)\}/g)];
-  assert.equal(forms.length, 16);
+  assert.equal(forms.length, 17);
   for (const [, prefix, body] of forms) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"]]) {
       const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")`));
@@ -615,8 +615,8 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const prefixes = [...controller.matchAll(/PresentationKey:\s*"(dialog\.[^"]+)"/g)].map(match => match[1]);
-  assert.equal(prefixes.length, 14); // Revoke has two entry points; + dialog.forceDropServer (2026-10-01).
-  assert.equal(new Set(prefixes).size, 13);
+  assert.equal(prefixes.length, 15); // Revoke has two entry points; + explicit shelf resend.
+  assert.equal(new Set(prefixes).size, 14);
   for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
       for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");
@@ -649,7 +649,7 @@ test("marked fixed confirmations keep their Polish fallback and button semantics
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository", "dialog.forceDropServer"]);
   const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"(dialog\.[^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
-  assert.equal(marked.length, 11);
+  assert.equal(marked.length, 12);
   for (const [, prefix, body] of marked) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"], ["ConfirmText", "confirm"], ["CancelText", "cancel"]]) {
       const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")\\s*(?:,|$)`));
@@ -786,7 +786,7 @@ test("preference changes synchronize, survive denied storage and do not touch in
 test("prompt locale change preserves unsaved input and pending submission", async () => {
   const nodes = new Map(), listeners = new Map();
   const node = id => {
-    if (!nodes.has(id)) nodes.set(id, { value: "", disabled: false, addEventListener() {}, replaceChildren() {}, focus() {}, select() {} });
+    if (!nodes.has(id)) nodes.set(id, { tagName: "INPUT", value: "", disabled: false, addEventListener() {}, replaceChildren() {}, removeAttribute() {}, focus() {}, select() {} });
     return nodes.get(id);
   };
   let rejectChoice, sent, locale = "pl";

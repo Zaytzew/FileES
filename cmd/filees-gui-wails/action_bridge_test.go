@@ -306,11 +306,11 @@ func TestUploadChannelAdapterTranslatesDeclarations(t *testing.T) {
 	if err != nil || len(listed.Channels) != 1 || listed.Channels[0].Slug != "inbox" || len(listed.Channels[0].Recipients) != 1 {
 		t.Fatalf("ListUploadChannels() = %+v, %v", listed, err)
 	}
-	declaration := actions.UploadChannelDeclaration{AuthorityRepoID: "docs", Slug: "drop", Recipients: []string{"a@example.net"}, RequireOTP: true}
+	declaration := actions.UploadChannelDeclaration{AuthorityRepoID: "docs", Slug: "drop", Recipients: []string{"a@example.net"}, RequireOTP: true, ManageInvitations: true, InvitationMessage: "Proszę o pliki"}
 	if err := adapter.CreateUploadChannel(t.Context(), "spot", declaration); err != nil || client.created.AuthorityRepoID != "docs" || client.created.Slug != "drop" || !client.created.RequireOTP {
 		t.Fatalf("CreateUploadChannel() payload=%+v err=%v", client.created, err)
 	}
-	if err := adapter.UpdateUploadChannel(t.Context(), "spot", "channel-1", declaration); err != nil || client.updated.ChannelID != "channel-1" {
+	if err := adapter.UpdateUploadChannel(t.Context(), "spot", "channel-1", declaration); err != nil || client.updated.ChannelID != "channel-1" || !client.updated.ManageInvitations || client.updated.InvitationMessage != declaration.InvitationMessage {
 		t.Fatalf("UpdateUploadChannel() payload=%+v err=%v", client.updated, err)
 	}
 }

@@ -104,7 +104,18 @@ function render(next) {
   $("#prompt-confirm").textContent = next.confirm_text || t(next.mode === "info" ? "action.understood" : "action.continue");
   $("#prompt-confirm").disabled = false;
   $("#prompt-cancel").disabled = false;
-  const input = $("#prompt-value");
+  let input = $("#prompt-value");
+  const tag = next.multiline && !next.secret ? "TEXTAREA" : "INPUT";
+  if (input.tagName !== tag) {
+    const replacement = document.createElement(tag.toLowerCase());
+    replacement.id = "prompt-value";
+    replacement.autocomplete = "off";
+    if (tag === "TEXTAREA") replacement.rows = 5;
+    input.replaceWith(replacement);
+    input = replacement;
+  }
+  if (next.max_length > 0) input.maxLength = next.max_length;
+  else input.removeAttribute("maxlength");
   input.type = next.secret ? "password" : "text";
   input.placeholder = next.placeholder || "";
   input.value = next.default || "";

@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "action.resendShelf": "Reenviar invitación",
+  "input.shelfMessage.title": "Mensaje de invitación",
+  "input.shelfMessage.text": "Texto opcional para los destinatarios (hasta 2000 caracteres). Editarlo no reenvía las invitaciones — use el botón específico.",
+  "input.shelfMessage.label": "Mensaje",
+  "input.shelfMessage.confirm": "Guardar",
+  "input.shelfMessage.cancel": "Cancelar",
+  "dialog.resendShelf.text": "¿Reenviar las invitaciones con el mensaje guardado a todos los destinatarios actuales? Los enlaces existentes seguirán siendo válidos.",
+  "dialog.resendShelf.confirm": "Reenviar",
+  "feedback.shelfInvitationsQueued": "Invitaciones en cola de envío",
+  "feedback.shelfInvitationsQueuedBody": "El servidor las envía mediante su cola de correo. Estar en cola no confirma la entrega.",
+  "dialog.resendShelf.title": "Reenviar invitación",
+  "dialog.resendShelf.cancel": "Cancelar",
   "input.localFolderName.title": "Nombre de la carpeta local",
   "input.localFolderName.text": "Conserve el nombre actual o introduzca uno nuevo. El nombre del repositorio en el servidor no cambiará.",
   "input.localFolderName.label": "Nombre de la carpeta",

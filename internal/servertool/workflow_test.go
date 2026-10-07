@@ -24,6 +24,7 @@ import (
 	"filees/pkg/serverconfig"
 	"filees/pkg/smtpsubmit"
 	"filees/public-shares/channel"
+	"filees/public-shares/manifest"
 )
 
 // s1StepEnv selects one step of TestS1FilesystemWorkflow in a child process.
@@ -231,14 +232,16 @@ func TestUploadChannelInvitationMailUsesSharedSMTPWorker(t *testing.T) {
 	}
 	now := time.Unix(1700000000, 0).UTC()
 	outbox := repoworker.UploadChannelOutbox{Root: filepath.Join(results, "public-shares", "upload-outbox"), Now: func() time.Time { return now }}
-	record := channel.UploadRecord{ChannelID: uuid.NewString(), Alias: "atmprojekt", Slug: "oferta-a"}
+	record := channel.UploadRecord{ChannelID: uuid.NewString(), Alias: "atmprojekt", Slug: "oferta-a", MailOperationID: uuid.NewString(), Manifest: &manifest.Upload{InvitationMessage: "Proszę o dokumenty.\nDziękuję."}}
 	if err := outbox.DeliverUploadTokens(context.Background(), record, []channel.Delivery{{Email: "a@example.test", Token: strings.Repeat("t", 43)}}); err != nil {
 		t.Fatal(err)
 	}
 	originalSubmit := smtpSubmit
 	t.Cleanup(func() { smtpSubmit = originalSubmit })
 	var submitted smtpsubmit.Request
+	submissions := 0
 	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submissions++
 		submitted = request
 		return nil
 	}
@@ -255,6 +258,9 @@ func TestUploadChannelInvitationMailUsesSharedSMTPWorker(t *testing.T) {
 	if submitted.Recipient != "a@example.test" || !bytes.Contains(submitted.Message, []byte("/atmprojekt/oferta-a?invite=")) || !bytes.Contains(stdout.Bytes(), []byte("upload_channel_invitation")) {
 		t.Fatalf("unexpected upload invitation: %+v stdout=%s", submitted, stdout.String())
 	}
+	if !bytes.Contains(submitted.Message, []byte("Proszę o dokumenty.\r\nDziękuję.")) {
+		t.Fatal("saved invitation message did not reach SMTP body")
+	}
 	if entries, err := os.ReadDir(outbox.Root); err != nil {
 		t.Fatal(err)
 	} else {
@@ -263,6 +269,14 @@ func TestUploadChannelInvitationMailUsesSharedSMTPWorker(t *testing.T) {
 				t.Fatalf("sent job remained: %v", entries)
 			}
 		}
+	}
+	if err := outbox.DeliverUploadTokens(context.Background(), record, []channel.Delivery{{Email: "a@example.test", Token: strings.Repeat("t", 43)}}); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitOK || submissions != 1 || !bytes.Contains(stdout.Bytes(), []byte(`"status":"no_work"`)) {
+		t.Fatalf("completed resend was replayed: code=%d submissions=%d stdout=%s stderr=%s", code, submissions, stdout.String(), stderr.String())
 	}
 }
 

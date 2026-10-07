@@ -1,5 +1,17 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "action.resendShelf": "Ponów zaproszenie",
+  "input.shelfMessage.title": "Wiadomość do zaproszenia",
+  "input.shelfMessage.text": "Opcjonalny tekst dla odbiorców (do 2000 znaków). Edycja wiadomości nie ponawia zaproszeń — służy do tego osobny przycisk.",
+  "input.shelfMessage.label": "Wiadomość",
+  "input.shelfMessage.confirm": "Zapisz",
+  "input.shelfMessage.cancel": "Anuluj",
+  "dialog.resendShelf.text": "Wysłać ponownie zaproszenia wszystkim obecnym odbiorcom, z zapisaną wiadomością? Dotychczasowe linki pozostaną ważne.",
+  "dialog.resendShelf.confirm": "Wyślij ponownie",
+  "feedback.shelfInvitationsQueued": "Zaproszenia przekazano do wysyłki",
+  "feedback.shelfInvitationsQueuedBody": "Serwer wysyła je przez swoją kolejkę poczty. Przyjęcie do kolejki nie potwierdza doręczenia.",
+  "dialog.resendShelf.title": "Ponów zaproszenie",
+  "dialog.resendShelf.cancel": "Anuluj",
   "input.localFolderName.title": "Nazwa lokalnego folderu",
   "input.localFolderName.text": "Zachowaj obecną nazwę albo wpisz nową. Nazwa repozytorium na serwerze pozostanie bez zmian.",
   "input.localFolderName.label": "Nazwa folderu",

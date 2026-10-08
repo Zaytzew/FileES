@@ -416,6 +416,14 @@ func TestFileESRecognisesPlaceholdersAndOnlyThem(t *testing.T) {
 		t.Fatal("the fetched placeholder did not return all expected bytes")
 	}
 	opened := filepath.Join(root, "sala.dwg")
+	// The read returns before Windows has settled the placeholder state: on
+	// build 26300 the first look still reported missing bytes and a look a
+	// few milliseconds later did not. Wait for it, bounded, and say how long.
+	settling := time.Now()
+	for time.Since(settling) < 5*time.Second && (!cloudfiles.IsPlaceholder(opened) || cloudfiles.NotOnDisk(opened)) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Logf("placeholder state settled after %v", time.Since(settling))
 	if !cloudfiles.IsPlaceholder(opened) || cloudfiles.NotOnDisk(opened) {
 		if info, err := os.Lstat(opened); err == nil {
 			t.Logf("hydrated file metadata: %#v", info.Sys())

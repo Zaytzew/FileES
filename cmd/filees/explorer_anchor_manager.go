@@ -115,6 +115,9 @@ type anchorManager struct {
 	// damagePublished: the repository state each anchor's damage source was
 	// last handed to; a recreated state gets it again.
 	damagePublished map[string]*ipcserver.RepoState
+	// providerSuspect is closed and replaced when every connected anchor
+	// should check its Windows connection now.
+	providerSuspect chan struct{}
 }
 
 type anchorConnection struct {
@@ -416,7 +419,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 				bridge.onConnected = func(providerCtx context.Context) {
 					m.publishDamage(record)
 					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })
-					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, func(checkCtx context.Context) (cfapiAnswer, error) {
+					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, m.providerSuspected, func(checkCtx context.Context) (cfapiAnswer, error) {
 						return m.call(checkCtx, "", "info", "--root", record.LocalPath)
 					}, func() {
 						log.Warnf("anchor at %s lost its Windows provider connection - reconnecting", record.LocalPath)
@@ -475,22 +478,34 @@ const anchorProviderCheckEvery = 30 * time.Second
 // reports a non-zero provider status; zero twice in a row means the
 // connection is gone, and ending the helper lets keep connect again. An
 // answer that cannot be read is not evidence either way.
-func watchAnchorProvider(ctx context.Context, every time.Duration, status func(context.Context) (cfapiAnswer, error), lost func()) {
+//
+// suspect, when not nil, yields a channel that is closed when something else
+// has shown the filter was detached (a repair just removed unreadable
+// entries). The check then happens at once and one zero reading is enough, so
+// the folders are back in seconds instead of a minute.
+func watchAnchorProvider(ctx context.Context, every time.Duration, suspect func() <-chan struct{}, status func(context.Context) (cfapiAnswer, error), lost func()) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	disconnected := 0
 	for {
+		var prompted <-chan struct{}
+		if suspect != nil {
+			prompted = suspect()
+		}
+		needed := 2
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-prompted:
+			needed = 1
 		}
 		answer, err := status(ctx)
 		if err != nil || !answer.OK || !answer.Ours || answer.Status != 0 {
 			disconnected = 0
 			continue
 		}
-		if disconnected++; disconnected >= 2 {
+		if disconnected++; disconnected >= needed {
 			if ctx.Err() == nil {
 				lost()
 			}

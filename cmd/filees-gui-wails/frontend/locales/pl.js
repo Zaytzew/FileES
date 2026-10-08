@@ -1602,6 +1602,7 @@ export default {
   "pending.abandon": "Kończenie starej próby",
   "pending.attach": "Łączenie folderu",
   "pending.anchor": "Tworzenie punktu zaczepienia",
+  "pending.repairAnchor": "Naprawianie folderu wirtualnego",
   "pending.detach": "Odłączanie folderu",
   "pending.delete": "Usuwanie repozytorium",
   "pending.timeout": "Zapisywanie limitu czasu",

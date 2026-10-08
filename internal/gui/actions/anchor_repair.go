@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
+	"filees/internal/gui/tray"
 )
 
 // AnchorRepairOutcome is what the elevated repair of one virtual folder
@@ -25,6 +28,13 @@ const (
 	// AnchorRepairFilterDetached: cloud files are still switched off on the
 	// volume.
 	AnchorRepairFilterDetached
+)
+
+// After a successful repair the daemon looks at the folder again within about
+// ten seconds; the card keeps its spinner until then, bounded.
+const (
+	anchorRepairSettle     = 90 * time.Second
+	anchorRepairSettlePoll = 250 * time.Millisecond
 )
 
 // AnchorRepairer starts the elevated repair. It is given a folder and
@@ -79,6 +89,15 @@ func (c *Controller) startRepairAnchor(ctx context.Context, serverID, repoID str
 		if _, current, _, still := damaged(); !still || current != root {
 			return
 		}
+		// From consent to a settled card the folder shows work in progress.
+		// The repair itself is seconds, but the daemon then needs a moment to
+		// see the folder clean and reconnect it, and a silent card reads as a
+		// failure (owner, 2026-10-08).
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind: string(tray.IntentRepairAnchor), ServerID: serverID, RepoID: repoID,
+			Label: c.uiText("pending.repairAnchor", "Naprawianie folderu wirtualnego"),
+		})
+		defer c.finishProjectedAction(actionID)
 		outcome, err := c.cfg.AnchorRepairer.RepairAnchor(ctx, root, false)
 		for attempt := 0; err == nil && outcome == AnchorRepairFilterDetached && attempt < 3; attempt++ {
 			again, promptErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
@@ -102,6 +121,17 @@ func (c *Controller) startRepairAnchor(ctx context.Context, serverID, repoID str
 		case err != nil:
 			c.reportActionError(ctx, key, c.uiText("feedback.repairAnchorFailed", "Nie udało się naprawić folderu"), name+" — "+c.actionErrorBody(err))
 		case outcome == AnchorRepairDone:
+			// Say "repaired" when the card can show it, not before.
+			settle := c.cfg.AnchorRepairSettle
+			if settle <= 0 {
+				settle = anchorRepairSettle
+			}
+			for deadline := time.Now().Add(settle); time.Now().Before(deadline) && ctx.Err() == nil; {
+				if _, _, _, still := damaged(); !still {
+					break
+				}
+				time.Sleep(anchorRepairSettlePoll)
+			}
 			info("info.repairAnchorDone", "Folder "+name+" jest naprawiony", "Nieczytelne wpisy zostały usunięte, a pliki w chmurze na dysku "+args["volume"]+" są znowu włączone. FileES połączy foldery wirtualne i odtworzy usunięte wpisy w ciągu około minuty.")
 		case outcome == AnchorRepairNoRights:
 			info("info.repairAnchorNoRights", "Brak uprawnień do operacji", "Windows nie przyznał uprawnień administratora. Nic nie zostało zmienione: nieczytelne pliki w folderze "+name+" nadal się nie otworzą, pozostałe działają.")

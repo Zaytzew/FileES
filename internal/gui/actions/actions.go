@@ -408,16 +408,19 @@ type Config struct {
 	DomainText func(code, key string, details map[string]string) string
 	// DomainHint renders a hint enum, or "" when the hint carries no
 	// sentence. HintNone is silence by design.
-	DomainHint           func(hint string) string
-	Intents              <-chan tray.Intent
-	ViewModel            func() app.ViewModel
-	Opener               platform.FolderOpener
-	Picker               platform.FilePicker
-	FolderPicker         platform.FolderPicker
-	Prompter             platform.Prompter
-	RepositoryCreator    RepositoryCreator
-	RepositoryAttacher   RepositoryAttacher
-	AnchorRepairer       AnchorRepairer
+	DomainHint         func(hint string) string
+	Intents            <-chan tray.Intent
+	ViewModel          func() app.ViewModel
+	Opener             platform.FolderOpener
+	Picker             platform.FilePicker
+	FolderPicker       platform.FolderPicker
+	Prompter           platform.Prompter
+	RepositoryCreator  RepositoryCreator
+	RepositoryAttacher RepositoryAttacher
+	AnchorRepairer     AnchorRepairer
+	// AnchorRepairSettle bounds the wait for the card after a repair; zero
+	// means the default.
+	AnchorRepairSettle   time.Duration
 	RepositoryLocator    RepositoryLocator
 	RepositoryRelocator  RepositoryRelocator
 	RepositoryDetacher   RepositoryDetacher

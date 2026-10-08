@@ -1588,6 +1588,7 @@ export default {
   "pending.abandon": "Fin de l’ancienne tentative",
   "pending.attach": "Connexion du dossier",
   "pending.anchor": "Création de l’ancrage",
+  "pending.repairAnchor": "Réparation du dossier virtuel",
   "pending.detach": "Déconnexion du dossier",
   "pending.delete": "Suppression du dépôt",
   "pending.timeout": "Enregistrement du délai",

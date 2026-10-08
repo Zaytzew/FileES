@@ -1575,6 +1575,7 @@ export default {
   "pending.abandon": "Alter Versuch wird beendet",
   "pending.attach": "Ordner wird verbunden",
   "pending.anchor": "Anker wird erstellt",
+  "pending.repairAnchor": "Virtueller Ordner wird repariert",
   "pending.detach": "Ordner wird getrennt",
   "pending.delete": "Repository wird gelöscht",
   "pending.timeout": "Zeitlimit wird gespeichert",

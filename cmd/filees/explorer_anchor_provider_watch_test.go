@@ -32,7 +32,7 @@ func TestAnchorProviderWatchEndsOnlyAHelperWindowsNoLongerKnows(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				watchAnchorProvider(ctx, time.Millisecond, func(context.Context) (cfapiAnswer, error) {
+				watchAnchorProvider(ctx, time.Millisecond, nil, func(context.Context) (cfapiAnswer, error) {
 					index := int(calls.Add(1)) - 1
 					if index >= len(test.answers) {
 						cancel()
@@ -54,5 +54,34 @@ func TestAnchorProviderWatchEndsOnlyAHelperWindowsNoLongerKnows(t *testing.T) {
 				t.Fatalf("lost=%d, want lost %v after %d readings", lost.Load(), test.lost, calls.Load())
 			}
 		})
+	}
+}
+
+func TestAnchorProviderWatchActsAtOnceWhenTheFilterIsKnownToHaveBeenDetached(t *testing.T) {
+	m := &anchorManager{}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var calls, lost atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// The routine check is an hour away: only the prompt can cause a look.
+		watchAnchorProvider(ctx, time.Hour, m.providerSuspected, func(context.Context) (cfapiAnswer, error) {
+			calls.Add(1)
+			return cfapiAnswer{OK: true, Ours: true, Status: 0}, nil
+		}, func() { lost.Add(1) })
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatal("checked without a reason")
+	}
+	m.suspectProviders()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch did not react to the prompt")
+	}
+	if calls.Load() != 1 || lost.Load() != 1 {
+		t.Fatalf("calls=%d lost=%d, want one look and one reconnect", calls.Load(), lost.Load())
 	}
 }

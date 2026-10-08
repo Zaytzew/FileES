@@ -3,13 +3,27 @@ package actions
 import (
 	"context"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/platform/platformtest"
 	contract "filees/pkg/contract/v1"
 )
+
+type recordedLifecycle struct{ started, finished int }
+
+func (l *recordedLifecycle) StartAction(action app.PendingAction) bool {
+	if action.Kind != "repair_anchor" || action.RepoID != "repo" || action.ServerID != "s" || action.Label == "" {
+		return false
+	}
+	l.started++
+	return true
+}
+func (l *recordedLifecycle) FinishAction(string)          { l.finished++ }
+func (l *recordedLifecycle) AwaitActionProjection(string) {}
 
 type scriptedAnchorRepairer struct {
 	outcomes []AnchorRepairOutcome
@@ -82,9 +96,15 @@ func TestRepairAnchorAsksFirstAndReportsWhatWindowsDid(t *testing.T) {
 					return nil
 				},
 			}
-			c := New(Config{ViewModel: func() app.ViewModel { return vm }, Prompter: fake, Notifier: fake, AnchorRepairer: repairer})
+			spinner := &recordedLifecycle{}
+			c := New(Config{ViewModel: func() app.ViewModel { return vm }, Prompter: fake, Notifier: fake, AnchorRepairer: repairer, ActionLifecycle: spinner, AnchorRepairSettle: 20 * time.Millisecond})
 			c.startRepairAnchor(context.Background(), "s", "repo")
 			c.tasks.Wait()
+			// A spinner exactly when something elevated was started, and never
+			// left behind.
+			if wantSpinner := len(test.calls) > 0; (spinner.started == 1) != wantSpinner || spinner.started != spinner.finished {
+				t.Errorf("spinner started %d finished %d, want started=%v", spinner.started, spinner.finished, wantSpinner)
+			}
 			if !reflect.DeepEqual(repairer.calls, test.calls) {
 				t.Errorf("elevated calls %q, want %q", repairer.calls, test.calls)
 			}
@@ -112,5 +132,43 @@ func TestRepairAnchorDoesNotElevateOnStaleState(t *testing.T) {
 	c.tasks.Wait()
 	if len(repairer.calls) != 0 {
 		t.Fatalf("elevated on stale state: %q", repairer.calls)
+	}
+}
+
+// "Repaired" is said when the card can show it: the result window waits for
+// the daemon's next look at the folder, with the spinner on until then.
+func TestRepairAnchorKeepsTheSpinnerUntilTheFolderShowsClean(t *testing.T) {
+	const root = `F:\work\ZUGA`
+	var cleared atomic.Bool
+	view := func() app.ViewModel {
+		repo := app.RepoViewModel{ID: "repo", ServerID: "s", DisplayName: "ZUGA", Attached: true, LocalPath: root}
+		if !cleared.Load() {
+			repo.AnchorDamage = &contract.AnchorDamage{Entries: 10}
+		}
+		return app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}}
+	}
+	repairer := &scriptedAnchorRepairer{outcomes: []AnchorRepairOutcome{AnchorRepairDone}}
+	spinner := &recordedLifecycle{}
+	var shownWhileDamaged bool
+	fake := &platformtest.Fake{
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+		ShowInfoFunc: func(context.Context, platform.InfoRequest) error {
+			shownWhileDamaged = !cleared.Load() || spinner.finished != 0
+			return nil
+		},
+	}
+	c := New(Config{ViewModel: view, Prompter: fake, Notifier: fake, AnchorRepairer: repairer, ActionLifecycle: spinner, AnchorRepairSettle: 10 * time.Second})
+	started := time.Now()
+	time.AfterFunc(400*time.Millisecond, func() { cleared.Store(true) })
+	c.startRepairAnchor(context.Background(), "s", "repo")
+	c.tasks.Wait()
+	if shownWhileDamaged {
+		t.Fatal("the result window came before the card was clean, or after the spinner ended")
+	}
+	if waited := time.Since(started); waited < 350*time.Millisecond || waited > 5*time.Second {
+		t.Fatalf("waited %v", waited)
+	}
+	if spinner.started != 1 || spinner.finished != 1 {
+		t.Fatalf("spinner started %d finished %d", spinner.started, spinner.finished)
 	}
 }

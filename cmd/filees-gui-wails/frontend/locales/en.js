@@ -1576,6 +1576,7 @@ export default {
   "pending.abandon": "Finishing old attempt",
   "pending.attach": "Connecting folder",
   "pending.anchor": "Creating the anchor",
+  "pending.repairAnchor": "Repairing the virtual folder",
   "pending.detach": "Detaching folder",
   "pending.delete": "Deleting repository",
   "pending.timeout": "Saving timeout",

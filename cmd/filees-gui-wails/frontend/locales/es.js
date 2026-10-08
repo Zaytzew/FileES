@@ -1588,6 +1588,7 @@ export default {
   "pending.abandon": "Finalizando intento anterior",
   "pending.attach": "Conectando carpeta",
   "pending.anchor": "Creando el anclaje",
+  "pending.repairAnchor": "Reparando la carpeta virtual",
   "pending.detach": "Desconectando carpeta",
   "pending.delete": "Eliminando repositorio",
   "pending.timeout": "Guardando tiempo límite",

@@ -17,7 +17,7 @@ const (
 	anchorDamageSample = 5
 	// A damaged folder is looked at again soon, so that a repair shows without
 	// a restart; a healthy one rarely, because looking opens every entry.
-	anchorDamageRecheck = 30 * time.Second
+	anchorDamageRecheck = 10 * time.Second
 	anchorDamageRoutine = 15 * time.Minute
 )
 
@@ -69,6 +69,9 @@ func (m *anchorManager) inspectDamage(record localrepo.Record) int {
 		log.Warnf("%d entries at %s have cloud metadata Windows cannot read; removing them needs administrator rights", current.Entries, record.LocalPath)
 	case current == nil && previous != nil:
 		log.Infof("no unreadable entries remain at %s", record.LocalPath)
+		// They can only have gone while the cloud files filter was detached,
+		// and that drops every provider connection on the volume.
+		m.suspectProviders()
 	}
 	// The GUI redraws a repository only when told its state changed; without
 	// this the card kept the answer from before the first inspection.
@@ -137,4 +140,24 @@ func watchAnchorDamage(ctx context.Context, damaged, healthy time.Duration, insp
 		case <-timer.C:
 		}
 	}
+}
+
+// providerSuspected is what a connected anchor waits on between routine
+// checks of its Windows connection.
+func (m *anchorManager) providerSuspected() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.providerSuspect == nil {
+		m.providerSuspect = make(chan struct{})
+	}
+	return m.providerSuspect
+}
+
+func (m *anchorManager) suspectProviders() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.providerSuspect != nil {
+		close(m.providerSuspect)
+	}
+	m.providerSuspect = make(chan struct{})
 }

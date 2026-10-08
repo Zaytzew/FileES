@@ -36,14 +36,14 @@ for platform in linux-amd64 openbsd-amd64; do
 	if [ -f "$stage/channel-cli.json" ]; then
 		"$work/manifests" -bundle "$destination/filees-client-$platform.tar.gz" \
 			-component cli -platform "$platform" -release-id "$release_id" \
-			-version "$version+$SOURCE_REVISION" -sequence "$number" -security-epoch 1 \
+			-version "$version" -sequence "$number" -security-epoch 1 \
 			-key-id "$KEY_ID" -release-root "$destination" \
 			-merge-channel "$stage/channel-cli.json" -channel-out "$stage/channel-cli-next.json"
 		mv "$stage/channel-cli-next.json" "$stage/channel-cli.json"
 	else
 		"$work/manifests" -bundle "$destination/filees-client-$platform.tar.gz" \
 			-component cli -platform "$platform" -release-id "$release_id" \
-			-version "$version+$SOURCE_REVISION" -sequence "$number" -security-epoch 1 \
+			-version "$version" -sequence "$number" -security-epoch 1 \
 			-key-id "$KEY_ID" -release-root "$destination" -channel-out "$stage/channel-cli.json"
 	fi
 done

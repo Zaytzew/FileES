@@ -1,12 +1,54 @@
 package provisioning
 
 import (
+	"errors"
+	"filees/pkg/errcat"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestPreflightLocalPathRejectsFilesystemRootBeforeScanning(t *testing.T) {
+	root := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	// Create performs no recursive scan in the old implementation either.
+	// Never reproduce the bug by walking a real disk in an attach test.
+	_, err := PreflightLocalPath(root, LocalPathCreate, nil)
+	var fault errcat.Fault
+	if !errors.As(err, &fault) || fault.Key != "repo.local_volume_root" {
+		t.Fatalf("expected readable root refusal before disk inspection, got %v", err)
+	}
+}
+
+func TestPreflightLocalPathRejectsAliasOfFilesystemRoot(t *testing.T) {
+	root := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	alias := filepath.Join(t.TempDir(), "disk-alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, err := PreflightLocalPath(alias, LocalPathCreate, nil)
+	var fault errcat.Fault
+	if !errors.As(err, &fault) || fault.Key != "repo.local_volume_root" {
+		t.Fatalf("filesystem root via alias not refused: %v", err)
+	}
+}
+
+func TestPreflightChildOfNonemptyParentRemainsAvailable(t *testing.T) {
+	parent := t.TempDir()
+	sibling := filepath.Join(parent, "existing-point")
+	if err := os.MkdirAll(filepath.Join(sibling, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(parent, "$RECYCLE.BIN"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(parent, "new-point")
+	check, err := PreflightLocalPath(child, LocalPathAttach, []string{sibling})
+	if err != nil || check.CanonicalPath != child || check.Exists || !check.Empty {
+		t.Fatalf("new child rejected or parent confused with target: %+v %v", check, err)
+	}
+}
 
 func TestPreflightLocalPathCreateAcceptsExistingContent(t *testing.T) {
 	root := t.TempDir()

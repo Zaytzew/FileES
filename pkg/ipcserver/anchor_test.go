@@ -136,4 +136,10 @@ func TestAnchorRefusalsAreReadable(t *testing.T) {
 	if response.Error == nil || response.Error.Code != "REPO-2014" || response.Error.MessageKey != "repo.attach_target_not_empty" {
 		t.Fatalf("not-empty refusal = %+v", response.Error)
 	}
+	stub.anchorErr = errcat.New("repo.local_volume_root", nil, errors.New("filesystem root cannot be a repository root"))
+	response = server.dispatch(lifecycleRequest(contract.CmdRepoAnchorCreate,
+		contract.RepoAnchorCreatePayload{ServerID: "primary", RepoID: "repo-1", LocalPath: filepath.Join(t.TempDir(), "Atlas")}))
+	if response.Error == nil || response.Error.Code != "REPO-2023" || response.Error.MessageKey != "repo.local_volume_root" {
+		t.Fatalf("volume-root refusal = %+v", response.Error)
+	}
 }

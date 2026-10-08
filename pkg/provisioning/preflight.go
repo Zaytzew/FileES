@@ -37,13 +37,16 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 		return LocalPathCheck{}, errors.New("local path must be absolute")
 	}
 	path = filepath.Clean(path)
-	if path == string(filepath.Separator) {
-		return LocalPathCheck{}, errors.New("filesystem root cannot be a repository root")
+	if isLocalFilesystemRoot(path) {
+		return LocalPathCheck{}, errcat.New("repo.local_volume_root", nil, errors.New("filesystem root cannot be a repository root"))
 	}
 
 	canonical, err := canonicalProspectivePath(path)
 	if err != nil {
 		return LocalPathCheck{}, fmt.Errorf("resolve local path: %w", err)
+	}
+	if isLocalFilesystemRoot(canonical) {
+		return LocalPathCheck{}, errcat.New("repo.local_volume_root", nil, errors.New("resolved folder is a filesystem root"))
 	}
 	if mode == LocalPathAttach {
 		// Refuse this exact reason even when the abandoned folder still has
@@ -106,6 +109,15 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 		return LocalPathCheck{}, errcat.New("repo.attach_target_not_empty", nil, errors.New("attach target must be absent or empty"))
 	}
 	return LocalPathCheck{CanonicalPath: canonical, Exists: true, Empty: empty}, nil
+}
+
+func isLocalFilesystemRoot(path string) bool {
+	// filepath.Dir handles drive and ordinary UNC roots, but the extended UNC
+	// prefix is a device volume to Go. Classify its share without touching it.
+	if len(path) >= 8 && strings.EqualFold(path[:8], `\\?\UNC\`) {
+		path = filepath.Clean(`\\` + path[8:])
+	}
+	return path == filepath.Dir(path)
 }
 
 func canonicalProspectivePath(path string) (string, error) {

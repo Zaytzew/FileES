@@ -290,6 +290,7 @@ var specs = []Spec{
 	{"REPO-2020", "repo.rename_target_exists", SevError, HintRequireAction, nil, "Something already occupies the new name"},
 	{"REPO-2021", "repo.rename_blocked_in_use", SevError, HintRetry, nil, "The system refused: the file is held open"},
 	{"REPO-2022", KeyInitialContentUnavailable, SevWarn, HintRequireAction, detailOnly(), "Initial import requires content available on this disk"},
+	{"REPO-2023", "repo.local_volume_root", SevError, HintRequireAction, nil, "Choose a folder, not the root of a disk or share"},
 	{"REPO-3001", "repo.activity_unavailable", SevError, HintNone, nil, "Activity journal is not available"},
 
 	{"MOBILE-0001", "mobile_pairing.unavailable", SevError, HintRetry, nil, "Mobile pairing is not available"},

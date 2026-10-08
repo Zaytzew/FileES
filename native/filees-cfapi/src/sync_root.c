@@ -58,6 +58,60 @@ int filees_cfapi_register(const WCHAR *root, const WCHAR *identity)
     return 0;
 }
 
+/* Some Windows installations return another point on the volume for an
+ * ordinary parent/sibling. A successful provider query is not containment
+ * proof. Resolve the reported root's file ID and compare actual handle paths,
+ * including a component boundary. Attribute-only handles never hydrate. */
+static HRESULT verified_provider(const WCHAR *path, CF_SYNC_ROOT_PROVIDER_INFO *provider)
+{
+    HANDLE file = INVALID_HANDLE_VALUE, point = INVALID_HANDLE_VALUE;
+    CF_SYNC_ROOT_BASIC_INFO basic;
+    BY_HANDLE_FILE_INFORMATION actual;
+    FILE_ID_DESCRIPTOR descriptor;
+    WCHAR actual_path[FILEES_CFAPI_MAX_PATH], point_path[FILEES_CFAPI_MAX_PATH];
+    DWORD returned = 0, actual_length, point_length;
+    ULONGLONG file_id;
+    HRESULT hr;
+
+    file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    ZeroMemory(&basic, sizeof basic);
+    hr = CfGetSyncRootInfoByHandle(file, CF_SYNC_ROOT_INFO_BASIC, &basic, sizeof basic, &returned);
+    if (FAILED(hr)) goto done;
+    if (returned < sizeof basic) { hr = E_UNEXPECTED; goto done; }
+    if (!GetFileInformationByHandle(file, &actual)) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+    file_id = ((ULONGLONG)actual.nFileIndexHigh << 32) | actual.nFileIndexLow;
+    if (file_id == (ULONGLONG)basic.SyncRootFileId.QuadPart) {
+        hr = CfGetSyncRootInfoByHandle(file, CF_SYNC_ROOT_INFO_PROVIDER, provider, sizeof *provider, &returned);
+        goto done;
+    }
+    ZeroMemory(&descriptor, sizeof descriptor);
+    descriptor.dwSize = sizeof descriptor;
+    descriptor.Type = FileIdType;
+    descriptor.FileId = basic.SyncRootFileId;
+    point = OpenFileById(file, &descriptor, FILE_READ_ATTRIBUTES,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, FILE_FLAG_BACKUP_SEMANTICS);
+    if (point == INVALID_HANDLE_VALUE) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+    actual_length = GetFinalPathNameByHandleW(file, actual_path, FILEES_CFAPI_MAX_PATH, VOLUME_NAME_GUID);
+    point_length = GetFinalPathNameByHandleW(point, point_path, FILEES_CFAPI_MAX_PATH, VOLUME_NAME_GUID);
+    if (!actual_length || !point_length) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+    if (actual_length >= FILEES_CFAPI_MAX_PATH || point_length >= FILEES_CFAPI_MAX_PATH) {
+        hr = HRESULT_FROM_WIN32(ERROR_FILENAME_EXCED_RANGE); goto done;
+    }
+    while (point_length && point_path[point_length - 1] == L'\\') point_path[--point_length] = L'\0';
+    if (actual_length < point_length ||
+        CompareStringOrdinal(actual_path, (int)point_length, point_path, (int)point_length, TRUE) != CSTR_EQUAL ||
+        (actual_length > point_length && actual_path[point_length] != L'\\')) {
+        hr = HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT); goto done;
+    }
+    hr = CfGetSyncRootInfoByHandle(point, CF_SYNC_ROOT_INFO_PROVIDER, provider, sizeof *provider, &returned);
+done:
+    if (point != INVALID_HANDLE_VALUE) CloseHandle(point);
+    CloseHandle(file);
+    return hr;
+}
+
 /* info answers one question the daemon must never assume: is this folder
  * already an anchor? Registration outlives a reboot and the daemon's own
  * lifetime, so starting one blind would either duplicate it or quietly adopt
@@ -65,14 +119,17 @@ int filees_cfapi_register(const WCHAR *root, const WCHAR *identity)
 int filees_cfapi_info(const WCHAR *root)
 {
     CF_SYNC_ROOT_PROVIDER_INFO info;
-    DWORD returned = 0;
     HRESULT hr;
     char provider[CF_MAX_PROVIDER_NAME_LENGTH + 1];
 
     ZeroMemory(&info, sizeof info);
-    hr = CfGetSyncRootInfoByPath(root, CF_SYNC_ROOT_INFO_PROVIDER, &info, sizeof info, &returned);
+    hr = verified_provider(root, &info);
     if (FAILED(hr)) {
-        filees_cfapi_fail("sync_root_info", hr);
+        /* Absence is not the same as inability to verify a boundary. */
+        const char *code = (hr == HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) ||
+                            hr == HRESULT_FROM_WIN32(ERROR_NOT_A_CLOUD_SYNC_ROOT) ||
+                            hr == HRESULT_FROM_WIN32(ERROR_INVALID_FUNCTION)) ? "sync_root_info" : "sync_root_boundary";
+        filees_cfapi_fail(code, hr);
         return 1;
     }
     if (!WideCharToMultiByte(CP_UTF8, 0, info.ProviderName, -1, provider, (int)sizeof provider, NULL, NULL)) {

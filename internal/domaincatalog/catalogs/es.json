@@ -136,6 +136,7 @@
     "repo.detach_required_forbidden": "No se puede desconectar un repositorio obligatorio",
     "repo.detach_unpublished_changes": "La carpeta tiene cambios locales que no se han publicado",
     "repo.attach_target_not_empty": "La carpeta elegida no está vacía: un anclaje o una vinculación solo se crea en una carpeta nueva o vacía",
+    "repo.local_volume_root": "Elige una carpeta, no una unidad entera ni la raíz de un recurso de red. Al crear un anclaje, puedes elegir una unidad como carpeta principal: FileES creará dentro una subcarpeta independiente.",
     "repo.initial_content_unavailable": "La importación no puede iniciarse ni reanudarse: algunos archivos o carpetas no están disponibles en este disco. Descárguelos con su proveedor (como Nextcloud o OneDrive) e inténtelo de nuevo. Si se eliminó ese programa, recupere primero los datos de su servidor. FileES no descarga ni elimina estos archivos.",
     "repo.editing_policy_failed": "No se pudieron cambiar las reglas de reserva",
     "repo.editing_policy_forbidden": "Solo el propietario puede cambiar las reglas de reserva",

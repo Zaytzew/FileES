@@ -136,6 +136,7 @@
     "repo.detach_required_forbidden": "Ein erforderliches Repository kann nicht getrennt werden",
     "repo.detach_unpublished_changes": "Der Ordner hat lokale Änderungen, die nicht veröffentlicht wurden",
     "repo.attach_target_not_empty": "Der gewählte Ordner ist nicht leer — ein Anker oder eine Verbindung entsteht nur in einem neuen oder leeren Ordner",
+    "repo.local_volume_root": "Wählen Sie einen Ordner, nicht ein ganzes Laufwerk oder das Stammverzeichnis einer Netzwerkfreigabe. Für einen Anker können Sie ein Laufwerk als übergeordneten Ordner wählen — FileES erstellt darin einen eigenen Unterordner.",
     "repo.initial_content_unavailable": "Der Import kann nicht gestartet oder fortgesetzt werden: Einige Dateien oder Ordner sind auf diesem Laufwerk nicht verfügbar. Laden Sie sie mit ihrem Anbieter (z. B. Nextcloud oder OneDrive) herunter und versuchen Sie es erneut. Wurde das Programm entfernt, stellen Sie die Daten zuerst von dessen Server wieder her. FileES lädt diese Dateien weder herunter noch löscht es sie.",
     "repo.editing_policy_failed": "Die Reservierungsrichtlinie konnte nicht geändert werden",
     "repo.editing_policy_forbidden": "Nur der Eigentümer kann die Reservierungsrichtlinie ändern",

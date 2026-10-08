@@ -201,18 +201,28 @@ func (m *anchorManager) precheck(localPath string) error {
 			if err != nil {
 				return err
 			}
-			if answer.OK {
-				provider := answer.Provider
-				if provider == "" {
-					provider = "another program"
-				}
-				return errcat.New("head.anchor_under_provider", map[string]string{"provider": provider}, fmt.Errorf("%s is inside a folder synchronised by %s", local, provider))
+			if err := anchorProviderRefusal(answer); err != nil {
+				return err
 			}
 			break
 		}
 		if filepath.Dir(probe) == probe {
 			break
 		}
+	}
+	return nil
+}
+
+func anchorProviderRefusal(answer cfapiAnswer) error {
+	if answer.OK {
+		provider := answer.Provider
+		if provider == "" {
+			provider = "another program"
+		}
+		return errcat.New("head.anchor_under_provider", map[string]string{"provider": provider}, errors.New("folder is inside an existing synchronisation point"))
+	}
+	if answer.Error == "sync_root_boundary" {
+		return fmt.Errorf("cannot verify synchronised folder boundary: %s", answer.HResult)
 	}
 	return nil
 }

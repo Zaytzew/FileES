@@ -136,6 +136,7 @@
     "repo.detach_required_forbidden": "Un dépôt obligatoire ne peut pas être déconnecté",
     "repo.detach_unpublished_changes": "Le dossier contient des modifications locales non publiées",
     "repo.attach_target_not_empty": "Le dossier choisi n’est pas vide — un ancrage ou une liaison ne se crée que dans un dossier nouveau ou vide",
+    "repo.local_volume_root": "Choisissez un dossier, pas un lecteur entier ni la racine d’un partage réseau. Pour créer un ancrage, vous pouvez choisir un lecteur comme dossier parent — FileES y créera un sous-dossier distinct.",
     "repo.initial_content_unavailable": "L’import ne peut pas démarrer ou reprendre : certains fichiers ou dossiers ne sont pas disponibles sur ce disque. Téléchargez-les avec leur fournisseur (comme Nextcloud ou OneDrive), puis réessayez. Si ce programme a été supprimé, récupérez d’abord les données depuis son serveur. FileES ne télécharge ni ne supprime ces fichiers.",
     "repo.editing_policy_failed": "Impossible de modifier les règles de réservation",
     "repo.editing_policy_forbidden": "Seul le propriétaire peut modifier les règles de réservation",

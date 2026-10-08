@@ -118,7 +118,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true, needRealmAlias: *joinRealmAlias != ""})
+		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needCapacityWriter: true, needSMTP: true, needRealmAlias: *joinRealmAlias != ""})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -162,7 +162,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-resend", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
+		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-resend", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needCapacityWriter: true, needSMTP: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -185,7 +185,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-revoke", areas: onboarding.AreaTickets | onboarding.AreaAudit, write: true})
+		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-revoke", areas: onboarding.AreaTickets | onboarding.AreaAudit, write: true, needCapacityWriter: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -332,7 +332,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-transfer-owner", areas: onboarding.AreaOperations, write: true, needSVN: true})
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-transfer-owner", areas: onboarding.AreaOperations, write: true, needCapacityWriter: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -381,7 +381,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-activate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needSVN: true})
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-activate", areas: onboarding.AreaOperations, write: true, needCapacityWriter: true, needRepositoryData: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -502,7 +502,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-rotate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needRepoInspection: true, needSVN: true, needRotationArchive: true})
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-rotate", areas: onboarding.AreaOperations, write: true, needCapacityWriter: true, needRepositoryData: true, needRepoInspection: true, needSVN: true, needRotationArchive: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -561,7 +561,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		if !admitted {
 			return admit()
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true, needRepoInspection: true, needSVN: true})
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needCapacityWriter: true, needRepoResults: true, needRepositoryData: true, needRepoInspection: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
@@ -638,7 +638,7 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 		}
 		files, config, err := openFiles(path, toolAccess{
 			name: "filees-admin/erasure-complete", areas: onboarding.AreaOperations | onboarding.AreaAudit,
-			write: true, needSMTP: true, needRepoResults: true,
+			write: true, needCapacityWriter: true, needSMTP: true, needRepoResults: true,
 		})
 		if err != nil {
 			report(stderr, "filees-admin config", err)

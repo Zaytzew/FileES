@@ -8,6 +8,7 @@ import (
 	"filees/internal/mobileworker"
 	"filees/pkg/clientview"
 	v1 "filees/pkg/mobile/v1"
+	"filees/pkg/serverconfig"
 	"github.com/google/uuid"
 	"os"
 	"path/filepath"
@@ -20,6 +21,10 @@ func TestMobileAdminRecovery(t *testing.T) {
 		return
 	}
 	f := newMobileWorkerFixture(t)
+	config, err := serverconfig.LoadFor(f.configPath, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ledger := sandboxTempDir(t)
 	if err := os.Chmod(ledger, 0700); err != nil {
 		t.Fatal(err)
@@ -40,8 +45,13 @@ func TestMobileAdminRecovery(t *testing.T) {
 	out.Reset()
 	stderr.Reset()
 	args = append(args, "--confirm-workers-stopped", "--reason", "maintenance: old workers stopped")
-	if code := runAdminMobileRecover(f.configPath, args, &out, &stderr); code != ExitOK {
+	command := append([]string{"-config", f.configPath, "mobile", "recover"}, args...)
+	if code := RunAdmin(command, &out, &stderr); code != ExitOK {
 		t.Fatalf("exit=%d %s", code, &stderr)
+	}
+	markers, err := os.ReadDir(filepath.Join(config.Activation.Root, "capacity-active-writers"))
+	if err != nil || len(markers) != 0 {
+		t.Fatalf("mobile recovery left capacity writer: %v %v", markers, err)
 	}
 	var got mobileworker.Record
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil || !got.RecoveryFenced || got.State != v1.OpStateRejected {

@@ -38,7 +38,7 @@ func runAdmittedOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer
 		return ExitData
 	}
 	demo := request.Schema == onboarding.DemoOnboardRequestSchema
-	files, config, err := openFiles(path, toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needOTP: true, needWorkerPublic: true, needDemoCapacity: demo})
+	files, config, err := openFiles(path, toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needCapacityWriter: true, needOTP: true, needWorkerPublic: true, needDemoCapacity: demo})
 	if err != nil {
 		report(stderr, "filees-onboard config", err)
 		return ExitConfig

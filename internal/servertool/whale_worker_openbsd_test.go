@@ -47,7 +47,7 @@ func TestWhaleWorkerNativeSandboxPublishesAcrossSessions(t *testing.T) {
 	resultsRoot := filepath.Join(root, "results")
 	serviceWC := filepath.Join(root, "service-wc")
 	serviceRepository := filepath.Join(root, "service-repository")
-	for _, dir := range []string{repositoriesRoot, resultsRoot, serviceWC, serviceRepository, filepath.Join(serviceWC, "clients", clientID)} {
+	for _, dir := range []string{repositoriesRoot, resultsRoot, serviceWC, serviceRepository, filepath.Join(serviceWC, "clients", clientID), filepath.Join(root, "activation")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}

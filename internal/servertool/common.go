@@ -42,9 +42,12 @@ const (
 )
 
 type toolAccess struct {
-	name               string
-	areas              onboarding.Area
-	write              bool
+	name  string
+	areas onboarding.Area
+	write bool
+	// The enclosing capacity guard must acknowledge its marker after this
+	// action returns. It does not grant the action activation authority.
+	needCapacityWriter bool
 	needOTP            bool
 	needSMTP           bool
 	needWorker         bool
@@ -182,6 +185,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"},
 			obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"},
 		)
+	}
+	if access.needCapacityWriter {
+		paths = append(paths, capacityWriterCompletionPath(capacityWriterRoot(root, activationConfig.Root)))
 	}
 	if access.needActivation {
 		sessionRoot := activationConfig.SessionRoot

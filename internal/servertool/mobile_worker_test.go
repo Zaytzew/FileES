@@ -83,6 +83,11 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 	if err := os.MkdirAll(repositoriesRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// The installer prepares this directory before the operational entry locks
+	// unveil. Linux hides a missing fixture; native OpenBSD refuses the profile.
+	if err := os.MkdirAll(filepath.Join(base, "repo-results", "gui-blobs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	configPath := filepath.Join(base, "server.json")
 	config := map[string]any{

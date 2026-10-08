@@ -17,6 +17,20 @@ func capacityGatePaths(c serverconfig.Config) []obsandbox.Path {
 	return []obsandbox.Path{{Label: "capacity-write-gate", Name: c.Activation.Root, Perms: "rwc"}}
 }
 
+func capacityWriterRoot(onboardingRoot, activationRoot string) string {
+	if filepath.IsAbs(activationRoot) {
+		return activationRoot
+	}
+	return onboardingRoot // pre-activation v1 layout
+}
+
+// Admission creates this directory before the action locks its unveil table.
+// Acknowledgement needs unlink and directory fsync, not activation authority,
+// gate policy writes or creation of new files in the activation root.
+func capacityWriterCompletionPath(root string) obsandbox.Path {
+	return obsandbox.Path{Label: "capacity-writer-completion", Name: filepath.Join(root, "capacity-active-writers"), Perms: "rwc"}
+}
+
 func runConfiguredCapacityWriter(path string, stderr io.Writer, run func() int) int {
 	c, err := serverconfig.LoadFor(path, 0)
 	if err != nil {
@@ -32,11 +46,7 @@ func runCapacityWriter(c serverconfig.Config, stderr io.Writer, run func() int) 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	code := ExitTempFail
-	root := c.Activation.Root
-	// Pre-activation v1 onboarding still has its private initialized state root.
-	if !filepath.IsAbs(root) {
-		root = c.Root
-	}
+	root := capacityWriterRoot(c.Root, c.Activation.Root)
 	err := (storagewatch.Gate{Root: root}).WithWriter(ctx, func() error {
 		code = run()
 		return nil

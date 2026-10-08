@@ -176,6 +176,16 @@ func TestPassportMaintenanceLeastPrivilegeAndUsage(t *testing.T) {
 			t.Fatalf("excessive authority: %+v", path)
 		}
 	}
+	wantCompletion := capacityWriterCompletionPath(config.Activation.Root)
+	foundCompletion := false
+	for _, path := range profile.Paths {
+		if path == wantCompletion {
+			foundCompletion = true
+		}
+	}
+	if !foundCompletion {
+		t.Fatal("maintenance cannot acknowledge its enclosing capacity writer")
+	}
 	check := passportMaintenanceProfile(config, "/srv/results/passport-maintenance", true, "")
 	if len(check.Paths) != 1 || check.Promises != "stdio rpath" || check.Paths[0].Perms != "r" {
 		t.Fatal("health check can mutate")

@@ -27,13 +27,14 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 			},
 		},
 		{
-			access:   toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needOTP: true},
+			access:   toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needCapacityWriter: true, needOTP: true},
 			promises: writePromises,
 			paths: []obsandbox.Path{
 				{Label: "lock", Name: "/srv/filees/.toolchain.lock", Perms: "rw"},
 				{Label: "tickets", Name: "/srv/filees/tickets", Perms: "rwc"},
 				{Label: "operations", Name: "/srv/filees/operations", Perms: "rwc"},
 				{Label: "audit", Name: "/srv/filees/audit", Perms: "rwc"},
+				{Label: "capacity-writer-completion", Name: "/srv/activation/capacity-active-writers", Perms: "rwc"},
 			},
 		},
 		{
@@ -92,6 +93,32 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 		}
 		if err := obsandbox.Validate(profile); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestCapacityCompletionProfileUsesOnlyWriterDirectory(t *testing.T) {
+	for _, activationRoot := range []string{"/srv/activation", "", "legacy-relative"} {
+		root := capacityWriterRoot("/srv/onboarding", activationRoot)
+		access := toolAccess{name: "capacity-test", write: true, needCapacityWriter: true}
+		profile := repositoryProfile("/srv/onboarding", access, activation.Config{Root: activationRoot}, "", "", "")
+		if len(profile.Paths) != 2 || profile.Paths[1] != capacityWriterCompletionPath(root) {
+			t.Fatalf("completion profile = %+v", profile.Paths)
+		}
+		wantRoot := activationRoot
+		if activationRoot == "" || activationRoot == "legacy-relative" {
+			wantRoot = "/srv/onboarding"
+		}
+		if profile.Paths[1].Name != filepath.Join(wantRoot, "capacity-active-writers") {
+			t.Fatalf("guard/profile root mismatch: %+v", profile.Paths[1])
+		}
+		if err := obsandbox.Validate(profile); err != nil {
+			t.Fatal(err)
+		}
+		access.needCapacityWriter = false
+		unprotected := repositoryProfile("/srv/onboarding", access, activation.Config{Root: activationRoot}, "", "", "")
+		if len(unprotected.Paths) != 1 {
+			t.Fatalf("unprotected action gained marker access: %+v", unprotected.Paths)
 		}
 	}
 }

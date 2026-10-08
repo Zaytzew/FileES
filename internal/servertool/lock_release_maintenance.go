@@ -25,7 +25,7 @@ func runAdminReapLockRequests(configPath string, args []string, out, stderr io.W
 	if len(args) != 0 {
 		return ExitUsage
 	}
-	_, config, err := openFiles(configPath, toolAccess{name: "filees-admin/reap-lock-requests", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true, needSVN: true})
+	_, config, err := openFiles(configPath, toolAccess{name: "filees-admin/reap-lock-requests", areas: onboarding.AreaOperations, write: true, needCapacityWriter: true, needRepoResults: true, needRepositoryData: true, needSVN: true})
 	if err != nil {
 		report(stderr, "lock request maintenance config", err)
 		return ExitConfig

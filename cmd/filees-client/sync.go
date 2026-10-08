@@ -86,18 +86,33 @@ func syncWorkingCopy(ctx context.Context, svn workingCopy, wc, message string) e
 	if err != nil {
 		return err
 	}
+	paths := append([]string{}, files...)
 	if len(files) > 0 {
 		if _, err := svn.Add(ctx, wc, files); err != nil {
 			return fmt.Errorf("add: %w", err)
+		}
+		// Add --parents schedules new directories as well as the leaves.
+		// SVN requires those parents in the same commit. Read the actual
+		// scheduled state rather than guessing which ancestors were new.
+		scheduled, err := svn.Status(ctx, wc, nil)
+		if err != nil {
+			return fmt.Errorf("post-add status: %w", err)
+		}
+		if _, _, err := syncPlan(scheduled); err != nil {
+			return err
+		}
+		for _, entry := range scheduled {
+			if entry.Item == "added" && !containsPath(paths, entry.Path) {
+				paths = append(paths, entry.Path)
+			}
 		}
 	}
 	if len(commit) == 0 && len(files) == 0 {
 		fmt.Fprintln(os.Stdout, "clean")
 		return nil
 	}
-	// Unversioned directories are replaced by the files walked under them.
-	// Committing the directory path itself would not publish those files.
-	paths := append([]string{}, files...)
+	// The pre-add plan still labels the source directories unversioned;
+	// their scheduled counterparts have already been included above.
 	for _, path := range commit {
 		if containsPath(add, path) || containsPath(paths, path) {
 			continue

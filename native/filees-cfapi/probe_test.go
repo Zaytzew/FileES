@@ -513,3 +513,30 @@ func TestAKnownFileThatBecameAPlaceholderIsNotReportedDeleted(t *testing.T) {
 	default:
 	}
 }
+
+// On cldflt 10.0.26100.9549 one long identity in a listing left every entry
+// created after it in the same call with metadata the filter could not read,
+// and those entries could not be deleted while the filter was attached
+// (implementation notes (not distributed)). Run this
+// against a helper without the fix only where a leftover folder is acceptable.
+func TestALongIdentityDoesNotSpoilTheEntriesListedAfterIt(t *testing.T) {
+	root := anchor(t)
+	long := "1251200843-20260707-77D55B800004-28_eurobis-sp-j-a-jaszczynski-w-zelazo.pdf"
+	listing := "f\t10\ta.pdf\ta.pdf\n" +
+		"f\t10\t" + long + "\t" + long + "\n" +
+		"f\t10\tz.pdf\tz.pdf\n" +
+		"d\t0\tzdir\tzdir\n"
+	if got := run(t, listing, "placeholders", "--root", root); !got.OK {
+		t.Fatalf("placeholders: %+v", got)
+	}
+	for _, name := range []string{"a.pdf", long, "z.pdf"} {
+		if got := run(t, "", "file-state", "--root", root, "--rel", name); !got.OK {
+			t.Fatalf("%s is unreadable after seeding: %+v", name, got)
+		}
+	}
+	directory, err := os.Open(filepath.Join(root, "zdir"))
+	if err != nil {
+		t.Fatalf("directory listed after a long identity is unreadable: %v", err)
+	}
+	directory.Close()
+}

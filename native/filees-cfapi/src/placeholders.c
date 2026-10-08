@@ -75,6 +75,21 @@ static int read_entries(struct filees_entry *entries, unsigned *count, const cha
     return 1;
 }
 
+/* Opens the entry itself, not what it stands for: nothing is hydrated. The
+ * directory listing cannot answer this; unreadable metadata shows only when
+ * the entry is opened. */
+static HRESULT entry_readable(const WCHAR *directory, const WCHAR *name)
+{
+    WCHAR path[MAX_PATH * 3];
+    HANDLE handle;
+    if (_snwprintf_s(path, MAX_PATH * 3, _TRUNCATE, L"%s\\%s", directory, name) < 0) return E_INVALIDARG;
+    handle = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                         OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    CloseHandle(handle);
+    return S_OK;
+}
+
 int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative)
 {
     struct filees_entry *entries;
@@ -123,14 +138,21 @@ int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative)
         if (entries[i].directory) info->Flags |= CF_PLACEHOLDER_CREATE_FLAG_DISABLE_ON_DEMAND_POPULATION;
     }
 
-    hr = CfCreatePlaceholders(directory, infos, count, CF_CREATE_FLAG_NONE, &processed);
     for (i = 0; i < count; ++i) {
+        /* One entry per call, never a batch. On cldflt 10.0.26100.9549 an
+         * entry whose metadata the filter stores compressed (an identity of
+         * about 66 characters) leaves every later entry of the same call with
+         * metadata the filter itself cannot read, and such an entry can be
+         * neither repaired nor deleted while the filter is attached
+         * (implementation notes (not distributed)). */
+        processed = 0;
+        hr = CfCreatePlaceholders(directory, &infos[i], 1, CF_CREATE_FLAG_NONE, &processed);
         /* A crash may leave a partly seeded directory. Never replace or
          * silently skip an obstruction. Resume only an exact own, clean,
          * byte-free identity, using the same proof as remote reconciliation.
          * If the batch itself failed, recheck every entry (Result alone is
          * not proof that the filter processed an entry). */
-        if (FAILED(hr) || processed != count || FAILED(infos[i].Result)) {
+        if (FAILED(hr) || processed != 1 || FAILED(infos[i].Result)) {
             WCHAR rel[FILEES_CFAPI_MAX_PATH];
             HRESULT retry = E_INVALIDARG;
             if (swprintf_s(rel, FILEES_CFAPI_MAX_PATH, relative && relative[0] ? L"%s/%s" : L"%s",
@@ -139,6 +161,15 @@ int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative)
                                            entries[i].size, entries[i].directory, 0);
             if (retry != S_OK) {
                 filees_cfapi_fail("create_placeholders", retry);
+                status = 1;
+                break;
+            }
+        } else {
+            /* Created is not yet usable: say so now, while the daemon can
+             * still stop, rather than when somebody opens the file. */
+            HRESULT readable = entry_readable(directory, entries[i].name);
+            if (FAILED(readable)) {
+                filees_cfapi_fail("placeholder_unreadable", readable);
                 status = 1;
                 break;
             }

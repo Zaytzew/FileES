@@ -44,6 +44,8 @@ type Config struct {
 	// ServerLinux is the Linux server's own track (alpha-linux). Its card is
 	// the template block between <!--SERVER_LINUX--> markers.
 	ServerLinux *ServerConfig `json:"server_linux,omitempty"`
+	// CLI is the standalone command-line client's own track (channel cli).
+	CLI *CLIConfig `json:"cli,omitempty"`
 }
 
 // ReleaseNotes is the optional highlighted sentence for one release.
@@ -89,6 +91,7 @@ type State struct {
 	Installers    map[string]StateInstaller `json:"installers,omitempty"`
 	Server        *ServerState              `json:"server,omitempty"`
 	ServerLinux   *ServerState              `json:"server_linux,omitempty"`
+	CLI           *CLIState                 `json:"cli,omitempty"`
 	// NotesSince is the sequence of the release published before this one;
 	// the "what's new" list counts from there.
 	NotesSince uint64 `json:"notes_since,omitempty"`
@@ -208,14 +211,19 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 		}
 	}
 	var oldServer, oldServerLinux *ServerState
+	var oldCLI *CLIState
 	if previous != nil {
-		oldServer, oldServerLinux = previous.Server, previous.ServerLinux
+		oldServer, oldServerLinux, oldCLI = previous.Server, previous.ServerLinux, previous.CLI
 	}
 	server, err := p.serverDownload(ctx, p.Config.Server, oldServer, false)
 	if err != nil {
 		return Result{}, err
 	}
 	serverLinux, err := p.serverDownload(ctx, p.Config.ServerLinux, oldServerLinux, true)
+	if err != nil {
+		return Result{}, err
+	}
+	cli, err := p.cliDownload(ctx, p.Config.CLI, oldCLI)
 	if err != nil {
 		return Result{}, err
 	}
@@ -266,6 +274,11 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if server != nil {
 		template = server.render(template, "SERVER_")
 	}
+	if cli != nil {
+		template = cli.render(template)
+	} else {
+		template = cliBlock.ReplaceAll(template, nil)
+	}
 	// The hand-written sentence from the configuration is for releases
 	// without signed notes. With notes it would stand as a second, older
 	// "what's new" box above the list (live on alpha r1733), and a
@@ -285,6 +298,9 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if serverLinux != nil {
 		allDownloads = append(allDownloads, serverLinux.download)
 	}
+	if cli != nil {
+		allDownloads = append(allDownloads, cli.downloads...)
+	}
 	sums := checksumFile(allDownloads)
 	result := Result{ReleaseID: envelope.ReleaseID, Version: downloads[0].Version}
 	// Public header metadata travels with the verified publication, not the
@@ -303,7 +319,7 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	}
 
 	if upToDate(p.OutDir, allDownloads, page, sums, metadata) {
-		return result, p.saveState(envelope, downloads, server, serverLinux, since)
+		return result, p.saveState(envelope, downloads, server, serverLinux, cli, since)
 	}
 
 	files := map[string][]byte{"SHA256SUMS": sums, "index.html": page, "release.json": metadata}
@@ -327,11 +343,16 @@ func (p Publisher) Publish(ctx context.Context) (Result, error) {
 	if serverLinux != nil {
 		files[serverLinux.download.Installer.Source] = serverLinux.data
 	}
+	if cli != nil {
+		for name, data := range cli.data {
+			files[name] = data
+		}
+	}
 	if err := replaceDirectory(p.OutDir, files); err != nil {
 		return Result{}, err
 	}
 	result.Changed = true
-	return result, p.saveState(envelope, downloads, server, serverLinux, since)
+	return result, p.saveState(envelope, downloads, server, serverLinux, cli, since)
 }
 
 // checksumFile lists every offered installer, in the order the page shows them.
@@ -535,7 +556,7 @@ func loadState(statePath string) (*State, error) {
 // that track has no signed release yet.
 var linuxServerBlock = regexp.MustCompile(`(?s)[ \t]*<!--SERVER_LINUX-->.*?<!--/SERVER_LINUX-->\n?`)
 
-func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server, serverLinux *serverBundle, since uint64) error {
+func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []platformDownload, server, serverLinux *serverBundle, cli *cliBundle, since uint64) error {
 	state := State{ReleaseID: envelope.ReleaseID, Sequence: envelope.Sequence, SecurityEpoch: envelope.SecurityEpoch, Installers: map[string]StateInstaller{}, NotesSince: since}
 	for _, download := range downloads {
 		state.Installers[download.Platform] = StateInstaller{Source: download.Installer.Source, SHA256: download.Installer.SHA256}
@@ -545,6 +566,9 @@ func (p Publisher) saveState(envelope *releaseenvelope.Envelope, downloads []pla
 	}
 	if serverLinux != nil {
 		state.ServerLinux = &serverLinux.state
+	}
+	if cli != nil {
+		state.CLI = &cli.state
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

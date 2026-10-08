@@ -191,6 +191,16 @@ func loadConfig(configPath string) (Config, error) {
 	if config.ServerLinux != nil && (!identifier.MatchString(config.ServerLinux.Channel) || config.ServerLinux.Platform != "linux-amd64") {
 		return Config{}, errors.New("server_linux needs a channel and platform linux-amd64")
 	}
+	if config.CLI != nil {
+		if !identifier.MatchString(config.CLI.Channel) || len(config.CLI.Platforms) == 0 {
+			return Config{}, errors.New("cli needs a channel and at least one platform")
+		}
+		for _, platform := range config.CLI.Platforms {
+			if !cliPlatform(platform) {
+				return Config{}, fmt.Errorf("cli platform %q is not offered", platform)
+			}
+		}
+	}
 	platforms := config.platforms()
 	if len(platforms) == 0 {
 		return Config{}, fmt.Errorf("%s: name a platform or a list of platforms", configPath)

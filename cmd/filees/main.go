@@ -98,6 +98,8 @@ func main() {
 			os.Exit(cmdUpdateChannel(os.Args[2:]))
 		case "replace-predecessor":
 			os.Exit(cmdReplacePredecessor(os.Args[2:]))
+		case "anchor-repair":
+			os.Exit(cmdAnchorRepair(os.Args[2:]))
 		case "status":
 			os.Exit(cmdStatus(os.Args[2:]))
 		case "lock":

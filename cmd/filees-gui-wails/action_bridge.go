@@ -75,6 +75,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		ShelfBrowser:         shelfBrowser,
 		Quarantine:           quarantine,
 		RepositoryAttacher:   repositoryAttacher,
+		AnchorRepairer:       newAnchorRepairer(),
 		RepositoryCreator:    repositoryCreator,
 		RepositoryLocator:    repositoryLocator,
 		RepositoryRelocator:  repositoryRelocator,

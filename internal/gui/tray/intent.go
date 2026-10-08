@@ -28,7 +28,10 @@ const (
 	IntentRetryLifecycle IntentKind = "retry_lifecycle"
 	// Makes a folder the Explorer anchor of a repository without a copy here
 	// (Windows builds with the Cloud Files API; owner, 2026-09-28).
-	IntentCreateAnchor     IntentKind = "create_anchor"
+	IntentCreateAnchor IntentKind = "create_anchor"
+	// Removes entries of a virtual folder whose cloud metadata Windows cannot
+	// read; needs administrator rights and asks first (owner, 2026-10-08).
+	IntentRepairAnchor     IntentKind = "repair_anchor"
 	IntentJournal          IntentKind = "journal"
 	IntentReservations     IntentKind = "reservations"
 	IntentCreateRepository IntentKind = "create_repository"

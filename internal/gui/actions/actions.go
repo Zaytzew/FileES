@@ -417,6 +417,7 @@ type Config struct {
 	Prompter             platform.Prompter
 	RepositoryCreator    RepositoryCreator
 	RepositoryAttacher   RepositoryAttacher
+	AnchorRepairer       AnchorRepairer
 	RepositoryLocator    RepositoryLocator
 	RepositoryRelocator  RepositoryRelocator
 	RepositoryDetacher   RepositoryDetacher
@@ -600,6 +601,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startConnectRepositories(ctx, intent.ServerID, []string{intent.RepoID}, false)
 	case tray.IntentCreateAnchor:
 		c.startCreateAnchor(ctx, intent.ServerID, intent.RepoID)
+	case tray.IntentRepairAnchor:
+		c.startRepairAnchor(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentPairMobileDevice:
 		c.startPairMobileDevice(ctx, intent.ServerID)
 	case tray.IntentUpdatePlan:

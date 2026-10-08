@@ -641,7 +641,10 @@ function renderRepo(repo) {
     ? bytes(repo.working_copy_bytes ?? 0)
     : "—";
   const recoveryRequired = Boolean(repo.commit_recovery_required);
-  return `<article class="repo-row ${repo.intent_resolution_required || recoveryRequired ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
+  // Entries of a virtual folder Windows cannot read; the repair asks for
+  // administrator rights (implementation notes (not distributed)).
+  const anchorDamage = Number(repo.anchor_damage_entries) > 0 ? Number(repo.anchor_damage_entries) : 0;
+  return `<article class="repo-row ${repo.intent_resolution_required || recoveryRequired || anchorDamage ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title">
       ${open}
       <div class="repo-name"><strong title="${escapeHTML(repo.own_name ? `${repo.display_name} (${t("rename.ownName", {name: repo.own_name})})` : repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoProblemLine(repo)}${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
@@ -652,6 +655,7 @@ function renderRepo(repo) {
     ${renderUnportable(repo)}
     ${repo.intent_resolution_required ? `<div class="intent-folder-warning"><strong>${escapeHTML(t("intent.required"))}</strong><button type="button" data-action="resolve_intents">${escapeHTML(t("intent.resolve"))}</button></div>` : ""}
     ${recoveryRequired ? `<div class="intent-folder-warning"><div><strong>${escapeHTML(t("commitRecovery.required"))}</strong><p>${escapeHTML(t("commitRecovery.help"))}</p></div><button type="button" data-action="resolve_commit_recovery">${escapeHTML(t("commitRecovery.resolve"))}</button></div>` : ""}
+    ${anchorDamage ? `<div class="intent-folder-warning"><div><strong>${escapeHTML(t("anchorDamage.title", {count: anchorDamage}))}</strong><p>${escapeHTML(t("anchorDamage.help"))}</p></div><button type="button" data-action="repair_anchor">${escapeHTML(t("anchorDamage.repair"))}</button></div>` : ""}
   </article>`;
 }
 

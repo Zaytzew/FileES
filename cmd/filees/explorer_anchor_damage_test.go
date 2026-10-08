@@ -19,7 +19,8 @@ func TestAnchorDamageIsReportedCountedAndClearedAfterRepair(t *testing.T) {
 	t.Cleanup(func() { anchorDamageScan = original })
 	record := localrepo.Record{ServerID: "office", RepoID: "repo", LocalPath: `F:\work\anchor`}
 	key := anchorKey(record)
-	m := &anchorManager{}
+	var announced []string
+	m := &anchorManager{guardChanged: func(repoID string) { announced = append(announced, repoID) }}
 
 	var found []anchorrepair.Damaged
 	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g"} {
@@ -56,6 +57,10 @@ func TestAnchorDamageIsReportedCountedAndClearedAfterRepair(t *testing.T) {
 	anchorDamageScan = func(string) ([]anchorrepair.Damaged, error) { return nil, nil }
 	if got := m.inspectDamage(record); got != 0 || m.damageOf(key) != nil {
 		t.Fatalf("repaired folder still reported: %d %+v", got, m.damageOf(key))
+	}
+	// The GUI is told when the answer changes and only then: found, cleared.
+	if m.inspectDamage(record); len(announced) != 2 || announced[0] != "repo" {
+		t.Fatalf("state change announcements: %q", announced)
 	}
 }
 

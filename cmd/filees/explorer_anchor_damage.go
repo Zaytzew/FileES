@@ -69,6 +69,12 @@ func (m *anchorManager) inspectDamage(record localrepo.Record) int {
 	case current == nil && previous != nil:
 		log.Infof("no unreadable entries remain at %s", record.LocalPath)
 	}
+	// The GUI redraws a repository only when told its state changed; without
+	// this the card kept the answer from before the first inspection.
+	changed := (current == nil) != (previous == nil) || current != nil && previous != nil && current.Entries != previous.Entries
+	if changed && m.guardChanged != nil {
+		m.guardChanged(record.RepoID)
+	}
 	if current == nil {
 		return 0
 	}

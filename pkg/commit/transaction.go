@@ -88,6 +88,9 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 	if in.Phase == "done" && plan.writerID == "" {
 		return nil, errors.New("no pending native writer requires recovery")
 	}
+	if err := s.inspectRecoveryDeletionBase(ctx, in, head); err != nil {
+		return s.planCanonicalRecovery(ctx, in, head, err)
+	}
 	plan.conflicts, err = s.inspectRecoveryConflicts(ctx, head)
 	if err != nil {
 		return s.planCanonicalRecovery(ctx, in, head, err)
@@ -146,6 +149,9 @@ func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string
 	writerID, proof, err := s.recoveryWriter(ctx, in, head)
 	if err != nil || writerID != plan.writerID || proof != plan.writerProof {
 		return nil, errors.New("native writer or its proof changed after recovery plan")
+	}
+	if err := s.inspectRecoveryDeletionBase(ctx, in, head); err != nil {
+		return nil, err // No writer, intent or queue mutation on stale local proof.
 	}
 	// The plan proved the attempt had no effect; the native helper still
 	// holds its record and would refuse every later commit (E200004) until

@@ -31,10 +31,10 @@ case "$RELEASE_ID" in
 	*[!A-Za-z0-9._-]*|'') die "invalid or missing RELEASE_ID" ;;
 esac
 case "$CHANNEL" in
-	alpha|beta|stable|android) ;;
+	alpha|beta|stable|android|cli) ;;
 	alpha-linux|beta-linux|stable-linux) ;;
-	'') die "missing CHANNEL (choose alpha, beta, stable, android, or alpha-linux, beta-linux, stable-linux)" ;;
-	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta, stable, android, or alpha-linux, beta-linux, stable-linux)" ;;
+	'') die "missing CHANNEL (choose alpha, beta, stable, android, cli, or alpha-linux, beta-linux, stable-linux)" ;;
+	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta, stable, android, cli, or alpha-linux, beta-linux, stable-linux)" ;;
 esac
 # The Linux server has channels of its own (owner, 2026-10-02): it differs
 # from the OpenBSD server and must neither wait for it nor move it. Maturity
@@ -56,7 +56,13 @@ release_root="releases/$RELEASE_ID"
 # Android is its own track. channel-android.json must never be promoted by
 # the server's channel.json rule, and a desktop envelope must never be
 # promoted as the phone channel.
-if [ "$CHANNEL" = android ]; then
+if [ "$CHANNEL" = cli ]; then
+	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] && [ ! -f "$release_root/channel-linux.json" ] && [ ! -f "$release_root/channel-android.json" ] \
+		|| die "CLI release $RELEASE_ID also carries another track's channel candidate"
+	candidate="$release_root/channel-cli.json"
+	channel_path="channels/cli.json"
+	[ -f "$candidate" ] || die "release $RELEASE_ID has no CLI candidate"
+elif [ "$CHANNEL" = android ]; then
 	[ ! -f "$release_root/channel.json" ] && [ ! -f "$release_root/channel.v2.json" ] && [ ! -f "$release_root/channel-linux.json" ] \
 		|| die "android release $RELEASE_ID also carries a server or desktop channel candidate"
 	candidate="$release_root/channel-android.json"
@@ -77,6 +83,8 @@ else
 	candidate="$release_root/channel.v2.json"
 	channel_path="channels/${CHANNEL}.v2.json"
 fi
+[ "$CHANNEL" = cli ] || [ ! -f "$release_root/channel-cli.json" ] \
+	|| die "release $RELEASE_ID is a CLI release; sign it with CHANNEL=cli"
 if [ ! -f "$candidate" ]; then
 	candidate="$release_root/channel.json"
 	channel_path="channels/${CHANNEL}.json"
@@ -99,6 +107,14 @@ manifests=0
 all_manifests_signed=true
 for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifest.json; do
 	[ -f "$manifest_path" ] || continue
+	if [ "$CHANNEL" = cli ]; then
+		case "$manifest_path" in
+			"$release_root"/cli/linux-amd64/manifest.json|"$release_root"/cli/openbsd-amd64/manifest.json) ;;
+			*) die "CLI release contains a different component: $manifest_path" ;;
+		esac
+		grep -Eq '"component"[[:space:]]*:[[:space:]]*"cli"' "$manifest_path" \
+			|| die "CLI manifest has a different component: $manifest_path"
+	fi
 	manifests=$((manifests + 1))
 	if [ ! -f "${manifest_path}.sig" ] || ! "$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$manifest_path" -x "${manifest_path}.sig"; then
 		all_manifests_signed=false

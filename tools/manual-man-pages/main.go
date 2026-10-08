@@ -1,7 +1,8 @@
-// Command manual-man-pages renders docs/man into the HTML manual.
+// Command manual-man-pages renders server and standalone CLI manpages into HTML.
 //
 //	go run ./tools/manual-man-pages
 //
+// Server sources stay in docs/man; the separate CLI source stays with its package.
 // Each mdoc page becomes manual/assets/man/<name>.<section>.html, rendered by
 // mandoc(1) — the formatter OpenBSD itself uses — inside the manual's own
 // page frame, plus an index. The generated pages record the SHA-256 of their
@@ -40,10 +41,11 @@ func (p page) file() string { return p.Name + "." + p.Section + ".html" }
 
 func main() {
 	src := flag.String("src", filepath.Join("docs", "man"), "mdoc sources")
+	cli := flag.String("cli-src", filepath.Join("cmd", "filees-client", "man", "filees-client.1"), "standalone CLI page (empty to omit)")
 	out := flag.String("out", filepath.Join("manual", "assets", "man"), "generated HTML")
 	mandoc := flag.String("mandoc", "mandoc", "mandoc command")
 	flag.Parse()
-	if err := run(*src, *out, *mandoc); err != nil {
+	if err := run(*src, *cli, *out, *mandoc); err != nil {
 		fmt.Fprintln(os.Stderr, "manual-man-pages:", err)
 		os.Exit(1)
 	}
@@ -52,10 +54,13 @@ func main() {
 var ndLine = regexp.MustCompile(`(?m)^\.Nd (.+)$`)
 
 // Load lists the mdoc pages under src, sorted by section and name.
-func Load(src string) ([]page, error) {
+func Load(src, cli string) ([]page, error) {
 	files, err := filepath.Glob(filepath.Join(src, "man*", "*.*"))
 	if err != nil {
 		return nil, err
+	}
+	if cli != "" {
+		files = append(files, cli)
 	}
 	var pages []page
 	for _, file := range files {
@@ -92,8 +97,8 @@ func Load(src string) ([]page, error) {
 // into a dead link.
 var xrLink = regexp.MustCompile(`<a class="Xr" href="([^"]+)"[^>]*>([^<]*)</a>`)
 
-func run(src, out, mandoc string) error {
-	pages, err := Load(src)
+func run(src, cli, out, mandoc string) error {
+	pages, err := Load(src, cli)
 	if err != nil {
 		return err
 	}
@@ -164,10 +169,10 @@ func indexDigest(pages []page) string {
 }
 
 func index(pages []page) string {
-	sections := map[string]string{"5": "File formats", "7": "Overview", "8": "System administration"}
+	sections := map[string]string{"1": "User commands", "5": "File formats", "7": "Overview", "8": "System administration"}
 	var b strings.Builder
 	b.WriteString(`<h1>FileES manual pages</h1>
-<p>The OpenBSD manual pages of the FileES server, rendered by <code>mandoc</code> from <code>docs/man</code>. The same pages are installed with the server and are upgraded with it by <code>filees-install</code>: <code>man filees</code> on the server shows what this page shows. English is canonical. A shorter extract with examples is in the Tech chapter: <a href="../en/man-pages.html">EN</a> · <a href="../pl/man-pages.html">PL</a>.</p>
+<p>FileES manual pages, rendered by <code>mandoc</code>. Server pages ship with the server bundle; <code>filees-client(1)</code> ships with the standalone Linux/OpenBSD client. English is canonical. Guides and examples: <a href="../en/man-pages.html">EN</a> · <a href="../pl/man-pages.html">PL</a>.</p>
 `)
 	current := ""
 	for _, p := range pages {

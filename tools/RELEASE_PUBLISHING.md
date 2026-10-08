@@ -349,3 +349,39 @@ pozycja ma tekst po polsku i po angielsku.
 
 Limity: 20 nowych pozycji na wydanie, 60 w pliku, 160 znaków na zdanie. Tekst
 nie może zawierać znaków sterujących ani znaków formatujących, w tym bidi.
+
+## Samodzielny CLI Linux/OpenBSD
+
+`cmd/filees-client/VERSION` określa własną wersję CLI, niezależną od desktopu.
+Pierwsze wydanie ma 0.1.0. Budować z czystej, jednolitej rewizji SVN albo
+jej dokładnego eksportu. `SOURCE_REVISION=rNNNN` trafia do binarium;
+`filees-client version` pokazuje `0.1.0+rNNNN`. Oba archiwa mają binarium,
+README i `filees-client(1)`, bez pary desktopowej i bundla serwera.
+
+Po przeglądzie szkicu notatek (component `cli`, scope `linux`, zgodnie
+z obecną konwencją opisów commitów) zapisać go jako osobny `notes.json`:
+
+```sh
+SOURCE_REVISION=rNNNN NOTES_FILE=/abs/reviewed-notes.json \
+FILEES_BIN_WC=/abs/FILEES-BIN KEY_ID=release-2026-a \
+sh tools/prepare-cli-release.sh
+```
+
+Kandydat `releases/rNNNN-cli/channel-cli.json` wskazuje wyłącznie
+`cli/linux-amd64` i `cli/openbsd-amd64`. Przed commitem i podpisem sprawdzić
+wersje, sumy, tryb 0755, `govulncheck -mode=binary` i natywny odbiór
+rozpakowanego pliku na obu platformach. Test potwierdzenia GET można
+uruchomić przez `FILEES_CLI_E2E_BINARY=/abs/filees-client go test
+./pkg/whaleclient -run TestCLIGetReleaseReceipt`; endpoint SSH jest
+syntetyczny, ale cache i rezerwacje używają rzeczywistego workera.
+
+Po commicie do FILEES-BIN, wyłącznie na maszynie podpisującej:
+
+```sh
+RELEASE_ID=rNNNN-cli CHANNEL=cli sh tools/release-sign-and-publish.sh
+```
+
+Promotor podpisuje manifesty i notatki oraz publikuje `channels/cli.json`.
+Kandydat ma `built-for-channel=cli`; nie wolno kierować go na desktop,
+Android ani kanały serwera. Retencja obejmuje osobno sufiks `-cli`.
+CLI nie ma automatycznego aktualizatora: archiwum instaluje operator.

@@ -637,12 +637,14 @@ func (m *Manager) runGet(ctx context.Context, operationID string) {
 		m.fail(op, err)
 		return
 	}
-	op.State, op.LastError = StateLocal, ""
-	if err := m.save(op); err != nil {
+	if err := m.releaseGet(ctx, transport, op); err != nil {
 		m.fail(op, err)
 		return
 	}
-	m.releaseGet(ctx, transport, op)
+	op.State, op.LastError = StateLocal, ""
+	if err := m.save(op); err != nil {
+		m.fail(op, err)
+	}
 }
 
 // recoverCompletedGet closes the crash boundary after destination rename but
@@ -667,17 +669,26 @@ func (m *Manager) recoverCompletedGet(ctx context.Context, transport Exchanger, 
 	if err != nil || size != op.Identity.ExpectedSize || digest != op.Identity.SHA256 {
 		return false, errors.Join(err, errors.New("Whale destination conflicts with completed transfer"))
 	}
-	op.State, op.LastError = StateLocal, ""
-	if err := m.save(*op); err != nil {
+	if err := m.releaseGet(ctx, transport, *op); err != nil {
 		return false, err
 	}
-	m.releaseGet(ctx, transport, *op)
-	return true, nil
+	op.State, op.LastError = StateLocal, ""
+	return true, m.save(*op)
 }
 
-func (m *Manager) releaseGet(ctx context.Context, transport Exchanger, op Operation) {
+// StateVerifying remains durable across rename and release. Only a confirmed
+// release permits StateLocal; recovery verifies the destination and replays
+// the same transfer/token without downloading or replacing the file again.
+func (m *Manager) releaseGet(ctx context.Context, transport Exchanger, op Operation) error {
 	release := whale.Request{Schema: whale.Schema, RequestID: uuid.NewString(), Operation: whale.OpGetRelease, Identity: *op.Identity, Revision: op.Revision, TransferID: op.OperationID, ConfirmationToken: op.ConfirmationToken}
-	_, _ = transport.Do(context.WithoutCancel(ctx), release, nil)
+	response, err := transport.Do(ctx, release, nil)
+	if err != nil {
+		return fmt.Errorf("Whale GET release not confirmed: %w", err)
+	}
+	if response.Status != "ok" || response.Result == nil || response.Result.State != whale.StateLocal {
+		return errors.New("Whale GET release not confirmed")
+	}
+	return nil
 }
 
 func (m *Manager) launch(parent context.Context, operationID string, run func(context.Context, string)) {

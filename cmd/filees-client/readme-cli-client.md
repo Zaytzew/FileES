@@ -1,4 +1,4 @@
-# filees-client
+# filees-client 0.1.0
 
 Jednorazowy klient. Nie jest demonem. Nie zna półek, szuflad,
 udziałów ani wehikułu czasu. Wehikuł czasu jest osobnym, późniejszym krokiem.
@@ -108,6 +108,8 @@ procesu SVN, więc może zawierać jego `.subversion`.
 
 Osobne artefakty Linux/OpenBSD buduje `cmd/filees-client/build.sh`.
 Każde archiwum zawiera binarium, ten opis i `share/man/man1/filees-client.1`.
+`filees-client version` podaje wersję CLI i rewizję źródeł. Podręcznik: 
+`man -M /ścieżka/do/pakietu/share/man filees-client`.
 Skrypt nie publikuje ich do kanału i nie dodaje klienta do paczki serwera.
 
 ## Import dumpa do nowego repo
@@ -147,10 +149,11 @@ tego samego `--profile` oraz `--state`; resume uruchamia wszystkie niedokończon
 operacje w tym katalogu i czeka na wskazaną. Polecenia nie uruchamiają demona.
 Trwały stan transferu pozostaje w prywatnym katalogu `--state`. Transport
 Whale korzysta z przypiętego klucza i `known_hosts` profilu aktywacji.
-PUT oraz quote/confirm GET przeszły na rzeczywistym testowym serwerze
-FileES. Trwałość zwolnienia serwerowej rezerwacji po zakończeniu GET nadal
-ma znany problem WH-CLI-01; nie uznawać samego lokalnego pliku za dowód
-zamknięcia całej operacji serwera.
+Sukces GET oznacza zweryfikowany plik i potwierdzone zwolnienie serwerowego
+cache oraz rezerwacji miejsca. Plik może już istnieć, gdy operacja czeka na
+potwierdzenie. Po błędzie użyj `whale-retry`, po przerwaniu procesu
+`whale-resume`, zawsze z tym samym profilem i katalogiem stanu. Klient
+sprawdza istniejący plik i ponawia zwolnienie bez ponownego pobierania.
 
 ## Sandbox
 

@@ -4,6 +4,14 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 dist=${DIST:-"$root/dist"}
 target=${1:-openbsd-amd64}
+version=$(tr -d '\r\n' < "$root/cmd/filees-client/VERSION")
+printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "invalid CLI VERSION" >&2; exit 2; }
+revision=${SOURCE_REVISION:-development}
+case "$revision" in
+	development) ;;
+	r*) number=${revision#r}; case "$number" in *[!0-9]*|'') echo "invalid SOURCE_REVISION" >&2; exit 2 ;; esac ;;
+	*) echo "SOURCE_REVISION must be rNNNN or development" >&2; exit 2 ;;
+esac
 case "$target" in
 	openbsd-amd64) goos=openbsd; goarch=amd64 ;;
 	linux-amd64) goos=linux; goarch=amd64 ;;
@@ -17,6 +25,7 @@ mkdir -p "$stage/bin" "$stage/share/doc/filees-client" "$stage/share/man/man1"
 (
 	cd "$root"
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
+		-ldflags "-X main.cliVersion=$version -X main.cliSourceRevision=$revision" \
 		-o "$stage/bin/filees-client" ./cmd/filees-client
 )
 chmod 755 "$stage/bin/filees-client"
@@ -32,11 +41,11 @@ case "$(uname -s)" in
 	MINGW*|MSYS*|CYGWIN*)
 		# NTFS does not preserve chmod for extensionless ELF files under
 		# Git Bash. Record the executable mode explicitly in GNU tar.
-		tar -cf "$stage/payload.tar" --mode=0755 -C "$stage" bin/filees-client
-		tar -rf "$stage/payload.tar" --mode=0644 -C "$stage" \
+		tar -cf "$stage/payload.tar" --mode=0755 --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$stage" bin/filees-client
+		tar -rf "$stage/payload.tar" --mode=0644 --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$stage" \
 			share/doc/filees-client/README.md share/man/man1/filees-client.1
-		gzip -c "$stage/payload.tar" > "$archive"
+		gzip -n -c "$stage/payload.tar" > "$archive"
 		;;
-	*) tar -czf "$archive" -C "$stage" . ;;
+	*) (cd "$root"; go run ./cmd/filees-release-bundle -source "$stage" -output "$archive") ;;
 esac
 printf '%s\n' "$archive"

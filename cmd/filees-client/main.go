@@ -17,6 +17,10 @@ import (
 	"filees/pkg/client"
 )
 
+// Set independently of the desktop version by the standalone package build.
+var cliVersion = "0.1.0"
+var cliSourceRevision = "development"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -24,6 +28,12 @@ func main() {
 	}
 	var code int
 	switch os.Args[1] {
+	case "version", "--version":
+		if len(os.Args) != 2 {
+			code = 2
+		} else {
+			fmt.Printf("filees-client %s+%s\n", cliVersion, cliSourceRevision)
+		}
 	case "activate-begin":
 		code = cmdActivateBegin(os.Args[2:])
 	case "activate-finish":
@@ -53,6 +63,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `usage: filees-client <command> [flags]
 
 commands:
+  version          show the standalone client version and source revision
   activate-begin    start onboarding (new realm, or a join ticket)
   activate-finish   read one OTP from stdin and finish activation
   activate-resume   resume an OTP-authorized activation

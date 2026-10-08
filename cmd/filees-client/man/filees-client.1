@@ -1,10 +1,12 @@
-.Dd October 7, 2026
+.Dd October 8, 2026
 .Dt FILEES-CLIENT 1
 .Os
 .Sh NAME
 .Nm filees-client
 .Nd run one FileES client operation without a background daemon
 .Sh SYNOPSIS
+.Nm
+.Cm version
 .Nm
 .Cm activate-begin
 .Fl -server-id Ar id
@@ -60,6 +62,8 @@ is a one-shot FileES client for Linux and
 It exits after one operation and may be called by a user's cron job.
 It uses an activated FileES identity and a pinned SSH host key.
 It is distributed separately from the desktop daemon and the server bundle.
+.Cm version
+prints the standalone client version and the source revision.
 .Pp
 .Cm checkout
 creates a working copy at the path selected by
@@ -123,6 +127,20 @@ read or continue operations in the same private state directory.
 No Whale command starts a daemon.
 The quote reports size and operation ID; downloading requires a separate
 explicit confirmation.
+.Pp
+A successful confirmed download includes verification of the destination
+and confirmation that the server released its download cache and reservation.
+The destination may already exist while the operation is still verifying
+or has failed to receive that confirmation.
+Inspect it with
+.Cm whale-status
+and use
+.Cm whale-retry
+after a failure, or
+.Cm whale-resume
+after a process interruption.
+The same operation checks the existing file and retries release without
+downloading it again.
 .Sh CONFIGURATION
 The INI file named by
 .Fl -config

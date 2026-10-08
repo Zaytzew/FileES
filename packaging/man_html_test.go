@@ -21,7 +21,9 @@ func TestHTMLManPagesAreRegenerated(t *testing.T) {
 		t.Fatalf("%v; %s", err, regenerate)
 	}
 	want := map[string]bool{"index.html": true}
-	for _, source := range manPages(t) {
+	sources := manPages(t)
+	sources["filees-client(1)"] = filepath.Join("..", "cmd", "filees-client", "man", "filees-client.1")
+	for _, source := range sources {
 		data, err := os.ReadFile(source)
 		if err != nil {
 			t.Fatal(err)
@@ -61,7 +63,9 @@ func TestHTMLManPageLinksResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pages = append(pages, filepath.Join("..", "manual", "assets", "en", "man-pages.html"), filepath.Join("..", "manual", "assets", "pl", "man-pages.html"))
+	for _, lang := range []string{"en", "pl"} {
+		pages = append(pages, filepath.Join("..", "manual", "assets", lang, "man-pages.html"), filepath.Join("..", "manual", "assets", lang, "cli-client.html"))
+	}
 	for _, page := range pages {
 		data, err := os.ReadFile(page)
 		if err != nil {

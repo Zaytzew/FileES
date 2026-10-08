@@ -61,7 +61,7 @@ type Notes struct {
 	Schema    string `json:"schema"`
 	ReleaseID string `json:"release_id"`
 	Sequence  uint64 `json:"sequence"`
-	// Component is server, desktop or android: the kind of release, which
+	// Component is server, desktop, android or cli: the kind of release, which
 	// decides the scopes its items may have.
 	Component string `json:"component"`
 	// SVNRevision is the source revision the release was built from; the
@@ -90,6 +90,7 @@ var componentScopes = map[string][]string{
 	"server":  {"server"},
 	"desktop": {"desktop", "windows", "linux"},
 	"android": {"android"},
+	"cli":     {"linux"},
 }
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

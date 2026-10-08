@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="filees-source-revision" content="$Rev$">
+<meta name="filees-generator" content="tools/manual-man-pages">
+<meta name="filees-mandoc-source" content="cmd/filees-client/man/filees-client.1 sha256:a6d7c2fbdbd542595a85da3e9a9731e169151de4c38259977e119d15babf357c">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>filees-client(1) — FileES manual pages</title>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/mandoc.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">mandoc · docs/man · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<div class="manual-content man-content">
+<div class="man-page-head"><a href="index.html">All manual pages</a></div>
+<div class="mandoc">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES-CLIENT(1)</td>
+    <td class="head-vol">General Commands Manual</td>
+    <td class="head-rtitle">FILEES-CLIENT(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Pp"><code class="Nm">filees-client</code> &#x2014;
+    <span class="Nd">run one FileES client operation without a background
+    daemon</span></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">version</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">activate-begin</code>
+      <code class="Fl">--server-id</code> <var class="Ar">id</var>
+      <code class="Fl">--server</code> <var class="Ar">address</var>
+      <code class="Fl">--known-hosts</code> <var class="Ar">path</var>
+      <code class="Fl">--state-root</code> <var class="Ar">path</var>
+      <code class="Fl">--email</code> <var class="Ar">address</var></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">activate-finish</code> |
+      <code class="Cm">activate-resume</code>
+      <code class="Fl">--server-id</code> <var class="Ar">id</var>
+      <code class="Fl">--server</code> <var class="Ar">address</var>
+      <code class="Fl">--known-hosts</code> <var class="Ar">path</var>
+      <code class="Fl">--state-root</code> <var class="Ar">path</var>
+      [<code class="Fl">--remote-port</code> <var class="Ar">port</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">checkout</code> <code class="Fl">--config</code>
+      <var class="Ar">path</var> <code class="Fl">--wc</code>
+      <var class="Ar">id</var> [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">sync</code> <code class="Fl">--config</code>
+      <var class="Ar">path</var> <code class="Fl">--wc</code>
+      <var class="Ar">id</var> [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>] [<code class="Fl">--message</code>
+      <var class="Ar">text</var>] [<code class="Fl">--nwc</code>]
+      [<code class="Fl">--restore-set</code> |
+      <code class="Fl">--reverse-reconcile-set</code>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">dump-load</code> <code class="Fl">--profile</code>
+      <var class="Ar">path</var> <code class="Fl">--dump</code>
+      <var class="Ar">path</var> <code class="Fl">--name</code>
+      <var class="Ar">name</var> <code class="Fl">--target</code>
+      <var class="Ar">path</var> <code class="Fl">--state</code>
+      <var class="Ar">path</var> [<code class="Fl">--svn</code>
+      <var class="Ar">path</var>] [<code class="Fl">--ssh</code>
+      <var class="Ar">path</var>] [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">whale-put</code> |
+      <code class="Cm">whale-get-quote</code> |
+      <code class="Cm">whale-get-confirm</code> |
+      <code class="Cm">whale-status</code> | <code class="Cm">whale-retry</code>
+      | <code class="Cm">whale-resume</code> <code class="Fl">--profile</code>
+      <var class="Ar">path</var> <code class="Fl">--state</code>
+      <var class="Ar">path</var> [<code class="Fl">--id</code>
+      <var class="Ar">uuid</var>] [<code class="Fl">--repo</code>
+      <var class="Ar">uuid</var>] [<code class="Fl">--path</code>
+      <var class="Ar">repository-path</var>] [<code class="Fl">--source</code>
+      <var class="Ar">path</var>] [<code class="Fl">--dest</code>
+      <var class="Ar">path</var>] [<code class="Fl">--revision</code>
+      <var class="Ar">number</var>] [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>]</td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp"><code class="Nm">filees-client</code> is a one-shot FileES client
+    for Linux and <span class="Ux">OpenBSD</span>. It exits after one operation
+    and may be called by a user's cron job. It uses an activated FileES identity
+    and a pinned SSH host key. It is distributed separately from the desktop
+    daemon and the server bundle. <code class="Cm">version</code> prints the
+    standalone client version and the source revision.</p>
+<p class="Pp"><code class="Cm">checkout</code> creates a working copy at the
+    path selected by <code class="Fl">--wc</code>. Without
+    <code class="Fl">--nwc</code>, <code class="Cm">sync</code> requires that
+    working copy. It updates, adds new files, propagates local deletions, and
+    commits changes. Conflicts stop the operation for manual resolution.</p>
+<p class="Pp"><code class="Cm">sync</code> <code class="Fl">--nwc</code> uses a
+    plain directory and commits new or changed files through
+    <span class="Xr">svnmucc(1)</span>. The long alias is
+    <code class="Fl">--no-working-copy</code>. It never propagates local
+    deletions. By default it does not restore paths deleted from the repository;
+    <code class="Fl">--restore-set</code> explicitly enables restoration of
+    source-present paths. <code class="Fl">--reverse-reconcile-set</code>
+    instead downloads one repository revision into the plain directory,
+    overwrites changed files and removes local paths absent from the accessible
+    repository view, without committing. The two set flags are mutually
+    exclusive and require <code class="Fl">--nwc</code>. No form of
+    <code class="Fl">--nwc</code> creates a <span class="Pa">.svn</span>
+    directory. These are client behaviours, not server-enforced permissions: the
+    activation retains its ordinary grants.</p>
+<p class="Pp"><code class="Cm">dump-load</code> imports one Subversion dump into
+    a newly created repository and a new working copy. Both
+    <code class="Fl">--target</code> and the private
+    <code class="Fl">--state</code> directory must be dedicated to this import.
+    On an uncertain result, repeat exactly the same command with the same
+    <code class="Fl">--state</code>; the stored operation ID prevents creating
+    another repository. The existing repository and working copy are never
+    overwritten. The activation needs permission to create repositories.</p>
+<p class="Pp"><code class="Cm">whale-put</code> publishes a source file through
+    FileES Whale. <code class="Cm">whale-get-quote</code> returns an operation
+    ID and size without downloading. After reviewing the quote,
+    <code class="Cm">whale-get-confirm</code> with that ID starts the download
+    to a new destination. <code class="Cm">whale-status</code>,
+    <code class="Cm">whale-retry</code>, and
+    <code class="Cm">whale-resume</code> read or continue operations in the same
+    private state directory. No Whale command starts a daemon. The quote reports
+    size and operation ID; downloading requires a separate explicit
+    confirmation.</p>
+<p class="Pp">A successful confirmed download includes verification of the
+    destination and confirmation that the server released its download cache and
+    reservation. The destination may already exist while the operation is still
+    verifying or has failed to receive that confirmation. Inspect it with
+    <code class="Cm">whale-status</code> and use
+    <code class="Cm">whale-retry</code> after a failure, or
+    <code class="Cm">whale-resume</code> after a process interruption. The same
+    operation checks the existing file and retries release without downloading
+    it again.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h1>
+<p class="Pp">The INI file named by <code class="Fl">--config</code> contains
+    &#x2018;tools&#x2019; (absolute paths for
+    <a class="permalink" href="#svn"><b class="Sy" id="svn">svn</b></a>,
+    <a class="permalink" href="#svnmucc"><b class="Sy" id="svnmucc">svnmucc</b></a>,
+    <a class="permalink" href="#ssh"><b class="Sy" id="ssh">ssh</b></a> and
+    <a class="permalink" href="#log_dir"><b class="Sy" id="log_dir">log_dir</b></a>),
+    &#x2018;realm&#x2019; (identity, known_hosts, host, port and optional
+    <b class="Sy">only</b>), and one or more &#x2018;wc id&#x2019; sections
+    (path and repository-root URL). The optional <b class="Sy">only</b> value is
+    an explicit allow-list such as &#x201C;!invoices !archive&#x201D;. The
+    journal directory must exist and be outside a <code class="Fl">--nwc</code>
+    source. The CLI never takes an arbitrary source directory or repository URL
+    from a <code class="Cm">sync</code> command line.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
+<dl class="Bl-tag">
+  <dt><span class="Pa">/etc/filees/filees-client.conf</span></dt>
+  <dd>Example invocation profile; the actual path is supplied by
+      <code class="Fl">--config</code>.</dd>
+  <dt><span class="Pa">/var/log/filees-client</span></dt>
+  <dd>Default private journal directory; create it before running the
+    client.</dd>
+  <dt><span class="Pa">state/job.json</span></dt>
+  <dd>Durable <code class="Cm">dump-load</code> identity, stored below the
+      chosen <code class="Fl">--state</code> directory.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h1>
+<p class="Pp">The <code class="Nm">filees-client</code> utility exits&#x00A0;0
+    on success, and&#x00A0;&gt;0 if an error occurs. Usage errors return 2.
+    Transport, repository, journal and interrupted-operation errors return
+  1.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
+<div class="Bd Bd-indent Li">
+<pre>filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -restore-set
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -reverse-reconcile-set
+filees-client dump-load --profile /home/user/.filees/client-profile.json \
+  --dump /home/user/archive.dump --name Invoices-Archive \
+  --target /home/user/archive-wc --state /home/user/.filees/import-001</pre>
+</div>
+<p class="Pp">After a producer has completed successfully, cron may call the
+    client with <code class="Cm">&amp;&amp;</code> so a failed producer cannot
+    publish a partial output.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><span class="Xr">ssh(1)</span>,
+    <span class="Xr">svn(1)</span>,
+    <span class="Xr">svnmucc(1)</span>,
+    <span class="Xr">crontab(5)</span></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CAVEATS"><a class="permalink" href="#CAVEATS">CAVEATS</a></h1>
+<p class="Pp">The repository path in a <code class="Fl">--nwc</code> profile
+    must be its root. Symbolic links and non-regular source files are refused.
+    Reverse reconciliation stages downloaded files before changing the local
+    directory, but application of the complete tree is not atomic; rerun it
+    after an interruption. Keep activation keys, profiles and operation state
+    outside published folders.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 8, 2026</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
+  </tr>
+</table>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>
+</main></body></html>

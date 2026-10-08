@@ -59,6 +59,11 @@ signify_stub() {
 		{"unsigned linux release refused on beta-linux", "channel-linux.json", "linux-amd64", "beta-linux", "", ""},
 		{"signed linux release promoted to beta-linux", "channel-linux.json", "linux-amd64", "beta-linux", "valid", "beta-linux"},
 		{"unknown linux stage", "channel-linux.json", "linux-amd64", "gamma-linux", "", ""},
+		{"CLI first signature has its own track", "channel-cli.json", "linux-amd64", "cli", "", "cli"},
+		{"CLI refused on desktop alpha", "channel-cli.json", "linux-amd64", "alpha", "", ""},
+		{"CLI refused on server alpha-linux", "channel-cli.json", "linux-amd64", "alpha-linux", "", ""},
+		{"desktop refused on CLI", "channel.v2.json", "linux-amd64", "cli", "", ""},
+		{"server refused on CLI", "channel-linux.json", "linux-amd64", "cli", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -77,11 +82,17 @@ signify_stub() {
 			write("test.pub", "not a public key")
 			write("releases/r9-server-linux/"+tc.candidate, payload)
 			manifest := "releases/r9-server-linux/" + tc.platform + "/manifest.json"
-			write(manifest, "immutable manifest")
+			if tc.candidate == "channel-cli.json" {
+				manifest = "releases/r9-server-linux/cli/" + tc.platform + "/manifest.json"
+				write("releases/r9-server-linux/built-for-channel", "cli\n")
+				write(manifest, `{ "component": "cli" }`)
+			} else {
+				write(manifest, "immutable manifest")
+			}
 			if tc.signature != "" {
 				write(manifest+".sig", tc.signature)
 			}
-			channels := []string{"alpha", "beta", "alpha-linux", "beta-linux"}
+			channels := []string{"alpha", "beta", "alpha-linux", "beta-linux", "cli", "android"}
 			for _, channel := range channels {
 				write("channels/"+channel+".json", "old "+channel)
 				write("channels/"+channel+".json.sig", "old signature")

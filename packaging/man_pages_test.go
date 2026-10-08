@@ -101,6 +101,7 @@ func TestManPagesPassMandocLint(t *testing.T) {
 	for _, file := range pages {
 		files = append(files, file)
 	}
+	files = append(files, filepath.Join("..", "cmd", "filees-client", "man", "filees-client.1"))
 	sort.Strings(files)
 	out, _ := exec.Command(mandoc, append([]string{"-T", "lint", "-W", "style"}, files...)...).CombinedOutput()
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {

@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="docs/man/man8/filees-rotate.8 sha256:299dab15c61a273224535e1e06422604b10815ae09b90de70e25ce9b257b44b9">
+<meta name="filees-mandoc-source" content="docs/man/man8/filees-rotate.8 sha256:ffce2dc4d405c426b790bf5fa94a0efd24a040261e2dae8f0d5ccc47f974c668">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-rotate(8) — FileES manual pages</title>
@@ -84,9 +84,10 @@
     configuration instead of the command line, so it cannot address a repository
     outside the configured tree. <code class="Nm">filees-rotate</code> also
     applies a restricted <span class="Xr">pledge(2)</span> and
-    <span class="Xr">unveil(2)</span> profile on OpenBSD. It
-    takes the repository and archive paths from <var class="Ar">argv</var>;
-    prefer the configured administrative command for ordinary operation.</p>
+    <span class="Xr">unveil(2)</span> profile on
+    <span class="Ux">OpenBSD</span>. It takes the repository and archive paths
+    from <var class="Ar">argv</var>; prefer the configured administrative
+    command for ordinary operation.</p>
 <p class="Pp">An operation that can change files requires the server
     configuration and holds the persistent capacity write admission through
     recovery, child processes and cleanup. The operation is refused while the
@@ -154,7 +155,7 @@
 <table class="foot">
   <tr>
     <td class="foot-date">October 3, 2026</td>
-    <td class="foot-os">Debian</td>
+    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
   </tr>
 </table>
 </div>

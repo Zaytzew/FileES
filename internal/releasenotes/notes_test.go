@@ -257,3 +257,17 @@ func TestSameSentenceInTwoReleases(t *testing.T) {
 		t.Fatalf("security items on the card %+v", security)
 	}
 }
+
+// Standalone CLI notes cannot carry server or desktop changes into its track.
+func TestStandaloneCLINotesScope(t *testing.T) {
+	n := &Notes{Schema: Schema, ReleaseID: "r2015-cli", Sequence: 2015, Component: "cli", HistoryFrom: 2015, Items: []Item{{Sequence: 2015, Scope: "linux", PL: "Jednorazowy klient Linux i OpenBSD", EN: "One-shot Linux and OpenBSD client"}}}
+	if _, err := Parse(encode(t, n)); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []string{"desktop", "server", "android", "windows"} {
+		n.Items[0].Scope = scope
+		if _, err := Parse(encode(t, n)); err == nil {
+			t.Fatalf("accepted unrelated scope %s", scope)
+		}
+	}
+}

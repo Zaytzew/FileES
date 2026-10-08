@@ -396,6 +396,12 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					}
 				}
 				bridge.onConnected = func(providerCtx context.Context) {
+					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, func(checkCtx context.Context) (cfapiAnswer, error) {
+						return m.call(checkCtx, "", "info", "--root", record.LocalPath)
+					}, func() {
+						log.Warnf("anchor at %s lost its Windows provider connection - reconnecting", record.LocalPath)
+						streams.abort()
+					})
 					guard := bridge.guard // snapshot source retains no completed fetch queue
 					if m.repos != nil {
 						if repo := m.repos(record.ServerID, record.RepoID); repo != nil {
@@ -435,6 +441,40 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 		select {
 		case <-ctx.Done():
 		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+const anchorProviderCheckEvery = 30 * time.Second
+
+// watchAnchorProvider ends a helper whose connection Windows no longer has.
+// Detaching and re-attaching the cloud filter on the volume drops every
+// provider connection without telling the provider: the helper keeps running,
+// nothing is logged, and opening a placeholder fails until the pair restarts
+// (implementation notes (not distributed), section 7). A connected helper
+// reports a non-zero provider status; zero twice in a row means the
+// connection is gone, and ending the helper lets keep connect again. An
+// answer that cannot be read is not evidence either way.
+func watchAnchorProvider(ctx context.Context, every time.Duration, status func(context.Context) (cfapiAnswer, error), lost func()) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	disconnected := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		answer, err := status(ctx)
+		if err != nil || !answer.OK || !answer.Ours || answer.Status != 0 {
+			disconnected = 0
+			continue
+		}
+		if disconnected++; disconnected >= 2 {
+			if ctx.Err() == nil {
+				lost()
+			}
+			return
 		}
 	}
 }

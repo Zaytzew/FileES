@@ -31,6 +31,14 @@ func (rs *RepoState) SetAnchorBlocksSource(fn func() []contract.AnchorDownloadBl
 	rs.mu.Unlock()
 }
 
+// SetAnchorDamageSource reports unreadable entries of the repository's virtual
+// folder. The source returns a fresh value, or nil when there are none.
+func (rs *RepoState) SetAnchorDamageSource(fn func() *contract.AnchorDamage) {
+	rs.mu.Lock()
+	rs.anchorDamageFn = fn
+	rs.mu.Unlock()
+}
+
 func (s *Server) handleAnchorConsent(req contract.Request) contract.Response {
 	var p contract.RepoAnchorConsentPayload
 	if err := contract.DecodePayload(req.Payload, &p); err != nil || p.ServerID == "" || p.RepoID == "" {

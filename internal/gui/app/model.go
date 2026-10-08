@@ -44,6 +44,7 @@ const (
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
 	AnchorDownloadBlocks []contract.AnchorDownloadBlock
+	AnchorDamage         *contract.AnchorDamage
 	ID                   string
 	DisplayName          string
 	ServerID             string

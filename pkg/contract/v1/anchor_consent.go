@@ -11,6 +11,15 @@ type AnchorDownloadBlock struct {
 	Files   int    `json:"files"` // distinct requests observed, not a transfer estimate
 }
 
+// AnchorDamage reports entries of a virtual folder whose cloud metadata
+// Windows cannot read. They can be removed only with administrator rights, so
+// the daemon reports them and never acts on them itself. Absent when there are
+// none. Sample holds at most a few paths relative to the folder.
+type AnchorDamage struct {
+	Entries int      `json:"entries"`
+	Sample  []string `json:"sample,omitempty"`
+}
+
 type RepoAnchorConsentPayload struct {
 	ServerID string `json:"server_id"`
 	RepoID   string `json:"repo_id"`

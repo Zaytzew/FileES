@@ -111,6 +111,7 @@ type anchorManager struct {
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
+	damage  map[string]*contract.AnchorDamage
 }
 
 type anchorConnection struct {
@@ -358,9 +359,23 @@ func (m *anchorManager) detach(ctx context.Context, record localrepo.Record) err
 // pause if the helper ever stops while the anchor is still wanted.
 func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 	log := talk.With("anchor:" + record.ServerID + "/" + record.RepoID)
+	m.publishDamage(record)
+	// Unreadable entries stop preparation every time, and each attempt lists
+	// the whole tree from the server. While they are there, wait for a repair
+	// instead of asking the server again.
+	blocked := false
 	for ctx.Err() == nil {
+		if blocked && m.inspectDamage(record) > 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(anchorDamageRecheck):
+			}
+			continue
+		}
+		blocked = false
 		if err := m.prepare(ctx, record); err != nil {
 			log.Warnf("prepare %s: %v", record.LocalPath, err)
+			blocked = m.inspectDamage(record) > 0
 		} else {
 			streams, err := startAnchorHelper(ctx, m.helper, record.LocalPath)
 			if err != nil {
@@ -396,6 +411,8 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					}
 				}
 				bridge.onConnected = func(providerCtx context.Context) {
+					m.publishDamage(record)
+					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })
 					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, func(checkCtx context.Context) (cfapiAnswer, error) {
 						return m.call(checkCtx, "", "info", "--root", record.LocalPath)
 					}, func() {

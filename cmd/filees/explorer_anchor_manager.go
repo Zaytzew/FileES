@@ -112,6 +112,9 @@ type anchorManager struct {
 	mu      sync.Mutex
 	running map[string]anchorConnection
 	damage  map[string]*contract.AnchorDamage
+	// damagePublished: the repository state each anchor's damage source was
+	// last handed to; a recreated state gets it again.
+	damagePublished map[string]*ipcserver.RepoState
 }
 
 type anchorConnection struct {

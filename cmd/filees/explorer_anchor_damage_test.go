@@ -5,12 +5,14 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"filees/internal/anchorrepair"
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 )
 
@@ -95,5 +97,38 @@ func TestAnchorDamageWatchLooksAgainSoonOnlyWhileSomethingIsDamaged(t *testing.T
 	}
 	if !reflect.DeepEqual(len(gaps), 3) || gaps[0] > 15*time.Millisecond {
 		t.Fatalf("first inspection was not immediate: %v", gaps)
+	}
+}
+
+// At daemon start an anchor connects before its repository state is
+// registered. The damage found then must still reach the GUI once the state
+// exists: this is what the owner's station showed on 2026-10-08.
+func TestAnchorDamageReachesARepositoryStateRegisteredAfterTheFirstInspection(t *testing.T) {
+	original := anchorDamageScan
+	t.Cleanup(func() { anchorDamageScan = original })
+	anchorDamageScan = func(string) ([]anchorrepair.Damaged, error) {
+		return []anchorrepair.Damaged{{Path: `Archiwum Robocze\a.pdf`}, {Path: `Archiwum Robocze\b.pdf`}}, nil
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	record := localrepo.Record{ServerID: "office", RepoID: "repo", LocalPath: t.TempDir()}
+	var registered *ipcserver.RepoState
+	var announced int
+	m := &anchorManager{
+		repos:        func(string, string) *ipcserver.RepoState { return registered },
+		guardChanged: func(string) { announced++ },
+	}
+	if got := m.inspectDamage(record); got != 2 || announced != 1 {
+		t.Fatalf("first inspection: %d entries, %d announcements", got, announced)
+	}
+	registered = server.RegisterRepoAccess(record.RepoID, "svn+ssh://example.invalid/repo", record.LocalPath, record.ServerID, "rw")
+	if got := m.inspectDamage(record); got != 2 || announced != 2 {
+		t.Fatalf("inspection after registration: %d entries, %d announcements", got, announced)
+	}
+	if damage := registered.Snapshot().AnchorDamage; damage == nil || damage.Entries != 2 {
+		t.Fatalf("snapshot does not carry the damage: %+v", damage)
+	}
+	// Nothing new: no further announcement.
+	if m.inspectDamage(record); announced != 2 {
+		t.Fatalf("unchanged state announced again: %d", announced)
 	}
 }

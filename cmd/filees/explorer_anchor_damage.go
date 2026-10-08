@@ -8,6 +8,7 @@ import (
 
 	"filees/internal/anchorrepair"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
 )
@@ -72,6 +73,9 @@ func (m *anchorManager) inspectDamage(record localrepo.Record) int {
 	// The GUI redraws a repository only when told its state changed; without
 	// this the card kept the answer from before the first inspection.
 	changed := (current == nil) != (previous == nil) || current != nil && previous != nil && current.Entries != previous.Entries
+	if m.publishDamage(record) && current != nil {
+		changed = true // known before, but nobody could read it yet
+	}
 	if changed && m.guardChanged != nil {
 		m.guardChanged(record.RepoID)
 	}
@@ -91,14 +95,30 @@ func (m *anchorManager) damageOf(key string) *contract.AnchorDamage {
 	return &contract.AnchorDamage{Entries: damage.Entries, Sample: append([]string(nil), damage.Sample...)}
 }
 
-func (m *anchorManager) publishDamage(record localrepo.Record) {
+// publishDamage hands the repository's state the place to read the damage
+// from, and reports whether this call was the first to do so. At daemon start
+// an anchor connects before its repository state exists, so one attempt at
+// connect time is not enough: every inspection tries again.
+func (m *anchorManager) publishDamage(record localrepo.Record) bool {
 	if m.repos == nil {
-		return
+		return false
 	}
-	if repo := m.repos(record.ServerID, record.RepoID); repo != nil {
-		key := anchorKey(record)
-		repo.SetAnchorDamageSource(func() *contract.AnchorDamage { return m.damageOf(key) })
+	repo := m.repos(record.ServerID, record.RepoID)
+	if repo == nil {
+		return false
 	}
+	key := anchorKey(record)
+	repo.SetAnchorDamageSource(func() *contract.AnchorDamage { return m.damageOf(key) })
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.damagePublished[key] == repo {
+		return false
+	}
+	if m.damagePublished == nil {
+		m.damagePublished = make(map[string]*ipcserver.RepoState)
+	}
+	m.damagePublished[key] = repo
+	return true
 }
 
 // watchAnchorDamage inspects now and then again: soon while something is

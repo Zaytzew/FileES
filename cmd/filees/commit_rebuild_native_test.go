@@ -100,6 +100,10 @@ func TestCanonicalRecoveryRealNativeSVN(t *testing.T) {
 		return plan, err
 	}
 	s.AcceptCanonicalRecovery = func(ctx context.Context, id string) error { return acceptCanonicalWorkingCopy(ctx, repo, c, job, id) }
+	cache := filepath.Join(wc, ".filees/commit_cache/cache.json")
+	queueA := `{"rel":"plan.dwg","op":"modified"}`
+	queueB := `{"rel":"unversioned.txt","op":"added"}`
+	write(cache, "["+queueA+","+queueB+"]")
 	plan, err := s.PlanCommitRecovery(t.Context())
 	if err != nil || plan.Choice != contract.CommitRecoveryRebuild || plan.HeadRevision != 3 {
 		t.Fatal(plan, err)
@@ -108,6 +112,10 @@ func TestCanonicalRecoveryRealNativeSVN(t *testing.T) {
 	if err != nil || result.State != "rebuild_requested" {
 		t.Fatal(result, err)
 	}
+	// Quiescence may rewrite an older cache in a different order. This must
+	// preserve the accepted proof even with the actual native SVN checkout.
+	rewritten := "[" + queueB + "," + queueA + "]"
+	write(cache, rewritten)
 	if err := recoverCanonicalWorkingCopy(t.Context(), repo, c); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +137,9 @@ func TestCanonicalRecoveryRealNativeSVN(t *testing.T) {
 	}
 	if !canonicalExists(filepath.Join(plan.Archive, ".filees/commit_cache/transaction.json")) {
 		t.Fatal("original intent lost")
+	}
+	if raw, err := os.ReadFile(filepath.Join(plan.Archive, ".filees/commit_cache/cache.json")); err != nil || string(raw) != rewritten {
+		t.Fatal("original queue lost", err)
 	}
 	if head, err := c.(client.TransactionCommitter).CommitHead(t.Context(), url); err != nil || head != 3 {
 		t.Fatal("recovery committed", head, err)

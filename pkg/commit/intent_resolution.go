@@ -92,10 +92,15 @@ func decodeIntentCache(data []byte, entries *[]cacheEntry, receipts *[]intentRec
 }
 
 func intentCacheValue(entries []cacheEntry, receipts []intentReceipt) any {
+	// The staging map has no iteration order. A shutdown save must not change
+	// an unchanged queue (in particular while canonical WC recovery quiesces).
+	ordered := make([]cacheEntry, len(entries))
+	copy(ordered, entries)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Rel < ordered[j].Rel })
 	if len(receipts) == 0 {
-		return entries
+		return ordered
 	}
-	return intentCache{Schema: intentCacheSchema, Entries: entries, Receipts: append([]intentReceipt(nil), receipts...)}
+	return intentCache{Schema: intentCacheSchema, Entries: ordered, Receipts: append([]intentReceipt(nil), receipts...)}
 }
 
 // PlanIntents reads only. The bounded plan is tied to this running repository

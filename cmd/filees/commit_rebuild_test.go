@@ -207,6 +207,90 @@ func TestCanonicalRecoveryRefusalsLeaveOriginalAndProof(t *testing.T) {
 	}
 }
 
+func TestCanonicalRecoveryQueueRewriteDuringCheckout(t *testing.T) {
+	for _, wrapped := range []bool{false, true} {
+		for _, changed := range []bool{false, true} {
+			t.Run(strconv.FormatBool(wrapped)+"/changed="+strconv.FormatBool(changed), func(t *testing.T) {
+				repo, c, _, _ := canonicalFixture(t)
+				cache := filepath.Join(repo.LocalPath, ".filees/commit_cache/cache.json")
+				makeCache := func(reversed, change bool) []byte {
+					a, b := `{"rel":"z.txt","op":"deleted","first_seen":"2026-10-08T00:00:00Z"}`, `{"rel":"a.dwg","op":"modified","unknown_future_field":true}`
+					if change {
+						b = strings.Replace(b, "true", "false", 1)
+					}
+					if reversed {
+						a, b = b, a
+					}
+					value := "[" + a + "," + b + "]"
+					if wrapped {
+						value = `{"schema":"filees.commit-cache/v2","entries":` + value + `,"intent_receipts":[{"plan_id":"accepted"}],"future":7}`
+					}
+					return []byte(value)
+				}
+				if err := os.WriteFile(cache, makeCache(false, false), 0600); err != nil {
+					t.Fatal(err)
+				}
+				j, plan, err := planCanonicalWorkingCopy(t.Context(), repo, c, "newer-intent", c.head)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := acceptCanonicalWorkingCopy(t.Context(), repo, c, j, plan.PlanID); err != nil {
+					t.Fatal(err)
+				}
+				c.afterCheckout = func() {
+					if err := os.WriteFile(cache, makeCache(true, changed), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				err = recoverCanonicalWorkingCopy(t.Context(), repo, c)
+				if changed {
+					if err == nil || canonicalExists(j.archive()) {
+						t.Fatal("changed queue accepted or original moved", err)
+					}
+				} else if err != nil || !canonicalExists(j.archive()) {
+					t.Fatal("order-only rewrite refused", err)
+				}
+				original := repo.LocalPath
+				if !changed {
+					original = j.archive()
+				}
+				data, _ := os.ReadFile(filepath.Join(original, "plan.dwg"))
+				if string(data) != "local" {
+					t.Fatal("original work lost")
+				}
+			})
+		}
+	}
+}
+
+func TestCanonicalRecoveryMalformedCacheStillBindsExactBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.json")
+	for _, raw := range []string{
+		`[{"broken":`,
+		`{"schema":"future","entries":[]}`,
+		`{"schema":"filees.commit-cache/v2","entries":[],"entries":[]}`,
+	} {
+		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		exact, exactSize, err := canonicalHash(t.Context(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proof, size, err := canonicalProofHash(t.Context(), path, true)
+		if err != nil || proof != exact || size != exactSize {
+			t.Fatal("unrecognized cache lost from proof", err)
+		}
+		if err := os.WriteFile(path, []byte(raw+" "), 0600); err != nil {
+			t.Fatal(err)
+		}
+		changed, _, err := canonicalProofHash(t.Context(), path, true)
+		if err != nil || changed == proof {
+			t.Fatal("unrecognized cache rewrite ignored", err)
+		}
+	}
+}
+
 func TestCanonicalRecoveryResumesEveryRenameWindow(t *testing.T) {
 	for _, stage := range []string{"prepared", "disabled-before-receipt", "disabled", "archived-before-receipt", "archived", "installed-before-receipt", "installed"} {
 		t.Run(stage, func(t *testing.T) {

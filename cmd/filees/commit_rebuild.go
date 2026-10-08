@@ -16,6 +16,7 @@ import (
 
 	"filees/internal/durable"
 	"filees/pkg/client"
+	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"github.com/google/uuid"
@@ -194,6 +195,10 @@ func (r canonicalContextReader) Read(p []byte) (int, error) {
 }
 
 func canonicalHash(ctx context.Context, path string) (string, int64, error) {
+	return canonicalProofHash(ctx, path, false)
+}
+
+func canonicalProofHash(ctx context.Context, path string, queue bool) (string, int64, error) {
 	st, err := os.Lstat(path)
 	if err != nil {
 		return "", 0, err
@@ -206,6 +211,19 @@ func canonicalHash(ctx context.Context, path string) (string, int64, error) {
 		return "", 0, err
 	}
 	defer f.Close()
+	if queue {
+		raw, err := io.ReadAll(canonicalContextReader{ctx, f})
+		if err != nil {
+			return "", 0, err
+		}
+		if proof, err := commit.RecoveryCacheProof(raw); err == nil {
+			raw = proof
+		}
+		// Malformed/unsupported caches remain bound byte-for-byte. Recovery
+		// can still preserve them, but cannot silently discard any content.
+		h := sha256.Sum256(raw)
+		return hex.EncodeToString(h[:]), int64(len(raw)), nil
+	}
 	h := sha256.New()
 	n, err := io.Copy(h, canonicalContextReader{ctx, f})
 	if err != nil {
@@ -273,7 +291,7 @@ func canonicalSnapshotMetadata(ctx context.Context, root, metadata string) (stri
 		if err := validateIdentityPath(filepath.Dir(path)); err != nil {
 			return "", nil, err
 		}
-		hash, size, err := canonicalHash(ctx, path)
+		hash, size, err := canonicalProofHash(ctx, path, rel == ".filees/commit_cache/cache.json")
 		if errors.Is(err, os.ErrNotExist) {
 			hash, size, err = "absent", 0, nil
 		}

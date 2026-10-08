@@ -212,3 +212,84 @@ func TestNativeSupervisorAdoptsOwnedDaemonAndCancelledSetupStartsNothing(t *test
 		t.Fatal("adopted daemon not observed")
 	}
 }
+
+func TestNativeSupervisorHandsRunningPairToUpdatedLauncher(t *testing.T) {
+	p := startupFixture(t)
+	launcher := filepath.Join(p.Root, "filees-launch.exe")
+	if err := os.WriteFile(launcher, []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := os.Stat(launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	successorDone := make(chan error, 1)
+	old := &Image{Path: launcher, Loaded: loaded, Start: func() error {
+		current, err := os.Stat(launcher)
+		if err != nil {
+			return err
+		}
+		next := &Image{Path: launcher, Loaded: current, Successor: true, Start: func() error { return errors.New("second handover") }}
+		go func() { successorDone <- superviseImage(ctx, p, false, initialized, 50*time.Millisecond, next) }()
+		return nil
+	}}
+	oldDone := make(chan error, 1)
+	go func() { oldDone <- superviseImage(ctx, p, true, initialized, 50*time.Millisecond, old) }()
+	waitUntil(t, func() bool { return ready(p) })
+	first, err := findDaemon(p.Root)
+	if err != nil || first == nil {
+		t.Fatal("no owned daemon", err)
+	}
+	pid := first.pid
+	first.Close()
+	select {
+	case err := <-oldDone:
+		t.Fatal("supervisor left without an update", err)
+	case <-time.After(1500 * time.Millisecond):
+	}
+
+	// What the channel update does: the running image is moved aside.
+	if err := os.Rename(launcher, launcher+".superseded-test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(launcher, []byte("new"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-oldDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("old supervisor did not hand over")
+	}
+	waitUntil(t, func() bool {
+		lock, err := singleinstance.Acquire(p.LockID)
+		if err == nil {
+			lock.Close()
+		}
+		return errors.Is(err, singleinstance.ErrAlreadyRunning)
+	})
+	proc, err := findDaemon(p.Root)
+	if err != nil || proc == nil {
+		t.Fatal("pair did not survive the handover", err)
+	}
+	if proc.pid != pid {
+		t.Fatalf("daemon restarted during handover: %d -> %d", pid, proc.pid)
+	}
+	proc.Close()
+	if _, err := os.Stat(filepath.Join(p.Root, "gui-called")); err == nil {
+		t.Fatal("successor opened the GUI")
+	}
+	os.WriteFile(filepath.Join(p.Root, "quit"), []byte("yes"), 0600)
+	select {
+	case err := <-successorDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("successor did not follow the daemon's normal stop")
+	}
+}

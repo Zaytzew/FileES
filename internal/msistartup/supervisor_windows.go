@@ -185,12 +185,50 @@ func startDaemon(p InstallPaths) (*process, error) {
 	return &process{h, uint32(c.Process.Pid)}, nil
 }
 
-func Supervise(ctx context.Context, p InstallPaths, interactive bool) error {
-	return supervise(ctx, p, interactive, setup, 15*time.Second)
+// Image is the launcher file this supervisor was loaded from. A channel update
+// moves that file aside and puts the new launcher in its place while the old
+// image keeps running; restarting the pair does not replace the supervisor.
+// Start launches the new file as a successor, which waits for this process
+// to release the singleton and then adopts the running daemon.
+type Image struct {
+	Path      string
+	Loaded    os.FileInfo
+	Successor bool
+	Start     func() error
+}
+
+func (image *Image) replaced() bool {
+	if image == nil || image.Loaded == nil || image.Start == nil {
+		return false
+	}
+	now, err := os.Stat(image.Path)
+	return err == nil && !os.SameFile(image.Loaded, now)
+}
+
+func Supervise(ctx context.Context, p InstallPaths, interactive bool, image *Image) error {
+	return superviseImage(ctx, p, interactive, setup, 15*time.Second, image)
 }
 
 func supervise(ctx context.Context, p InstallPaths, interactive bool, initialize func(context.Context, InstallPaths, bool) (bool, error), backoff time.Duration) error {
-	lock, err := singleinstance.Acquire(p.LockID)
+	return superviseImage(ctx, p, interactive, initialize, backoff, nil)
+}
+
+func superviseImage(ctx context.Context, p InstallPaths, interactive bool, initialize func(context.Context, InstallPaths, bool) (bool, error), backoff time.Duration, image *Image) error {
+	successor := image != nil && image.Successor
+	var lock singleinstance.Lock
+	var err error
+	if successor {
+		// The supervisor that started us still holds the singleton.
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		lock, err = acquire(waitCtx, p.LockID)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			Note(p, "successor supervisor: predecessor did not release the pair")
+			return nil
+		}
+	} else {
+		lock, err = singleinstance.Acquire(p.LockID)
+	}
 	if errors.Is(err, singleinstance.ErrAlreadyRunning) {
 		return nil
 	}
@@ -233,7 +271,7 @@ func supervise(ctx context.Context, p InstallPaths, interactive bool, initialize
 			tracked.Close()
 		}
 	}()
-	if !interactive {
+	if !interactive && !successor {
 		waitCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		for !ready(p) && waitCtx.Err() == nil {
 			_ = pause(waitCtx, 200*time.Millisecond)
@@ -245,6 +283,7 @@ func supervise(ctx context.Context, p InstallPaths, interactive bool, initialize
 			}
 		}
 	}
+	handed := false
 	for {
 		if err := pause(ctx, time.Second); err != nil {
 			return err
@@ -254,6 +293,17 @@ func supervise(ctx context.Context, p InstallPaths, interactive bool, initialize
 			return err
 		}
 		if !exited {
+			// Only with the pair up: handing over while an update is still
+			// restarting the daemon would make the successor start a second one.
+			if !handed && image.replaced() && ready(p) {
+				handed = true
+				if err := image.Start(); err != nil {
+					Note(p, fmt.Sprintf("launcher was updated; successor supervisor did not start: %v", err))
+					continue
+				}
+				Note(p, "launcher was updated - successor supervisor takes over the running pair")
+				return nil
+			}
 			continue
 		}
 		next, err := findDaemon(p.Root)

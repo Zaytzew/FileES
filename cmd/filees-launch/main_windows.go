@@ -43,7 +43,7 @@ func run(args []string) int {
 	}
 	paths := msistartup.Paths(filepath.Dir(exe))
 	if mode == "supervise" || mode == "interactive-supervise" {
-		err = msistartup.Supervise(context.Background(), paths, mode == "interactive-supervise")
+		err = msistartup.Supervise(context.Background(), paths, mode == "interactive-supervise", loadedImage(exe, paths.Root))
 	} else if mode == "show" || mode == "explorer" {
 		err = msistartup.Open(context.Background(), paths, func() error { return startSupervisor(exe, paths.Root, true) })
 		if err == nil && mode == "explorer" {
@@ -60,6 +60,32 @@ func run(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// successorEnv marks a supervisor started by its predecessor after an update
+// replaced the launcher. It is not an argument: every installed version, and
+// the MSI upgrade that stops supervisors, must keep recognising the command
+// line of a supervisor.
+const successorEnv = "FILEES_SUPERVISOR_SUCCESSOR"
+
+func loadedImage(exe, root string) *msistartup.Image {
+	loaded, err := os.Stat(exe)
+	if err != nil {
+		return nil
+	}
+	successor := os.Getenv(successorEnv) == "1"
+	// Not inherited by the daemon or anything it starts later.
+	_ = os.Unsetenv(successorEnv)
+	return &msistartup.Image{Path: exe, Loaded: loaded, Successor: successor, Start: func() error {
+		cmd := exec.Command(exe, "--supervise")
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), successorEnv+"=1")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		return cmd.Process.Release()
+	}}
 }
 
 func startSupervisor(exe, root string, interactive bool) error {

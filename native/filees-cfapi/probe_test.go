@@ -8,6 +8,7 @@ package nativecfapiprobe
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -395,18 +396,34 @@ func TestFileESRecognisesPlaceholdersAndOnlyThem(t *testing.T) {
 			t.Errorf("IsPlaceholder(%s) = %v, want %v", filepath.Base(path), got, want)
 		}
 	}
+	if !cloudfiles.NotOnDisk(filepath.Join(root, "sala.dwg")) {
+		t.Fatal("an unhydrated placeholder must report missing local bytes")
+	}
 
-	// Once opened and turned into an ordinary file it is the person's again.
+	// Fetching supplies bytes without reverting the placeholder. Readiness may
+	// remain PARTIAL, but PARTIALLY_ON_DISK must describe the missing bytes.
 	materialized := filepath.Join(t.TempDir(), "sala.dwg")
-	if err := os.WriteFile(materialized, make([]byte, 4096), 0o644); err != nil {
+	content := bytes.Repeat([]byte{0x5a}, 4096)
+	if err := os.WriteFile(materialized, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	connectAnchor(t, root, func(request []string) string { return "ok\t" + request[1] + "\t" + materialized })
-	if _, err := os.ReadFile(filepath.Join(root, "sala.dwg")); err != nil {
+	read, err := os.ReadFile(filepath.Join(root, "sala.dwg"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !bytes.Equal(read, content) {
+		t.Fatal("the fetched placeholder did not return all expected bytes")
 	}
 	opened := filepath.Join(root, "sala.dwg")
 	if !cloudfiles.IsPlaceholder(opened) || cloudfiles.NotOnDisk(opened) {
+		if info, err := os.Lstat(opened); err == nil {
+			t.Logf("hydrated file metadata: %#v", info.Sys())
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		metadata, err := exec.CommandContext(ctx, helper(t), "file-state", "--root", root, "--rel", "sala.dwg").CombinedOutput()
+		t.Logf("helper file-state: %s (error %v)", strings.TrimSpace(string(metadata)), err)
 		t.Fatalf("a fetched placeholder stays a placeholder until reverted, with its bytes on disk: placeholder=%v notOnDisk=%v",
 			cloudfiles.IsPlaceholder(opened), cloudfiles.NotOnDisk(opened))
 	}

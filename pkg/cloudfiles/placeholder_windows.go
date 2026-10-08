@@ -15,14 +15,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// CF_PLACEHOLDER_STATE bits (cfapi.h).
-const (
-	statePlaceholder = 0x00000001
-	stateSyncRoot    = 0x00000002
-	statePartial     = 0x00000010
-	stateInvalid     = 0xFFFFFFFF
-)
-
 // PHCM_EXPOSE_PLACEHOLDERS: RtlSetThreadPlaceholderCompatibilityMode.
 const exposePlaceholders = 2
 
@@ -126,10 +118,11 @@ func LocalState(path string) (managed, inSync bool) {
 }
 
 // NotOnDisk reports whether path is a placeholder whose content is not (or not
-// entirely) on this disk: reading it would download it.
+// entirely) on this disk. Readiness/validation alone does not imply missing
+// bytes; the PARTIALLY_ON_DISK bit is distinct from PARTIAL.
 func NotOnDisk(path string) bool {
 	value, ok := state(path)
-	return ok && value&statePlaceholder != 0 && value&statePartial != 0
+	return ok && contentMissing(value)
 }
 
 // IsSyncRoot reports whether path is the root of an anchor or of another

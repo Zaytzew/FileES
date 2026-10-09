@@ -6,6 +6,7 @@
 #include <winioctl.h>
 #include <shlobj.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const WCHAR k_local_identity[] = L"filees.local/v1";
@@ -229,25 +230,119 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
     return hr;
 }
 
-static HRESULT read_state(const WCHAR *root, const WCHAR *relative, struct state *state)
+static HRESULT move_object(HANDLE file, const WCHAR *root, const char *expected_id,
+                            BY_HANDLE_FILE_INFORMATION *object)
+{
+    char actual[64];
+    HRESULT hr = belongs_to_point(file, root);
+    if (FAILED(hr)) return hr;
+    if (!GetFileInformationByHandle(file, object)) return HRESULT_FROM_WIN32(GetLastError());
+    sprintf_s(actual, sizeof actual, "%lu:%llu", (unsigned long)object->dwVolumeSerialNumber,
+        ((ULONGLONG)object->nFileIndexHigh << 32) | object->nFileIndexLow);
+    if (!expected_id || strcmp(actual, expected_id) || object->nNumberOfLinks != 1) return E_ACCESSDENIED;
+    return S_OK;
+}
+
+HRESULT filees_move_tree(const WCHAR *root, const WCHAR *source, const WCHAR *destination, const char *expected_id)
+{
+    WCHAR src[FILEES_CFAPI_MAX_PATH], dst[FILEES_CFAPI_MAX_PATH];
+    BY_HANDLE_FILE_INFORMATION object;
+    HANDLE file;
+    FILE_RENAME_INFO *rename;
+    DWORD bytes;
+    HRESULT hr = local_path(root, source, src);
+    if (SUCCEEDED(hr)) hr = local_path(root, destination, dst);
+    if (FAILED(hr) || !_wcsicmp(src, dst)) return FAILED(hr) ? hr : E_INVALIDARG;
+    /* The coordinator rechecks every descendant's FileID and pins ancestors.
+     * Descendant data-read guards have drained before this rename (Windows
+     * refuses moving the cloud tree while they are held). This handle never
+     * requests bytes; each subsequent identity change has its own proof. */
+    file = CreateFileW(src, FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE,
+        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    hr = move_object(file, root, expected_id, &object);
+    if (SUCCEEDED(hr) && !(object.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) hr = E_ACCESSDENIED;
+    if (SUCCEEDED(hr)) {
+        bytes = (DWORD)(sizeof *rename + wcslen(dst) * sizeof(WCHAR));
+        rename = calloc(1, bytes);
+        if (!rename) hr = E_OUTOFMEMORY;
+        else {
+            rename->ReplaceIfExists = FALSE;
+            rename->FileNameLength = (DWORD)(wcslen(dst) * sizeof(WCHAR));
+            memcpy(rename->FileName, dst, rename->FileNameLength);
+            /* The reader has only this exact rename in flight. Other processes
+             * retain the prior refusal; source FileID and helper PID bind ACK. */
+            filees_remote_rename_begin(object.dwVolumeSerialNumber,
+                ((ULONGLONG)object.nFileIndexHigh << 32) | object.nFileIndexLow);
+            if (!SetFileInformationByHandle(file, FileRenameInfo, rename, bytes)) hr = HRESULT_FROM_WIN32(GetLastError());
+            filees_remote_rename_end();
+            free(rename);
+        }
+    }
+    CloseHandle(file);
+    return hr;
+}
+
+HRESULT filees_move_identity(const WCHAR *root, const WCHAR *relative, const char *expected_id,
+                             const WCHAR *previous, const WCHAR *identity)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    char old_utf8[FILEES_CFAPI_MAX_IDENTITY * 4], new_utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
+    BY_HANDLE_FILE_INFORMATION object;
+    struct state before = {0};
+    HANDLE file;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || wcsncmp(previous, L"filees.remote/v1:", 17) || wcsncmp(identity, L"filees.remote/v1:", 17) ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, previous, -1, old_utf8, sizeof old_utf8, NULL, NULL) ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, new_utf8, sizeof new_utf8, NULL, NULL))
+        return FAILED(hr) ? hr : E_INVALIDARG;
+    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC, 0,
+        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    hr = move_object(file, root, expected_id, &object);
+    if (SUCCEEDED(hr)) hr = inspect_tree(file, root, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || before.local ||
+        (!before.directory && (before.on_disk != 0 || before.modified != 0 || !before.clean)) ||
+        (strcmp(before.identity, old_utf8) && strcmp(before.identity, new_utf8)))) hr = E_ACCESSDENIED;
+    if (hr == S_OK && strcmp(before.identity, new_utf8))
+        /* Identity only: no FS metadata, pin-state or dehydration. VERIFY is
+         * atomic for remote files; do not mark a directory's children clean.
+         * Metadata handles alone are NOT a foreground write exclusion. */
+        {
+            hr = CfUpdatePlaceholder(file, NULL, identity, (DWORD)((wcslen(identity) + 1) * sizeof(WCHAR)),
+                NULL, 0, before.directory ? CF_UPDATE_FLAG_NONE :
+                CF_UPDATE_FLAG_VERIFY_IN_SYNC | CF_UPDATE_FLAG_MARK_IN_SYNC, NULL, NULL);
+        }
+    CloseHandle(file);
+    return hr;
+}
+
+static HRESULT read_state_mode(const WCHAR *root, const WCHAR *relative, struct state *state, int tree)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
     HANDLE file = INVALID_HANDLE_VALUE;
     HRESULT hr = local_path(root, relative, path);
     if (SUCCEEDED(hr)) {
         file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                           NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-        hr = file == INVALID_HANDLE_VALUE ? HRESULT_FROM_WIN32(GetLastError()) : inspect(file, root, state);
+                           NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        hr = file == INVALID_HANDLE_VALUE ? HRESULT_FROM_WIN32(GetLastError()) :
+            (tree ? inspect_tree(file, root, state) : inspect(file, root, state));
     }
     if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
     return hr;
 }
 
+static HRESULT read_state(const WCHAR *root, const WCHAR *relative, struct state *state)
+{
+    return read_state_mode(root, relative, state, 0);
+}
+
 static void print_state(const struct state *state)
 {
-    printf("{\"ok\":true,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\",\"size\":%lld,\"identity\":",
+    printf("{\"ok\":true,\"directory\":%s,\"placeholder\":%s,\"partial\":%s,\"in_sync\":%s,\"local\":%s,\"usn\":\"%lld\",\"size\":%lld,\"on_disk\":%lld,\"modified\":%lld,\"identity\":",
+           state->directory ? "true" : "false",
            state->placeholder ? "true" : "false", state->partial ? "true" : "false",
-           state->clean ? "true" : "false", state->local ? "true" : "false", state->usn, state->size);
+           state->clean ? "true" : "false", state->local ? "true" : "false", state->usn, state->size, state->on_disk, state->modified);
     filees_cfapi_json_string(state->identity);
     putchar('}');
 }
@@ -423,7 +518,7 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
 /* Read at most 64 relative paths in one process. No bytes, hydration or
  * mutation; failed rows keep their position and never imply a clean file.
  * Validate the complete bounded input before opening any file. */
-int filees_cfapi_file_states(const WCHAR *root)
+static int states(const WCHAR *root, int tree)
 {
     WCHAR relatives[64][FILEES_CFAPI_MAX_PATH];
     char line[FILEES_CFAPI_MAX_LINE];
@@ -449,7 +544,7 @@ int filees_cfapi_file_states(const WCHAR *root)
     printf("{\"schema\":\"" FILEES_CFAPI_SCHEMA "\",\"ok\":true,\"states\":[");
     for (i = 0; i < count; ++i) {
         struct state state;
-        HRESULT hr = read_state(root, relatives[i], &state);
+        HRESULT hr = read_state_mode(root, relatives[i], &state, tree);
         if (i) putchar(',');
         if (SUCCEEDED(hr)) print_state(&state);
         else printf("{\"ok\":false,\"hresult\":\"0x%08lx\"}", (unsigned long)hr);
@@ -458,6 +553,9 @@ int filees_cfapi_file_states(const WCHAR *root)
     fflush(stdout);
     return 0;
 }
+
+int filees_cfapi_file_states(const WCHAR *root) { return states(root, 0); }
+int filees_cfapi_tree_states(const WCHAR *root) { return states(root, 1); }
 
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean)
 {

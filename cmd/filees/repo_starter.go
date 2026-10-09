@@ -509,6 +509,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, operation func() error, complete func() error) error {
 		return service.WithFileRelease(ctx, wc, rel, recovery, operation, complete)
 	})
+	runtimeRepo.state.SetTreeMutationFunc(func(ctx context.Context, source, destination string, recovery *watcher.TreeMoveSnapshot, operation func(*watcher.TreeMoveSnapshot) error, complete func() error) error {
+		return service.WithRemoteTreeMove(ctx, wc, source, destination, recovery, operation, complete)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	var canonicalPlan *canonicalRecoveryJob
@@ -551,6 +554,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetAdoptFunc(nil)
 			runtimeRepo.state.SetLocalStatusFunc(nil)
 			runtimeRepo.state.SetFileReleaseFunc(nil)
+			runtimeRepo.state.SetTreeMutationFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
@@ -612,6 +616,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		runtimeRepo.state.SetAdoptFunc(nil)
 		runtimeRepo.state.SetLocalStatusFunc(nil)
 		runtimeRepo.state.SetFileReleaseFunc(nil)
+		runtimeRepo.state.SetTreeMutationFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
 		runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)

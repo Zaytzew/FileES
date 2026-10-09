@@ -32,6 +32,7 @@
       <div class="hb-hero-actions">
         <button id="hb-fill" type="button" class="primary-button" hidden data-i18n="headBrowser.fill">Pobierz cały folder</button>
         <button id="hb-open-copy" type="button" class="quiet-button" hidden data-i18n="headBrowser.openCopy">Otwórz kopię na tym komputerze</button>
+        <button id="hb-recover-move" type="button" class="quiet-button" hidden data-i18n="headBrowser.recoverMove">Sprawdź przerwane przeniesienie</button>
       </div>
     </section>
 
@@ -44,6 +45,17 @@
     </section>
   </main>
   <div id="hb-toasts" class="toast-stack" aria-live="polite"></div>
+  <dialog id="hb-move-dialog" class="content-card">
+    <form id="hb-move-form">
+      <h2 data-i18n="headBrowser.move">Przenieś / zmień nazwę</h2>
+      <p id="hb-move-source"></p>
+      <label for="hb-move-target" data-i18n="headBrowser.moveTarget">Nowa ścieżka w repozytorium (wraz z nazwą folderu)</label>
+      <input id="hb-move-target" type="text" maxlength="4096" required autocomplete="off" spellcheck="false">
+      <p data-i18n="headBrowser.moveHint">Folder nadrzędny musi już istnieć. Przykład: 01_PROJEKT/DOKUMENTY_FORMALNE. Zdalne pliki nie będą pobierane.</p>
+      <button type="submit" class="primary-button" data-i18n="headBrowser.moveContinue">Sprawdź i kontynuuj</button>
+      <button id="hb-move-cancel" type="button" class="quiet-button" data-i18n="headBrowser.moveCancel">Anuluj</button>
+    </form>
+  </dialog>
   <script type="module" src="./headbrowser.js"></script>
 </body>
 </html>

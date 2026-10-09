@@ -42,6 +42,12 @@ type headBrowserBatchDaemon interface {
 	AnchorBatch(context.Context, contract.RepoAnchorBatchPayload) (*contract.RepoAnchorBatchResult, error)
 }
 
+type headBrowserMoveDaemon interface {
+	AnchorMovePlan(context.Context, contract.RepoAnchorMoveSelection) (*contract.RepoAnchorMovePlan, error)
+	AnchorMove(context.Context, contract.RepoAnchorMovePayload) (*contract.RepoAnchorMoveResult, error)
+	AnchorMoveRecover(context.Context, contract.RepoAnchorMoveSelection) (*contract.RepoAnchorMoveResult, error)
+}
+
 // HeadBrowserService serves the "Browse on the server" window
 // (implementation notes (not distributed)): the tree of a repository with
 // no copy on this computer, or with only chosen paths. Like the time machine
@@ -88,6 +94,7 @@ type HeadBrowserRepository struct {
 	Sparse     bool   `json:"sparse"`
 	CanRelease bool   `json:"can_release"`
 	CanBatch   bool   `json:"can_batch"`
+	CanMove    bool   `json:"can_move"`
 	LocalPath  string `json:"local_path,omitempty"`
 }
 
@@ -120,11 +127,12 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 	if !snapshot.Connected || snapshot.Stale {
 		return HeadBrowserRepository{}, false
 	}
-	offered, releaseOffered, batchOffered := false, false, false
+	offered, releaseOffered, batchOffered, moveOffered := false, false, false, false
 	for _, capability := range snapshot.Capabilities {
 		offered = offered || capability == contract.CapRepoHeadBrowse
 		releaseOffered = releaseOffered || capability == contract.CapRepoAnchorRelease
 		batchOffered = batchOffered || capability == contract.CapRepoAnchorBatch
+		moveOffered = moveOffered || capability == contract.CapRepoAnchorMove
 	}
 	if !offered {
 		return HeadBrowserRepository{}, false
@@ -148,6 +156,7 @@ func (service *HeadBrowserService) lookup(serverID, repoID string) (HeadBrowserR
 			Attached: repo.Attached, Sparse: repo.Sparse, LocalPath: repo.LocalPath,
 			CanRelease: repo.Attached && repo.Sparse && releaseOffered,
 			CanBatch:   repo.Attached && repo.Sparse && batchOffered,
+			CanMove:    repo.Attached && repo.Sparse && repo.Access == "rw" && moveOffered,
 		}, true
 	}
 	return HeadBrowserRepository{}, false

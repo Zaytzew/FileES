@@ -4,6 +4,8 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "head.move_read_only": "Vous ne pouvez pas modifier ce dépôt actuellement.",
+    "head.move_refused": "Le dossier ne peut pas être déplacé en toute sécurité. Fermez les programmes qui l’utilisent et attendez la fin du téléchargement ou de la publication. Vérifiez le journal ; ne supprimez rien manuellement.",
     "head.folder_path_missing": "Certains fichiers du dépôt sont absents de ce dossier. Vérifiez les suppressions en attente et les détails du journal. FileES ne les restaure pas et ne les ignore pas lors du téléchargement de tout le dossier.",
     "head.folder_changed": "Le contenu ou l’emplacement du dossier a changé au-delà de la sélection confirmée. Sélectionnez à nouveau le dossier et confirmez l’action.",
     "head.folder_busy": "Le dossier termine une écriture. Attendez qu’elle soit terminée.",

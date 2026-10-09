@@ -59,6 +59,10 @@ void filees_bridge_say_state_set(const char *id, HRESULT hr);
 void filees_bridge_say_release_prepared(const char *id, HRESULT hr);
 void filees_bridge_say_release_restored(const char *id, HRESULT hr);
 void filees_bridge_say_tree_set(const char *id, HRESULT hr);
+void filees_bridge_say_tree_move(const char *id, HRESULT hr);
+void filees_bridge_say_tree_identity(const char *id, HRESULT hr);
+void filees_remote_rename_begin(DWORD volume, ULONGLONG file_id);
+void filees_remote_rename_end(void);
 void filees_remote_delete_begin(DWORD volume, ULONGLONG file_id);
 void filees_remote_delete_end(void);
 int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG offset, LONGLONG length,
@@ -84,6 +88,7 @@ HRESULT filees_own_sync_root(const WCHAR *root);
 int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_file_states(const WCHAR *root);
+int filees_cfapi_tree_states(const WCHAR *root);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);
@@ -91,6 +96,11 @@ HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLON
 int filees_local_identity(const void *identity, DWORD length);
 HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
                            const WCHAR *identity, LONGLONG size, int directory, int remove);
+/* Connected-provider-only, exact FileID. Physical directory move and identity
+ * retarget never read file data; coordinator owns all descendants and receipt. */
+HRESULT filees_move_tree(const WCHAR *root, const WCHAR *source, const WCHAR *destination, const char *expected_id);
+HRESULT filees_move_identity(const WCHAR *root, const WCHAR *relative, const char *expected_id,
+                             const WCHAR *previous, const WCHAR *identity);
 
 #ifdef __cplusplus
 }

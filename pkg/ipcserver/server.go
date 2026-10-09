@@ -59,6 +59,7 @@ type Server struct {
 	anchorDownload       AnchorDownload
 	anchorRelease        AnchorRelease
 	anchorBatch          AnchorBatchService
+	anchorMove           AnchorMoveService
 	anchorConsent        AnchorConsent
 	virtualFolders       VirtualFoldersService
 	partialAnchor        bool
@@ -422,6 +423,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.anchorBatchService() != nil {
 		caps = append(caps, contract.CapRepoAnchorBatch)
+	}
+	if s.anchorMoveService() != nil {
+		caps = append(caps, contract.CapRepoAnchorMove)
 	}
 	if s.anchorConsentHandler() != nil {
 		caps = append(caps, contract.CapRepoAnchorConsent)

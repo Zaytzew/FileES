@@ -193,7 +193,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	for reader.Scan() {
 		line := strings.TrimSpace(reader.Text())
 		switch {
-		case strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"):
+		case strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"), strings.HasPrefix(line, "tree-moved\t"), strings.HasPrefix(line, "tree-identity\t"):
 			fields := strings.Split(line, "\t")
 			if len(fields) == 3 {
 				bridge.stateMu.Lock()

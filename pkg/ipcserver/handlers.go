@@ -166,6 +166,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleAnchorBatch(req, false)
 	case contract.CmdRepoAnchorBatch:
 		return s.handleAnchorBatch(req, true)
+	case contract.CmdRepoAnchorMovePlan, contract.CmdRepoAnchorMove, contract.CmdRepoAnchorMoveRecover:
+		return s.handleAnchorMove(req)
 	case contract.CmdRepoAnchorConsent:
 		return s.handleAnchorConsent(req)
 	case contract.CmdRepoHistoryFetch:

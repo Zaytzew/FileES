@@ -247,6 +247,8 @@ var specs = []Spec{
 	{"HEAD-2021", "head.folder_wait_timeout", SevWarn, HintRetryLocal, nil, "Bounded folder wait expired"},
 	{"HEAD-2022", "head.folder_permission", SevError, HintRequireAction, nil, "Filesystem access to the selected folder was denied"},
 	{"HEAD-2023", "head.folder_path_missing", SevError, HintRequireAction, nil, "A repository path is missing locally; refuse without restoring or skipping it"},
+	{"HEAD-2024", "head.move_read_only", SevError, HintNone, nil, "Tree mutation requires current read-write access"},
+	{"HEAD-2025", "head.move_refused", SevError, HintRequireAction, nil, "Tree move preflight or proof was refused without a speculative replay"},
 	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},

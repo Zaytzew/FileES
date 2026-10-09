@@ -52,6 +52,12 @@ svn_error_t *filees_unschedule_move(const char *wc_arg, const char *old_rel,
                                     const char *new_rel, svn_boolean_t live,
                                     const char **state, apr_pool_t *pool);
 
+/* Offline tree metadata phases; exact remote receipt and physical object pins
+ * are coordinator preconditions, NOT implied by a helper success. */
+svn_error_t *filees_local_tree(const char *phase, const char *wc, svn_boolean_t live,
+    const char *root, const char *uuid, svn_revnum_t base, svn_revnum_t revision,
+    const char *source, const char *destination, apr_pool_t *pool);
+
 /* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
 svn_error_t *filees_remote_tree_move(const char *root, const char *uuid,
     svn_revnum_t base, const char *marker, const char *message,

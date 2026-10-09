@@ -3,7 +3,7 @@ import * as HeadBrowser from "./bindings/filees/cmd/filees-gui-wails/headbrowser
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, getLocale } from "./i18n.js";
 import { formatBytes, breadcrumb, joinPath, parentPath } from "./timemachine-view.js";
-import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey } from "./headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey, moveAllowed } from "./headbrowser-view.js";
 
 // Przeglądaj na serwerze (implementation notes (not distributed)). The page
 // asks the daemon for everything through HeadBrowserService: the folder at
@@ -52,6 +52,8 @@ async function loadRepository() {
 }
 
 async function open(context) {
+  $("#hb-move-dialog").close();
+  moveDialogScope=null;
   const token = ++state.token;
   state.path = "";
   state.entries = [];
@@ -100,7 +102,8 @@ function renderHeader() {
   $("#hb-status").textContent = repo ? t(copyStatusKey(repo)) : "";
   $("#hb-fill").hidden = !(repo?.attached && repo?.sparse);
   $("#hb-open-copy").hidden = !repo?.attached;
-  for (const button of ["#hb-fill", "#hb-open-copy"]) $(button).disabled = Boolean(state.busy);
+  $("#hb-recover-move").hidden = !repo?.can_move;
+  for (const button of ["#hb-fill", "#hb-open-copy", "#hb-recover-move"]) $(button).disabled = Boolean(state.busy);
 }
 
 function renderEntries() {
@@ -134,6 +137,7 @@ function renderEntries() {
     const size = dir ? "" : escapeHTML(formatBytes(entry.size ?? 0, getLocale()));
     const local = availability ? `<span class="hb-local is-${contentState}">${escapeHTML(t(availability))}</span>` : "<span></span>";
     const actions = [
+      moveAllowed(state.repo,entry) ? `<button type="button" class="quiet-button" data-move="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.move"))}</button>` : "",
       dir ? "" : `<button type="button" class="quiet-button" data-preview="${escapeHTML(path)}" title="${escapeHTML(t("headBrowser.previewHint"))}"${disabled}>${escapeHTML(t("headBrowser.preview"))}</button>`,
       entry.local ? `<button type="button" class="quiet-button" data-open-local="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.openLocal"))}</button>` : "",
       materializeAllowed(state.repo, entry) ? `<button type="button" class="primary-button" data-materialize="${escapeHTML(path)}"${disabled}>${escapeHTML(t("headBrowser.materialize"))}</button>` : "",
@@ -200,6 +204,7 @@ async function release(path) {
   await list(state.path);
 }
 
+let moveDialogScope=null;
 $("#hb-entries").addEventListener("click", event => {
   const target = event.target.closest("button");
   if (!target || target.disabled) return;
@@ -208,6 +213,27 @@ $("#hb-entries").addEventListener("click", event => {
   else if (target.dataset.openLocal !== undefined) HeadBrowser.OpenLocal(target.dataset.openLocal).catch(error => toast(errorText(error)));
   else if (target.dataset.materialize !== undefined) materialize(target.dataset.materialize);
   else if (target.dataset.release !== undefined) release(target.dataset.release);
+  else if (target.dataset.move !== undefined) {
+    moveDialogScope={token:state.token,server:state.repo.server_id,repo:state.repo.repo_id};
+    $("#hb-move-source").textContent=target.dataset.move;
+    $("#hb-move-target").value=target.dataset.move;
+    $("#hb-move-dialog").showModal();
+    $("#hb-move-target").focus();
+  }
+});
+$("#hb-move-form").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const source=$("#hb-move-source").textContent, destination=$("#hb-move-target").value;
+  $("#hb-move-dialog").close();
+  const scope=moveDialogScope;moveDialogScope=null;
+  if (!scope || scope.token!==state.token || scope.server!==state.repo?.server_id || scope.repo!==state.repo?.repo_id) return;
+  await withBusy("headBrowser.moving",()=>HeadBrowser.MoveFolder(source,destination));
+  await list(state.path);
+});
+$("#hb-move-cancel").addEventListener("click",()=>$("#hb-move-dialog").close());
+$("#hb-recover-move").addEventListener("click",async()=>{
+  await withBusy("headBrowser.moving",()=>HeadBrowser.RecoverMove());
+  await list(state.path);
 });
 $("#hb-breadcrumb").addEventListener("click", event => {
   const target = event.target.closest("[data-open-path]");
@@ -221,7 +247,7 @@ $("#hb-close").addEventListener("click", () => HeadBrowser.Close());
 // Explorer can hydrate/release while this window remains open. Refresh when
 // returning to it, without a timer, overlapping calls or a flashing list.
 window.addEventListener("focus", () => {
-  if (state.repo && !state.busy && !state.loading) return list(state.path, true);
+  if (state.repo && !state.busy && !state.loading && !$("#hb-move-dialog").open) return list(state.path, true);
 });
 
 Events.On("filees:head-browser-context", event => open(event?.data ?? event));

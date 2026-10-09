@@ -44,6 +44,14 @@ export function Release(path) {
     return $Call.ByID(1622697256, path);
 }
 
+export function MoveFolder(source, destination) {
+    return $Call.ByID(3431692106, source, destination);
+}
+
+export function RecoverMove() {
+    return $Call.ByID(1345854232);
+}
+
 export function Operation(operationID) {
     return $Call.ByID(2266335560, operationID);
 }

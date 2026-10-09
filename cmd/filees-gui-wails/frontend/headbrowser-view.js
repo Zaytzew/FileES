@@ -53,3 +53,7 @@ export function releaseAllowed(repo, entry) {
 export function materializeAllowed(repo, entry) {
   return !entry?.local || Boolean(repo?.can_batch && entry?.kind === "dir");
 }
+
+export function moveAllowed(repo,entry) {
+  return Boolean(repo?.can_move && repo?.attached && repo?.sparse && repo?.access==="rw" && entry?.kind==="dir");
+}

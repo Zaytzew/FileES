@@ -78,11 +78,12 @@ func (s *Service) WithRemoteTreeMutation(ctx context.Context, wc string, recover
 // Internal tree coordinator entry, retaining the real writer AND scanner
 // locks through the callback and durable baseline ACK. No fallback without a
 // publication scanner. This does not retire the owner's pending marker.
-func (s *Service) WithRemoteTreeMove(ctx context.Context, wc, source, destination string, recovery *watcher.TreeMoveSnapshot, operation func(*watcher.TreeMoveSnapshot) error) error {
-	if operation == nil {
+func (s *Service) WithRemoteTreeMove(ctx context.Context, wc, source, destination string, recovery *watcher.TreeMoveSnapshot, operation func(*watcher.TreeMoveSnapshot) error, completion ...func() error) error {
+	if operation == nil || len(completion) > 1 {
 		return errors.New("missing tree move coordinator")
 	}
 	return s.WithRemoteTreeMutation(ctx, wc, recovery != nil, func() error {
+		var err error
 		if recovery != nil {
 			if recovery.WC != wc || recovery.Source != source || recovery.Destination != destination {
 				return errors.New("tree recovery selection differs from its bound snapshot")
@@ -90,11 +91,24 @@ func (s *Service) WithRemoteTreeMove(ctx context.Context, wc, source, destinatio
 			if s.RecoverTreeMove == nil {
 				return errors.ErrUnsupported
 			}
-			return s.RecoverTreeMove(ctx, recovery, func() error { return operation(recovery) })
+			err = s.RecoverTreeMove(ctx, recovery, func() error { return operation(recovery) })
+		} else {
+			if s.FenceTreeMove == nil {
+				return errors.ErrUnsupported
+			}
+			err = s.FenceTreeMove(ctx, source, destination, operation)
 		}
-		if s.FenceTreeMove == nil {
-			return errors.ErrUnsupported
+		if err != nil {
+			return err
 		}
-		return s.FenceTreeMove(ctx, source, destination, operation)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Scanner ACK is now durable; keep the real writer while the private
+		// coordinator verifies completion and retires only its exact fence.
+		if len(completion) == 1 && completion[0] != nil {
+			return completion[0]()
+		}
+		return nil
 	})
 }

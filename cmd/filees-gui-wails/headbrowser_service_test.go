@@ -134,7 +134,7 @@ func TestHeadBrowserFrontendBindingUsesBuildContextIDs(t *testing.T) {
 	// import path instead, so an ID read from bindings here would differ from
 	// the one the application answers to - which is exactly how r1450 shipped
 	// with "unknown bound method id" behind every button of this window.
-	for _, method := range []string{"Open", "Context", "Repository", "List", "Preview", "OpenLocal", "Materialize", "Fill", "Release", "Operation", "Close"} {
+	for _, method := range []string{"Open", "Context", "Repository", "List", "Preview", "OpenLocal", "Materialize", "Fill", "Release", "MoveFolder", "RecoverMove", "Operation", "Close"} {
 		if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.HeadBrowserService." + method}) == nil {
 			t.Fatalf("binding not found: %s", method)
 		}

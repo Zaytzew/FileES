@@ -16,6 +16,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/watcher"
 )
 
 // RepoState holds the live runtime state of one repo, updated by the daemon.
@@ -77,6 +78,7 @@ type RepoState struct {
 	adoptFn                  func(ctx context.Context, rel string, revision int64) error
 	localStatusFn            func(context.Context, []string, func([]client.StatusEntry) error) error
 	fileReleaseFn            func(context.Context, string, bool, func() error, func() error) error
+	treeMutationFn           func(context.Context, string, string, *watcher.TreeMoveSnapshot, func(*watcher.TreeMoveSnapshot) error, func() error) error
 	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)

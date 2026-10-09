@@ -4,6 +4,8 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "head.move_read_only": "Sie dürfen dieses Repository derzeit nicht ändern.",
+    "head.move_refused": "Der Ordner lässt sich nicht sicher verschieben. Schließen Sie Programme, die ihn verwenden, und warten Sie auf Downloads oder Veröffentlichungen. Prüfen Sie das Protokoll; löschen Sie nichts manuell.",
     "head.folder_path_missing": "Einige Dateien aus dem Repository fehlen in diesem Ordner. Prüfen Sie ausstehende Löschungen und die Details im Protokoll. FileES stellt sie weder wieder her noch überspringt es sie beim Herunterladen des gesamten Ordners.",
     "head.folder_changed": "Inhalt oder Speicherort des Ordners haben sich über die bestätigte Auswahl hinaus geändert. Wählen Sie den Ordner erneut und bestätigen Sie die Aktion.",
     "head.folder_busy": "Der Ordner schließt einen Schreibvorgang ab. Warten Sie, bis er beendet ist.",

@@ -4,6 +4,8 @@
   "name": "English",
   "dictionary_version": "1",
   "messages": {
+    "head.move_read_only": "You do not currently have permission to change this repository.",
+    "head.move_refused": "The folder cannot be moved safely. Close programs using it and wait for downloading or publication to finish. Check the journal details; do not delete anything manually.",
     "head.folder_path_missing": "Some repository files are missing from this folder. Check pending deletions and the journal details. FileES will neither restore them nor skip them when downloading the whole folder.",
     "head.folder_changed": "The folder contents or location changed beyond the confirmed selection. Select the folder again and confirm the action.",
     "head.folder_busy": "The folder is completing a write. Wait for it to finish.",

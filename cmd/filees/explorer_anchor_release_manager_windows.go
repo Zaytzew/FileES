@@ -23,6 +23,7 @@ func anchorReleaseLocation(r localrepo.Record) anchorReleaseIdentity {
 func (m *anchorManager) wireRelease(ipc *ipcserver.Server) {
 	ipc.SetAnchorRelease(m.release)
 	ipc.SetAnchorBatch(anchorBatchAdapter{manager: m})
+	m.wireTreeMove(ipc)
 }
 
 func (m *anchorManager) enterReleaseIntent() (func(), error) {

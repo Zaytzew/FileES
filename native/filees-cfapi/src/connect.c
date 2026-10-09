@@ -281,6 +281,37 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     trace("delete acknowledgement", hr);
 }
 
+static SRWLOCK g_rename_lock = SRWLOCK_INIT;
+static DWORD g_rename_volume;
+static ULONGLONG g_rename_file;
+static int g_rename_active;
+
+void filees_remote_rename_begin(DWORD volume, ULONGLONG file_id)
+{
+    AcquireSRWLockExclusive(&g_rename_lock);
+    g_rename_volume = volume; g_rename_file = file_id; g_rename_active = 1;
+    ReleaseSRWLockExclusive(&g_rename_lock);
+}
+
+void filees_remote_rename_end(void)
+{
+    AcquireSRWLockExclusive(&g_rename_lock);
+    g_rename_active = 0;
+    ReleaseSRWLockExclusive(&g_rename_lock);
+}
+
+static int own_remote_rename(const CF_CALLBACK_INFO *info)
+{
+    int allowed;
+    AcquireSRWLockShared(&g_rename_lock);
+    allowed = g_rename_active && info->ProcessInfo &&
+        info->ProcessInfo->ProcessId == GetCurrentProcessId() &&
+        info->VolumeSerialNumber == g_rename_volume &&
+        (ULONGLONG)info->FileId.QuadPart == g_rename_file;
+    ReleaseSRWLockShared(&g_rename_lock);
+    return allowed;
+}
+
 static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
 {
     CF_OPERATION_INFO operation;
@@ -291,7 +322,7 @@ static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckRename);
     answer.AckRename.Flags = CF_OPERATION_ACK_RENAME_FLAG_NONE;
-    answer.AckRename.CompletionStatus = filees_local_identity(info->FileIdentity, info->FileIdentityLength)
+    answer.AckRename.CompletionStatus = (filees_local_identity(info->FileIdentity, info->FileIdentityLength) || own_remote_rename(info))
         ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
     hr = CfExecute(&operation, &answer);
     trace("rename acknowledgement", hr);
@@ -361,7 +392,26 @@ int filees_cfapi_connect(const WCHAR *root)
         size_t length = strlen(line);
         while (length && (line[length - 1] == '\n' || line[length - 1] == '\r')) line[--length] = '\0';
         if (!length) continue;
-        if (!strncmp(line, "tree-set\t", 9)) {
+        if (!strncmp(line, "tree-move\t", 10) || !strncmp(line, "tree-identity\t", 14)) {
+            int retarget = !strncmp(line, "tree-identity\t", 14), i, count = retarget ? 5 : 4;
+            char *parts[5], *next = line + (retarget ? 14 : 10);
+            WCHAR first[FILEES_CFAPI_MAX_PATH], second[FILEES_CFAPI_MAX_PATH], third[FILEES_CFAPI_MAX_IDENTITY];
+            hr = E_INVALIDARG;
+            for (i = 0; i < count && next; ++i) {
+                parts[i] = next; next = strchr(next, '\t'); if (next) *next++ = 0;
+            }
+            if (i == count && !next && *parts[0] &&
+                filees_cfapi_widen(parts[1], first, FILEES_CFAPI_MAX_PATH)) {
+                if (retarget && filees_cfapi_widen(parts[3], second, FILEES_CFAPI_MAX_PATH) &&
+                    filees_cfapi_widen(parts[4], third, FILEES_CFAPI_MAX_IDENTITY))
+                    hr = filees_move_identity(g_root, first, parts[2], second, third);
+                else if (!retarget && filees_cfapi_widen(parts[2], second, FILEES_CFAPI_MAX_PATH))
+                    hr = filees_move_tree(g_root, first, second, parts[3]);
+            }
+            if (retarget) filees_bridge_say_tree_identity(line + 14, hr);
+            else filees_bridge_say_tree_move(line + 10, hr);
+        }
+        else if (!strncmp(line, "tree-set\t", 9)) {
             char *parts[7], *next = line + 9;
             WCHAR rel[FILEES_CFAPI_MAX_PATH], old[FILEES_CFAPI_MAX_IDENTITY], identity[FILEES_CFAPI_MAX_IDENTITY];
             LONGLONG size = 0;

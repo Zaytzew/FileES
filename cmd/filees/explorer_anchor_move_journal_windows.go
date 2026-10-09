@@ -28,6 +28,7 @@ type anchorMoveIntent struct {
 	Root                               anchorReleaseFileID
 	Move                               client.RemoteTreeMove
 	ScannerSHA256                      string
+	ObjectsSHA256                      string
 }
 
 type anchorMoveReceipt struct {
@@ -45,7 +46,7 @@ func anchorMoveStateDir(record localrepo.Record) string {
 }
 
 func validateAnchorMoveIntent(in anchorMoveIntent, record localrepo.Record, root anchorReleaseFileID) error {
-	if in.Schema != "filees.anchor-move-intent/v2" || in.ServerID == "" || in.RepoID == "" || in.AttachmentID == "" ||
+	if (in.Schema != "filees.anchor-move-intent/v2" && in.Schema != "filees.anchor-move-intent/v3") || in.ServerID == "" || in.RepoID == "" || in.AttachmentID == "" ||
 		in.ServerID != record.ServerID || in.RepoID != record.RepoID || in.AttachmentID != record.OperationID ||
 		in.WC != record.LocalPath || in.Move.RootURL != record.RepoURL || in.Root != root || root.Index == 0 ||
 		!filepath.IsAbs(in.WC) || filepath.Clean(in.WC) != in.WC {
@@ -54,6 +55,14 @@ func validateAnchorMoveIntent(in anchorMoveIntent, record localrepo.Record, root
 	digest, err := hex.DecodeString(in.ScannerSHA256)
 	if err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != in.ScannerSHA256 {
 		return errors.New("tree move lacks its immutable scanner digest")
+	}
+	if in.Schema == "filees.anchor-move-intent/v3" {
+		digest, err = hex.DecodeString(in.ObjectsSHA256)
+		if err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != in.ObjectsSHA256 {
+			return errors.New("tree move lacks its object digest")
+		}
+	} else if in.ObjectsSHA256 != "" {
+		return errors.New("legacy tree move contains unrelated object proof")
 	}
 	return client.ValidateRemoteTreeMove(in.Move)
 }
@@ -159,7 +168,7 @@ func readAnchorMoveIntent(ctx context.Context, record localrepo.Record, root anc
 // prepare/send is one internal callback under Service.WithRemoteTreeMove
 // and a future exact local subtree guard. Every marker precedes its
 // external effect. Once created, no marker is replaced, deleted or timed out.
-func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, snapshot *watcher.TreeMoveSnapshot, svn client.RemoteTreeMover) (*client.RemoteTreeReceipt, error) {
+func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, snapshot *watcher.TreeMoveSnapshot, svn client.RemoteTreeMover, objects ...*anchorMoveObjects) (*client.RemoteTreeReceipt, error) {
 	if svn == nil || !svn.RemoteTreeMovesEnabled() {
 		return nil, errors.New("native tree move unavailable")
 	}
@@ -174,11 +183,24 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 	}
 	in := anchorMoveIntent{Schema: "filees.anchor-move-intent/v2", ServerID: record.ServerID, RepoID: record.RepoID,
 		AttachmentID: record.OperationID, WC: record.LocalPath, Root: root, Move: move, ScannerSHA256: digest}
+	if len(objects) > 1 {
+		return nil, errors.New("tree move has multiple object proofs")
+	}
+	if len(objects) == 1 {
+		if err := validateMoveObjects(objects[0], record, root, move); err != nil {
+			return nil, err
+		}
+		in.Schema = "filees.anchor-move-intent/v3"
+		in.ObjectsSHA256, err = moveObjectsDigest(objects[0])
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := validateAnchorMoveIntent(in, record, root); err != nil {
 		return nil, err
 	}
 	dir := anchorMoveStateDir(record)
-	for _, name := range []string{commit.FileReleasePendingName, commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveReceiptName, anchorMoveScannerName} {
+	for _, name := range []string{commit.FileReleasePendingName, commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveReceiptName, anchorMoveScannerName, anchorMoveObjectsName, anchorMoveCompleteName} {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			return nil, errors.New("tree move has pending or unreadable evidence; inspect, do not replay")
 		}
@@ -191,6 +213,11 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 	}
 	if err := writeAnchorReleaseJSONFileLimit(dir, anchorMoveScannerName, snapshot, anchorMoveScannerLimit); err != nil {
 		return nil, err
+	}
+	if len(objects) == 1 {
+		if err := writeAnchorReleaseJSONFileLimit(dir, anchorMoveObjectsName, objects[0], anchorMoveObjectsLimit); err != nil {
+			return nil, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -206,6 +233,16 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 		return nil, err
 	}
 	defer closeAnchorMoveEvidence(files)
+	if len(objects) == 1 {
+		f, _, err := openAnchorReleaseFile(filepath.Join(dir, anchorMoveObjectsName), false)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		if _, err := readMoveObjects(ctx, record, in); err != nil {
+			return nil, err
+		}
+	}
 	checked, sent, saved, err := readAnchorMoveIntent(ctx, record, root)
 	if err != nil || checked != in || !sent || saved != nil {
 		return nil, errors.Join(err, errors.New("tree move evidence changed before send"))

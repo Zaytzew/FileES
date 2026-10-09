@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey } from "../frontend/headbrowser-view.js";
+import { entryType, sortEntries, copyStatusKey, releaseOffered, releaseAllowed, materializeAllowed, availabilityKey, moveAllowed } from "../frontend/headbrowser-view.js";
+
+test("folder move is offered only by an attached writable virtual-folder daemon",()=>{
+ const repo={can_move:true,attached:true,sparse:true,access:"rw"},dir={kind:"dir"};
+ assert.equal(moveAllowed(repo,dir),true);
+ for(const field of ["can_move","attached","sparse"]) assert.equal(moveAllowed({...repo,[field]:false},dir),false);
+ assert.equal(moveAllowed({...repo,access:"r"},dir),false);
+ assert.equal(moveAllowed(repo,{kind:"file"}),false);
+});
 
 test("directory badges describe content, never just the local skeleton", () => {
   for (const value of ["remote", "hybrid", "local"]) {

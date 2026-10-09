@@ -152,6 +152,7 @@ func anchorHelperPath() string {
 
 // cfapiAnswer is the helper's one JSON object.
 type cfapiAnswer struct {
+	Features    []string      `json:"features"`
 	OK          bool          `json:"ok"`
 	Detail      string        `json:"detail"`
 	Error       string        `json:"error"`
@@ -160,6 +161,9 @@ type cfapiAnswer struct {
 	Ours        bool          `json:"ours"`
 	Status      int           `json:"status"`
 	Placeholder bool          `json:"placeholder"`
+	Directory   bool          `json:"directory"`
+	OnDisk      int64         `json:"on_disk"`
+	Modified    int64         `json:"modified"`
 	Partial     bool          `json:"partial"`
 	InSync      bool          `json:"in_sync"`
 	Local       bool          `json:"local"`
@@ -456,6 +460,9 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					}
 					m.mu.Unlock()
 					if ok && connection.ctx == ctx {
+						m.recoverConnectedTreeMove(providerCtx, record, bridge)
+						// Release recovery is a provider-lifetime loop, not a one-shot.
+						// Complete the receipted tree recovery before entering it.
 						m.recoverAnchorRelease(providerCtx, record, bridge)
 					}
 				}

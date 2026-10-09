@@ -18,8 +18,14 @@
 .hb-local { padding: 2px 8px; border-radius: 999px; color: #b8f0cf; background: rgba(46, 160, 100, .16); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .hb-local.is-remote { color: var(--text); background: rgba(78, 167, 224, .18); }
 .hb-local.is-hybrid { color: var(--text); background: rgba(255, 170, 60, .18); }
-.hb-actions { display: flex; gap: 6px; }
+.hb-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; max-width: 520px; gap: 6px; }
 .hb-actions button { padding: 5px 10px; font-size: 12px; }
 .hb-loading { display: flex; align-items: center; gap: 8px; }
 .hb-spinner { width: 15px; height: 15px; flex: 0 0 auto; border: 2px solid rgba(255, 106, 0, .2); border-top-color: var(--orange); border-radius: 50%; animation: hb-spin .8s linear infinite; }
 @keyframes hb-spin { to { transform: rotate(360deg); } }
+
+#hb-move-dialog { max-width: min(620px, 90vw); color: var(--text); background: var(--surface, #101c2d); border: 1px solid var(--line); }
+#hb-move-dialog::backdrop { background: rgba(0,0,0,.6); }
+#hb-move-target { display: block; box-sizing: border-box; width: 100%; margin: 12px 0; padding: 10px; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; }
+#hb-move-source { overflow-wrap: anywhere; }
+#hb-move-dialog p { line-height: 1.5; }

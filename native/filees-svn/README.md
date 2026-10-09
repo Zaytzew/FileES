@@ -1,5 +1,25 @@
 # FileES native SVN client — explicit platform integration
 
+Internal remote-tree prerequisite, 2026-10-09, base r2039 plus delta:
+`remote-tree-move --url ROOT --uuid UUID --revision N --operation-id UUID
+--message TEXT -- SOURCE DESTINATION` advertises `remote_tree_move_bound_v1`.
+It drives the public RA commit editor: one copyfrom at N and one deletion,
+one revision, without a WC or fetching file bytes. UUID and canonical exact
+repository root must match; HEAD must equal N before opening the editor.
+Root/private/overlapping paths, an occupied destination or absent parent
+refuse. Parents are opened once, depth-first. Server authz, hooks and locks
+remain authoritative; no lock tokens are stolen or bypassed. The operation
+does not grant a writer lease for any local WC.
+
+`filees:commit-id` and the exact callback receipt support read-only outcome
+inspection by `pkg/client/remote_tree.go`. Pre-editor failures carry
+`filees.commit-not-sent`; failures after requesting an editor are uncertain,
+even if abort_edit succeeds. Neither an absent response nor an absent marker
+permits blind replay or proves a writer can no longer finish. The future
+coordinator must durably record the intent, own its process/WC guards and
+protect/reconcile local files before exposing the action to GUI/Explorer.
+This optional primitive is not yet called by the daemon, CLI or GUI.
+
 Internal effect inspection prerequisite, 2026-10-06, base r1938 plus delta:
 `inspect-excluded --wc WC -- REL` advertises optional
 `sparse_inspect_excluded_v1`. It reads exactly one committed file through

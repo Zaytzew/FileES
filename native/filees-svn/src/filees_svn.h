@@ -53,6 +53,9 @@ svn_error_t *filees_unschedule_move(const char *wc_arg, const char *old_rel,
                                     const char **state, apr_pool_t *pool);
 
 /* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
+svn_error_t *filees_remote_tree_move(const char *root, const char *uuid,
+    svn_revnum_t base, const char *marker, const char *message,
+    const char *source, const char *destination, apr_pool_t *pool);
 svn_error_t *filees_ra_ctx(svn_client_ctx_t **ctx, apr_pool_t *pool);
 svn_error_t *filees_ra_ctx_auth(svn_client_ctx_t *ctx, apr_pool_t *pool);
 svn_error_t *filees_ra_target(const char **canonical, const char *url,

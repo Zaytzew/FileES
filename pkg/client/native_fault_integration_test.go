@@ -28,7 +28,7 @@ func init() {
 	}
 	fault := os.Getenv("FILEES_TEST_FAULT_ARM")
 	mode := ""
-	if os.Args[1] == "commit" {
+	if os.Args[1] == "commit" || os.Args[1] == "remote-tree-move" {
 		if b, err := os.ReadFile(fault); err == nil {
 			if err := os.Remove(fault); err != nil {
 				panic(err)

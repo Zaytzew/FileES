@@ -403,6 +403,14 @@ svn_error_t *svn_wc__filees_exclude_bound_v1(svn_wc_context_t *ctx, const char *
   return fr_exclude(ctx, path, retained, expected, cancel_func, cancel_baton, revision, uuid, url, pool);
 }
 
+svn_error_t *svn_wc__filees_exclude_idle_bound_v1(svn_wc_context_t *ctx, const char *path,
+    const char *retained, void *expected, svn_revnum_t revision, const char *uuid,
+    const char *url, svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *pool)
+{
+  return svn_wc__filees_exclude_bound_v1(ctx, path, retained, expected,
+                  revision, uuid, url, cancel_func, cancel_baton, pool);
+}
+
 struct fr_resume_baton {
   svn_wc_context_t *ctx;
   const char *retained, *source_id, *uuid, *url;

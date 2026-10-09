@@ -111,7 +111,7 @@ func verifyAnchorReleaseSet(source, stage, cfapi string) error {
 	if err != nil {
 		return fmt.Errorf("load staged SVN runtime: %w", err)
 	}
-	if err := verifyAnchorReleaseReceipt(raw, "filees.native-svn/v1", "", "sparse_exclude_bound_v1", "sparse_resume_bound_v1", "sparse_inspect_excluded_idle_v1", "info_inspect_remote_v1"); err != nil {
+	if err := verifyAnchorReleaseReceipt(raw, "filees.native-svn/v1", "", "sparse_exclude_bound_v1", "sparse_exclude_idle_bound_v1", "sparse_resume_bound_v1", "sparse_inspect_excluded_idle_v1", "info_inspect_remote_v1"); err != nil {
 		return err
 	}
 	raw, err = inspect(cfapi, "version")

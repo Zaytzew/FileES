@@ -67,3 +67,17 @@ func TestAnchorReleaseReceiptRequiresSchemaVersionAndAllFeatures(t *testing.T) {
 		})
 	}
 }
+
+func TestPreEffectRecoveryRequiresIdleBoundRuntimeReceipt(t *testing.T) {
+	for _, present := range []bool{false, true} {
+		features := []string{"sparse_exclude_bound_v1", "sparse_resume_bound_v1"}
+		if present {
+			features = append(features, "sparse_exclude_idle_bound_v1")
+		}
+		raw, _ := json.Marshal(map[string]any{"ok": true, "schema": "filees.native-svn/v1", "features": features})
+		err := verifyAnchorReleaseReceipt(raw, "filees.native-svn/v1", "", "sparse_exclude_idle_bound_v1")
+		if (err == nil) != present {
+			t.Fatalf("idle bound=%v: %v", present, err)
+		}
+	}
+}

@@ -3,9 +3,11 @@ package ipcserver
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"time"
 
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -55,12 +57,14 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	var actionErr error
 	if !execute {
 		plan, err := service.Plan(ctx, p.RepoAnchorPlanPayload)
 		if err == nil {
 			return contract.OKResponse(req.RequestID, plan)
 		}
 		s.lg.Warnf("Explorer folder preview refused: %v", err)
+		actionErr = err
 	} else {
 		fingerprint, err := hex.DecodeString(p.Fingerprint)
 		if err != nil || len(fingerprint) != 32 {
@@ -71,6 +75,10 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 			return contract.OKResponse(req.RequestID, result)
 		}
 		s.lg.Warnf("Explorer folder action refused: %v", err)
+		actionErr = err
+	}
+	if errors.Is(actionErr, commit.ErrFileReleasePending) || commit.HasPendingFileRelease(summary.LocalPath) {
+		return contract.ErrResponse(req.RequestID, "HEAD-2016", "ERROR", "RETRY", "head.release_pending", nil)
 	}
 	code, key := "HEAD-2015", "head.release_refused"
 	if p.Action == "download" {

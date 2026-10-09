@@ -48,6 +48,10 @@ type anchorReleaseResumer interface {
 	ResumeRetainedPath(context.Context, string, string, string, client.RetainedPathBinding) error
 }
 
+type anchorReleaseRetrySupport interface {
+	RequireRetainedRetrySupport(context.Context) error
+}
+
 func anchorReleaseBinding(r anchorReleaseRecord) (client.RetainedPathBinding, error) {
 	u, err := anchorReleaseURL(r)
 	return client.RetainedPathBinding{SourceVolume: r.Source.Volume, SourceIndex: r.Source.Index,
@@ -63,6 +67,35 @@ func resumeAnchorReleaseExclusion(ctx context.Context, j *anchorReleaseJournal, 
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	// The request was durable before the native call. A refusal before BASE
+	// changed leaves no work item to resume. Re-admit only that exact ordinary
+	// object and BASE; the new runtime rejects unrelated work atomically and
+	// repeats source/copy/repository checks under its SVN write lock.
+	if r.Phase == "exclude_requested" && checkAnchorReleaseBase(ctx, r, svn) == nil {
+		retry, ok := svn.(anchorReleaseRetrySupport)
+		if !ok {
+			return errors.New("pre-effect release recovery unavailable; preserve retained copy")
+		}
+		if err := retry.RequireRetainedRetrySupport(ctx); err != nil {
+			return err
+		}
+		if err := checkAnchorReleaseSource(ctx, r, false); err != nil {
+			return err
+		}
+		binding, err := anchorReleaseBinding(r)
+		if err != nil {
+			return err
+		}
+		retryErr := svn.ExcludeRetainedPath(ctx, r.Identity.WC, r.Identity.Rel,
+			filepath.Join(j.store, j.id, "data.bin"), binding)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := checkAnchorReleaseExclusion(ctx, r, svn); err != nil {
+			return errors.Join(retryErr, err)
+		}
+		return nil
 	}
 	resume, ok := svn.(anchorReleaseResumer)
 	if !ok {
@@ -234,7 +267,8 @@ func startAnchorRelease(ctx context.Context, store string, identity anchorReleas
 }
 
 // No generic cleanup or blind destructive replay. After exclude_requested,
-// recovery admits only the runtime's exact conditional work item, followed by
+// recovery admits the runtime's exact conditional work item, or re-admits the
+// unchanged pre-effect BASE/source with an atomic empty-queue check, followed by
 // independent idle exclusion inspection and no-replace seed restoration.
 func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorReleaseIO) (anchorReleaseRecovery, error) {
 	var out anchorReleaseRecovery

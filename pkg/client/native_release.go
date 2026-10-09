@@ -75,6 +75,18 @@ func (c *execClient) RequireRetainedResumeSupport(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// RequireRetainedRetrySupport gates a pre-effect retry on an atomic empty-queue
+// check in the bound runtime. An older runtime may only resume its saved item.
+func (c *execClient) RequireRetainedRetrySupport(ctx context.Context) error {
+	if runtime.GOOS != "windows" || !nativeWCOps(c) {
+		return errors.ErrUnsupported
+	}
+	if err := c.nativeRequireFeature(ctx, "sparse_exclude_idle_bound_v1"); err != nil {
+		return errors.Join(errors.ErrUnsupported, err)
+	}
+	return ctx.Err()
+}
+
 func (c *execClient) retainedPathOperation(ctx context.Context, verb, wc, rel, retained string, b RetainedPathBinding) error {
 	if runtime.GOOS != "windows" || !nativeWCOps(c) {
 		return errors.ErrUnsupported

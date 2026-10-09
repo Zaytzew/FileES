@@ -41,6 +41,22 @@ db = replace(db, '  if (!keep_working && !no_delete_wc)\n', '  if (!keep_working
 db = replace(db, '                                     conflict, work_items, scratch_pool),',
   '                                     conflict, work_items, FALSE, scratch_pool),');
 db = replace(db, '\nsvn_error_t *\nsvn_wc__db_base_get_info_internal(', `
+static svn_error_t *
+filees_exclude_txn(svn_wc__db_wcroot_t *wcroot, const char *rel,
+    svn_wc__db_t *db, svn_revnum_t revision, svn_skel_t *item,
+    apr_pool_t *pool)
+{
+  svn_sqlite__stmt_t *stmt;
+  svn_boolean_t row;
+  SVN_ERR(svn_sqlite__get_statement(&stmt, wcroot->sdb, STMT_FILEES_WORK_ITEMS));
+  SVN_ERR(svn_sqlite__step(&row, stmt));
+  SVN_ERR(svn_sqlite__reset(stmt));
+  if (row) return svn_error_create(SVN_ERR_WC_OBSTRUCTED_UPDATE, NULL,
+                                  "FileES exclusion refuses an existing work queue");
+  return db_base_remove(wcroot, rel, db, FALSE, FALSE, TRUE, revision,
+                        NULL, item, TRUE, pool);
+}
+
 /* FileES extension: same atomic BASE transition, never a pathname removal. */
 svn_error_t *
 svn_wc__db_filees_exclude(svn_wc__db_t *db, const char *local_abspath,
@@ -53,8 +69,8 @@ svn_wc__db_filees_exclude(svn_wc__db_t *db, const char *local_abspath,
   SVN_ERR(svn_wc__db_wcroot_parse_local_abspath(&wcroot, &local_relpath, db,
                               local_abspath, scratch_pool, scratch_pool));
   VERIFY_USABLE_WCROOT(wcroot);
-  SVN_WC__DB_WITH_TXN(db_base_remove(wcroot, local_relpath, db, FALSE,
-                      FALSE, TRUE, revision, NULL, work_item, TRUE, scratch_pool), wcroot);
+  SVN_WC__DB_WITH_TXN(filees_exclude_txn(wcroot, local_relpath, db,
+                                      revision, work_item, scratch_pool), wcroot);
   SVN_ERR(flush_entries(wcroot, local_abspath, svn_depth_empty, scratch_pool));
   return SVN_NO_ERROR;
 }
@@ -167,6 +183,13 @@ svn_wc__filees_exclude_retained_v1(svn_wc_context_t *wc_ctx,
 
 svn_error_t *
 svn_wc__filees_exclude_bound_v1(svn_wc_context_t *wc_ctx,
+    const char *local_abspath, const char *retained_abspath, void *expected_source_handle,
+    svn_revnum_t expected_revision, const char *expected_uuid, const char *expected_url,
+    svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);
+
+/* Same bound operation, with atomic refusal of any pre-existing work queue. */
+svn_error_t *
+svn_wc__filees_exclude_idle_bound_v1(svn_wc_context_t *wc_ctx,
     const char *local_abspath, const char *retained_abspath, void *expected_source_handle,
     svn_revnum_t expected_revision, const char *expected_uuid, const char *expected_url,
     svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);

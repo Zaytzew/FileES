@@ -183,6 +183,7 @@ func finishManagedAnchorRelease(ctx context.Context, j *anchorReleaseJournal, fe
 
 func (m *anchorManager) recoverAnchorRelease(ctx context.Context, record localrepo.Record, bridge *anchorBridge) {
 	previous := ""
+	pendingBefore := commit.HasPendingFileRelease(record.LocalPath)
 	for ctx.Err() == nil {
 		var err error
 		if commit.HasPendingFileRelease(record.LocalPath) {
@@ -191,6 +192,11 @@ func (m *anchorManager) recoverAnchorRelease(ctx context.Context, record localre
 		if ctx.Err() != nil {
 			return
 		}
+		pendingNow := commit.HasPendingFileRelease(record.LocalPath)
+		if pendingNow != pendingBefore && m.guardChanged != nil {
+			m.guardChanged(record.RepoID)
+		}
+		pendingBefore = pendingNow
 		if err != nil && commit.HasPendingFileRelease(record.LocalPath) && err.Error() != previous {
 			previous = err.Error()
 			m.log.Warnf("Explorer release recovery remains fenced: %v", err)
@@ -287,6 +293,9 @@ func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record
 		j = saved
 		var err error
 		fence, err = saved.persistFence(ctx)
+		if err == nil && m.guardChanged != nil {
+			m.guardChanged(record.RepoID)
+		}
 		return err
 	}
 	return repo.WithFileRelease(ctx, rel, false, func() error {

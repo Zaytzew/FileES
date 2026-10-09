@@ -95,9 +95,16 @@ typedef svn_error_t *(*bound_exclude_fn)(svn_wc_context_t *, const char *, const
 static bound_exclude_fn bound_exclude(void)
 {
     HMODULE wc = GetModuleHandleW(L"libsvn_wc-1.dll");
+    bound_exclude_fn idle = wc ? (bound_exclude_fn)GetProcAddress(wc, "svn_wc__filees_exclude_idle_bound_v1") : NULL;
+    if (idle) return idle;
     return wc ? (bound_exclude_fn)GetProcAddress(wc, "svn_wc__filees_exclude_bound_v1") : NULL;
 }
 int filees_bound_exclusion_available(void) { return bound_exclude() != NULL; }
+int filees_idle_bound_exclusion_available(void)
+{
+    HMODULE wc = GetModuleHandleW(L"libsvn_wc-1.dll");
+    return wc && GetProcAddress(wc, "svn_wc__filees_exclude_idle_bound_v1") != NULL;
+}
 typedef svn_error_t *(*bound_resume_fn)(svn_wc_context_t *, const char *, const char *, const char *,
     svn_revnum_t, const char *, const char *, svn_cancel_func_t, void *, apr_pool_t *);
 static bound_resume_fn bound_resume(void)
@@ -116,6 +123,7 @@ static svn_error_t *guard_file(const char *path, svn_boolean_t retained, apr_poo
 }
 int filees_conditional_exclusion_available(void) { return 0; }
 int filees_bound_exclusion_available(void) { return 0; }
+int filees_idle_bound_exclusion_available(void) { return 0; }
 int filees_bound_resume_available(void) { return 0; }
 #endif
 

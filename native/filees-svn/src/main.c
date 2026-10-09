@@ -39,6 +39,7 @@ static void print_ok_version(void)
     printf("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\",\"commit_not_sent_v1\",\"writer_release_v1\",\"writer_inspect_v1\",\"status_conflicted_v1\",\"sparse_exclude_retained_v1\",\"sparse_inspect_excluded_v1\",\"sparse_inspect_excluded_idle_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
+    if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
     if (filees_bound_resume_available()) printf(",\"sparse_resume_bound_v1\"");
     puts("]}");
 }

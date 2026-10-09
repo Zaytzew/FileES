@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -711,6 +712,9 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	if headRev == 0 {
 		headRev = localRev
 	}
+	// A release fence stops every ordinary writer. Project its current presence,
+	// not a historical failure: successful recovery removes this overlay.
+	state = fileReleaseState(state, attached, wc)
 
 	snap := contract.RepoStatus{
 		AnchorDownloadBlocks:   anchorBlocks,
@@ -771,7 +775,7 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		Access:           rs.access,
 		URL:              rs.url,
 		LocalPath:        rs.localPath,
-		State:            rs.state,
+		State:            fileReleaseState(rs.state, rs.attached, rs.localPath),
 		OwnerRealmID:     rs.ownerRealmID,
 		AttachmentPolicy: rs.attachmentPolicy,
 		ServerDeleted:    rs.serverDeleted, LocalCleanupPending: rs.localCleanupPending,
@@ -785,6 +789,13 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		LifecycleOperationID: rs.lifecycleOperationID, LifecycleError: rs.lifecycleError,
 		CanRetryLifecycle: rs.canRetryLifecycle, CanAbandonLifecycle: rs.canAbandonLifecycle,
 	}
+}
+
+func fileReleaseState(state string, attached bool, wc string) string {
+	if attached && wc != "" && state == contract.StateActive && commit.HasPendingFileRelease(wc) {
+		return contract.StateDegraded
+	}
+	return state
 }
 
 // --- file-reading helpers (daemon reads its own state files) ---

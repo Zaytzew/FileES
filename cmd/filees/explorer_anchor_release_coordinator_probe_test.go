@@ -51,6 +51,14 @@ func (p releaseProbeExcluder) RequireRetainedResumeSupport(ctx context.Context) 
 	return r.RequireRetainedResumeSupport(ctx)
 }
 
+func (p releaseProbeExcluder) RequireRetainedRetrySupport(ctx context.Context) error {
+	r, ok := p.anchorReleaseExcluder.(anchorReleaseRetrySupport)
+	if !ok {
+		return errors.New("fixture runtime lacks pre-effect recovery")
+	}
+	return r.RequireRetainedRetrySupport(ctx)
+}
+
 func (p releaseProbeExcluder) ResumeRetainedPath(ctx context.Context, wc, rel, retained string, b client.RetainedPathBinding) error {
 	r, ok := p.anchorReleaseExcluder.(anchorReleaseResumer)
 	if !ok {
@@ -91,7 +99,7 @@ func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target stri
 
 // Actual CFAPI and SVN in owned fixtures. No production pair, GUI or copy retirement.
 func TestAnchorReleaseCoordinatorNative(t *testing.T) {
-	for _, name := range []string{"normal", "empty", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
+	for _, name := range []string{"normal", "empty", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "exclude-refused", "exclude-refused-source-changed", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			repo, source, point, store := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point"), filepath.Join(root, "evidence")
@@ -173,6 +181,9 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}}
 			ops.svn = releaseProbeExcluder{anchorReleaseExcluder: svn, exclude: func(ctx context.Context, wc, rel, retained string, b client.RetainedPathBinding) error {
 				excludes++
+				if (name == "exclude-refused" || name == "exclude-refused-source-changed") && excludes == 1 {
+					return errors.New("fixture: native admission refused before BASE transition")
+				}
 				if name == "defer-after-base" || name == "crash-after-base" {
 					mode := "defer"
 					if name == "crash-after-base" {
@@ -331,10 +342,17 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			if got, err := os.ReadFile(filepath.Join(store, j.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
 				t.Fatal("retained bytes lost")
 			}
-			if name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
+			if name == "exclude-refused-source-changed" {
+				changed := append([]byte(nil), body...)
+				changed[0] ^= 32
+				if err := os.WriteFile(path, changed, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if name == "exclude-refused" || name == "exclude-refused-source-changed" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
 				fresh := &anchorReleaseJournal{store: store, identity: identity, id: j.id}
 				out, err = fresh.advanceRelease(t.Context(), ops)
-				want := name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base"
+				want := name == "exclude-refused" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base"
 				if want && (err != nil || !out.seedObserved) {
 					t.Fatalf("fresh resume: %+v %v", out, err)
 				}
@@ -342,8 +360,22 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 					t.Fatalf("unsafe resume: %+v %v", out, err)
 				}
 			}
-			if prepares != 1 || excludes > 1 || restores > 1 {
+			maxExcludes := 1
+			if name == "exclude-refused" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
+				maxExcludes = 2 // Fresh admission, never another prepare or generic cleanup.
+			}
+			if prepares != 1 || excludes > maxExcludes || restores > 1 {
 				t.Fatalf("blind retry: %d/%d/%d", prepares, excludes, restores)
+			}
+			if name == "exclude-refused" && (excludes != 2 || restores != 1) {
+				t.Fatal("pre-effect refusal did not complete exactly once")
+			}
+			if name == "exclude-refused-source-changed" {
+				changed := append([]byte(nil), body...)
+				changed[0] ^= 32
+				if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, changed) || excludes != 1 || restores != 0 {
+					t.Fatal("changed source was retried or damaged", err)
+				}
 			}
 			if name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
 				if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, body) {

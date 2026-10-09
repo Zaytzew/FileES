@@ -473,6 +473,23 @@ Linux r898 deployment and first real two-realm move are recorded in
 the live report (implementation notes, not distributed).
 API: [Apache SVN move7](https://subversion.apache.org/docs/api/1.14/group__Move.html).
 
+### CFAPI release refusal before the BASE transition (2026-10-09)
+
+A durable `exclude_requested` may precede a native admission failure and
+leave a normal BASE with no pending work. `resume-bound` still refuses that
+case: it only executes an exact durable private item. The coordinator may
+instead re-admit the saved ordinary object after independently checking the
+recorded BASE, identity and complete source/retained bytes. This requires
+`sparse_exclude_idle_bound_v1`, advertised only with the new private runtime
+export. The BASE transaction refuses a pre-existing WORK_QUEUE atomically;
+all existing write-lock, source-handle, pristine and repository checks remain.
+Older runtimes refuse this recovery rather than attempting generic cleanup.
+Alpha packaging requires the new receipt. No new release record format.
+
+The opt-in `TestIdleBoundExclusionRefusesExistingQueue` uses
+`FILEES_TEST_SQLITE` to create foreign work only in a disposable test WC and
+verifies both queue/BASE and original/retained bytes remain unchanged.
+
 ### Recovery owner consistency (2026-09-28)
 
 `writer-inspect` / `writer_inspect_v1` returns `commit_id` under the existing

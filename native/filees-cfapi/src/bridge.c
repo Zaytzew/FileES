@@ -187,6 +187,14 @@ void filees_bridge_say_state_set(const char *id, HRESULT hr)
     LeaveCriticalSection(&g_lock);
 }
 
+void filees_bridge_say_directory_set(const char *id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("directory-set\t%s\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}
+
 void filees_bridge_say_release_prepared(const char *id, HRESULT hr)
 {
     EnterCriticalSection(&g_lock);

@@ -77,6 +77,8 @@ type RepoState struct {
 	depthFn                  func(ctx context.Context, rel, depth string) error
 	adoptFn                  func(ctx context.Context, rel string, revision int64) error
 	localStatusFn            func(context.Context, []string, func([]client.StatusEntry) error) error
+	localSubtreeStatusFn     func(context.Context, string, func([]client.StatusEntry) error) error
+	localMetadataGuardFn     func(context.Context, func() error) error
 	fileReleaseFn            func(context.Context, string, bool, func() error, func() error) error
 	treeMutationFn           func(context.Context, string, string, *watcher.TreeMoveSnapshot, func(*watcher.TreeMoveSnapshot) error, func() error) error
 	sparse                   bool
@@ -165,6 +167,38 @@ func (rs *RepoState) WithLocalStatus(ctx context.Context, paths []string, confir
 		return ErrDepthUnavailable
 	}
 	return fn(ctx, paths, confirm)
+}
+
+// Internal observer only, not an IPC capability or server command.
+func (rs *RepoState) SetLocalMetadataGuardFunc(fn func(context.Context, func() error) error) {
+	rs.mu.Lock()
+	rs.localMetadataGuardFn = fn
+	rs.mu.Unlock()
+}
+func (rs *RepoState) WithLocalMetadataGuard(ctx context.Context, operation func() error) error {
+	rs.mu.RLock()
+	fn := rs.localMetadataGuardFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return ErrDepthUnavailable
+	}
+	return fn(ctx, operation)
+}
+
+// Internal recursive observer only, not an IPC capability or server command.
+func (rs *RepoState) SetLocalSubtreeStatusFunc(fn func(context.Context, string, func([]client.StatusEntry) error) error) {
+	rs.mu.Lock()
+	rs.localSubtreeStatusFn = fn
+	rs.mu.Unlock()
+}
+func (rs *RepoState) WithLocalSubtreeStatus(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
+	rs.mu.RLock()
+	fn := rs.localSubtreeStatusFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return ErrDepthUnavailable
+	}
+	return fn(ctx, rel, confirm)
 }
 
 // ErrDepthUnavailable: the repository has no running working copy to deepen.

@@ -321,7 +321,11 @@ static HRESULT read_state_mode(const WCHAR *root, const WCHAR *relative, struct 
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
     HANDLE file = INVALID_HANDLE_VALUE;
-    HRESULT hr = local_path(root, relative, path);
+    HRESULT hr;
+    if (tree && !wcscmp(relative, L".")) {
+        hr = filees_own_sync_root(root);
+        if (SUCCEEDED(hr)) wcscpy_s(path, FILEES_CFAPI_MAX_PATH, root);
+    } else hr = local_path(root, relative, path);
     if (SUCCEEDED(hr)) {
         file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -515,29 +519,36 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative)
     return 0;
 }
 
-/* Read at most 64 relative paths in one process. No bytes, hydration or
+/* File turns keep 64 paths; a bounded directory proof can read 4096 children
+ * plus its parent in one process, without thousands of helper launches.
+ * No bytes, hydration or
  * mutation; failed rows keep their position and never imply a clean file.
  * Validate the complete bounded input before opening any file. */
 static int states(const WCHAR *root, int tree)
 {
-    WCHAR relatives[64][FILEES_CFAPI_MAX_PATH];
+    unsigned limit = tree ? FILEES_CFAPI_MAX_ENTRIES + 1 : 64;
+    WCHAR (*relatives)[FILEES_CFAPI_MAX_PATH] = calloc(limit, sizeof *relatives);
     char line[FILEES_CFAPI_MAX_LINE];
     int count = 0, i;
+    if (!relatives) { filees_cfapi_fail("file_states_memory", E_OUTOFMEMORY); return 2; }
     while (fgets(line, sizeof line, stdin)) {
         size_t length = strlen(line);
-        if (count == 64 || !length || line[length - 1] != '\n') {
+        if ((unsigned)count == limit || !length || line[length - 1] != '\n') {
+            free(relatives);
             filees_cfapi_fail("file_states_input", E_INVALIDARG);
             return 2;
         }
         line[--length] = 0;
         if (length && line[length - 1] == '\r') line[--length] = 0;
         if (!length || !filees_cfapi_widen(line, relatives[count], FILEES_CFAPI_MAX_PATH)) {
+            free(relatives);
             filees_cfapi_fail("file_states_input", E_INVALIDARG);
             return 2;
         }
         ++count;
     }
     if (ferror(stdin)) {
+        free(relatives);
         filees_cfapi_fail("file_states_input", E_FAIL);
         return 2;
     }
@@ -550,12 +561,157 @@ static int states(const WCHAR *root, int tree)
         else printf("{\"ok\":false,\"hresult\":\"0x%08lx\"}", (unsigned long)hr);
     }
     puts("]}");
+    free(relatives);
     fflush(stdout);
     return 0;
 }
 
 int filees_cfapi_file_states(const WCHAR *root) { return states(root, 0); }
 int filees_cfapi_tree_states(const WCHAR *root) { return states(root, 1); }
+
+/* Confirm ONE directory, never its descendants. The daemon supplies the exact
+ * complete bounded subtree observed before SVN inspection. Attribute-only handles
+ * keep those objects/USNs stable through the parent CAS, without hydration.
+ * Pin state and population policy are not availability decorations. */
+HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
+    const WCHAR *identity, LONGLONG expected_usn, int clean, char **lines, unsigned input_count)
+{
+    struct child { WCHAR name[FILEES_CFAPI_MAX_PATH]; HANDLE file; int directory; USN usn; };
+    struct child *children = NULL;
+    WCHAR path[FILEES_CFAPI_MAX_PATH], full[FILEES_CFAPI_MAX_PATH], wanted[FILEES_CFAPI_MAX_IDENTITY];
+    HANDLE directory = INVALID_HANDLE_VALUE, search = INVALID_HANDLE_VALUE;
+    WIN32_FIND_DATAW found;
+    struct state before, child_state;
+    unsigned count = 0, i, seen = 0, row = 0, parent, pass;
+    int confirmed = 0, bound_parent = 0;
+    HRESULT hr = E_INVALIDARG;
+    if (expected_usn <= 0 || input_count > FILEES_CFAPI_MAX_ENTRIES || (!clean && input_count)) goto done;
+    children = calloc(input_count ? input_count : 1, sizeof *children);
+    if (!children) return E_OUTOFMEMORY;
+    for (i = 0; i < input_count; ++i) children[i].file = INVALID_HANDLE_VALUE;
+    if (!wcscmp(relative, L".")) {
+        hr = filees_own_sync_root(root);
+        if (SUCCEEDED(hr)) wcscpy_s(path, FILEES_CFAPI_MAX_PATH, root);
+    } else hr = local_path(root, relative, path);
+    if (FAILED(hr)) goto done;
+    directory = CreateFileW(path, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | WRITE_DAC,
+        FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (directory == INVALID_HANDLE_VALUE) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+    hr = inspect_tree(directory, root, &before);
+    if (FAILED(hr)) goto done;
+    if (!before.directory || before.usn != expected_usn ||
+        !filees_cfapi_widen(before.identity, wanted, FILEES_CFAPI_MAX_IDENTITY) || wcscmp(wanted, identity)) {
+        hr = HRESULT_FROM_WIN32(ERROR_RETRY); goto done;
+    }
+    bound_parent = 1;
+    for (row = 0; row < input_count; ++row) {
+        char *line = lines[row];
+        char *token, *id, *end = NULL;
+        LONGLONG child_usn;
+        size_t n = strlen(line);
+        if (count >= FILEES_CFAPI_MAX_ENTRIES || !n || n + 1 >= FILEES_CFAPI_MAX_LINE) { hr = E_INVALIDARG; goto done; }
+        while (n && (line[n-1] == '\r' || line[n-1] == '\n')) line[--n] = 0;
+        token = strchr(line, '\t');
+        if (!token) { hr = E_INVALIDARG; goto done; }
+        *token++ = 0; id = strchr(token, '\t');
+        if (!id) { hr = E_INVALIDARG; goto done; }
+        *id++ = 0; child_usn = _strtoi64(token, &end, 10);
+        if (!clean || !end || end == token || *end || child_usn <= 0 || strchr(id, '\t') ||
+            !filees_cfapi_widen(line, children[count].name, FILEES_CFAPI_MAX_PATH) ||
+            !*children[count].name || wcspbrk(children[count].name, L"\\:*?\"<>|") ||
+            !wcscmp(children[count].name, L".") || !wcscmp(children[count].name, L"..") ||
+            !_wcsicmp(children[count].name, L".svn") || !_wcsicmp(children[count].name, L".filees") ||
+            !filees_cfapi_widen(id, wanted, FILEES_CFAPI_MAX_IDENTITY)) { hr = E_INVALIDARG; goto done; }
+        for (i = 0; i < count; ++i)
+            if (!_wcsicmp(children[i].name, children[count].name)) { hr = E_INVALIDARG; goto done; }
+        if (swprintf_s(full, FILEES_CFAPI_MAX_PATH, !wcscmp(relative,L".") ? L"%s" : L"%s/%s",
+            !wcscmp(relative,L".") ? children[count].name : relative, children[count].name) < 0) { hr = E_INVALIDARG; goto done; }
+        { WCHAR canonical[FILEES_CFAPI_MAX_PATH];
+          hr = local_path(root,full,canonical);
+          if (FAILED(hr)) goto done;
+          wcscpy_s(full,FILEES_CFAPI_MAX_PATH,canonical);
+        }
+        children[count].file = CreateFileW(full, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, NULL,
+            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (children[count].file == INVALID_HANDLE_VALUE) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+        ++count;
+        hr = inspect_tree(children[count-1].file, root, &child_state);
+        if (FAILED(hr)) goto done;
+        if (!child_state.placeholder || !child_state.clean || child_state.usn != child_usn || child_state.modified != 0 ||
+            !filees_cfapi_widen(child_state.identity, wanted, FILEES_CFAPI_MAX_IDENTITY) || strcmp(child_state.identity, id)) {
+            hr = HRESULT_FROM_WIN32(ERROR_RETRY); goto done;
+        }
+        children[count-1].directory = child_state.directory;
+        children[count-1].usn = child_state.usn;
+    }
+    if (clean) {
+        for (pass = 0; pass < 2; ++pass) {
+        seen = 0;
+        for (parent = 0; parent <= count; ++parent) {
+        const WCHAR *prefix = parent ? children[parent-1].name : L"";
+        if (parent && !children[parent-1].directory) continue;
+        if (swprintf_s(full, FILEES_CFAPI_MAX_PATH, *prefix ? L"%s\\%s\\*" : L"%s\\*", path, prefix) < 0) { hr = E_INVALIDARG; goto done; }
+        search = FindFirstFileW(full, &found);
+        if (search == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_NOT_FOUND) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+        if (search != INVALID_HANDLE_VALUE) do {
+            if (!wcscmp(found.cFileName, L".") || !wcscmp(found.cFileName, L"..")) continue;
+            if (!parent && !wcscmp(relative, L".") &&
+                (!_wcsicmp(found.cFileName, L".svn") || !_wcsicmp(found.cFileName, L".filees"))) continue;
+            if (swprintf_s(full,FILEES_CFAPI_MAX_PATH,*prefix ? L"%s/%s" : L"%s",
+                *prefix ? prefix : found.cFileName, found.cFileName) < 0) { hr=E_INVALIDARG;goto done; }
+            for (i = 0; i < count; ++i) if (!wcscmp(children[i].name, full)) break;
+            if (i == count) { hr = HRESULT_FROM_WIN32(ERROR_RETRY); goto done; }
+            ++seen;
+        } while (FindNextFileW(search, &found));
+        if (search != INVALID_HANDLE_VALUE && GetLastError() != ERROR_NO_MORE_FILES) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+        if (search != INVALID_HANDLE_VALUE) { FindClose(search);search=INVALID_HANDLE_VALUE; }
+        }
+        if (seen != count) { hr = HRESULT_FROM_WIN32(ERROR_RETRY); goto done; }
+        /* Directory handles do not prevent creation of a new descendant.
+         * Repeat all directory tokens after enumeration, while existing byte
+         * objects remain deny-write pinned. Never ACK a changed listing. */
+        for (i=0;i<count;++i) if (children[i].directory) {
+            USN final_usn;
+            hr=file_usn(children[i].file,&final_usn);
+            if (FAILED(hr)) goto done;
+            if (final_usn!=children[i].usn) {hr=HRESULT_FROM_WIN32(ERROR_RETRY);goto done;}
+        }
+        { USN final_usn;
+          hr=file_usn(directory,&final_usn);
+          if (FAILED(hr)) goto done;
+          if (final_usn!=expected_usn) {hr=HRESULT_FROM_WIN32(ERROR_RETRY);goto done;}
+        }
+        if (!pass) {
+            USN acknowledged_usn = 0;
+            /* Directory handles cannot forbid creation of a new child.
+             * Validate the complete listing again AFTER setting the marker;
+             * a changed proof clears only this parent before returning.
+             * Later creations are tracked normally by TRACK_ALL. */
+            hr = CfSetInSyncState(directory, CF_IN_SYNC_STATE_IN_SYNC,
+                CF_SET_IN_SYNC_FLAG_NONE, &acknowledged_usn);
+            if (FAILED(hr)) goto done;
+            confirmed = 1;
+            /* Some cldflt versions return zero for a directory's output USN.
+             * The complete post-ACK enumeration is the essential proof;
+             * record its starting directory token on this same handle. */
+            hr = file_usn(directory, &expected_usn);
+            if (FAILED(hr)) goto done;
+        }
+        }
+    } else {
+        hr = CfSetInSyncState(directory, CF_IN_SYNC_STATE_NOT_IN_SYNC,
+            CF_SET_IN_SYNC_FLAG_NONE, NULL);
+    }
+done:
+    if (bound_parent && clean && FAILED(hr))
+        CfSetInSyncState(directory, CF_IN_SYNC_STATE_NOT_IN_SYNC, CF_SET_IN_SYNC_FLAG_NONE, NULL);
+    if (search != INVALID_HANDLE_VALUE) FindClose(search);
+    for (i = 0; i < count; ++i) if (children[i].file != INVALID_HANDLE_VALUE) CloseHandle(children[i].file);
+    if (directory != INVALID_HANDLE_VALUE) CloseHandle(directory);
+    free(children);
+    if (SUCCEEDED(hr) || confirmed || bound_parent) SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, path, NULL);
+    return hr;
+}
 
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean)
 {

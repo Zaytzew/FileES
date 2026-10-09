@@ -134,6 +134,12 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return service.WithLocalStatus(ctx, point, paths, confirm)
 	})
+	state.SetLocalSubtreeStatusFunc(func(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
+		return service.WithLocalSubtreeStatus(ctx, point, rel, confirm)
+	})
+	state.SetLocalMetadataGuardFunc(func(ctx context.Context, operation func() error) error {
+		return service.WithLocalMetadataGuard(ctx, point, operation)
+	})
 	state.SetAdoptFunc(func(ctx context.Context, rel string, revision int64) error {
 		_, err := svn.(interface {
 			UpdateAdoptPath(context.Context, string, string, int64) (string, error)
@@ -251,6 +257,61 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if err := m.refreshLocalStates(t.Context(), record, bridge, &cursor); err != nil {
 		t.Fatal(err)
 	}
+	readFolder := func() cfapiAnswer {
+		t.Helper()
+		a, e := m.call(t.Context(), "folder\n", "tree-states", "--root", point)
+		if e != nil || !a.OK || len(a.States) != 1 || !a.States[0].OK {
+			t.Fatal("directory observation", a, e)
+		}
+		return a.States[0]
+	}
+	observeFolder := func(want bool) {
+		t.Helper()
+		if err := m.refreshDirectoryStates(t.Context(), record, bridge, &anchorDirectoryCursor{}); err != nil {
+			t.Fatal("production directory observer", err)
+		}
+		if s := readFolder(); s.InSync != want {
+			t.Fatal("directory synchronization marker", s, want)
+		}
+	}
+	if err := bridge.setDirectoryState(t.Context(), "folder", readFolder(), false, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// A refused parent cannot trap the cursor indefinitely before its peers.
+	state.SetLocalSubtreeStatusFunc(func(context.Context, string, func([]client.StatusEntry) error) error {
+		return errors.New("isolated writer temporarily unavailable")
+	})
+	directoryCursor := &anchorDirectoryCursor{}
+	if err := m.refreshDirectoryStates(t.Context(), record, bridge, directoryCursor); err == nil || directoryCursor.after != "folder" {
+		t.Fatal("failed directory did not rotate", err, directoryCursor.after)
+	}
+	if readFolder().InSync {
+		t.Fatal("refused writer falsely acknowledged parent")
+	}
+	state.SetLocalSubtreeStatusFunc(func(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
+		return service.WithLocalSubtreeStatus(ctx, point, rel, confirm)
+	})
+	if err := m.refreshDirectoryStates(t.Context(), record, bridge, directoryCursor); err != nil || directoryCursor.after != "" {
+		t.Fatal("remaining directory/cycle did not progress", err, directoryCursor.after)
+	}
+	observeFolder(true)
+	// A descendant SVN property has no file-byte USN signal. The recursive
+	// native status, kept under the writer through ACK, must still find it.
+	probeRun(t, point, cli, "propset", "filees:directory-probe", "pending", "folder/file-00.txt")
+	observeFolder(false)
+	rows, err := svn.(client.LocalSubtreeStatuser).LocalSubtreeStatus(t.Context(), point, "folder")
+	if err != nil || len(rows) < 25 {
+		t.Fatal("recursive native status omitted children", len(rows), err)
+	}
+	foundProperty := false
+	for _, row := range rows {
+		foundProperty = foundProperty || row.Props == "modified"
+	}
+	if !foundProperty {
+		t.Fatal("parent acknowledgement hid a pending descendant property")
+	}
+	probeRun(t, point, cli, "propdel", "filees:directory-probe", "folder/file-00.txt")
+	observeFolder(true)
 	p.Action = "release"
 	plan, err = adapter.Plan(t.Context(), p)
 	if err != nil || plan.Files != 24 {
@@ -261,6 +322,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		t.Fatal("release folder", result, err)
 	}
 	checkAvailability(contract.HeadRemote)
+	observeFolder(true)
 	for i := range 24 {
 		rel := fmt.Sprintf("folder/file-%02d.txt", i)
 		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", rel)

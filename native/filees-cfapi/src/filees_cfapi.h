@@ -89,6 +89,9 @@ int filees_cfapi_file_state(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_file_states(const WCHAR *root);
 int filees_cfapi_tree_states(const WCHAR *root);
+HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
+    const WCHAR *identity, LONGLONG expected_usn, int clean, char **lines, unsigned input_count);
+void filees_bridge_say_directory_set(const char *id, HRESULT hr);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);

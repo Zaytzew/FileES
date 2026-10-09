@@ -359,6 +359,7 @@ int filees_cfapi_connect(const WCHAR *root)
 {
     char line[FILEES_CFAPI_MAX_LINE];
     HRESULT hr;
+    int protocol_error = 0;
 
     g_root = root;
     g_trace = GetEnvironmentVariableW(L"FILEES_CFAPI_TRACE", NULL, 0) > 0;
@@ -431,6 +432,47 @@ int filees_cfapi_connect(const WCHAR *root)
                 hr = filees_remote_tree(g_root, rel, old, identity, size, *parts[2] == 'd', *parts[6] == '1');
             filees_bridge_say_tree_set(line + 9, hr);
         }
+        else if (!strncmp(line, "directory-set\t", 14)) {
+            char *parts[6], *cursor = line + 14, **rows = NULL, *end = NULL;
+            WCHAR rel[FILEES_CFAPI_MAX_PATH], identity[FILEES_CFAPI_MAX_IDENTITY];
+            LONGLONG usn;
+            unsigned count, i;
+            LONGLONG count64;
+            int valid = 1;
+            for (i = 0; i < 6; ++i) {
+                parts[i] = cursor;
+                cursor = strchr(cursor, '\t');
+                if (i < 5 && !cursor) { valid = 0; break; }
+                if (cursor) *cursor++ = 0;
+            }
+            /* Bad framing ends the provider: never interpret payload rows as
+             * independent fetch replies or commands after a parsing error. */
+            if (!valid || cursor) { protocol_error = 1; goto disconnect; }
+            if (!release_number(parts[5], &count64, 1) || count64 > FILEES_CFAPI_MAX_ENTRIES) { protocol_error = 1; goto disconnect; }
+            count = (unsigned)count64;
+            rows = calloc(count ? count : 1, sizeof *rows);
+            if (!rows) { protocol_error = 1; goto disconnect; }
+            for (i = 0; i < count; ++i) {
+                char payload[FILEES_CFAPI_MAX_LINE];
+                if (!fgets(payload, sizeof payload, stdin) || !strchr(payload, '\n')) { valid = 0; break; }
+                rows[i] = _strdup(payload);
+                if (!rows[i]) { valid = 0; break; }
+            }
+            if (!valid) {
+                for (i = 0; i < count; ++i) free(rows[i]);
+                free(rows); protocol_error = 1; goto disconnect;
+            }
+            hr = E_INVALIDARG;
+            usn = _strtoi64(parts[2], &end, 10);
+            if (*parts[0] && end && end != parts[2] && !*end && usn > 0 &&
+                (!strcmp(parts[4], "0") || !strcmp(parts[4], "1")) &&
+                filees_cfapi_widen(parts[1], rel, FILEES_CFAPI_MAX_PATH) &&
+                filees_cfapi_widen(parts[3], identity, FILEES_CFAPI_MAX_IDENTITY))
+                hr = filees_set_directory_state(g_root, rel, identity, usn, *parts[4] == '1', rows, count);
+            for (i = 0; i < count; ++i) free(rows[i]);
+            free(rows);
+            filees_bridge_say_directory_set(parts[0], hr);
+        }
         else if (!strncmp(line, "state-set\t", 10)) {
             char *id = line + 10, *rel = strchr(id, '\t'), *token = NULL, *clean = NULL, *end = NULL;
             WCHAR wide[FILEES_CFAPI_MAX_PATH];
@@ -497,10 +539,11 @@ int filees_cfapi_connect(const WCHAR *root)
         else filees_bridge_answer(line);
     }
 
+disconnect:
     hr = CfDisconnectSyncRoot(g_connection);
     if (FAILED(hr)) {
         filees_cfapi_fail("disconnect_sync_root", hr);
         return 1;
     }
-    return 0;
+    return protocol_error;
 }

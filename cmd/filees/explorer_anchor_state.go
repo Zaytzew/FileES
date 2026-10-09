@@ -28,12 +28,14 @@ func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo
 	}
 	cursor := ""
 	remote := &anchorTreeRefresh{}
+	directories := &anchorDirectoryCursor{}
 	for ctx.Err() == nil {
 		more := anchorLocalStateTurn(ctx, &cursor, func(ctx context.Context) error {
 			return m.refreshLocalStates(ctx, record, bridge, &cursor)
 		})
 		if !more {
 			m.refreshRemoteTree(ctx, record, bridge, remote)
+			_ = m.refreshDirectoryStates(ctx, record, bridge, directories)
 		}
 		delay := period
 		if more {

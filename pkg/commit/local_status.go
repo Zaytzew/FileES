@@ -9,6 +9,16 @@ import (
 
 var ErrLocalStatusBusy = errors.New("working copy writer is busy")
 
+// WithLocalMetadataGuard is an internal nonblocking observer fence. It gives
+// no publication proof: callers may conservatively CLEAR a parent marker,
+// never set it clean without a separate complete status/descendant proof.
+func (s *Service) WithLocalMetadataGuard(ctx context.Context, wc string, operation func() error) error {
+	if operation == nil {
+		return errors.New("missing metadata operation")
+	}
+	return s.withLocalStatus(ctx, wc, func() ([]client.StatusEntry, error) { return nil, nil }, func([]client.StatusEntry) error { return operation() })
+}
+
 // WithWorkingCopyWrite admits daemon-side property migration and read-only
 // pipeline updates to the same guard. The caller must not call another
 // locking Service method from operation. This is not a new remote command.
@@ -42,6 +52,28 @@ func (s *Service) WithLocalStatus(ctx context.Context, wc string, paths []string
 	if len(paths) == 0 || len(paths) > 64 || confirm == nil {
 		return errors.New("invalid local status batch")
 	}
+	return s.withLocalStatus(ctx, wc, func() ([]client.StatusEntry, error) { return s.Cli.Status(ctx, wc, paths) }, confirm)
+}
+
+// Separate entry for directory aggregation: an empty-depth Status row must
+// never hide a descendant's pending properties, deletion or conflict.
+func (s *Service) WithLocalSubtreeStatus(ctx context.Context, wc, rel string, confirm func([]client.StatusEntry) error) error {
+	if rel == "" || confirm == nil {
+		return errors.New("invalid subtree observation")
+	}
+	return s.withLocalStatus(ctx, wc, func() ([]client.StatusEntry, error) {
+		reader, ok := s.Cli.(client.LocalSubtreeStatuser)
+		if !ok {
+			return nil, errors.ErrUnsupported
+		}
+		return reader.LocalSubtreeStatus(ctx, wc, rel)
+	}, confirm)
+}
+
+func (s *Service) withLocalStatus(ctx context.Context, wc string, read func() ([]client.StatusEntry, error), confirm func([]client.StatusEntry) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !s.wcOpMu.TryLock() {
 		return ErrLocalStatusBusy
 	}
@@ -52,7 +84,7 @@ func (s *Service) WithLocalStatus(ctx context.Context, wc string, paths []string
 	if HasPendingLocalMutation(wc) {
 		return LocalMutationPendingError(wc)
 	}
-	rows, err := s.Cli.Status(ctx, wc, paths)
+	rows, err := read()
 	if err != nil {
 		return err
 	}

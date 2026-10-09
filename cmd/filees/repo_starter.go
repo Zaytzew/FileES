@@ -167,6 +167,8 @@ func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetDepthFunc(nil)
 	state.SetAdoptFunc(nil)
 	state.SetLocalStatusFunc(nil)
+	state.SetLocalSubtreeStatusFunc(nil)
+	state.SetLocalMetadataGuardFunc(nil)
 	state.SetIntentFuncs(nil, nil)
 	state.SetCommitRecoveryFuncs(nil, nil, nil)
 	state.SetNoticeFuncs(nil, nil)
@@ -506,6 +508,12 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return service.WithLocalStatus(ctx, wc, paths, confirm)
 	})
+	runtimeRepo.state.SetLocalSubtreeStatusFunc(func(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
+		return service.WithLocalSubtreeStatus(ctx, wc, rel, confirm)
+	})
+	runtimeRepo.state.SetLocalMetadataGuardFunc(func(ctx context.Context, operation func() error) error {
+		return service.WithLocalMetadataGuard(ctx, wc, operation)
+	})
 	runtimeRepo.state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, operation func() error, complete func() error) error {
 		return service.WithFileRelease(ctx, wc, rel, recovery, operation, complete)
 	})
@@ -553,6 +561,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetDepthFunc(nil)
 			runtimeRepo.state.SetAdoptFunc(nil)
 			runtimeRepo.state.SetLocalStatusFunc(nil)
+			runtimeRepo.state.SetLocalSubtreeStatusFunc(nil)
+			runtimeRepo.state.SetLocalMetadataGuardFunc(nil)
 			runtimeRepo.state.SetFileReleaseFunc(nil)
 			runtimeRepo.state.SetTreeMutationFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
@@ -615,6 +625,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		runtimeRepo.state.SetDepthFunc(nil)
 		runtimeRepo.state.SetAdoptFunc(nil)
 		runtimeRepo.state.SetLocalStatusFunc(nil)
+		runtimeRepo.state.SetLocalSubtreeStatusFunc(nil)
+		runtimeRepo.state.SetLocalMetadataGuardFunc(nil)
 		runtimeRepo.state.SetFileReleaseFunc(nil)
 		runtimeRepo.state.SetTreeMutationFunc(nil)
 		runtimeRepo.state.SetIntentFuncs(nil, nil)
@@ -1088,6 +1100,12 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	runtime.state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return guard.WithLocalStatus(ctx, wc, paths, confirm)
 	})
+	runtime.state.SetLocalSubtreeStatusFunc(func(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
+		return guard.WithLocalSubtreeStatus(ctx, wc, rel, confirm)
+	})
+	runtime.state.SetLocalMetadataGuardFunc(func(ctx context.Context, operation func() error) error {
+		return guard.WithLocalMetadataGuard(ctx, wc, operation)
+	})
 	runtime.state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, operation func() error, complete func() error) error {
 		return guard.WithFileRelease(ctx, wc, rel, recovery, operation, complete)
 	})
@@ -1141,6 +1159,8 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		runtime.state.SetDepthFunc(nil)
 		runtime.state.SetAdoptFunc(nil)
 		runtime.state.SetLocalStatusFunc(nil)
+		runtime.state.SetLocalSubtreeStatusFunc(nil)
+		runtime.state.SetLocalMetadataGuardFunc(nil)
 		runtime.state.SetFileReleaseFunc(nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {

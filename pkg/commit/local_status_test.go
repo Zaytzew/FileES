@@ -9,6 +9,89 @@ import (
 	"filees/pkg/client"
 )
 
+type subtreeStatusClient struct {
+	*statusClient
+	err error
+}
+
+func (c *subtreeStatusClient) LocalSubtreeStatus(_ context.Context, _, _ string) ([]client.StatusEntry, error) {
+	return c.entries, c.err
+}
+
+func TestLocalSubtreeStatusKeepsWriterThroughACKAndRefusesUnprovenState(t *testing.T) {
+	wc := t.TempDir()
+	cli := &subtreeStatusClient{statusClient: &statusClient{entries: []client.StatusEntry{{Path: "folder/child", Props: "modified"}}}}
+	s := &Service{Cli: cli}
+	s.BindWorkingCopy("repo", wc)
+	confirm := func(rows []client.StatusEntry) error {
+		if len(rows) != 1 || rows[0].Props != "modified" {
+			t.Fatal("descendant properties omitted", rows)
+		}
+		if s.wcOpMu.TryLock() {
+			s.wcOpMu.Unlock()
+			t.Fatal("writer admitted before directory ACK")
+		}
+		return nil
+	}
+	if err := s.WithLocalSubtreeStatus(t.Context(), wc, "folder", confirm); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	unexpected := func([]client.StatusEntry) error { called = true; return nil }
+	s.wcOpMu.Lock()
+	err := s.WithLocalSubtreeStatus(t.Context(), wc, "folder", unexpected)
+	s.wcOpMu.Unlock()
+	if !errors.Is(err, ErrLocalStatusBusy) {
+		t.Fatal("busy writer accepted", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := s.WithLocalSubtreeStatus(ctx, wc, "folder", unexpected); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	cli.err = errors.New("inspection failed")
+	if err := s.WithLocalSubtreeStatus(t.Context(), wc, ".", unexpected); err == nil {
+		t.Fatal("failed subtree accepted")
+	}
+	cli.err = nil
+	s.commitWriterBlocked = true
+	if err := s.WithLocalSubtreeStatus(t.Context(), wc, "folder", unexpected); !errors.Is(err, ErrLocalStatusBusy) {
+		t.Fatal(err)
+	}
+	s.commitWriterBlocked = false
+	if err := s.WithLocalSubtreeStatus(t.Context(), wc+"-other", "folder", unexpected); !errors.Is(err, ErrLocalStatusBusy) {
+		t.Fatal(err)
+	}
+	s.Cli = cli.statusClient
+	if err := s.WithLocalSubtreeStatus(t.Context(), wc, "folder", unexpected); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatal("non-recursive fallback accepted", err)
+	}
+	if called {
+		t.Fatal("unproven directory confirmed")
+	}
+}
+
+func TestLocalMetadataGuardIsNonblockingAndKeepsWriterThroughClear(t *testing.T) {
+	wc := t.TempDir()
+	s := &Service{Cli: &statusClient{}}
+	s.BindWorkingCopy("repo", wc)
+	if err := s.WithLocalMetadataGuard(t.Context(), wc, func() error {
+		if s.wcOpMu.TryLock() {
+			s.wcOpMu.Unlock()
+			t.Fatal("clear parent marker has no writer fence")
+		}
+		if err := s.WithLocalMetadataGuard(t.Context(), wc, func() error { t.Fatal("busy observer entered"); return nil }); !errors.Is(err, ErrLocalStatusBusy) {
+			t.Fatal(err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithLocalMetadataGuard(t.Context(), wc, nil); err == nil {
+		t.Fatal("missing clear operation accepted")
+	}
+}
+
 func TestLocalStatusHoldsWriterUntilConfirmationAndSkipsBusy(t *testing.T) {
 	wc := t.TempDir()
 	s := &Service{Cli: &statusClient{entries: []client.StatusEntry{{Path: "file", Item: "normal", Props: "none"}}}}

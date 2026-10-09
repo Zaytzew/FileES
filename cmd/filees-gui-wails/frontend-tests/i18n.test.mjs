@@ -9,6 +9,27 @@ import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("virtual folder result dialogs translate their buttons in every language", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const start = source.indexOf("function promptText("), end = source.indexOf("\n}\n", start) + 2;
+  for (const language of languages) {
+    const text = (key, args) => translate(catalogues, language.code, key, args);
+    const renderText = runInNewContext(source.slice(start, end) + "\npromptText", {t: text});
+    for (const action of ["download", "release"]) {
+      const key = `info.anchorFolder.${action}`;
+      const prompt = {presentation_key: key, presentation_args: {done: "1", total: "1"}};
+      for (const part of ["title", "text", "confirm", "cancel"]) {
+        assert.equal(typeof language.messages[`${key}.${part}`], "string", `${language.code}: ${key}.${part}`);
+        const label = renderText(prompt, part, "unused fallback");
+        assert.ok(label && !label.startsWith("[info."), `${language.code}: ${label}`);
+        assert.doesNotMatch(label, /\{(?:done|total)\}/);
+      }
+    }
+  }
+  assert.equal(catalogues.pl["info.anchorFolder.download.confirm"], "Rozumiem");
+  assert.equal(catalogues.pl["info.anchorFolder.release.confirm"], "Rozumiem");
+});
+
 test("content availability has all three labels in every language", () => {
   for (const language of languages) {
     for (const state of ["remote", "hybrid", "local"]) {

@@ -89,7 +89,7 @@ func (s *Server) handleAnchorMove(req contract.Request) contract.Response {
 		return contract.OKResponse(req.RequestID, contract.RepoAnchorMoveResult{State: "moved"})
 	}
 	s.lg.Warnf("Explorer tree move refused: %v", err)
-	if commit.HasPendingRemoteTree(summary.LocalPath) || errors.Is(err, commit.ErrRemoteTreePending) {
+	if commit.HasPendingRemoteTree(summary.LocalPath) || commit.HasPendingRemoteFileDelete(summary.LocalPath) || errors.Is(err, commit.ErrRemoteTreePending) || errors.Is(err, commit.ErrRemoteFileDeletePending) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2019", "ERROR", "REQUIRE_ACTION", "head.folder_recovery_required", nil)
 	}
 	if errors.Is(err, ErrAnchorSelectionChanged) || errors.Is(err, commit.ErrLocalStatusBusy) {

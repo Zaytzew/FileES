@@ -12,8 +12,15 @@ import (
 // Presence (including unreadable/corrupt state) fences all ordinary writers.
 // The private coordinator alone may interpret or retire this evidence.
 const RemoteTreePendingName = "remote-tree.pending.json"
+const RemoteFileDeletePendingName = "remote-file-delete.pending.json"
 
 var ErrRemoteTreePending = errors.New("local tree move recovery is pending")
+var ErrRemoteFileDeletePending = errors.New("local file deletion recovery is pending")
+
+func HasPendingRemoteFileDelete(wc string) bool {
+	_, err := os.Lstat(filepath.Join(wc, ".filees", "state", RemoteFileDeletePendingName))
+	return !errors.Is(err, os.ErrNotExist)
+}
 
 func HasPendingRemoteTree(wc string) bool {
 	_, err := os.Lstat(filepath.Join(wc, ".filees", "state", RemoteTreePendingName))
@@ -21,10 +28,13 @@ func HasPendingRemoteTree(wc string) bool {
 }
 
 func HasPendingLocalMutation(wc string) bool {
-	return HasPendingFileRelease(wc) || HasPendingRemoteTree(wc)
+	return HasPendingFileRelease(wc) || HasPendingRemoteTree(wc) || HasPendingRemoteFileDelete(wc)
 }
 
 func LocalMutationPendingError(wc string) error {
+	if HasPendingRemoteFileDelete(wc) {
+		return ErrRemoteFileDeletePending
+	}
 	if HasPendingRemoteTree(wc) {
 		return ErrRemoteTreePending
 	}
@@ -32,7 +42,7 @@ func LocalMutationPendingError(wc string) error {
 }
 
 func IsLocalMutationPending(err error) bool {
-	return errors.Is(err, ErrFileReleasePending) || errors.Is(err, ErrRemoteTreePending)
+	return errors.Is(err, ErrFileReleasePending) || errors.Is(err, ErrRemoteTreePending) || errors.Is(err, ErrRemoteFileDeletePending)
 }
 
 // Internal only. The callback must hold the scanner/local-object guards, prove
@@ -61,8 +71,50 @@ func (s *Service) WithRemoteTreeMutation(ctx context.Context, wc string, recover
 	if s.wc != wc || s.Cli == nil || s.commitWriterBlocked || HasUnresolvedCommit(wc) {
 		return ErrLocalStatusBusy
 	}
-	if HasPendingFileRelease(wc) || HasPendingRemoteTree(wc) != recovery {
+	if HasPendingRemoteFileDelete(wc) || HasPendingFileRelease(wc) || HasPendingRemoteTree(wc) != recovery {
 		return LocalMutationPendingError(wc)
+	}
+	if !recovery {
+		s.mu.Lock()
+		staged := len(s.staging) != 0
+		s.mu.Unlock()
+		if staged {
+			return ErrLocalStatusBusy
+		}
+	}
+	return operation()
+}
+
+// Private deletion journal entry. Preparation and completion use the same real
+// writer, but completion additionally requires its own durable pending fence.
+// This supplies no scanner/OS proof, retry permission or evidence retirement.
+func (s *Service) WithRemoteFileDeleteMutation(ctx context.Context, wc string, recovery bool, operation func() error) error {
+	if operation == nil {
+		return errors.New("missing remote file deletion operation")
+	}
+	leave, err := s.Pause.Enter(ctx, s.repoID, false)
+	if err != nil {
+		return err
+	}
+	defer leave()
+	release, err := s.Admission.EnterContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.wc != wc || s.Cli == nil || s.commitWriterBlocked || HasUnresolvedCommit(wc) {
+		return ErrLocalStatusBusy
+	}
+	if HasPendingFileRelease(wc) || HasPendingRemoteTree(wc) {
+		return LocalMutationPendingError(wc)
+	}
+	if HasPendingRemoteFileDelete(wc) != recovery {
+		return ErrRemoteFileDeletePending
 	}
 	if !recovery {
 		s.mu.Lock()

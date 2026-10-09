@@ -58,7 +58,7 @@ func (s *Service) WithFileRelease(ctx context.Context, wc, rel string, recovery 
 	if s.wc != wc || s.commitWriterBlocked || s.Cli == nil || HasUnresolvedCommit(wc) {
 		return ErrLocalStatusBusy
 	}
-	if HasPendingRemoteTree(wc) || HasPendingFileRelease(wc) != recovery {
+	if HasPendingRemoteFileDelete(wc) || HasPendingRemoteTree(wc) || HasPendingFileRelease(wc) != recovery {
 		return LocalMutationPendingError(wc)
 	}
 	if !recovery {

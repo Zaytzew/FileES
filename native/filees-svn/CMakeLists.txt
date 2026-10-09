@@ -33,6 +33,26 @@ if(FILEES_SVN_BUILD_RELEASE_PROBE)
   target_include_directories(filees-release-probe PRIVATE "${SVN_INCLUDE_DIR}" "${APR_INCLUDE_DIR}")
   target_link_libraries(filees-release-probe PRIVATE "${SVN_CLIENT_LIBRARY}" "${SVN_WC_LIBRARY}" "${SVN_SUBR_LIBRARY}" "${APR_LIBRARY}")
 endif()
+# Disposable tree metadata experiment, never a runtime verb or staged binary.
+# Public post-commit APIs can acknowledge unsent changes; tests measure this
+# boundary before a production reconciler is allowed to use them.
+option(FILEES_SVN_BUILD_TREE_PROBE "Build disposable sparse-tree metadata probe" OFF)
+if(FILEES_SVN_BUILD_TREE_PROBE)
+  if(NOT WIN32)
+    message(FATAL_ERROR "Sparse-tree probe is currently Windows-only")
+  endif()
+  add_executable(filees-tree-probe src/tree_probe.c src/common.c)
+  set_target_properties(filees-tree-probe PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
+  target_include_directories(filees-tree-probe PRIVATE "${SVN_INCLUDE_DIR}" "${APR_INCLUDE_DIR}")
+  target_link_libraries(filees-tree-probe PRIVATE "${SVN_CLIENT_LIBRARY}" "${SVN_WC_LIBRARY}" "${SVN_SUBR_LIBRARY}" "${APR_LIBRARY}")
+  if(MSVC)
+    target_compile_options(filees-tree-probe PRIVATE /W4 /utf-8)
+  elseif(MINGW)
+    target_compile_options(filees-tree-probe PRIVATE -Wall -Wextra -Werror)
+    target_link_options(filees-tree-probe PRIVATE -municode)
+  endif()
+endif()
+
 # DT_RPATH applies to the transitive private library closure too. Do not export
 # LD_LIBRARY_PATH: the helper may launch the host's SSH client.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

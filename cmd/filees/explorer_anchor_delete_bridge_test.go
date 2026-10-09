@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -13,6 +14,48 @@ import (
 	"testing"
 	"time"
 )
+
+func TestAnchorDeleteTransportRearmsOnlyRetiredOrUnpreparedEpoch(t *testing.T) {
+	answers := make(chan string, 20)
+	var wg sync.WaitGroup
+	work := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
+	var prepared, completed atomic.Int32
+	d := newAnchorDeleteTransport(t.Context(), func(context.Context, anchorDeleteCallback) error {
+		if prepared.Add(1) == 1 {
+			return errors.Join(errors.New("denied before any intent"), errAnchorDeleteNotPrepared)
+		}
+		return nil
+	}, func(context.Context, anchorDeleteCallback) error { completed.Add(1); return nil }, 0, work, func(s string) { answers <- s })
+	d.rearm = true
+	first := d.session
+	d.receive(deleteBridgeFrame("delete-request", "1"))
+	<-answers
+	wg.Wait()
+	if first == d.session || d.token != "" {
+		t.Fatal("explicit pre-intent refusal did not rearm")
+	}
+	d.receive(deleteBridgeFrame("delete-request", "2"))
+	<-answers
+	wg.Wait()
+	second := d.session
+	d.receive("delete-acked\t1\t" + hresultOK)
+	d.receive(deleteBridgeFrame("delete-complete", "0"))
+	wg.Wait()
+	if completed.Load() != 0 {
+		t.Fatal("old ACK completed a new epoch")
+	}
+	d.receive("delete-acked\t2\t" + hresultOK)
+	wg.Wait()
+	if completed.Load() != 1 || d.session == second || d.token != "" {
+		t.Fatal("retired coordinator did not rearm")
+	}
+	d.receive("delete-acked\t2\t" + hresultOK)
+	d.receive(deleteBridgeFrame("delete-complete", "0"))
+	wg.Wait()
+	if completed.Load() != 1 {
+		t.Fatal("late completion replayed")
+	}
+}
 
 func deleteBridgeFrame(kind, token string) string {
 	request := "17"

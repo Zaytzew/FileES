@@ -81,6 +81,7 @@ type RepoState struct {
 	localMetadataGuardFn     func(context.Context, func() error) error
 	fileReleaseFn            func(context.Context, string, bool, func() error, func() error) error
 	treeMutationFn           func(context.Context, string, string, *watcher.TreeMoveSnapshot, func(*watcher.TreeMoveSnapshot) error, func() error) error
+	fileDeleteFn             func(context.Context, string, *watcher.FileDeleteSnapshot, func(*watcher.FileDeleteSnapshot) error, func() error) error
 	sparse                   bool
 	intentPlanFn             func(context.Context) (*contract.IntentPlan, error)
 	intentApplyFn            func(context.Context, string, string) (*contract.IntentApplyResult, error)

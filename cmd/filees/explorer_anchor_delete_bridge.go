@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ func sameAnchorDeleteObject(a, b anchorDeleteCallback) bool {
 // native ACK and completed OS deletion are three DIFFERENT pieces of evidence.
 // Closing/timing out never fabricates completion or clears a durable intent.
 type anchorDeleteTransport struct {
+	rearm                             bool
 	mu                                sync.Mutex
 	ctx                               context.Context
 	session                           string
@@ -44,6 +46,17 @@ type anchorDeleteTransport struct {
 	cb                                anchorDeleteCallback
 	approved, acked, failed, finished bool
 	completion                        *anchorDeleteCallback
+}
+
+var errAnchorDeleteNotPrepared = errors.New("file deletion refused before durable preparation")
+
+// Rearm only after scanner ACK/retirement or an explicit pre-intent refusal.
+// Exact tokens and a fresh epoch prevent late ACKs completing another action.
+func (d *anchorDeleteTransport) rearmLocked() {
+	d.session = uuid.NewString()
+	d.token, d.cb = "", anchorDeleteCallback{}
+	d.approved, d.acked, d.failed, d.finished = false, false, false, false
+	d.completion = nil
 }
 
 func newAnchorDeleteTransport(ctx context.Context, prepare, complete func(context.Context, anchorDeleteCallback) error, timeout time.Duration, work func(func()), send func(string)) *anchorDeleteTransport {
@@ -158,6 +171,9 @@ func (d *anchorDeleteTransport) authorize(token string, cb anchorDeleteCallback)
 	if err != nil || ctx.Err() != nil {
 		d.failed = true
 		d.send("delete-deny\t" + token + "\t1")
+		if d.rearm && errors.Is(err, errAnchorDeleteNotPrepared) {
+			d.rearmLocked()
+		}
 		return
 	}
 	d.approved = true
@@ -174,10 +190,13 @@ func (d *anchorDeleteTransport) finishLocked() {
 	cb := *d.completion
 	d.work(func() {
 		// The durable coordinator owns reporting/recovery of this failure.
-		if err := d.complete(d.ctx, cb); err != nil {
-			d.mu.Lock()
+		err := d.complete(d.ctx, cb)
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if err != nil {
 			d.failed = true
-			d.mu.Unlock()
+		} else if d.rearm && d.ctx.Err() == nil {
+			d.rearmLocked()
 		}
 	})
 }

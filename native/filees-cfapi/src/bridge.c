@@ -129,7 +129,6 @@ void filees_bridge_answer(char *line)
     EnterCriticalSection(&g_lock);
     for (i = 0; i < FILEES_BRIDGE_SLOTS; ++i) {
         if (!g_slots[i].used || g_slots[i].id != id) continue;
-#ifdef FILEES_CFAPI_DELETE_PROBE
         if (g_slots[i].kind == 2) {
             /* Typed, canonical, exact token. A fetch 'ok' cannot authorize
              * deletion even if it happens to carry the same numeric id. */
@@ -140,7 +139,6 @@ void filees_bridge_answer(char *line)
             SetEvent(g_slots[i].done);
             break;
         }
-#endif
         if (strcmp(kind, "ok") && strcmp(kind, "err")) break;
         g_slots[i].ok = !strcmp(kind, "ok") &&
                         MultiByteToWideChar(CP_UTF8, 0, rest, -1, g_slots[i].path, FILEES_CFAPI_MAX_PATH) > 0;
@@ -262,7 +260,6 @@ void filees_bridge_say_tree_identity(const char *id, HRESULT hr)
     LeaveCriticalSection(&g_lock);
 }
 
-#ifdef FILEES_CFAPI_DELETE_PROBE
 static int delete_text(const void *identity, DWORD identity_length, const WCHAR *path,
     char *utf8, size_t utf8_size, char *full_path, size_t path_size)
 {
@@ -278,6 +275,7 @@ static int delete_text(const void *identity, DWORD identity_length, const WCHAR 
         !strpbrk(utf8, "\t\r\n") && !strpbrk(full_path, "\t\r\n");
 }
 
+#ifdef FILEES_CFAPI_DELETE_PROBE
 int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
     LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
     const void *identity, DWORD identity_length, const WCHAR *path, DWORD process)
@@ -294,6 +292,7 @@ int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
     LeaveCriticalSection(&g_lock);
     return written > 0;
 }
+#endif
 
 static int send_delete_frame(const char *kind, int id, DWORD volume,
     LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
@@ -346,4 +345,3 @@ void filees_bridge_say_delete_complete(DWORD volume, LONGLONG root_id, LONGLONG 
     send_delete_frame("delete-complete", 0, volume, root_id, file_id, request,
         flags, identity, identity_length, path, process);
 }
-#endif

@@ -430,6 +430,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 						m.guardChanged(record.RepoID)
 					}
 				}
+				closeDelete := m.bindFileDelete(record, bridge, streams)
 				bridge.onConnected = func(providerCtx context.Context) {
 					m.publishDamage(record)
 					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })
@@ -461,12 +462,14 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					m.mu.Unlock()
 					if ok && connection.ctx == ctx {
 						m.recoverConnectedTreeMove(providerCtx, record, bridge)
+						m.recoverConnectedFileDelete(providerCtx, record)
 						// Release recovery is a provider-lifetime loop, not a one-shot.
 						// Complete the receipted tree recovery before entering it.
 						m.recoverAnchorRelease(providerCtx, record, bridge)
 					}
 				}
 				err := bridge.serve(ctx, streams)
+				closeDelete()
 				m.mu.Lock()
 				if connection := m.running[anchorKey(record)]; connection.bridge == bridge {
 					connection.bridge = nil

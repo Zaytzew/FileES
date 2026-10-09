@@ -448,6 +448,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service.EventAcknowledged = scanner.EventAcknowledged
 	service.FenceFileRelease = scanner.WithCleanFileMutation
 	service.FenceTreeMove = scanner.WithTreeMove
+	service.FenceFileDelete = scanner.WithFileDeletePreparation
+	service.RecoverFileDelete = scanner.WithFileDeleteRecovery
 	service.RecoverTreeMove = scanner.WithTreeMoveRecovery
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
 	if recovered {
@@ -520,6 +522,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetTreeMutationFunc(func(ctx context.Context, source, destination string, recovery *watcher.TreeMoveSnapshot, operation func(*watcher.TreeMoveSnapshot) error, complete func() error) error {
 		return service.WithRemoteTreeMove(ctx, wc, source, destination, recovery, operation, complete)
 	})
+	runtimeRepo.state.SetFileDeleteFunc(func(ctx context.Context, source string, recovery *watcher.FileDeleteSnapshot, operation func(*watcher.FileDeleteSnapshot) error, complete func() error) error {
+		return service.WithRemoteFileDelete(ctx, wc, source, recovery, operation, complete)
+	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	runtimeRepo.state.SetIntentFuncs(service.PlanIntents, service.ApplyIntents)
 	var canonicalPlan *canonicalRecoveryJob
@@ -565,6 +570,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetLocalMetadataGuardFunc(nil)
 			runtimeRepo.state.SetFileReleaseFunc(nil)
 			runtimeRepo.state.SetTreeMutationFunc(nil)
+			runtimeRepo.state.SetFileDeleteFunc(nil)
 			runtimeRepo.state.SetIntentFuncs(nil, nil)
 			runtimeRepo.state.SetCommitRecoveryFuncs(nil, nil, nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)

@@ -24,8 +24,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Internal prerequisite only: no production delete callback is enabled here.
-// The coordinator must hold the real WC writer/scanner, authenticate current
+// Private durable evidence, not a public deletion capability.
+// The coordinator holds the real WC writer/scanner, authenticates current
 // permission and prove this exact manifest node before calling preparation.
 // Session is supplied by the owning live bridge, never trusted from a frame.
 type anchorDeleteIntent struct {
@@ -36,6 +36,7 @@ type anchorDeleteIntent struct {
 	Delete                                     client.RemoteFileDelete
 	Snapshot                                   watcher.FileDeleteSnapshot
 	Parents                                    []anchorMoveObject
+	TreeSHA256                                 string `json:",omitempty"`
 }
 
 type anchorDeleteCompleted struct {
@@ -53,7 +54,7 @@ const anchorDeleteCompletedName = "remote-file-delete.completed.json"
 const anchorDeleteRequestedName = "remote-file-delete.requested.json"
 const anchorDeleteReceiptName = "remote-file-delete.receipt.json"
 
-// One approved object per live connection. A fresh connection cannot complete
+// One approved object per live bridge epoch. A fresh epoch cannot complete
 // an old prepared operation, even with identical PID/path/RequestKey. Close
 // releases handles but NEVER removes its pending fence or fabricates completion.
 type anchorDeleteSession struct {
@@ -61,6 +62,7 @@ type anchorDeleteSession struct {
 	record            localrepo.Record
 	id                string
 	providerPID       uint32
+	treeSHA256        string
 	in                *anchorDeleteIntent
 	guards            []windows.Handle
 	object            windows.Handle
@@ -127,7 +129,7 @@ func validateAnchorDeleteIntent(in anchorDeleteIntent, record localrepo.Record, 
 		return err
 	}
 	rel, revision, _, ok := parseAnchorRemoteIdentity(cb.Identity)
-	if !ok || rel != in.Delete.Source || revision != in.Delete.BaseRevision {
+	if !ok || rel != in.Delete.Source || revision <= 0 || revision > in.Delete.BaseRevision {
 		return errors.New("file deletion lacks an exact remote identity")
 	}
 	if err := watcher.ValidateFileDeleteSnapshot(&in.Snapshot, in.WC); err != nil {
@@ -186,7 +188,7 @@ func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallba
 		}
 	}()
 	in := anchorDeleteIntent{Schema: "filees.anchor-file-delete-intent/v1", ServerID: s.record.ServerID, RepoID: s.record.RepoID,
-		AttachmentID: s.record.OperationID, WC: s.record.LocalPath, Root: root, ProviderPID: s.providerPID, Callback: cb, Delete: request, Snapshot: *snapshot}
+		AttachmentID: s.record.OperationID, WC: s.record.LocalPath, Root: root, ProviderPID: s.providerPID, Callback: cb, Delete: request, Snapshot: *snapshot, TreeSHA256: s.treeSHA256}
 	for _, parent := range anchorDeleteParents(request.Source) {
 		pins, err := guardAnchorReleaseDirectories(filepath.Join(s.record.LocalPath, filepath.FromSlash(parent)), s.record.LocalPath)
 		if err != nil {

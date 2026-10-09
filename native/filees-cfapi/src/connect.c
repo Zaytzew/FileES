@@ -270,9 +270,7 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     CF_OPERATION_INFO operation;
     CF_OPERATION_PARAMETERS answer;
     HRESULT hr;
-#ifdef FILEES_CFAPI_DELETE_PROBE
     int delete_id = 0;
-#endif
     (void)params;
     operation_info(info, CF_OPERATION_TYPE_ACK_DELETE, &operation);
     ZeroMemory(&answer, sizeof answer);
@@ -284,6 +282,9 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     /* Characterization only, in a differently named, opt-in executable. The
      * regular provider has neither this environment switch nor this override. */
     if (GetEnvironmentVariableW(L"FILEES_CFAPI_DELETE_PROBE_BRIDGE", NULL, 0) > 0) {
+#else
+    {
+#endif
         /* Local files and the provider's own projection keep their existing
          * gate; they cannot create an external deletion intent. */
         if (answer.AckDelete.CompletionStatus != STATUS_SUCCESS &&
@@ -292,7 +293,9 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
                 params->Delete.Flags, info->FileIdentity, info->FileIdentityLength,
                 info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0, &delete_id))
             answer.AckDelete.CompletionStatus = STATUS_SUCCESS;
-    } else if (filees_bridge_say_delete_probe("pre", info->VolumeSerialNumber,
+    }
+#ifdef FILEES_CFAPI_DELETE_PROBE
+    else if (filees_bridge_say_delete_probe("pre", info->VolumeSerialNumber,
         info->SyncRootFileId.QuadPart, info->FileId.QuadPart, info->RequestKey.QuadPart,
         params->Delete.Flags, info->FileIdentity, info->FileIdentityLength,
         info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0) &&
@@ -300,26 +303,26 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
         answer.AckDelete.CompletionStatus = STATUS_SUCCESS;
 #endif
     hr = CfExecute(&operation, &answer);
-#ifdef FILEES_CFAPI_DELETE_PROBE
     if (delete_id) filees_bridge_say_delete_acked(delete_id, hr);
-#endif
     trace("delete acknowledgement", hr);
 }
 
-#ifdef FILEES_CFAPI_DELETE_PROBE
 static void CALLBACK on_delete_completion(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
 {
+#ifdef FILEES_CFAPI_DELETE_PROBE
     if (GetEnvironmentVariableW(L"FILEES_CFAPI_DELETE_PROBE_BRIDGE", NULL, 0) > 0)
+#endif
         filees_bridge_say_delete_complete(info->VolumeSerialNumber,
             info->SyncRootFileId.QuadPart, info->FileId.QuadPart, info->RequestKey.QuadPart,
             params->DeleteCompletion.Flags, info->FileIdentity, info->FileIdentityLength,
             info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0);
+#ifdef FILEES_CFAPI_DELETE_PROBE
     else filees_bridge_say_delete_probe("complete", info->VolumeSerialNumber,
         info->SyncRootFileId.QuadPart, info->FileId.QuadPart, info->RequestKey.QuadPart,
         params->DeleteCompletion.Flags, info->FileIdentity, info->FileIdentityLength,
         info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0);
-}
 #endif
+}
 
 static SRWLOCK g_rename_lock = SRWLOCK_INIT;
 static DWORD g_rename_volume;
@@ -372,9 +375,7 @@ static CF_CALLBACK_REGISTRATION k_callbacks[] = {
     {CF_CALLBACK_TYPE_FETCH_DATA, on_fetch_data},
     {CF_CALLBACK_TYPE_CANCEL_FETCH_DATA, on_cancel_fetch_data},
     {CF_CALLBACK_TYPE_NOTIFY_DELETE, on_delete},
-#ifdef FILEES_CFAPI_DELETE_PROBE
     {CF_CALLBACK_TYPE_NOTIFY_DELETE_COMPLETION, on_delete_completion},
-#endif
     {CF_CALLBACK_TYPE_NOTIFY_RENAME, on_rename},
     CF_CALLBACK_REGISTRATION_END
 };

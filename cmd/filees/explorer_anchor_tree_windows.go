@@ -147,7 +147,7 @@ func (m *anchorManager) readRemoteTree(ctx context.Context, record localrepo.Rec
 
 func loadAnchorRemoteTree(record localrepo.Record, root anchorReleaseFileID) (anchorRemoteTree, error) {
 	var tree anchorRemoteTree
-	file, err := os.Open(anchorTreePath(record.LocalPath))
+	file, _, err := openAnchorReleaseFile(anchorTreePath(record.LocalPath), false)
 	if err != nil {
 		return tree, err
 	}
@@ -193,7 +193,15 @@ func saveAnchorRemoteTree(record localrepo.Record, tree anchorRemoteTree) error 
 	if err != nil {
 		return err
 	}
-	return os.Rename(name, anchorTreePath(record.LocalPath))
+	from, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return err
+	}
+	to, err := windows.UTF16PtrFromString(anchorTreePath(record.LocalPath))
+	if err != nil {
+		return err
+	}
+	return windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
 }
 
 // Deletes children before parents, then adds parents before children. A rename

@@ -21,6 +21,7 @@ var requiredAnchorFeatures = []string{
 	"local_state_usn_v1", "local_states_batch_v1", "batch_release_observation_v1",
 	"explicit_hydrate_v1", "remote_tree_v1",
 	"directory_state_bound_v1",
+	"file_delete_bound_v1",
 }
 
 type cfapiVersion struct {

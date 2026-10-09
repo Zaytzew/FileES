@@ -231,6 +231,16 @@ Raport: `implementation notes (not distributed)`.
 
 ### Dostarczanie plików
 
+Stan 2026-10-09, baza r2050 + WC: normalny helper ma `file_delete_bound_v1`.
+Pojedynczy niepobrany plik może zostać usunięty po typowanym przygotowaniu
+demona i exact OS completion, z trwałym dowodem, jednym remote commitem,
+metadata-only uzgodnieniem SVN, manifestem/skanerem i retirement. Zwykła
+odmowa pozostaje przy braku dowodów/praw, katalogu, excluded SVN node
+i remote rename (w tym przeniesieniu do Kosza). Switch zgody próby nigdy
+nie działa w normalnym helperze. To nie odblokowuje wszystkich kasowań
+ani dowolnego przeciągania w Explorerze; starszy opis poniżej dotyczy
+pierwszego cięcia. E2E/granice: `implementation notes (not distributed)`.
+
 - Placeholder wygląda w Eksploratorze jak zwykły plik swojego typu, ma
   prawdziwą nazwę i rozmiar z HEAD, a **na dysku zajmuje zero bajtów**
   (atrybut `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`).

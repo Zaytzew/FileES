@@ -111,12 +111,12 @@ func verifyAnchorReleaseSet(source, stage, cfapi string) error {
 	if err != nil {
 		return fmt.Errorf("load staged SVN runtime: %w", err)
 	}
-	if err := verifyAnchorReleaseReceipt(raw, "filees.native-svn/v1", "", "sparse_exclude_bound_v1", "sparse_exclude_idle_bound_v1", "sparse_resume_bound_v1", "sparse_inspect_excluded_idle_v1", "info_inspect_remote_v1"); err != nil {
+	if err := verifyAnchorReleaseReceipt(raw, "filees.native-svn/v1", "", "sparse_exclude_bound_v1", "sparse_exclude_idle_bound_v1", "sparse_resume_bound_v1", "sparse_inspect_excluded_idle_v1", "info_inspect_remote_v1", "remote_file_delete_bound_v1", "local_file_delete_metadata_bound_v1", "remote_tree_move_bound_v1", "local_tree_metadata_bound_v1"); err != nil {
 		return err
 	}
 	raw, err = inspect(cfapi, "version")
 	if err != nil {
 		return fmt.Errorf("load CFAPI helper: %w", err)
 	}
-	return verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", strings.TrimSpace(string(base)), "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1", "remote_tree_v1")
+	return verifyAnchorReleaseReceipt(raw, "filees.cfapi/v1", strings.TrimSpace(string(base)), "prepare_release_bound_v1", "restore_release_v1", "release_observation_v1", "remote_tree_v1", "directory_state_bound_v1", "file_delete_bound_v1")
 }

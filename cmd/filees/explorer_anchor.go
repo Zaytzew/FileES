@@ -55,11 +55,12 @@ type anchorBridge struct {
 	retainLocal bool
 	observe     func(context.Context, *anchorBridge)
 	onConnected func(context.Context)
-	// Private transport prerequisite. Nil in product construction: remote
-	// deletion stays refused until the complete coordinator is received.
+	// Private typed transport. The Windows manager binds current authority,
+	// writer/scanner and durable completion; a missing hook refuses deletion.
 	deletePrepare   func(context.Context, anchorDeleteCallback) error
 	deleteComplete  func(context.Context, anchorDeleteCallback) error
 	deleteTimeout   time.Duration
+	deleteRearm     bool // only a fully receipted/retired product coordinator
 	stateMu         sync.Mutex
 	stateID         uint64
 	stateWait       map[string]anchorCommandWait
@@ -121,10 +122,11 @@ const (
 // anchorHelperStreams is how a helper process is started. Tests hand over
 // plain pipes; the daemon hands over the real process.
 type anchorHelperStreams struct {
-	stdout io.Reader
-	stdin  io.WriteCloser
-	wait   func() error
-	abort  func()
+	providerPID uint32
+	stdout      io.Reader
+	stdin       io.WriteCloser
+	wait        func() error
+	abort       func()
 }
 
 func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperStreams, error) {
@@ -156,7 +158,8 @@ func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperS
 	var waitErr error
 	go func() { waitErr = command.Wait(); close(exited) }()
 	return &anchorHelperStreams{
-		stdout: stdout, stdin: stdin,
+		providerPID: uint32(command.Process.Pid),
+		stdout:      stdout, stdin: stdin,
 		wait:  func() error { <-exited; _ = stdout.Close(); return waitErr },
 		abort: func() { _ = command.Process.Kill(); <-exited },
 	}, nil
@@ -190,6 +193,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 		}()
 	}
 	deletion := newAnchorDeleteTransport(ctx, bridge.deletePrepare, bridge.deleteComplete, bridge.deleteTimeout, work, bridge.enqueue)
+	deletion.rearm = bridge.deleteRearm
 	if bridge.observe != nil {
 		work(func() { bridge.observe(ctx, bridge) })
 	}

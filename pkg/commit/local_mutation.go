@@ -127,6 +127,42 @@ func (s *Service) WithRemoteFileDeleteMutation(ctx context.Context, wc string, r
 	return operation()
 }
 
+// Preparation never ACKs the scanner. Recovery ACKs only persisted, bound
+// observations after independent proof, then retires evidence under the writer.
+func (s *Service) WithRemoteFileDelete(ctx context.Context, wc, source string, recovery *watcher.FileDeleteSnapshot, operation func(*watcher.FileDeleteSnapshot) error, complete func() error) error {
+	if operation == nil {
+		return errors.New("missing file deletion coordinator")
+	}
+	return s.WithRemoteFileDeleteMutation(ctx, wc, recovery != nil, func() error {
+		if recovery == nil {
+			if s.FenceFileDelete == nil || complete != nil {
+				return errors.ErrUnsupported
+			}
+			if s.CheckPublication != nil {
+				if err := s.CheckPublication(ctx); err != nil {
+					return err
+				}
+			}
+			return s.FenceFileDelete(ctx, source, operation)
+		}
+		if recovery.WC != wc || recovery.Source != source || s.RecoverFileDelete == nil || complete == nil {
+			return errors.New("file deletion recovery selection or coordinator differs")
+		}
+		if s.CheckPublication != nil {
+			if err := s.CheckPublication(ctx); err != nil {
+				return err
+			}
+		}
+		if err := s.RecoverFileDelete(ctx, recovery, func() error { return operation(recovery) }); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return complete()
+	})
+}
+
 // Internal tree coordinator entry, retaining the real writer AND scanner
 // locks through the callback and durable baseline ACK. No fallback without a
 // publication scanner. This does not retire the owner's pending marker.

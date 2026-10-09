@@ -4,12 +4,41 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"os"
 	"path/filepath"
 	"time"
 
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 )
+
+var ErrAnchorSelectionChanged = errors.New("folder selection changed; preview and confirm again")
+var ErrAnchorRecoveryRequired = errors.New("folder publication requires verified recovery")
+
+// Typed reasons only. Never infer permission to retry from command text or
+// diagnostic Details. Partial results may expose this reason, not raw output.
+func AnchorBatchFailure(err error, action string) (code, key, hint string) {
+	switch {
+	case errors.Is(err, commit.ErrFileReleasePending):
+		return "HEAD-2016", "head.release_pending", "REQUIRE_ACTION"
+	case errors.Is(err, ErrAnchorRecoveryRequired):
+		return "HEAD-2019", "head.folder_recovery_required", "REQUIRE_ACTION"
+	case errors.Is(err, commit.ErrLocalStatusBusy):
+		return "HEAD-2018", "head.folder_busy", "RETRY_LOCAL"
+	case errors.Is(err, ErrAnchorSelectionChanged):
+		return "HEAD-2017", "head.folder_changed", "REQUIRE_ACTION"
+	case errors.Is(err, ErrDepthUnavailable):
+		return "HEAD-2020", "head.folder_unavailable", "NONE"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "HEAD-2021", "head.folder_wait_timeout", "RETRY_LOCAL"
+	case errors.Is(err, os.ErrPermission):
+		return "HEAD-2022", "head.folder_permission", "REQUIRE_ACTION"
+	}
+	if action == "release" {
+		return "HEAD-2015", "head.release_refused", "RETRY"
+	}
+	return "HEAD-2006", "head.materialize_failed", "RETRY"
+}
 
 type AnchorBatchService interface {
 	Plan(context.Context, contract.RepoAnchorPlanPayload) (contract.RepoAnchorPlan, error)
@@ -63,7 +92,9 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 		if err == nil {
 			return contract.OKResponse(req.RequestID, plan)
 		}
-		s.lg.Warnf("Explorer folder preview refused: %v", err)
+		if !errors.Is(err, commit.ErrLocalStatusBusy) {
+			s.lg.Warnf("Explorer folder preview refused: %v", err)
+		}
 		actionErr = err
 	} else {
 		fingerprint, err := hex.DecodeString(p.Fingerprint)
@@ -74,15 +105,14 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 		if err == nil {
 			return contract.OKResponse(req.RequestID, result)
 		}
-		s.lg.Warnf("Explorer folder action refused: %v", err)
+		if !errors.Is(err, commit.ErrLocalStatusBusy) && !errors.Is(err, ErrAnchorSelectionChanged) {
+			s.lg.Warnf("Explorer folder action refused: %v", err)
+		}
 		actionErr = err
 	}
 	if errors.Is(actionErr, commit.ErrFileReleasePending) || commit.HasPendingFileRelease(summary.LocalPath) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2016", "ERROR", "RETRY", "head.release_pending", nil)
 	}
-	code, key := "HEAD-2015", "head.release_refused"
-	if p.Action == "download" {
-		code, key = "HEAD-2006", "head.materialize_failed"
-	}
-	return contract.ErrResponse(req.RequestID, code, "ERROR", "RETRY", key, nil)
+	code, key, hint := AnchorBatchFailure(actionErr, p.Action)
+	return contract.ErrResponse(req.RequestID, code, "ERROR", hint, key, nil)
 }

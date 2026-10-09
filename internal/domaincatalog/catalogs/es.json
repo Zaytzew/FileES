@@ -4,6 +4,12 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_changed": "El contenido o la ubicación de la carpeta cambió fuera de la selección confirmada. Selecciona de nuevo la carpeta y confirma la acción.",
+    "head.folder_busy": "La carpeta está terminando una escritura. Espera a que termine.",
+    "head.folder_recovery_required": "La publicación de esta carpeta requiere conciliación. Revisa el diario y concilia la publicación; los cambios conservados no se eliminarán.",
+    "head.folder_unavailable": "La carpeta virtual se desconectó o su soporte no está disponible. Comprueba la conexión y el acceso al repositorio.",
+    "head.folder_wait_timeout": "La espera terminó sin confirmación de que la acción haya finalizado. Revisa el estado de la carpeta y el diario; los archivos ya descargados permanecen.",
+    "head.folder_permission": "El sistema denegó el acceso a los archivos de esta carpeta. Comprueba los permisos y los programas que los utilizan.",
     "commit.foreign_placeholder_wait": "Este archivo no está disponible en este disco: descárguelo con su proveedor (como Nextcloud o OneDrive). FileES lo mantiene en la cola; no lo elimina ni lo descarga.",
     "commit.server_storage_held": "La publicación espera la confirmación de que hay espacio disponible en el servidor. Los cambios locales se conservan.",
     "system.quiescing": "FileES está preparando un reinicio seguro. Esta acción no se ha iniciado; inténtalo de nuevo en unos instantes.",

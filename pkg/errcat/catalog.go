@@ -240,6 +240,12 @@ var specs = []Spec{
 	{"HEAD-2014", "head.release_unavailable", SevError, HintNone, nil, "Explicit local file release is unavailable"},
 	{"HEAD-2015", "head.release_refused", SevError, HintRetry, nil, "File release was refused; preserve local data"},
 	{"HEAD-2016", "head.release_pending", SevError, HintRetry, nil, "Interrupted file release awaits verified recovery"},
+	{"HEAD-2017", "head.folder_changed", SevError, HintRequireAction, nil, "Confirmed folder selection changed"},
+	{"HEAD-2018", "head.folder_busy", SevInfo, HintRetryLocal, nil, "Folder is completing a write; retry before any effect"},
+	{"HEAD-2019", "head.folder_recovery_required", SevError, HintRequireAction, nil, "Publication requires verified recovery before download"},
+	{"HEAD-2020", "head.folder_unavailable", SevError, HintNone, nil, "Virtual folder is no longer connected or available"},
+	{"HEAD-2021", "head.folder_wait_timeout", SevWarn, HintRetryLocal, nil, "Bounded folder wait expired"},
+	{"HEAD-2022", "head.folder_permission", SevError, HintRequireAction, nil, "Filesystem access to the selected folder was denied"},
 	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},

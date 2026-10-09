@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchorFolder.wait.title": "En attente de la fin de l’écriture…",
+  "progress.anchorFolder.wait.text": "« {path} » — le dossier termine une écriture. FileES attendra et réessaiera l’action. Vous n’avez pas à la relancer manuellement.",
   "action.resendShelf": "Renvoyer l’invitation",
   "input.shelfMessage.title": "Message d’invitation",
   "input.shelfMessage.text": "Texte facultatif pour les destinataires (2000 caractères maximum). Sa modification ne renvoie pas les invitations — utilisez le bouton dédié.",
@@ -70,7 +72,7 @@ export default {
   "progress.anchorFolder.release.title": "Libération de l’espace…",
   "progress.anchorFolder.release.text": "« {path} » — libération de l’espace occupé par {files} fichiers. Les données du serveur restent. Veuillez attendre la fin de l’opération.",
   "progress.anchorFolder.download.title": "Téléchargement des fichiers…",
-  "progress.anchorFolder.download.text": "« {path} » — téléchargement de {files} fichiers. Veuillez attendre la fin de l’opération.",
+  "progress.anchorFolder.download.text": "« {path} » — {files} fichiers à télécharger. Si une écriture est en cours, FileES attendra et réessaiera automatiquement. Veuillez attendre la fin de l’opération.",
   "info.anchorFolder.release.title": "Espace libéré",
   "info.anchorFolder.release.text": "Espace de {done} fichiers sur {total} libéré. Les données du serveur restent ; les fichiers seront téléchargés à leur prochaine ouverture.",
   "info.anchorFolder.release.confirm": "Compris",

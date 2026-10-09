@@ -57,6 +57,8 @@ type HeadBrowserService struct {
 	confirm          func(context.Context, platform.ConfirmRequest) (bool, error)
 	showProgress     func(context.Context, platform.ProgressRequest) (func(), error)
 	folderComplete   func(context.Context, string, int64, int64)
+	folderWait       func(context.Context, time.Duration) error
+	folderTimeout    time.Duration
 
 	mu      sync.RWMutex
 	emitter snapshotEmitter
@@ -188,16 +190,20 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 	}
 	focus := service.Context()
 	payload := contract.RepoAnchorPlanPayload{ServerID: repo.ServerID, RepoID: repo.RepoID, Path: path, Action: action}
-	plan, err := headBrowserCall(service, headBrowserReadTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoAnchorPlan, error) {
-		return daemon.AnchorPlan(ctx, payload)
-	})
+	timeout := service.folderTimeout
+	if timeout <= 0 {
+		timeout = headBrowserWriteTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	plan, err := service.folderPreview(ctx, daemon, repo, focus, payload, true)
 	if err != nil {
 		return zero, true, err
 	}
 	if !plan.Directory {
 		return zero, false, nil
 	}
-	if plan.Files < 0 || plan.Bytes < 0 || len(plan.Fingerprint) != 64 {
+	if plan.Files < 0 || plan.Bytes < 0 || !folderDigest(plan.Fingerprint) {
 		return zero, true, errors.New(service.render("HEAD-2006", "head.materialize_failed", nil))
 	}
 	if plan.Files == 0 {
@@ -206,8 +212,6 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 	if service.confirm == nil {
 		return zero, true, errors.New(service.text("headBrowser.confirmUnavailable", "Potwierdzenie działania jest niedostępne"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), headBrowserWriteTimeout)
-	defer cancel()
 	accepted, err := service.confirm(ctx, platform.ConfirmRequest{
 		PresentationKey:  "confirm.anchorFolder." + action,
 		PresentationArgs: map[string]string{"files": fmt.Sprint(plan.Files), "bytes": fmt.Sprint(plan.Bytes), "path": path},
@@ -246,15 +250,17 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 		}
 		defer closeProgress()
 	}
-	result, err := headBrowserCall(service, headBrowserWriteTimeout, "HEAD-2006", "head.materialize_failed", func(ctx context.Context) (*contract.RepoAnchorBatchResult, error) {
-		return daemon.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: payload, Fingerprint: plan.Fingerprint})
-	})
+	result, currentPlan, err := service.folderExecute(ctx, daemon, repo, focus, payload, plan)
 	closeProgress()
 	if err != nil {
 		return zero, true, err
 	}
-	if result.State != "attached" || result.Completed != result.Total || result.Total != plan.Files {
-		return zero, true, fmt.Errorf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
+	if result.State != "attached" || result.Completed != result.Total || result.Total != currentPlan.Files {
+		partial := fmt.Sprintf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
+		if result.FailureKey != "" {
+			partial += "\n" + service.render(result.FailureCode, result.FailureKey, nil)
+		}
+		return zero, true, errors.New(partial)
 	}
 	if service.folderComplete != nil {
 		service.folderComplete(ctx, action, result.Completed, result.Total)

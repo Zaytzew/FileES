@@ -3,6 +3,7 @@ package ipcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,33 @@ type pendingAnchorBatch struct{ err error }
 
 func (p pendingAnchorBatch) Plan(context.Context, contract.RepoAnchorPlanPayload) (contract.RepoAnchorPlan, error) {
 	return contract.RepoAnchorPlan{}, p.err
+}
+
+func TestAnchorBatchReasonsRemainTyped(t *testing.T) {
+	for _, tc := range []struct {
+		err error
+		key string
+	}{
+		{commit.ErrLocalStatusBusy, "head.folder_busy"},
+		{ErrAnchorSelectionChanged, "head.folder_changed"},
+		{ErrAnchorRecoveryRequired, "head.folder_recovery_required"},
+		{ErrDepthUnavailable, "head.folder_unavailable"},
+		{context.DeadlineExceeded, "head.folder_wait_timeout"},
+		{os.ErrPermission, "head.folder_permission"},
+		{errors.New("working copy writer is busy"), "head.materialize_failed"},
+	} {
+		s := New(filepath.Join(t.TempDir(), "daemon.sock"))
+		s.RegisterActivation(contract.ActivationStatus{ServerID: "server", ClientRole: contract.ClientRoleNormal})
+		s.RegisterRepoAccess("repo", "file:///fixture/repo", t.TempDir(), "server", contract.AccessReadWrite)
+		s.SetAnchorBatch(pendingAnchorBatch{tc.err})
+		for _, execute := range []bool{false, true} {
+			payload, _ := json.Marshal(contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: ".", Action: "download"}, Fingerprint: strings.Repeat("a", 64)})
+			got := s.handleAnchorBatch(contract.Request{RequestID: "test", Payload: payload}, execute)
+			if got.Error == nil || got.Error.MessageKey != tc.key {
+				t.Fatalf("%v execute=%v: %+v", tc.err, execute, got)
+			}
+		}
+	}
 }
 func (p pendingAnchorBatch) Execute(context.Context, contract.RepoAnchorBatchPayload) (contract.RepoAnchorBatchResult, error) {
 	return contract.RepoAnchorBatchResult{}, p.err

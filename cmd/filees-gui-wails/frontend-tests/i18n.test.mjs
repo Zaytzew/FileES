@@ -9,6 +9,20 @@ import {updateDownloadLine} from "../frontend/update-download.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("virtual folder wait and download spinner copy resolves in every language", () => {
+  for (const language of languages) {
+    for (const stage of ["wait", "download"]) {
+      for (const part of ["title", "text"]) {
+        const key = `progress.anchorFolder.${stage}.${part}`;
+        assert.ok(language.messages[key], `${language.code}: ${key}`);
+        const text = translate(catalogues, language.code, key, {path: "test-folder", files: "3"});
+        assert.doesNotMatch(text, /\{(?:path|files)\}|\[progress\./);
+      }
+    }
+  }
+  assert.match(catalogues.pl["progress.anchorFolder.download.text"], /poczeka.*automatycznie/);
+});
+
 test("virtual folder result dialogs translate their buttons in every language", () => {
   const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
   const start = source.indexOf("function promptText("), end = source.indexOf("\n}\n", start) + 2;

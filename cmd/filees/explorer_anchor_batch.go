@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"filees/pkg/client"
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -47,6 +48,9 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 	found := selection == "."
 	result.preview.Directory = found
 	seen := make(map[string]bool)
+	consent := sha256.New()
+	consentEncoder := json.NewEncoder(consent)
+	_ = consentEncoder.Encode([]string{binding, selection, action})
 	err := client.EachHistoryTreeNode(manifest, func(node client.HistoryTreeNode) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -62,6 +66,7 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 			return errors.New("ambiguous folder manifest")
 		}
 		seen[folded] = true
+		_ = consentEncoder.Encode(node)
 		if len(seen) > anchorBatchFileLimit || pathBytes+len(node.Path) > anchorBatchPathBytes {
 			return errors.New("folder plan too large; choose a smaller subtree")
 		}
@@ -119,7 +124,7 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 			} else {
 				if action == "download" {
 					if state.Placeholder && !state.Local {
-						return result, errors.New("hydrated file has not yet been adopted")
+						return result, commit.ErrLocalStatusBusy
 					}
 					continue
 				}
@@ -136,6 +141,9 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 		}
 	}
 	result.preview.Fingerprint = hex.EncodeToString(hash.Sum(nil))
+	if action == "download" {
+		result.preview.SelectionFingerprint = hex.EncodeToString(consent.Sum(nil))
+	}
 	return result, nil
 }
 

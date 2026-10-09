@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"filees/pkg/commit"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 )
@@ -28,10 +30,26 @@ func TestAnchorReleaseManagerRequiresFreshPointAndConnectedProvider(t *testing.T
 		t.Fatal(err)
 	}
 	server := ipcserver.New("unused")
-	server.RegisterRepoAccess("repo", point.RepoURL, point.LocalPath, "server", "rw")
+	repo := server.RegisterRepoAccess("repo", point.RepoURL, point.LocalPath, "server", "rw")
 	m := &anchorManager{lifecycle: store, repos: server.RepoState}
 	if err := m.currentReleaseRecord(point); err != nil {
 		t.Fatal(err)
+	}
+	adapter := anchorBatchAdapter{manager: m}
+	payload := contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: ".", Action: "download"}
+	repo.SetPublishProgress(&contract.PublishProgress{})
+	if _, err := adapter.record(payload); !errors.Is(err, commit.ErrLocalStatusBusy) {
+		t.Fatal("active publication did not wait", err)
+	}
+	required := true
+	repo.SetCommitRecoveryFuncs(func() bool { return required }, nil, nil)
+	if _, err := adapter.record(payload); !errors.Is(err, ipcserver.ErrAnchorRecoveryRequired) {
+		t.Fatal("HOLD hidden by busy", err)
+	}
+	required = false
+	repo.SetPublishProgress(nil)
+	if _, err := adapter.record(payload); err != nil {
+		t.Fatal("completed publication remained busy", err)
 	}
 	// No provider is not permission to invoke ordinary SVN.
 	if err := m.release(t.Context(), "server", "repo", "file.txt"); !errors.Is(err, ipcserver.ErrDepthUnavailable) {

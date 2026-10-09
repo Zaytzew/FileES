@@ -60,16 +60,23 @@ func (m *anchorManager) downloadFile(ctx context.Context, record localrepo.Recor
 }
 
 func (m *anchorManager) waitDownloaded(ctx context.Context, record localrepo.Record, rel string) error {
-	deadline, cancel := context.WithTimeout(ctx, time.Minute)
+	deadline, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
+	delay := 100 * time.Millisecond
 	for {
+		if err := deadline.Err(); err != nil {
+			return err
+		}
 		repo := m.repos(record.ServerID, record.RepoID)
 		if repo == nil {
 			return ipcserver.ErrDepthUnavailable
 		}
 		summary := repo.Summary()
 		if !summary.Attached || filepath.Clean(summary.LocalPath) != filepath.Clean(record.LocalPath) {
-			return errors.New("Explorer point was detached during download")
+			return ipcserver.ErrDepthUnavailable
+		}
+		if repo.Snapshot().CommitRecoveryRequired {
+			return ipcserver.ErrAnchorRecoveryRequired
 		}
 		adopted := false
 		err := repo.WithLocalStatus(deadline, []string{rel}, func(rows []client.StatusEntry) error {
@@ -91,12 +98,13 @@ func (m *anchorManager) waitDownloaded(ctx context.Context, record localrepo.Rec
 		if err == nil && adopted {
 			return nil
 		}
-		timer := time.NewTimer(100 * time.Millisecond)
+		timer := time.NewTimer(delay)
 		select {
 		case <-deadline.Done():
 			timer.Stop()
 			return fmt.Errorf("downloaded file was not adopted into the working copy: %w", deadline.Err())
 		case <-timer.C:
 		}
+		delay = min(delay*2, time.Second)
 	}
 }

@@ -4,6 +4,12 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_changed": "Inhalt oder Speicherort des Ordners haben sich über die bestätigte Auswahl hinaus geändert. Wählen Sie den Ordner erneut und bestätigen Sie die Aktion.",
+    "head.folder_busy": "Der Ordner schließt einen Schreibvorgang ab. Warten Sie, bis er beendet ist.",
+    "head.folder_recovery_required": "Die Veröffentlichung dieses Ordners muss abgeglichen werden. Prüfen Sie das Journal und gleichen Sie die Veröffentlichung ab; gesicherte Änderungen werden nicht gelöscht.",
+    "head.folder_unavailable": "Der virtuelle Ordner wurde getrennt oder seine Unterstützung ist nicht verfügbar. Prüfen Sie die Verbindung und den Repository-Zugriff.",
+    "head.folder_wait_timeout": "Die Wartezeit endete ohne Bestätigung des Abschlusses. Prüfen Sie den Ordnerstatus und das Journal; bereits heruntergeladene Dateien bleiben erhalten.",
+    "head.folder_permission": "Das System hat den Zugriff auf Dateien in diesem Ordner verweigert. Prüfen Sie Berechtigungen und Programme, die diese Dateien verwenden.",
     "commit.foreign_placeholder_wait": "Diese Datei ist auf diesem Laufwerk nicht verfügbar — laden Sie sie mit ihrem Anbieter (z. B. Nextcloud oder OneDrive) herunter. FileES behält sie in der Warteschlange; es löscht sie nicht und lädt sie nicht herunter.",
     "commit.server_storage_held": "Die Veröffentlichung wartet auf die Bestätigung, dass auf dem Server Speicherplatz verfügbar ist. Lokale Änderungen bleiben erhalten.",
     "system.quiescing": "FileES bereitet einen sicheren Neustart vor. Diese Aktion wurde nicht gestartet; versuchen Sie es in Kürze erneut.",

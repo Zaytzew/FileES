@@ -56,8 +56,11 @@ func TestAnchorDownloadWaitsForConfirmedAdoption(t *testing.T) {
 	m := &anchorManager{repos: server.RepoState}
 	record := localrepo.Record{ServerID: "server", RepoID: "repo", LocalPath: local}
 	calls := 0
-	repo.SetLocalStatusFunc(func(_ context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+	repo.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		calls++
+		if until, ok := ctx.Deadline(); !ok || time.Until(until) <= time.Minute {
+			t.Fatal("adoption still times out before a long publication finishes")
+		}
 		if len(paths) != 1 || paths[0] != "file.txt" {
 			t.Fatalf("paths=%v", paths)
 		}

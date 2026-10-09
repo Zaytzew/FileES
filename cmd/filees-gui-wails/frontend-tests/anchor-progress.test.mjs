@@ -9,7 +9,7 @@ test("folder spinner never borrows publication percentages", () => {
   const sandbox = { t: key => key };
   runInNewContext(source + "\nglobalThis.inspect = { measure, setContext: value => context = value };", sandbox);
   sandbox.inspect.setContext({ snapshot: () => ({ repositories: [{ local_path: "D:/folder", publish_files_total: 100, publish_files_done: 70 }] }), bytes: String });
-  for (const action of ["download", "release"]) {
+  for (const action of ["download", "release", "wait"]) {
     const result = sandbox.inspect.measure({ presentation_key: `progress.anchorFolder.${action}`, presentation_args: { path: "D:/folder" } });
     assert.equal(result.share, null);
     assert.equal(result.line, "");

@@ -4,6 +4,12 @@
   "name": "English",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_changed": "The folder contents or location changed beyond the confirmed selection. Select the folder again and confirm the action.",
+    "head.folder_busy": "The folder is completing a write. Wait for it to finish.",
+    "head.folder_recovery_required": "This folder's publication needs reconciliation. Check the journal and reconcile publication; retained changes will not be deleted.",
+    "head.folder_unavailable": "The virtual folder was detached or its support is unavailable. Check its attachment and repository access.",
+    "head.folder_wait_timeout": "The wait ended without confirmation that the action finished. Check the folder status and journal; files already downloaded remain.",
+    "head.folder_permission": "The system denied access to files in this folder. Check permissions and programs using these files.",
     "commit.foreign_placeholder_wait": "This file is not available on this disk — download it using its provider (such as Nextcloud or OneDrive). FileES keeps it queued; it neither deletes nor downloads the file.",
     "commit.server_storage_held": "Publication is waiting for confirmation that server storage is available. Local changes are retained.",
     "system.quiescing": "FileES is preparing a safe restart. This action was not started; try again shortly.",

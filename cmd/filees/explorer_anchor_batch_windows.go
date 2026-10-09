@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +85,17 @@ func (a anchorBatchAdapter) record(p contract.RepoAnchorPlanPayload) (localrepo.
 			if commit.HasPendingFileRelease(record.LocalPath) {
 				return localrepo.Record{}, commit.ErrFileReleasePending
 			}
+			repo := m.repos(record.ServerID, record.RepoID)
+			if repo == nil {
+				return localrepo.Record{}, ipcserver.ErrDepthUnavailable
+			}
+			status := repo.Snapshot()
+			if status.CommitRecoveryRequired {
+				return localrepo.Record{}, ipcserver.ErrAnchorRecoveryRequired
+			}
+			if status.PublishProgress != nil {
+				return localrepo.Record{}, commit.ErrLocalStatusBusy
+			}
 			return record, nil
 		}
 	}
@@ -123,10 +136,9 @@ func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchor
 	}
 	binding, _ := json.Marshal(struct {
 		Operation, Server, Repo, URL, Path string
-		Revision                           int64
 		Root                               anchorReleaseFileID
 	}{
-		record.OperationID, record.ServerID, record.RepoID, record.RepoURL, record.LocalPath, revision, anchorReleaseID(root),
+		record.OperationID, record.ServerID, record.RepoID, record.RepoURL, record.LocalPath, anchorReleaseID(root),
 	})
 	selection, err := anchorBatchPlan(ctx, manifest, p.Path, p.Action, string(binding), func(paths []string) ([]cfapiAnswer, error) {
 		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
@@ -139,6 +151,10 @@ func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchor
 		return answer.States, nil
 	})
 	selection.revision = revision
+	// The exact execution still includes HEAD and all metadata. Only the
+	// read-only download consent can survive an unrelated revision/USN change.
+	exact := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", selection.preview.Fingerprint, revision)))
+	selection.preview.Fingerprint = hex.EncodeToString(exact[:])
 	return selection, err
 }
 
@@ -167,7 +183,7 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 		return result, err
 	}
 	if !selection.preview.Directory || p.Fingerprint != selection.preview.Fingerprint {
-		return result, errors.New("folder selection changed; preview and confirm again")
+		return result, ipcserver.ErrAnchorSelectionChanged
 	}
 	result = contract.RepoAnchorBatchResult{LocalPath: record.LocalPath, Path: p.Path, State: "attached", Total: selection.preview.Files}
 	result.Completed, err = runAnchorBatch(ctx, selection, func(ctx context.Context, file anchorBatchFile) error {
@@ -183,11 +199,12 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 		return a.download(ctx, record, file, selection.revision)
 	})
 	if err != nil {
-		if result.Completed == 0 {
-			return result, err
-		}
+		// Once a file action has started, zero confirmations do not prove zero
+		// effects (hydration can precede adoption). Never return a retryable
+		// pre-effect refusal from this phase, even for the first file.
 		a.manager.log.Warnf("Explorer folder action interrupted: %v", err)
 		result.State = "partial"
+		result.FailureCode, result.FailureKey, _ = ipcserver.AnchorBatchFailure(err, p.Action)
 	}
 	return result, nil
 }

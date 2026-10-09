@@ -4,6 +4,12 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_changed": "Le contenu ou l’emplacement du dossier a changé au-delà de la sélection confirmée. Sélectionnez à nouveau le dossier et confirmez l’action.",
+    "head.folder_busy": "Le dossier termine une écriture. Attendez qu’elle soit terminée.",
+    "head.folder_recovery_required": "La publication de ce dossier doit être rapprochée. Consultez le journal et rapprochez la publication ; les modifications conservées ne seront pas supprimées.",
+    "head.folder_unavailable": "Le dossier virtuel a été détaché ou sa prise en charge est indisponible. Vérifiez sa connexion et l’accès au dépôt.",
+    "head.folder_wait_timeout": "L’attente s’est terminée sans confirmation de la fin de l’action. Vérifiez l’état du dossier et le journal ; les fichiers déjà téléchargés restent.",
+    "head.folder_permission": "Le système a refusé l’accès aux fichiers de ce dossier. Vérifiez les autorisations et les programmes utilisant ces fichiers.",
     "commit.foreign_placeholder_wait": "Ce fichier n’est pas disponible sur ce disque — téléchargez-le avec son fournisseur (comme Nextcloud ou OneDrive). FileES le conserve dans la file d’attente ; il ne le supprime ni ne le télécharge.",
     "commit.server_storage_held": "La publication attend la confirmation que de l’espace est disponible sur le serveur. Les modifications locales sont conservées.",
     "system.quiescing": "FileES prépare un redémarrage sûr. Cette action n’a pas été lancée ; réessayez dans quelques instants.",

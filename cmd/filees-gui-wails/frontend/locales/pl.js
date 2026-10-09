@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchorFolder.wait.title": "Czekam na zakończenie zapisu…",
+  "progress.anchorFolder.wait.text": "„{path}” — folder kończy bieżący zapis. FileES poczeka i ponowi działanie. Nie musisz ponawiać go ręcznie.",
   "action.resendShelf": "Ponów zaproszenie",
   "input.shelfMessage.title": "Wiadomość do zaproszenia",
   "input.shelfMessage.text": "Opcjonalny tekst dla odbiorców (do 2000 znaków). Edycja wiadomości nie ponawia zaproszeń — służy do tego osobny przycisk.",
@@ -69,7 +71,7 @@ export default {
   "progress.anchorFolder.release.title": "Zwalnianie miejsca…",
   "progress.anchorFolder.release.text": "„{path}” — zwalniam miejsce zajęte przez {files} plików. Dane na serwerze pozostają. Poczekaj na zakończenie działania.",
   "progress.anchorFolder.download.title": "Pobieranie plików…",
-  "progress.anchorFolder.download.text": "„{path}” — pobieram {files} plików. Poczekaj na zakończenie działania.",
+  "progress.anchorFolder.download.text": "„{path}” — do pobrania: {files} plików. Jeśli folder kończy zapis, FileES poczeka i ponowi pobranie automatycznie. Poczekaj na zakończenie działania.",
   "info.anchorFolder.release.title": "Zwolniono miejsce",
   "info.anchorFolder.release.text": "Zwolniono miejsce zajęte przez {done} z {total} plików. Dane na serwerze pozostają; pliki pobiorą się przy kolejnym otwarciu.",
   "info.anchorFolder.release.confirm": "Rozumiem",

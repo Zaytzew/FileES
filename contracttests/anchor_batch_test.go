@@ -15,11 +15,11 @@ type contractBatchProbe struct{ plans, writes int }
 
 func (b *contractBatchProbe) Plan(context.Context, contract.RepoAnchorPlanPayload) (contract.RepoAnchorPlan, error) {
 	b.plans++
-	return contract.RepoAnchorPlan{Directory: true, Files: 3, Bytes: 30, Fingerprint: strings.Repeat("ab", 32)}, nil
+	return contract.RepoAnchorPlan{Directory: true, Files: 3, Bytes: 30, Fingerprint: strings.Repeat("ab", 32), SelectionFingerprint: strings.Repeat("cd", 32)}, nil
 }
 func (b *contractBatchProbe) Execute(context.Context, contract.RepoAnchorBatchPayload) (contract.RepoAnchorBatchResult, error) {
 	b.writes++
-	return contract.RepoAnchorBatchResult{State: "partial", Completed: 1, Total: 3}, nil
+	return contract.RepoAnchorBatchResult{State: "partial", Completed: 1, Total: 3, FailureCode: "HEAD-2018", FailureKey: "head.folder_busy"}, nil
 }
 
 func TestAnchorBatchContractRequiresActivationScopeAndConfirmation(t *testing.T) {
@@ -42,14 +42,14 @@ func TestAnchorBatchContractRequiresActivationScopeAndConfirmation(t *testing.T)
 	}
 	p := contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: ".", Action: "download"}
 	plan, err := cli.AnchorPlan(ctx, p)
-	if err != nil || plan.Files != 3 || probe.writes != 0 {
+	if err != nil || plan.Files != 3 || probe.writes != 0 || plan.SelectionFingerprint != strings.Repeat("cd", 32) {
 		t.Fatal(plan, err)
 	}
 	if _, err := cli.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p}); err == nil || probe.writes != 0 {
 		t.Fatal("unconfirmed execution")
 	}
 	result, err := cli.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p, Fingerprint: plan.Fingerprint})
-	if err != nil || result.State != "partial" || result.Completed != 1 {
+	if err != nil || result.State != "partial" || result.Completed != 1 || result.FailureCode != "HEAD-2018" || result.FailureKey != "head.folder_busy" {
 		t.Fatal(result, err)
 	}
 	for _, path := range []string{"", "../a", ".svn/db", "dir/.FILEES/cache", "a\\b", "a\tb"} {

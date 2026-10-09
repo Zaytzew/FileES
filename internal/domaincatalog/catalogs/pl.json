@@ -4,6 +4,12 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_changed": "Zawartość lub położenie folderu zmieniły się poza potwierdzonym zakresem. Wybierz folder ponownie i potwierdź działanie.",
+    "head.folder_busy": "Folder kończy bieżący zapis. Poczekaj na jego zakończenie.",
+    "head.folder_recovery_required": "Publikacja tego folderu wymaga uzgodnienia. Sprawdź dziennik i uzgodnij publikację; zachowane zmiany pozostają bez usuwania.",
+    "head.folder_unavailable": "Folder wirtualny został odłączony albo jego obsługa jest niedostępna. Sprawdź podłączenie i dostęp do repozytorium.",
+    "head.folder_wait_timeout": "Zakończono oczekiwanie bez potwierdzenia zakończenia działania. Sprawdź stan folderu i dziennik; pliki już pobrane pozostają.",
+    "head.folder_permission": "System odmówił dostępu do plików tego folderu. Sprawdź uprawnienia i programy używające tych plików.",
     "commit.foreign_placeholder_wait": "Plik nie jest dostępny na tym dysku — pobierz go w programie, który nim zarządza (np. Nextcloud lub OneDrive). FileES zachowuje kolejkę; nie usuwa ani nie pobiera tego pliku.",
     "commit.server_storage_held": "Publikacja czeka na potwierdzenie dostępnego miejsca na serwerze. Lokalne zmiany są zachowane.",
     "system.quiescing": "FileES przygotowuje bezpieczny restart. To działanie nie zostało rozpoczęte; spróbuj ponownie za chwilę.",

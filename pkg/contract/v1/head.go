@@ -37,6 +37,10 @@ type RepoAnchorPlan struct {
 	Files       int64  `json:"files"`
 	Bytes       int64  `json:"bytes"`
 	Fingerprint string `json:"fingerprint"`
+	// Download-only consent: attachment and selected paths/kinds/sizes, not
+	// a pinned version. Allows a fresh exact plan after publication, never a
+	// larger selection or silent re-confirmation of destructive release.
+	SelectionFingerprint string `json:"selection_fingerprint,omitempty"`
 }
 
 type RepoAnchorBatchPayload struct {
@@ -45,11 +49,13 @@ type RepoAnchorBatchPayload struct {
 }
 
 type RepoAnchorBatchResult struct {
-	LocalPath string `json:"local_path"`
-	Path      string `json:"path"`
-	State     string `json:"state"` // attached or partial; never an atomic folder transaction
-	Completed int64  `json:"completed"`
-	Total     int64  `json:"total"`
+	LocalPath   string `json:"local_path"`
+	Path        string `json:"path"`
+	State       string `json:"state"` // attached or partial; never an atomic folder transaction
+	Completed   int64  `json:"completed"`
+	Total       int64  `json:"total"`
+	FailureCode string `json:"failure_code,omitempty"`
+	FailureKey  string `json:"failure_key,omitempty"`
 }
 
 type RepoAnchorReleasePayload struct {

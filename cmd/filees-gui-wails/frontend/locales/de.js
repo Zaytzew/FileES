@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchorFolder.wait.title": "Warten auf Abschluss des Schreibvorgangs…",
+  "progress.anchorFolder.wait.text": "„{path}“ — der Ordner schließt einen Schreibvorgang ab. FileES wartet und versucht die Aktion erneut. Ein manueller Versuch ist nicht nötig.",
   "action.resendShelf": "Einladung erneut senden",
   "input.shelfMessage.title": "Nachricht zur Einladung",
   "input.shelfMessage.text": "Optionaler Text für Empfänger (bis zu 2000 Zeichen). Bearbeiten sendet keine Einladungen erneut — dafür gibt es eine eigene Schaltfläche.",
@@ -70,7 +72,7 @@ export default {
   "progress.anchorFolder.release.title": "Speicherplatz wird freigegeben…",
   "progress.anchorFolder.release.text": "„{path}“ — Speicherplatz von {files} Dateien wird freigegeben. Die Serverdaten bleiben erhalten. Bitte warten Sie bis zum Abschluss.",
   "progress.anchorFolder.download.title": "Dateien werden heruntergeladen…",
-  "progress.anchorFolder.download.text": "„{path}“ — {files} Dateien werden heruntergeladen. Bitte warten Sie bis zum Abschluss.",
+  "progress.anchorFolder.download.text": "„{path}“ — {files} Dateien zum Herunterladen. Läuft noch ein Schreibvorgang, wartet FileES und versucht es automatisch erneut. Bitte warten Sie bis zum Abschluss.",
   "info.anchorFolder.release.title": "Speicherplatz freigegeben",
   "info.anchorFolder.release.text": "Speicherplatz von {done} von {total} Dateien freigegeben. Die Serverdaten bleiben erhalten; Dateien werden beim nächsten Öffnen heruntergeladen.",
   "info.anchorFolder.release.confirm": "Verstanden",

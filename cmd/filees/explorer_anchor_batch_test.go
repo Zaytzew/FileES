@@ -54,9 +54,15 @@ func TestAnchorBatchPlanUsesOnlySelectedMetadataAndBindsChanges(t *testing.T) {
 	if err != nil || changed.preview.Fingerprint == first.preview.Fingerprint {
 		t.Fatal("metadata change not bound", err)
 	}
+	if changed.preview.SelectionFingerprint != first.preview.SelectionFingerprint || other.preview.SelectionFingerprint != "" {
+		t.Fatal("download consent changed with USN or destructive release got refresh consent")
+	}
 	changed, err = anchorBatchPlan(t.Context(), manifest, "dir", "download", "another attachment", probe)
 	if err != nil || changed.preview.Fingerprint == first.preview.Fingerprint {
 		t.Fatal("attachment change not bound", err)
+	}
+	if changed.preview.SelectionFingerprint == first.preview.SelectionFingerprint {
+		t.Fatal("download consent escaped attachment binding")
 	}
 }
 
@@ -98,6 +104,42 @@ func TestAnchorBatchRefusesIncompleteForeignDirtyAndAmbiguousPlans(t *testing.T)
 	cancel()
 	if _, err := anchorBatchPlan(ctx, manifest, ".", "download", "binding", nil); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestAnchorDownloadConsentBindsSelectedPathsKindsAndSizes(t *testing.T) {
+	plan := func(raw, selected string) string {
+		t.Helper()
+		selection, err := anchorBatchPlan(t.Context(), batchManifest(t, raw), selected, "download", "same-point", func(paths []string) ([]cfapiAnswer, error) {
+			states := make([]cfapiAnswer, len(paths))
+			for i, path := range paths {
+				// Already local files are still bound into the consent manifest.
+				states[i] = batchState(path, true)
+			}
+			return states, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return selection.preview.SelectionFingerprint
+	}
+	base := "{\"path\":\"dir\",\"kind\":\"dir\"}\n{\"path\":\"dir/a\",\"kind\":\"file\",\"size\":10}\n"
+	first := plan(base, "dir")
+	for _, raw := range []string{
+		strings.Replace(base, "dir/a", "dir/b", 1),
+		strings.Replace(base, "\"size\":10", "\"size\":11", 1),
+		strings.Replace(base, "\"kind\":\"file\",\"size\":10", "\"kind\":\"dir\"", 1),
+		base + "{\"path\":\"dir/b\",\"kind\":\"file\",\"size\":10}\n",
+	} {
+		if plan(raw, "dir") == first {
+			t.Fatal("changed subtree retained consent")
+		}
+	}
+	if plan(base, ".") == first {
+		t.Fatal("larger selection retained consent")
+	}
+	if plan(base+"{\"path\":\"elsewhere\",\"kind\":\"file\",\"size\":99}\n", "dir") != first {
+		t.Fatal("unrelated path invalidated download consent")
 	}
 }
 

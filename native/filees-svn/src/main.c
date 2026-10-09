@@ -22,7 +22,7 @@ static const char *const k_verbs[] = {
     "record-move", "unschedule-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "writer-inspect", "list",
-    "fetch-file", "list-tree", "fetch-tree", "exclude-retained", "exclude-bound", "resume-bound", "inspect-excluded", "remote-tree-move", "remote-file-delete", "local-tree", NULL
+    "fetch-file", "list-tree", "fetch-tree", "exclude-retained", "exclude-bound", "resume-bound", "inspect-excluded", "remote-tree-move", "remote-file-delete", "local-tree", "local-file-delete", NULL
 };
 
 static void print_ok_version(void)
@@ -40,6 +40,7 @@ static void print_ok_version(void)
     printf(",\"remote_tree_move_bound_v1\"");
     printf(",\"remote_file_delete_bound_v1\"");
     printf(",\"local_tree_metadata_bound_v1\"");
+    printf(",\"local_file_delete_metadata_bound_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -567,6 +568,23 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     }
 
     if (!strcmp(verb, "commit")) return run_commit(argc, argv, pool);
+    if (!strcmp(verb, "local-file-delete")) {
+        svn_revnum_t base, revision;
+        const char *end;
+        char number[32];
+        if (argc != 15 || (strcmp(argv[2], "--wc") && strcmp(argv[2], "--disposable-wc")) ||
+            strcmp(argv[4], "--phase") || strcmp(argv[6], "--url") || strcmp(argv[8], "--uuid") ||
+            strcmp(argv[10], "--base") || strcmp(argv[12], "--revision"))
+            return filees_refuse("usage: local-file-delete --wc|--disposable-wc WC --phase inspect|stage|ack|verify --url ROOT --uuid UUID --base BASE --revision REV SOURCE");
+        SVN_ERR(svn_revnum_parse(&base, argv[11], &end));
+        apr_snprintf(number, sizeof number, "%ld", (long)base);
+        if (*end || strcmp(number, argv[11])) return filees_refuse("file delete metadata: invalid BASE");
+        SVN_ERR(svn_revnum_parse(&revision, argv[13], &end));
+        apr_snprintf(number, sizeof number, "%ld", (long)revision);
+        if (*end || strcmp(number, argv[13])) return filees_refuse("file delete metadata: invalid revision");
+        return filees_local_file_delete(argv[5], argv[3], !strcmp(argv[2], "--wc"),
+            argv[7], argv[9], base, revision, argv[14], pool);
+    }
     if (!strcmp(verb, "local-tree")) {
         svn_revnum_t base, revision;
         const char *end;

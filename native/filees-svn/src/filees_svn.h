@@ -58,6 +58,12 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc, svn_boolean_t 
     const char *root, const char *uuid, svn_revnum_t base, svn_revnum_t revision,
     const char *source, const char *destination, apr_pool_t *pool);
 
+/* One-file metadata acknowledgement; no fetch, content reads or filesystem
+ * deletion. Remote receipt, completion and writer fence belong to caller. */
+svn_error_t *filees_local_file_delete(const char *phase, const char *wc, svn_boolean_t live,
+    const char *root, const char *uuid, svn_revnum_t base, svn_revnum_t revision,
+    const char *source, apr_pool_t *pool);
+
 /* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
 svn_error_t *filees_remote_tree_move(const char *root, const char *uuid,
     svn_revnum_t base, const char *marker, const char *message,

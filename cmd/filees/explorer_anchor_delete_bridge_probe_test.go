@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,14 +53,15 @@ func (w *deleteProbeWriter) Write(raw []byte) (int, error) {
 
 // Actual connected Cloud Filter -> typed Go bridge -> durable journal -> native
 // RA deletion/inspection. This is NOT the final coordinator: authorization and
-// scanner selection are isolated fixtures, no local SVN/CAS/retirement occurs.
+// scanner selection are isolated fixtures. Selected cases exercise local SVN
+// metadata reconciliation; no manifest/scanner CAS or retirement occurs.
 func TestAnchorDeleteBridgeNativeDurable(t *testing.T) {
 	helper := probeTool(t, "FILEES_CFAPI_DELETE_PROBE")
 	version, err := exec.Command(helper, "version").Output()
 	if err != nil || !strings.Contains(string(version), "delete_bridge_probe_v1") {
 		t.Fatal("isolated typed bridge helper required", err)
 	}
-	for _, scenario := range []string{"allow", "lost-reply", "typed-isolation", "refuse", "default-refuse"} {
+	for _, scenario := range []string{"allow", "lost-reply", "typed-isolation", "metadata-present", "metadata-recreated", "refuse", "default-refuse"} {
 		t.Run(scenario, func(t *testing.T) {
 			r, _ := testTreeMoveIntent(t)
 			base := t.TempDir()
@@ -75,7 +77,7 @@ func TestAnchorDeleteBridgeNativeDurable(t *testing.T) {
 			}
 			uri := (&url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(repo)}).String()
 			probeRun(t, base, cli, "import", "-q", "-m", "deletion bridge seed", seed, uri)
-			svn := client.New(client.Options{SvnPath: cli, NativeSVNPath: native, Timeout: time.Minute})
+			svn := client.New(client.Options{SvnPath: filepath.Join(base, "absent-cli.exe"), NativeSVNPath: native, Timeout: time.Minute})
 			id, err := svn.(interface {
 				HistoryRepositoryUUID(context.Context, string) (string, error)
 			}).HistoryRepositoryUUID(t.Context(), uri)
@@ -85,6 +87,13 @@ func TestAnchorDeleteBridgeNativeDurable(t *testing.T) {
 			r.RepoURL = uri
 			request := client.RemoteFileDelete{RootURL: uri, UUID: id, BaseRevision: 1, OperationID: uuid.NewString(), Source: source, Message: "Usunięcie próby"}
 			identity, _ := anchorRemoteIdentity(source, 1, 4)
+			withMetadata := strings.HasPrefix(scenario, "metadata-")
+			if withMetadata {
+				probeRun(t, base, cli, "checkout", "-q", "--force", uri, r.LocalPath)
+				if err := os.Remove(filepath.Join(r.LocalPath, source)); err != nil {
+					t.Fatal(err)
+				}
+			}
 			p := newLocalStateProbe(t, r.LocalPath, "", fmt.Sprintf("f\t4\t%s\t%s\n", identity, source))
 			p.stop()
 			t.Setenv("FILEES_CFAPI_DELETE_PROBE_BRIDGE", "1")
@@ -119,10 +128,21 @@ func TestAnchorDeleteBridgeNativeDurable(t *testing.T) {
 			prepared := make(chan error, 1)
 			var journal *anchorDeleteSession
 			bridge := &anchorBridge{root: r.LocalPath, onConnected: func(context.Context) { close(connected) }}
+			var fetches atomic.Int32
+			bridge.materializePinned = func(context.Context, string, int64, int64) (string, int64, error) {
+				fetches.Add(1)
+				return "", 0, errors.New("metadata deletion must not request file bytes")
+			}
 			if scenario != "default-refuse" {
 				bridge.deletePrepare = func(c context.Context, cb anchorDeleteCallback) error {
 					if scenario == "refuse" {
 						return errors.New("isolated authorization refusal")
+					}
+					if withMetadata {
+						state, err := svn.(client.LocalFileDeleteReconciler).LocalFileDeleteMetadata(c, r.LocalPath, "inspect", request, 0)
+						if err != nil || state != "present" {
+							return errors.Join(err, errors.New("isolated local metadata preflight failed"))
+						}
 					}
 					journal = newAnchorDeleteSession(r, uint32(cmd.Process.Pid))
 					journal.id = cb.Session
@@ -228,11 +248,32 @@ func TestAnchorDeleteBridgeNativeDurable(t *testing.T) {
 			if _, err = sendAnchorFileDelete(ctx, r, remote); err == nil || remote.sends != 1 {
 				t.Fatal("replayed deletion", err)
 			}
+			if withMetadata {
+				if scenario == "metadata-recreated" {
+					if err := os.WriteFile(filepath.Join(r.LocalPath, source), []byte("new unpublished object"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, phase := range []string{"stage", "stage", "ack", "ack", "verify"} {
+					state, err := svn.(client.LocalFileDeleteReconciler).LocalFileDeleteMetadata(ctx, r.LocalPath, phase, request, receipt.Revision)
+					if err != nil || state != "complete" && !(phase == "stage" && state == "scheduled") {
+						t.Fatal("connected deletion metadata", phase, state, err)
+					}
+				}
+				if scenario == "metadata-recreated" {
+					if got, err := os.ReadFile(filepath.Join(r.LocalPath, source)); err != nil || string(got) != "new unpublished object" {
+						t.Fatal("recreated bytes changed", string(got), err)
+					}
+				}
+			}
 			if out, err := exec.Command(cli, "cat", "-r", "1", uri+"/"+url.PathEscape(source)+"@1").Output(); err != nil || string(out) != "seed" {
 				t.Fatal("historical bytes", string(out), err)
 			}
 			if !commit.HasPendingRemoteFileDelete(r.LocalPath) {
 				t.Fatal("receipt retired unreconciled fence")
+			}
+			if fetches.Load() != 0 {
+				t.Fatal("deletion metadata triggered hydration", fetches.Load())
 			}
 		})
 	}

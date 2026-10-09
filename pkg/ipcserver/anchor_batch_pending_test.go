@@ -27,6 +27,7 @@ func TestAnchorBatchReasonsRemainTyped(t *testing.T) {
 		{commit.ErrLocalStatusBusy, "head.folder_busy"},
 		{ErrAnchorSelectionChanged, "head.folder_changed"},
 		{ErrAnchorRecoveryRequired, "head.folder_recovery_required"},
+		{commit.ErrRemoteTreePending, "head.folder_recovery_required"},
 		{ErrAnchorPathMissing, "head.folder_path_missing"},
 		{ErrDepthUnavailable, "head.folder_unavailable"},
 		{context.DeadlineExceeded, "head.folder_wait_timeout"},
@@ -45,6 +46,9 @@ func TestAnchorBatchReasonsRemainTyped(t *testing.T) {
 			}
 			if tc.key == "head.folder_path_missing" && (got.Error.Code != "HEAD-2023" || got.Error.Hint != "REQUIRE_ACTION") {
 				t.Fatalf("missing path must not trigger silent retry: %+v", got.Error)
+			}
+			if errors.Is(tc.err, commit.ErrRemoteTreePending) && (got.Error.Code != "HEAD-2019" || got.Error.Hint != "REQUIRE_ACTION") {
+				t.Fatalf("tree recovery must not enter download retry: %+v", got.Error)
 			}
 		}
 	}

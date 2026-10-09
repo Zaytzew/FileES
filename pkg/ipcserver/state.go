@@ -792,7 +792,7 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 }
 
 func fileReleaseState(state string, attached bool, wc string) string {
-	if attached && wc != "" && state == contract.StateActive && commit.HasPendingFileRelease(wc) {
+	if attached && wc != "" && state == contract.StateActive && commit.HasPendingLocalMutation(wc) {
 		return contract.StateDegraded
 	}
 	return state

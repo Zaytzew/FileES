@@ -58,8 +58,8 @@ func (s *Service) WithFileRelease(ctx context.Context, wc, rel string, recovery 
 	if s.wc != wc || s.commitWriterBlocked || s.Cli == nil || HasUnresolvedCommit(wc) {
 		return ErrLocalStatusBusy
 	}
-	if HasPendingFileRelease(wc) != recovery {
-		return ErrFileReleasePending
+	if HasPendingRemoteTree(wc) || HasPendingFileRelease(wc) != recovery {
+		return LocalMutationPendingError(wc)
 	}
 	if !recovery {
 		s.mu.Lock()

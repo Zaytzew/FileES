@@ -33,7 +33,7 @@ func TestTheWatcherManifestIsCheckpointedAfterAPublishedBatch(t *testing.T) {
 		"service.EventAcknowledged = scanner.EventAcknowledged",
 		// Pending file release also fences the scanner; retaining that fence
 		// must not remove the original unresolved-publication condition.
-		"wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) || commit.HasPendingFileRelease(wc) }",
+		"wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) || commit.HasPendingLocalMutation(wc) }",
 	} {
 		if !strings.Contains(source, wiring) {
 			t.Errorf("missing publication wiring: %s", wiring)

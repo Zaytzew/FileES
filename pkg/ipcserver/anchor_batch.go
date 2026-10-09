@@ -20,6 +20,8 @@ var ErrAnchorPathMissing = errors.New("repository path is absent from the local 
 // diagnostic Details. Partial results may expose this reason, not raw output.
 func AnchorBatchFailure(err error, action string) (code, key, hint string) {
 	switch {
+	case errors.Is(err, commit.ErrRemoteTreePending):
+		return "HEAD-2019", "head.folder_recovery_required", "REQUIRE_ACTION"
 	case errors.Is(err, commit.ErrFileReleasePending):
 		return "HEAD-2016", "head.release_pending", "REQUIRE_ACTION"
 	case errors.Is(err, ErrAnchorRecoveryRequired):
@@ -87,6 +89,9 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 	if !summary.Attached || !filepath.IsAbs(summary.LocalPath) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2005", "ERROR", "REQUIRE_ACTION", "head.anchor_required", nil)
 	}
+	if commit.HasPendingRemoteTree(summary.LocalPath) {
+		return contract.ErrResponse(req.RequestID, "HEAD-2019", "ERROR", "REQUIRE_ACTION", "head.folder_recovery_required", nil)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	var actionErr error
@@ -113,7 +118,10 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 		}
 		actionErr = err
 	}
-	if errors.Is(actionErr, commit.ErrFileReleasePending) || commit.HasPendingFileRelease(summary.LocalPath) {
+	if errors.Is(actionErr, commit.ErrRemoteTreePending) || commit.HasPendingRemoteTree(summary.LocalPath) {
+		return contract.ErrResponse(req.RequestID, "HEAD-2019", "ERROR", "REQUIRE_ACTION", "head.folder_recovery_required", nil)
+	}
+	if commit.IsLocalMutationPending(actionErr) || commit.HasPendingLocalMutation(summary.LocalPath) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2016", "ERROR", "RETRY", "head.release_pending", nil)
 	}
 	code, key, hint := AnchorBatchFailure(actionErr, p.Action)

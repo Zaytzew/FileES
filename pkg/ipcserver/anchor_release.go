@@ -47,11 +47,17 @@ func (s *Server) handleAnchorRelease(req contract.Request) contract.Response {
 	if !summary.Attached || !filepath.IsAbs(summary.LocalPath) {
 		return contract.ErrResponse(req.RequestID, "HEAD-2005", "ERROR", "REQUIRE_ACTION", "head.anchor_required", nil)
 	}
+	if commit.HasPendingRemoteTree(summary.LocalPath) {
+		return contract.ErrResponse(req.RequestID, "HEAD-2019", "ERROR", "REQUIRE_ACTION", "head.folder_recovery_required", nil)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	if err := release(ctx, p.ServerID, p.RepoID, rel); err != nil {
 		s.lg.Warnf("local file release refused: %v", err)
-		if errors.Is(err, commit.ErrFileReleasePending) || commit.HasPendingFileRelease(summary.LocalPath) {
+		if errors.Is(err, commit.ErrRemoteTreePending) || commit.HasPendingRemoteTree(summary.LocalPath) {
+			return contract.ErrResponse(req.RequestID, "HEAD-2019", "ERROR", "REQUIRE_ACTION", "head.folder_recovery_required", nil)
+		}
+		if errors.Is(err, commit.ErrFileReleasePending) || commit.HasPendingLocalMutation(summary.LocalPath) {
 			return contract.ErrResponse(req.RequestID, "HEAD-2016", "ERROR", "RETRY", "head.release_pending", nil)
 		}
 		return contract.ErrResponse(req.RequestID, "HEAD-2015", "ERROR", "RETRY", "head.release_refused", nil)

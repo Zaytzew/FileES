@@ -54,8 +54,8 @@ func (s *Service) CommitRecoveryRequired() bool {
 func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecoveryPlan, error) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
-	if HasPendingFileRelease(s.wc) {
-		return nil, ErrFileReleasePending
+	if HasPendingLocalMutation(s.wc) {
+		return nil, LocalMutationPendingError(s.wc)
 	}
 	in, err := s.readIntent(s.wc)
 	if err != nil {
@@ -114,8 +114,8 @@ func (s *Service) PlanCommitRecovery(ctx context.Context) (*contract.CommitRecov
 func (s *Service) ApplyCommitRecovery(ctx context.Context, planID, choice string) (*contract.CommitRecoveryApplyResult, error) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
-	if HasPendingFileRelease(s.wc) {
-		return nil, ErrFileReleasePending
+	if HasPendingLocalMutation(s.wc) {
+		return nil, LocalMutationPendingError(s.wc)
 	}
 	plan := s.commitRecoveryPlan
 	s.commitRecoveryPlan = nil
@@ -376,7 +376,7 @@ func (s *Service) writeIntent(wc string, in *commitIntent) error {
 // intentPending is deliberately fail-closed, including corrupt/foreign state.
 // It protects all clean-path retirement entry points, not only the poll loop.
 func (s *Service) intentPending(wc string) bool {
-	if HasPendingFileRelease(wc) {
+	if HasPendingLocalMutation(wc) {
 		return true
 	}
 	in, err := s.readIntent(wc)
@@ -384,8 +384,8 @@ func (s *Service) intentPending(wc string) bool {
 }
 
 func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, resultErr error) {
-	if HasPendingFileRelease(wc) {
-		return true, ErrFileReleasePending // Not a failed publication, no COMMIT HOLD.
+	if HasPendingLocalMutation(wc) {
+		return true, LocalMutationPendingError(wc) // Not a failed publication, no COMMIT HOLD.
 	}
 	in, err := s.readIntent(wc)
 	defer func() {

@@ -2,16 +2,58 @@ package contracttests
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
 )
 
 type contractBatchProbe struct{ plans, writes int }
+
+func TestAnchorBatchContractTreeFenceRequiresRecoveryWithoutRetry(t *testing.T) {
+	socket := testSocketPath(t)
+	server := ipcserver.New(socket)
+	server.RegisterActivation(contract.ActivationStatus{ServerID: "server", ClientRole: contract.ClientRoleNormal})
+	wc := t.TempDir()
+	dir := filepath.Join(wc, ".filees", "state")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, commit.RemoteTreePendingName), []byte("invalid evidence also fences"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server.RegisterRepoAccess("repo", "file:///fixture/repo", wc, "server", contract.AccessReadWrite)
+	probe := &contractBatchProbe{}
+	server.SetAnchorBatch(probe)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cli := ipcclient.New(socket, "tree-fence-test")
+	for _, action := range []string{"download", "release"} {
+		p := contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: ".", Action: action}
+		_, err := cli.AnchorPlan(ctx, p)
+		var response *ipcclient.ResponseError
+		if !errors.As(err, &response) || response.Body.Code != "HEAD-2019" || response.Body.MessageKey != "head.folder_recovery_required" || response.Body.Hint != "REQUIRE_ACTION" {
+			t.Fatal(err, response)
+		}
+		_, err = cli.AnchorBatch(ctx, contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p, Fingerprint: strings.Repeat("ab", 32)})
+		if !errors.As(err, &response) || response.Body.Code != "HEAD-2019" || response.Body.Hint != "REQUIRE_ACTION" {
+			t.Fatal(err, response)
+		}
+	}
+	if probe.plans != 0 || probe.writes != 0 {
+		t.Fatal("pending tree reached provider", probe)
+	}
+}
 
 func (b *contractBatchProbe) Plan(context.Context, contract.RepoAnchorPlanPayload) (contract.RepoAnchorPlan, error) {
 	b.plans++

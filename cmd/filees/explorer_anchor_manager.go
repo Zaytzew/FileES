@@ -308,8 +308,8 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 // unregisters without fetching: fully hydrated files stay, unhydrated entries
 // disappear locally. No SVN deletion is scheduled (owner, 2026-09-28).
 func (m *anchorManager) detach(ctx context.Context, record localrepo.Record) error {
-	if commit.HasPendingFileRelease(record.LocalPath) {
-		return commit.ErrFileReleasePending // Keep registration, journal and local metadata intact.
+	if commit.HasPendingLocalMutation(record.LocalPath) {
+		return commit.LocalMutationPendingError(record.LocalPath) // Keep registration, journal and local metadata intact.
 	}
 	m.mu.Lock()
 	connection, active := m.running[anchorKey(record)]
@@ -545,7 +545,7 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	if info.OK && !info.Ours {
 		return fmt.Errorf("%s is registered by %s", record.LocalPath, info.Provider)
 	}
-	if commit.HasPendingFileRelease(record.LocalPath) {
+	if commit.HasPendingLocalMutation(record.LocalPath) {
 		if !info.OK {
 			return errors.New("release recovery requires its existing FileES registration")
 		}
@@ -708,8 +708,8 @@ func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record
 }
 
 func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Record, identity string, revision, expectedSize int64) (string, int64, error) {
-	if commit.HasPendingFileRelease(record.LocalPath) {
-		return "", 0, commit.ErrFileReleasePending
+	if commit.HasPendingLocalMutation(record.LocalPath) {
+		return "", 0, commit.LocalMutationPendingError(record.LocalPath)
 	}
 	rel, pinned, pinnedSize, ok := parseAnchorRemoteIdentity(identity)
 	if !ok {
@@ -757,8 +757,8 @@ func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Reco
 		return "", 0, errors.New("download size differs from confirmed metadata")
 	}
 	time.AfterFunc(30*time.Minute, func() { _ = os.RemoveAll(dir) })
-	if commit.HasPendingFileRelease(record.LocalPath) {
-		return "", 0, commit.ErrFileReleasePending
+	if commit.HasPendingLocalMutation(record.LocalPath) {
+		return "", 0, commit.LocalMutationPendingError(record.LocalPath)
 	}
 	return dest, revision, nil
 }

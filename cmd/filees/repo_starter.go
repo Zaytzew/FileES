@@ -258,7 +258,7 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		return false
 	}
 	defer leave()
-	if commit.HasUnresolvedCommit(wc) || commit.HasPendingFileRelease(wc) {
+	if commit.HasUnresolvedCommit(wc) || commit.HasPendingLocalMutation(wc) {
 		logger.Infof("startup update deferred: durable local operation recovery pending")
 		return false
 	}
@@ -405,7 +405,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		_ = os.Remove(baselineOK)
 	}
 	wopts, latency := buildWatcherOptions(repo, manifest, busyPath)
-	wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) || commit.HasPendingFileRelease(wc) }
+	wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) || commit.HasPendingLocalMutation(wc) }
 	scanner, err := watcher.NewScanner(wopts)
 	if err != nil {
 		return nil, err
@@ -452,7 +452,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		service.ReconcileStandingConflicts(ctx, wc)
 	}
 	migrationDeferred := true
-	if !commit.HasPendingFileRelease(wc) {
+	if !commit.HasPendingLocalMutation(wc) {
 		migrationDeferred = applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	}
 	// A deferred migration is retried after each confirmed publication rather

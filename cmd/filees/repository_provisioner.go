@@ -836,8 +836,8 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	if current.State != localrepo.StateDetaching && current.State != localrepo.StateDeleting {
 		return current, errors.New("repository detach is not in progress")
 	}
-	if current.LocalPath != "" && commit.HasPendingFileRelease(current.LocalPath) {
-		return current, commit.ErrFileReleasePending
+	if current.LocalPath != "" && commit.HasPendingLocalMutation(current.LocalPath) {
+		return current, commit.LocalMutationPendingError(current.LocalPath)
 	}
 	if err := p.quiesceAttachment(ctx, current); err != nil {
 		return current, err
@@ -845,8 +845,8 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	// A release may have begun while quiesce waited for the writer. Its
 	// durable evidence must survive stopping the attachment, even in a
 	// nocfapi build which cannot resume that operation itself.
-	if current.LocalPath != "" && commit.HasPendingFileRelease(current.LocalPath) {
-		return current, commit.ErrFileReleasePending
+	if current.LocalPath != "" && commit.HasPendingLocalMutation(current.LocalPath) {
+		return current, commit.LocalMutationPendingError(current.LocalPath)
 	}
 	if current.Anchor {
 		if p.detachAnchor == nil {
@@ -1107,8 +1107,8 @@ func stripWorkingCopyMetadataWithRetry(ctx context.Context, root, operationID st
 }
 
 func stripWorkingCopyMetadata(root, operationID string) error {
-	if root != "" && commit.HasPendingFileRelease(root) {
-		return commit.ErrFileReleasePending
+	if root != "" && commit.HasPendingLocalMutation(root) {
+		return commit.LocalMutationPendingError(root)
 	}
 	root = filepath.Clean(root)
 	if !filepath.IsAbs(root) || filepath.Dir(root) == root {

@@ -41,6 +41,10 @@ type RemoteTreeReceipt struct {
 
 func (c *execClient) RemoteTreeMovesEnabled() bool { return filepath.IsAbs(c.nativeSVNPath) }
 
+// ValidateRemoteTreeMove validates immutable intent before persisting it. It
+// does not authenticate the caller or prove the remote/local selection is clean.
+func ValidateRemoteTreeMove(move RemoteTreeMove) error { return validateRemoteTreeMove(move) }
+
 func validateRemoteTreeMove(move RemoteTreeMove) error {
 	u, err := url.Parse(move.RootURL)
 	if err != nil || u == nil || !u.IsAbs() || u.Opaque != "" || !strings.Contains(move.RootURL, "://") ||

@@ -82,8 +82,8 @@ func (a anchorBatchAdapter) record(p contract.RepoAnchorPlanPayload) (localrepo.
 			if err := m.currentReleaseRecord(record); err != nil {
 				return localrepo.Record{}, err
 			}
-			if commit.HasPendingFileRelease(record.LocalPath) {
-				return localrepo.Record{}, commit.ErrFileReleasePending
+			if commit.HasPendingLocalMutation(record.LocalPath) {
+				return localrepo.Record{}, commit.LocalMutationPendingError(record.LocalPath)
 			}
 			repo := m.repos(record.ServerID, record.RepoID)
 			if repo == nil {
@@ -211,8 +211,8 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 
 func (a anchorBatchAdapter) download(ctx context.Context, record localrepo.Record, file anchorBatchFile, revision int64) error {
 	m := a.manager
-	if commit.HasPendingFileRelease(record.LocalPath) {
-		return commit.ErrFileReleasePending
+	if commit.HasPendingLocalMutation(record.LocalPath) {
+		return commit.LocalMutationPendingError(record.LocalPath)
 	}
 	m.mu.Lock()
 	connection := m.running[anchorKey(record)]

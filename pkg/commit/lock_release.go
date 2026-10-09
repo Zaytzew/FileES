@@ -87,8 +87,8 @@ func (s *Service) ClaimReleasedLock(ctx context.Context, repoID, wc string, requ
 	defer release()
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
-	if HasPendingFileRelease(wc) {
-		return false, ErrFileReleasePending
+	if HasPendingLocalMutation(wc) {
+		return false, LocalMutationPendingError(wc)
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err

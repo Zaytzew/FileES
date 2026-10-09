@@ -243,7 +243,7 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 		return
 	}
 	defer unlock()
-	if m.currentReleaseRecord(record) != nil || commit.HasPendingFileRelease(record.LocalPath) {
+	if m.currentReleaseRecord(record) != nil || commit.HasPendingLocalMutation(record.LocalPath) {
 		return
 	}
 	guards, err := guardAnchorReleaseDirectories(record.LocalPath, record.LocalPath)

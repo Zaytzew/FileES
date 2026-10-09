@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -446,7 +445,7 @@ func runReadOnlyRepoWithUpdate(ctx context.Context, repo config.Repo, rs *ipcser
 		}()
 		out, err := svnUpdate(ctx, repo.LocalPath)
 		if err != nil {
-			if errors.Is(err, commit.ErrFileReleasePending) {
+			if commit.IsLocalMutationPending(err) {
 				return true // Local recovery fence, not a lost server connection.
 			}
 			if ctx.Err() == nil {

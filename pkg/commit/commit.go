@@ -616,7 +616,7 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 // recordCommitFailure writes the classified fault to errors.jsonl and the
 // talk log. tryCommit used to Warnf only, which never reached `filees log`.
 func (s *Service) recordCommitFailure(what string, err error) {
-	if errors.Is(err, ErrFileReleasePending) {
+	if IsLocalMutationPending(err) {
 		return // Local release recovery is not a failed publication.
 	}
 	var held *recoveryFailure
@@ -716,7 +716,7 @@ func (s *Service) shutdownDrain(wc string) {
 		return
 	}
 	s.saveCache()
-	if HasPendingFileRelease(wc) {
+	if HasPendingLocalMutation(wc) {
 		return // Preserve queued edits; recovery alone may clear the fence.
 	}
 	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
@@ -959,7 +959,7 @@ type pendingEntry struct {
 // unknown identity cannot grant speculative RW. Per-path ownership includes
 // guest-owned objects; other objects remain on the manual borrow path.
 func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
-	if HasPendingFileRelease(wc) {
+	if HasPendingLocalMutation(wc) {
 		return
 	}
 	if s.AutoUnlockOwned == nil || s.RealmID == "" || (!s.PerPathOwnership && s.RealmID != s.OwnerRealmID) {
@@ -1130,8 +1130,8 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 // Caller holds publication admission and wcOpMu. The shout comment cannot be
 // consumed by an automatic commit or replaced by a second publish request.
 func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) error {
-	if HasPendingFileRelease(wc) {
-		return ErrFileReleasePending
+	if HasPendingLocalMutation(wc) {
+		return LocalMutationPendingError(wc)
 	}
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("working copy metadata is missing")

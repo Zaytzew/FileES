@@ -124,19 +124,34 @@ func treeMovePaths(source, destination string) bool {
 }
 
 func (s *Scanner) validateTreeMoveSnapshot(p *TreeMoveSnapshot) error {
-	if p == nil || p.Schema != "filees.scanner-tree-move/v1" || p.WC != s.wc ||
-		!filepath.IsAbs(p.WC) || filepath.Clean(p.WC) != p.WC || p.Session == "" || p.Sequence == 0 ||
-		(p.Session == s.session && p.Sequence > s.sequence) ||
+	if err := ValidateTreeMoveSnapshot(p, s.wc); err != nil {
+		return err
+	}
+	if p.Session == s.session && p.Sequence > s.sequence {
+		return errors.New("tree move snapshot claims a future scanner generation")
+	}
+	return nil
+}
+
+// ValidateTreeMoveSnapshot validates bounded observations and their WC binding,
+// not publication, filesystem effects or authorization. The owning Scanner
+// additionally checks its current generation and performs a scoped baseline CAS.
+func ValidateTreeMoveSnapshot(p *TreeMoveSnapshot, wc string) error {
+	if p == nil || p.Schema != "filees.scanner-tree-move/v1" || p.WC != wc ||
+		!filepath.IsAbs(p.WC) || filepath.Clean(p.WC) != p.WC || len(p.WC) > 32768 ||
+		p.Session == "" || len(p.Session) > 128 || !utf8.ValidString(p.Session) || p.Sequence == 0 ||
 		!treeMovePaths(p.Source, p.Destination) || len(p.Entries) == 0 || len(p.Entries) > 100000 {
 		return errors.New("tree move snapshot is unbound or invalid")
 	}
-	previous, pathBytes, root := "", 0, false
+	previous, pathBytes, metadataBytes, root := "", 0, 0, false
 	aliases := make(map[string]bool, len(p.Entries))
 	for _, e := range p.Entries {
 		pathBytes += len(e.Path)
+		metadataBytes += len(e.Identity) + len(e.MD5)
 		alias := strings.ToLower(e.Path)
 		if !e.Present || !treeContains(p.Source, e.Path) || !treeMovePaths(e.Path, p.Destination+strings.TrimPrefix(e.Path, p.Source)) || e.Path <= previous ||
-			e.Size < 0 || (e.IsDir && (e.Size != 0 || e.MD5 != "")) || pathBytes > 16<<20 || aliases[alias] {
+			e.Size < 0 || (e.IsDir && (e.Size != 0 || e.MD5 != "")) || pathBytes > 16<<20 || metadataBytes > 16<<20 ||
+			len(e.Identity) > 1024 || len(e.MD5) > 128 || !utf8.ValidString(e.Identity) || aliases[alias] {
 			return errors.New("tree move snapshot has invalid baseline entries")
 		}
 		aliases[alias] = true

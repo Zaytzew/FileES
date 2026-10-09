@@ -12,6 +12,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/localrepo"
+	"filees/pkg/watcher"
 	"github.com/google/uuid"
 )
 
@@ -42,6 +43,14 @@ func testTreeMoveIntent(t *testing.T) (localrepo.Record, client.RemoteTreeMove) 
 	return r, m
 }
 
+// Journal-only fixture. Real scanner/ACK integration is tested separately;
+// these observations are not an independent filesystem or SVN proof.
+func testTreeMoveSnapshot(r localrepo.Record, m client.RemoteTreeMove) *watcher.TreeMoveSnapshot {
+	return &watcher.TreeMoveSnapshot{Schema: "filees.scanner-tree-move/v1", WC: r.LocalPath,
+		Source: m.Source, Destination: m.Destination, Session: uuid.NewString(), Sequence: 1,
+		Entries: []watcher.PublicationEntry{{Path: m.Source, Present: true, IsDir: true}}}
+}
+
 func TestAnchorTreeMoveLostReplyIsInspectedNeverResent(t *testing.T) {
 	r, m := testTreeMoveIntent(t)
 	lost := errors.New("lost reply after effect")
@@ -63,7 +72,7 @@ func TestAnchorTreeMoveLostReplyIsInspectedNeverResent(t *testing.T) {
 		}
 		return remote, nil
 	}}
-	if _, err := sendAnchorTreeMove(t.Context(), r, m, svn); !errors.Is(err, lost) {
+	if _, err := sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn); !errors.Is(err, lost) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
@@ -72,7 +81,7 @@ func TestAnchorTreeMoveLostReplyIsInspectedNeverResent(t *testing.T) {
 			t.Fatal(receipt, err)
 		}
 	}
-	if _, err := sendAnchorTreeMove(t.Context(), r, m, svn); err == nil {
+	if _, err := sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn); err == nil {
 		t.Fatal("pending operation replayed")
 	}
 	if svn.sends != 1 || svn.inspections != 2 || !commit.HasPendingRemoteTree(r.LocalPath) {
@@ -83,7 +92,7 @@ func TestAnchorTreeMoveLostReplyIsInspectedNeverResent(t *testing.T) {
 func TestAnchorTreeMoveUnknownOutcomePreservesFenceAndRejectsForeignAttachment(t *testing.T) {
 	r, m := testTreeMoveIntent(t)
 	svn := &testTreeMover{move: func(client.RemoteTreeMove) (*client.RemoteTreeReceipt, error) { return nil, errors.New("uncertain") }, inspect: func(client.RemoteTreeMove) (*client.RemoteTreeReceipt, error) { return nil, nil }}
-	if _, err := sendAnchorTreeMove(t.Context(), r, m, svn); err == nil {
+	if _, err := sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn); err == nil {
 		t.Fatal("lost response accepted")
 	}
 	if _, err := inspectAnchorTreeMove(t.Context(), r, svn); err == nil || !commit.HasPendingRemoteTree(r.LocalPath) {
@@ -105,7 +114,7 @@ func TestAnchorTreeMoveUnknownOutcomePreservesFenceAndRejectsForeignAttachment(t
 func TestAnchorTreeMoveGuardsEvidenceDuringRemoteEffect(t *testing.T) {
 	r, m := testTreeMoveIntent(t)
 	probe := func() {
-		for _, name := range []string{commit.RemoteTreePendingName, anchorMoveRequestName} {
+		for _, name := range []string{commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveScannerName} {
 			p := filepath.Join(anchorMoveStateDir(r), name)
 			if err := os.Remove(p); err == nil {
 				t.Fatal("evidence deletion was not guarded")
@@ -123,7 +132,7 @@ func TestAnchorTreeMoveGuardsEvidenceDuringRemoteEffect(t *testing.T) {
 		probe()
 		return &client.RemoteTreeReceipt{RemoteTreeMove: m, Revision: 20}, nil
 	}}
-	if _, err := sendAnchorTreeMove(t.Context(), r, m, svn); err != nil {
+	if _, err := sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := inspectAnchorTreeMove(t.Context(), r, svn); err != nil {
@@ -139,10 +148,10 @@ func TestAnchorTreeMoveReplacementRootAndCanceledSendRefuse(t *testing.T) {
 	}}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := sendAnchorTreeMove(ctx, r, m, svn); err == nil || svn.sends != 0 || commit.HasPendingRemoteTree(r.LocalPath) {
+	if _, err := sendAnchorTreeMove(ctx, r, m, testTreeMoveSnapshot(r, m), svn); err == nil || svn.sends != 0 || commit.HasPendingRemoteTree(r.LocalPath) {
 		t.Fatal("canceled send changed state", err)
 	}
-	if _, err := sendAnchorTreeMove(t.Context(), r, m, svn); err == nil {
+	if _, err := sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn); err == nil {
 		t.Fatal("expected lost reply")
 	}
 	old := filepath.Join(t.TempDir(), "old-root")
@@ -158,7 +167,7 @@ func TestAnchorTreeMoveReplacementRootAndCanceledSendRefuse(t *testing.T) {
 	if err := os.MkdirAll(anchorMoveStateDir(r), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{commit.RemoteTreePendingName, anchorMoveRequestName} {
+	for _, name := range []string{commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveScannerName} {
 		b, err := os.ReadFile(filepath.Join(old, ".filees", "state", name))
 		if err != nil {
 			t.Fatal(err)
@@ -179,7 +188,7 @@ func TestAnchorTreeMovePreparedIntentAndMismatchedReceiptRefuse(t *testing.T) {
 			svn := &testTreeMover{move: func(client.RemoteTreeMove) (*client.RemoteTreeReceipt, error) { return nil, errors.New("uncertain") }, inspect: func(client.RemoteTreeMove) (*client.RemoteTreeReceipt, error) {
 				return &client.RemoteTreeReceipt{RemoteTreeMove: m, Revision: 20}, nil
 			}}
-			_, _ = sendAnchorTreeMove(t.Context(), r, m, svn)
+			_, _ = sendAnchorTreeMove(t.Context(), r, m, testTreeMoveSnapshot(r, m), svn)
 			dir := anchorMoveStateDir(r)
 			switch mode {
 			case "prepared":

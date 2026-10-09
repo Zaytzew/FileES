@@ -7,6 +7,8 @@ package main
 // Recovery is READ-ONLY on SVN, never a retry or permission to retire evidence.
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/localrepo"
+	"filees/pkg/watcher"
 	"golang.org/x/sys/windows"
 )
 
@@ -24,6 +27,7 @@ type anchorMoveIntent struct {
 	ServerID, RepoID, AttachmentID, WC string
 	Root                               anchorReleaseFileID
 	Move                               client.RemoteTreeMove
+	ScannerSHA256                      string
 }
 
 type anchorMoveReceipt struct {
@@ -33,17 +37,23 @@ type anchorMoveReceipt struct {
 
 const anchorMoveRequestName = "remote-tree.requested.json"
 const anchorMoveReceiptName = "remote-tree.receipt.json"
+const anchorMoveScannerName = "remote-tree.scanner.json"
+const anchorMoveScannerLimit = 64 << 20
 
 func anchorMoveStateDir(record localrepo.Record) string {
 	return filepath.Join(record.LocalPath, ".filees", "state")
 }
 
 func validateAnchorMoveIntent(in anchorMoveIntent, record localrepo.Record, root anchorReleaseFileID) error {
-	if in.Schema != "filees.anchor-move-intent/v1" || in.ServerID == "" || in.RepoID == "" || in.AttachmentID == "" ||
+	if in.Schema != "filees.anchor-move-intent/v2" || in.ServerID == "" || in.RepoID == "" || in.AttachmentID == "" ||
 		in.ServerID != record.ServerID || in.RepoID != record.RepoID || in.AttachmentID != record.OperationID ||
 		in.WC != record.LocalPath || in.Move.RootURL != record.RepoURL || in.Root != root || root.Index == 0 ||
 		!filepath.IsAbs(in.WC) || filepath.Clean(in.WC) != in.WC {
 		return errors.New("tree move differs from the current activated attachment")
+	}
+	digest, err := hex.DecodeString(in.ScannerSHA256)
+	if err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != in.ScannerSHA256 {
+		return errors.New("tree move lacks its immutable scanner digest")
 	}
 	return client.ValidateRemoteTreeMove(in.Move)
 }
@@ -93,7 +103,7 @@ func readAnchorMoveJSON(ctx context.Context, path string, target any) error {
 // Ordinary evidence handles deny write/delete while consulting SVN. Directory
 // guards alone prevent root replacement, not replacement of these phase files.
 func pinAnchorMoveEvidence(record localrepo.Record, saved bool) ([]*os.File, error) {
-	names := []string{commit.RemoteTreePendingName, anchorMoveRequestName}
+	names := []string{commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveScannerName}
 	if saved {
 		names = append(names, anchorMoveReceiptName)
 	}
@@ -146,10 +156,10 @@ func readAnchorMoveIntent(ctx context.Context, record localrepo.Record, root anc
 	return in, sent, &receipt, nil
 }
 
-// prepare/send is one internal callback under Service.WithRemoteTreeMutation
-// and a future exact scanner/local subtree guard. Every marker precedes its
+// prepare/send is one internal callback under Service.WithRemoteTreeMove
+// and a future exact local subtree guard. Every marker precedes its
 // external effect. Once created, no marker is replaced, deleted or timed out.
-func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, svn client.RemoteTreeMover) (*client.RemoteTreeReceipt, error) {
+func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, snapshot *watcher.TreeMoveSnapshot, svn client.RemoteTreeMover) (*client.RemoteTreeReceipt, error) {
 	if svn == nil || !svn.RemoteTreeMovesEnabled() {
 		return nil, errors.New("native tree move unavailable")
 	}
@@ -158,12 +168,17 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 		return nil, err
 	}
 	defer closeAnchorReleaseGuards(guards)
-	in := anchorMoveIntent{"filees.anchor-move-intent/v1", record.ServerID, record.RepoID, record.OperationID, record.LocalPath, root, move}
+	digest, err := anchorMoveSnapshotDigest(snapshot, record, move)
+	if err != nil {
+		return nil, err
+	}
+	in := anchorMoveIntent{Schema: "filees.anchor-move-intent/v2", ServerID: record.ServerID, RepoID: record.RepoID,
+		AttachmentID: record.OperationID, WC: record.LocalPath, Root: root, Move: move, ScannerSHA256: digest}
 	if err := validateAnchorMoveIntent(in, record, root); err != nil {
 		return nil, err
 	}
 	dir := anchorMoveStateDir(record)
-	for _, name := range []string{commit.FileReleasePendingName, commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveReceiptName} {
+	for _, name := range []string{commit.FileReleasePendingName, commit.RemoteTreePendingName, anchorMoveRequestName, anchorMoveReceiptName, anchorMoveScannerName} {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			return nil, errors.New("tree move has pending or unreadable evidence; inspect, do not replay")
 		}
@@ -172,6 +187,9 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 		return nil, err
 	}
 	if err := writeAnchorReleaseJSONFile(dir, commit.RemoteTreePendingName, in); err != nil {
+		return nil, err
+	}
+	if err := writeAnchorReleaseJSONFileLimit(dir, anchorMoveScannerName, snapshot, anchorMoveScannerLimit); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -191,6 +209,9 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 	checked, sent, saved, err := readAnchorMoveIntent(ctx, record, root)
 	if err != nil || checked != in || !sent || saved != nil {
 		return nil, errors.Join(err, errors.New("tree move evidence changed before send"))
+	}
+	if _, err := readAnchorMoveSnapshot(ctx, record, in); err != nil {
+		return nil, err
 	}
 	receipt, err := svn.RemoteTreeMove(ctx, move)
 	if err != nil {
@@ -212,6 +233,21 @@ func sendAnchorTreeMove(ctx context.Context, record localrepo.Record, move clien
 // not prove local reconciliation, clear the fence or resurrect an old writer.
 // A stored receipt is compared to remote evidence, never trusted on its own.
 func inspectAnchorTreeMove(ctx context.Context, record localrepo.Record, svn client.RemoteTreeMover) (*client.RemoteTreeReceipt, error) {
+	state, err := inspectAnchorTreeMoveState(ctx, record, svn)
+	if err != nil {
+		return nil, err
+	}
+	return state.Receipt, nil
+}
+
+type anchorMoveRecovery struct {
+	Receipt  *client.RemoteTreeReceipt
+	Snapshot *watcher.TreeMoveSnapshot
+}
+
+// The future local coordinator consumes exactly these persisted observations.
+// A confirmed remote receipt alone never authorizes scanner ACK or retirement.
+func inspectAnchorTreeMoveState(ctx context.Context, record localrepo.Record, svn client.RemoteTreeMover) (*anchorMoveRecovery, error) {
 	if svn == nil || !svn.RemoteTreeMovesEnabled() {
 		return nil, errors.New("native tree move inspection unavailable")
 	}
@@ -236,6 +272,10 @@ func inspectAnchorTreeMove(ctx context.Context, record localrepo.Record, svn cli
 	if err != nil || checked != in || !sent || (saved == nil) != (pinnedReceipt == nil) || (saved != nil && *saved != *pinnedReceipt) {
 		return nil, errors.Join(err, errors.New("tree move evidence changed before inspection"))
 	}
+	snapshot, err := readAnchorMoveSnapshot(ctx, record, in)
+	if err != nil {
+		return nil, err
+	}
 	receipt, err := svn.InspectRemoteTreeMove(ctx, in.Move)
 	if err != nil {
 		return nil, err
@@ -254,5 +294,5 @@ func inspectAnchorTreeMove(ctx context.Context, record localrepo.Record, svn cli
 			return nil, err
 		}
 	}
-	return receipt, nil
+	return &anchorMoveRecovery{Receipt: receipt, Snapshot: snapshot}, nil
 }

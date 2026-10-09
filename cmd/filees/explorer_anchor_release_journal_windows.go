@@ -283,11 +283,17 @@ func writeAnchorReleaseJSON(dir string, index int, value any) error {
 }
 
 func writeAnchorReleaseJSONFile(dir, name string, value any) error {
+	return writeAnchorReleaseJSONFileLimit(dir, name, value, 16*1024)
+}
+
+// Internal immutable write; release records retain their original 16 KiB bound.
+// Tree observations use a separate explicit bound, never a value from IPC.
+func writeAnchorReleaseJSONFileLimit(dir, name string, value any, limit int) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	if len(raw) > 16*1024 {
+	if limit <= 0 || len(raw) > limit {
 		return errors.New("release record exceeds size limit")
 	}
 	f, err := os.CreateTemp(dir, ".pending-*")

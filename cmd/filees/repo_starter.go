@@ -445,6 +445,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service.AcknowledgePublication = scanner.AcknowledgePublication
 	service.EventAcknowledged = scanner.EventAcknowledged
 	service.FenceFileRelease = scanner.WithCleanFileMutation
+	service.FenceTreeMove = scanner.WithTreeMove
+	service.RecoverTreeMove = scanner.WithTreeMoveRecovery
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
 	if recovered {
 		// Conflicts an older update left behind block the migration below

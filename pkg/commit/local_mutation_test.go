@@ -1,12 +1,14 @@
 package commit
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"filees/pkg/client"
+	"filees/pkg/watcher"
 )
 
 func pendingRemoteTree(t *testing.T, wc string) {
@@ -16,6 +18,59 @@ func pendingRemoteTree(t *testing.T, wc string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, RemoteTreePendingName), []byte("corrupt evidence also fences"), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemoteTreeMoveUsesRealWriterAndScannerCallbacks(t *testing.T) {
+	wc := t.TempDir()
+	s := &Service{Cli: &statusClient{}}
+	s.BindWorkingCopy("repo", wc)
+	called := 0
+	if err := s.WithRemoteTreeMove(t.Context(), wc, "old", "new", nil, func(*watcher.TreeMoveSnapshot) error { called++; return nil }); !errors.Is(err, errors.ErrUnsupported) || called != 0 {
+		t.Fatal(err, called)
+	}
+	p := &watcher.TreeMoveSnapshot{WC: wc, Source: "old", Destination: "new"}
+	s.FenceTreeMove = func(ctx context.Context, source, destination string, operation func(*watcher.TreeMoveSnapshot) error) error {
+		if s.wcOpMu.TryLock() {
+			s.wcOpMu.Unlock()
+			t.Fatal("scanner outside writer fence")
+		}
+		if source != "old" || destination != "new" {
+			t.Fatal("selection widened")
+		}
+		return operation(p)
+	}
+	if err := s.WithRemoteTreeMove(t.Context(), wc, "old", "new", nil, func(got *watcher.TreeMoveSnapshot) error {
+		if got != p {
+			t.Fatal("lost observations")
+		}
+		called++
+		return nil
+	}); err != nil || called != 1 {
+		t.Fatal(err, called)
+	}
+	pendingRemoteTree(t, wc)
+	s.RecoverTreeMove = func(ctx context.Context, got *watcher.TreeMoveSnapshot, inspect func() error) error {
+		if s.wcOpMu.TryLock() {
+			s.wcOpMu.Unlock()
+			t.Fatal("recovery outside writer fence")
+		}
+		if got != p {
+			t.Fatal("replaced persisted observations")
+		}
+		return inspect()
+	}
+	if err := s.WithRemoteTreeMove(t.Context(), wc, "old", "new", p, func(got *watcher.TreeMoveSnapshot) error { called++; return nil }); err != nil || called != 2 || !HasPendingRemoteTree(wc) {
+		t.Fatal(err, called)
+	}
+	for _, selection := range [][2]string{{"foreign", "new"}, {"old", "foreign"}} {
+		if err := s.WithRemoteTreeMove(t.Context(), wc, selection[0], selection[1], p, func(*watcher.TreeMoveSnapshot) error { t.Fatal("changed recovery selection entered"); return nil }); err == nil {
+			t.Fatal("changed selection admitted")
+		}
+	}
+	s.RecoverTreeMove = nil
+	if err := s.WithRemoteTreeMove(t.Context(), wc, "old", "new", p, func(*watcher.TreeMoveSnapshot) error { t.Fatal("missing scanner bypassed"); return nil }); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatal(err)
 	}
 }

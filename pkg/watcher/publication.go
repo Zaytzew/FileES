@@ -154,7 +154,18 @@ func (s *Scanner) WithCleanFileMutation(ctx context.Context, rel string, operati
 func (s *Scanner) EventAcknowledged(ev Event) bool {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
-	return ev.Session != "" && ev.Session == s.session && ev.Sequence > 0 && ev.Sequence <= s.acknowledged[ev.Rel]
+	if ev.Session == "" || ev.Session != s.session || ev.Sequence == 0 {
+		return false
+	}
+	if ev.Sequence <= s.acknowledged[ev.Rel] {
+		return true
+	}
+	for root, sequence := range s.acknowledgedTrees {
+		if treeContains(root, ev.Rel) && ev.Sequence <= sequence {
+			return true
+		}
+	}
+	return false
 }
 
 func publicationPath(p string) bool {

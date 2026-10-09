@@ -92,6 +92,7 @@ type Scanner struct {
 	session            string
 	sequence           uint64
 	acknowledged       map[string]uint64
+	acknowledgedTrees  map[string]uint64 // confirmed tree transitions; scoped prior event generations only
 	publicationPending func() bool
 	// static
 	wc         string
@@ -329,6 +330,13 @@ func (s *Scanner) WorkingCopySize() (int64, bool) {
 
 // SaveState writes the current map as a sorted list to path (atomically)
 func (s *Scanner) SaveState(path string) error {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	// Shutdown must not turn current unconfirmed observations into the durable
+	// baseline while a commit/release/tree coordinator owns its recovery.
+	if s.publicationPending != nil && s.publicationPending() {
+		return nil
+	}
 	if !s.workingCopyAvailable() {
 		return errors.New("watcher: working copy metadata is missing")
 	}

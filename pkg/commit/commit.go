@@ -165,6 +165,8 @@ type Service struct {
 	AcknowledgePublication func(*watcher.PublicationSnapshot) error
 	EventAcknowledged      func(watcher.Event) bool
 	FenceFileRelease       func(context.Context, string, func() error) error
+	FenceTreeMove          func(context.Context, string, string, func(*watcher.TreeMoveSnapshot) error) error
+	RecoverTreeMove        func(context.Context, *watcher.TreeMoveSnapshot, func() error) error
 	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
 	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
 	Emit func(evType string, payload any)

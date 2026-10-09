@@ -161,6 +161,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .action-badge div { min-width:0; } .action-badge strong,.action-badge small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .action-badge strong { font-size:13px; } .action-badge small { margin-top:4px; color:var(--muted); font-size:12px; }
 .action-spinner { width:19px; height:19px; flex:0 0 auto; border:2px solid rgba(154,167,232,.25); border-top-color:var(--filees-orange); border-radius:50%; animation:spin .8s linear infinite; }
+.metrics .metric-spinner { display:inline-block; width:24px; height:24px; vertical-align:middle; }
 .server-panel { --realm-accent:var(--filees-orange); min-width:0; max-width:100%; overflow:visible; border:1px solid var(--line); border-radius:17px; background:rgba(255,255,255,.02); }
 .server-header { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:76px; padding:14px 18px; border-radius:16px; background:linear-gradient(105deg,color-mix(in srgb,var(--realm-accent) 14%,transparent),rgba(78,167,224,.045) 58%,transparent); box-shadow:inset 4px 0 color-mix(in srgb,var(--realm-accent) 82%,transparent); cursor:pointer; }
 .server-header[aria-expanded="true"] { border-bottom:1px solid var(--line); border-radius:16px 16px 0 0; }

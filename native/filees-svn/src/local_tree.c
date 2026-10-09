@@ -110,10 +110,12 @@ static svn_error_t *absent_info(struct binding *b, const char *path,
 static svn_error_t *scheduled_pair(struct binding *b, const char *src, const char *dst,
                                    svn_client_ctx_t *ctx, apr_pool_t *pool)
 {
-    const svn_client_info2_t *s, *d;
+    const svn_client_info2_t *s = NULL, *d = NULL;
     const svn_wc_info_t *sw, *dw;
     SVN_ERR(read_bound(&s, b, src, FALSE, ctx, pool));
     SVN_ERR(read_bound(&d, b, dst, FALSE, ctx, pool));
+    if (!s || !d || !s->wc_info || !d->wc_info)
+        return filees_refuse("tree metadata: scheduled pair metadata missing");
     sw = s->wc_info; dw = d->wc_info;
     if (s->kind != svn_node_dir || d->kind != svn_node_dir || s->rev != b->base ||
         sw->schedule != svn_wc_schedule_delete || dw->schedule != svn_wc_schedule_add ||

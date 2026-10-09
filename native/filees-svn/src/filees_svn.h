@@ -62,6 +62,9 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc, svn_boolean_t 
 svn_error_t *filees_remote_tree_move(const char *root, const char *uuid,
     svn_revnum_t base, const char *marker, const char *message,
     const char *source, const char *destination, apr_pool_t *pool);
+svn_error_t *filees_remote_file_delete(const char *root, const char *uuid,
+    svn_revnum_t base, const char *marker, const char *message,
+    const char *source, apr_pool_t *pool);
 svn_error_t *filees_ra_ctx(svn_client_ctx_t **ctx, apr_pool_t *pool);
 svn_error_t *filees_ra_ctx_auth(svn_client_ctx_t *ctx, apr_pool_t *pool);
 svn_error_t *filees_ra_target(const char **canonical, const char *url,

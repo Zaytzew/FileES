@@ -234,3 +234,31 @@ void filees_bridge_say_tree_identity(const char *id, HRESULT hr)
     fflush(stdout);
     LeaveCriticalSection(&g_lock);
 }
+
+#ifdef FILEES_CFAPI_DELETE_PROBE
+int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
+    LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
+    const void *identity, DWORD identity_length, const WCHAR *path, DWORD process)
+{
+    WCHAR wide[FILEES_CFAPI_MAX_IDENTITY];
+    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4], full_path[FILEES_CFAPI_MAX_PATH * 4];
+    size_t length;
+    int written;
+    if (!identity || identity_length < sizeof(WCHAR) || identity_length > sizeof wide ||
+        identity_length % sizeof(WCHAR) || !path) return 0;
+    length = identity_length / sizeof(WCHAR);
+    memcpy(wide, identity, identity_length);
+    /* Blobs are length-delimited. Do not read beyond them or ignore suffixes. */
+    if (wide[length - 1] != L'\0' || wcsnlen(wide, length) != length - 1) return 0;
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, utf8, sizeof utf8, NULL, NULL) ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, full_path, sizeof full_path, NULL, NULL) ||
+        strpbrk(utf8, "\t\r\n") || strpbrk(full_path, "\t\r\n")) return 0;
+    EnterCriticalSection(&g_lock);
+    written = printf("delete-probe\t%s\t%lu\t%lld\t%lld\t%lld\t%lu\t%s\t%s\t%lu\n",
+        phase, (unsigned long)volume, root_id, file_id, request, (unsigned long)flags,
+        utf8, full_path, (unsigned long)process);
+    if (fflush(stdout)) written = -1;
+    LeaveCriticalSection(&g_lock);
+    return written > 0;
+}
+#endif

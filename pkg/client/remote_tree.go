@@ -46,18 +46,8 @@ func (c *execClient) RemoteTreeMovesEnabled() bool { return filepath.IsAbs(c.nat
 func ValidateRemoteTreeMove(move RemoteTreeMove) error { return validateRemoteTreeMove(move) }
 
 func validateRemoteTreeMove(move RemoteTreeMove) error {
-	u, err := url.Parse(move.RootURL)
-	if err != nil || u == nil || !u.IsAbs() || u.Opaque != "" || !strings.Contains(move.RootURL, "://") ||
-		u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(move.RootURL, "\x00\r\n") ||
-		move.BaseRevision < 0 || move.BaseRevision > math.MaxInt32 ||
-		len(move.Message) == 0 || len(move.Message) > 4096 || !utf8.ValidString(move.Message) || strings.ContainsRune(move.Message, 0) {
-		return errors.New("remote tree: invalid repository binding or message")
-	}
-	for _, id := range []string{move.UUID, move.OperationID} {
-		parsed, err := uuid.Parse(id)
-		if err != nil || parsed == uuid.Nil || parsed.String() != id {
-			return errors.New("remote tree: canonical repository and operation UUID required")
-		}
+	if err := validateRemoteMutationBinding(move.RootURL, move.UUID, move.BaseRevision, move.OperationID, move.Message); err != nil {
+		return err
 	}
 	for _, rel := range []string{move.Source, move.Destination} {
 		if !remoteTreePath(rel) {
@@ -69,6 +59,23 @@ func validateRemoteTreeMove(move RemoteTreeMove) error {
 	a, b := strings.ToLower(move.Source), strings.ToLower(move.Destination)
 	if a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") {
 		return errors.New("remote tree: source and destination overlap")
+	}
+	return nil
+}
+
+func validateRemoteMutationBinding(root, repoUUID string, base int64, operationID, message string) error {
+	u, err := url.Parse(root)
+	if err != nil || u == nil || !u.IsAbs() || u.Opaque != "" || !strings.Contains(root, "://") ||
+		u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(root, "\x00\r\n") ||
+		base < 0 || base > math.MaxInt32 ||
+		len(message) == 0 || len(message) > 4096 || !utf8.ValidString(message) || strings.ContainsRune(message, 0) {
+		return errors.New("remote tree: invalid repository binding or message")
+	}
+	for _, id := range []string{repoUUID, operationID} {
+		parsed, err := uuid.Parse(id)
+		if err != nil || parsed == uuid.Nil || parsed.String() != id {
+			return errors.New("remote tree: canonical repository and operation UUID required")
+		}
 	}
 	return nil
 }

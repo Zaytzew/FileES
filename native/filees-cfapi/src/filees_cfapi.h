@@ -69,6 +69,13 @@ int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG 
                           filees_bridge_waiting waiting, void *context, WCHAR *path, int *id_out);
 void filees_bridge_say_hydrated(int id, const WCHAR *identity);
 
+#ifdef FILEES_CFAPI_DELETE_PROBE
+/* Probe-only serialized diagnostic line, not a product approval protocol. */
+int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
+    LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
+    const void *identity, DWORD identity_length, const WCHAR *path, DWORD process);
+#endif
+
 /* Verbs. Each returns a process exit code and has already printed its JSON. */
 int filees_cfapi_register(const WCHAR *root, const WCHAR *identity);
 int filees_cfapi_unregister(const WCHAR *root);

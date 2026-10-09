@@ -32,7 +32,11 @@ static void print_version(void)
     /* Features are how the daemon decides what this build can do, exactly as
      * with the native SVN helper: a name appears here only when the thing
      * behind it works. */
-    puts("],\"features\":[\"sync_root_v1\",\"shell_sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\",\"local_state_usn_v1\",\"local_states_batch_v1\",\"batch_release_observation_v1\",\"explicit_hydrate_v1\",\"prepare_release_usn_v1\",\"restore_release_v1\",\"release_observation_v1\",\"prepare_release_bound_v1\",\"remote_tree_v1\",\"bound_tree_move_v1\",\"directory_state_bound_v1\"]}");
+    printf("],\"features\":[\"sync_root_v1\",\"shell_sync_root_v1\",\"placeholders_v1\",\"refuse_delete_rename_v1\",\"fetch_bridge_v1\",\"revert_placeholder_v1\",\"local_state_usn_v1\",\"local_states_batch_v1\",\"batch_release_observation_v1\",\"explicit_hydrate_v1\",\"prepare_release_usn_v1\",\"restore_release_v1\",\"release_observation_v1\",\"prepare_release_bound_v1\",\"remote_tree_v1\",\"bound_tree_move_v1\",\"directory_state_bound_v1\"");
+#ifdef FILEES_CFAPI_DELETE_PROBE
+    printf(",\"delete_callback_probe_v1\"");
+#endif
+    puts("]}");
     fflush(stdout);
 }
 

@@ -277,9 +277,29 @@ static void CALLBACK on_delete(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     answer.AckDelete.Flags = CF_OPERATION_ACK_DELETE_FLAG_NONE;
     answer.AckDelete.CompletionStatus = (filees_local_identity(info->FileIdentity, info->FileIdentityLength) || own_remote_delete(info))
         ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
+#ifdef FILEES_CFAPI_DELETE_PROBE
+    /* Characterization only, in a differently named, opt-in executable. The
+     * regular provider has neither this environment switch nor this override. */
+    if (filees_bridge_say_delete_probe("pre", info->VolumeSerialNumber,
+        info->SyncRootFileId.QuadPart, info->FileId.QuadPart, info->RequestKey.QuadPart,
+        params->Delete.Flags, info->FileIdentity, info->FileIdentityLength,
+        info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0) &&
+        GetEnvironmentVariableW(L"FILEES_CFAPI_DELETE_PROBE_ALLOW", NULL, 0) > 0)
+        answer.AckDelete.CompletionStatus = STATUS_SUCCESS;
+#endif
     hr = CfExecute(&operation, &answer);
     trace("delete acknowledgement", hr);
 }
+
+#ifdef FILEES_CFAPI_DELETE_PROBE
+static void CALLBACK on_delete_completion(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
+{
+    filees_bridge_say_delete_probe("complete", info->VolumeSerialNumber,
+        info->SyncRootFileId.QuadPart, info->FileId.QuadPart, info->RequestKey.QuadPart,
+        params->DeleteCompletion.Flags, info->FileIdentity, info->FileIdentityLength,
+        info->NormalizedPath, info->ProcessInfo ? info->ProcessInfo->ProcessId : 0);
+}
+#endif
 
 static SRWLOCK g_rename_lock = SRWLOCK_INIT;
 static DWORD g_rename_volume;
@@ -332,6 +352,9 @@ static CF_CALLBACK_REGISTRATION k_callbacks[] = {
     {CF_CALLBACK_TYPE_FETCH_DATA, on_fetch_data},
     {CF_CALLBACK_TYPE_CANCEL_FETCH_DATA, on_cancel_fetch_data},
     {CF_CALLBACK_TYPE_NOTIFY_DELETE, on_delete},
+#ifdef FILEES_CFAPI_DELETE_PROBE
+    {CF_CALLBACK_TYPE_NOTIFY_DELETE_COMPLETION, on_delete_completion},
+#endif
     {CF_CALLBACK_TYPE_NOTIFY_RENAME, on_rename},
     CF_CALLBACK_REGISTRATION_END
 };

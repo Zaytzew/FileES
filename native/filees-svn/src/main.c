@@ -22,7 +22,7 @@ static const char *const k_verbs[] = {
     "record-move", "unschedule-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "writer-inspect", "list",
-    "fetch-file", "list-tree", "fetch-tree", "exclude-retained", "exclude-bound", "resume-bound", "inspect-excluded", "remote-tree-move", "local-tree", NULL
+    "fetch-file", "list-tree", "fetch-tree", "exclude-retained", "exclude-bound", "resume-bound", "inspect-excluded", "remote-tree-move", "remote-file-delete", "local-tree", NULL
 };
 
 static void print_ok_version(void)
@@ -38,6 +38,7 @@ static void print_ok_version(void)
     }
     printf("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\",\"writer_lease_v1\",\"sparse_checkout_v1\",\"sparse_update_parents_v1\",\"sparse_set_depth_v1\",\"sparse_adopt_v1\",\"history_list_v1\",\"history_raw_file_v1\",\"history_dated_log_v1\",\"history_tree_v1\",\"commit_progress_v1\",\"commit_not_sent_v1\",\"writer_release_v1\",\"writer_inspect_v1\",\"status_conflicted_v1\",\"sparse_exclude_retained_v1\",\"sparse_inspect_excluded_v1\",\"sparse_inspect_excluded_idle_v1\"");
     printf(",\"remote_tree_move_bound_v1\"");
+    printf(",\"remote_file_delete_bound_v1\"");
     printf(",\"local_tree_metadata_bound_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
@@ -617,14 +618,17 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
     if (!strcmp(verb, "info")) return run_info(argc, argv, pool);
 
-    if (!strcmp(verb, "remote-tree-move")) {
+    if (!strcmp(verb, "remote-tree-move") || !strcmp(verb, "remote-file-delete")) {
         svn_revnum_t revision;
-        if (argc != 15 || strcmp(argv[2], "--url") || strcmp(argv[4], "--uuid") ||
+        int deleting = !strcmp(verb, "remote-file-delete");
+        if (argc != (deleting ? 14 : 15) || strcmp(argv[2], "--url") || strcmp(argv[4], "--uuid") ||
             strcmp(argv[6], "--revision") || strcmp(argv[8], "--operation-id") ||
             strcmp(argv[10], "--message") || strcmp(argv[12], "--"))
-            return filees_refuse("usage: remote-tree-move --url ROOT --uuid UUID --revision N --operation-id UUID --message TEXT -- SOURCE DESTINATION");
+            return filees_refuse("usage: remote mutation --url ROOT --uuid UUID --revision N --operation-id UUID --message TEXT -- SOURCE [DESTINATION]");
         i = 6;
         SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
+        if (deleting)
+            return filees_remote_file_delete(argv[3], argv[5], revision, argv[9], argv[11], argv[13], pool);
         return filees_remote_tree_move(argv[3], argv[5], revision, argv[9], argv[11], argv[13], argv[14], pool);
     }
 

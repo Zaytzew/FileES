@@ -38,7 +38,7 @@ struct slot {
     int used;
     int id;
     int ok;
-    int kind; /* 1 = fetch; 2 = isolated typed delete, never interchangeable */
+    int kind; /* 1 = fetch; 2 = typed delete; 3 = typed rename, never interchangeable */
     int answered;
     HANDLE done;
     WCHAR path[FILEES_CFAPI_MAX_PATH];
@@ -129,13 +129,15 @@ void filees_bridge_answer(char *line)
     EnterCriticalSection(&g_lock);
     for (i = 0; i < FILEES_BRIDGE_SLOTS; ++i) {
         if (!g_slots[i].used || g_slots[i].id != id) continue;
-        if (g_slots[i].kind == 2) {
+        if (g_slots[i].kind == 2 || g_slots[i].kind == 3) {
             /* Typed, canonical, exact token. A fetch 'ok' cannot authorize
              * deletion even if it happens to carry the same numeric id. */
-            if (strcmp(kind, "delete-allow") && strcmp(kind, "delete-deny")) break;
+            const char *allow = g_slots[i].kind == 2 ? "delete-allow" : "rename-allow";
+            const char *deny = g_slots[i].kind == 2 ? "delete-deny" : "rename-deny";
+            if (strcmp(kind, allow) && strcmp(kind, deny)) break;
             if (strcmp(rest, "1") || g_slots[i].answered) break;
             g_slots[i].answered = 1;
-            g_slots[i].ok = !strcmp(kind, "delete-allow");
+            g_slots[i].ok = !strcmp(kind, allow);
             SetEvent(g_slots[i].done);
             break;
         }
@@ -344,4 +346,58 @@ void filees_bridge_say_delete_complete(DWORD volume, LONGLONG root_id, LONGLONG 
 {
     send_delete_frame("delete-complete", 0, volume, root_id, file_id, request,
         flags, identity, identity_length, path, process);
+}
+
+static int send_rename_frame(const char *kind, int id, const CF_CALLBACK_INFO *info,
+    DWORD flags, const WCHAR *source, const WCHAR *target)
+{
+    char identity[FILEES_CFAPI_MAX_IDENTITY * 4], from[4097], to[4097];
+    int written;
+    if (!info->ProcessInfo || !delete_text(info->FileIdentity, info->FileIdentityLength,
+        source, identity, sizeof identity, from, sizeof from) || !target ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, target, -1, to, sizeof to, NULL, NULL) ||
+        strpbrk(to, "\t\r\n") || strlen(identity) > 2048) return 0;
+    EnterCriticalSection(&g_lock);
+    written = printf("%s\t%d\t%lu\t%llu\t%llu\t%lld\t%lu\t%s\t%s\t%lu\t%s\n",
+        kind, id, (unsigned long)info->VolumeSerialNumber,
+        (ULONGLONG)info->SyncRootFileId.QuadPart, (ULONGLONG)info->FileId.QuadPart,
+        info->RequestKey.QuadPart, (unsigned long)flags, identity, from,
+        (unsigned long)info->ProcessInfo->ProcessId, to);
+    if (fflush(stdout)) written = -1;
+    LeaveCriticalSection(&g_lock);
+    return written > 0;
+}
+
+int filees_bridge_rename_request(const CF_CALLBACK_INFO *info, DWORD flags,
+    const WCHAR *target, int *id_out)
+{
+    struct slot *slot;
+    int id, ok = 0;
+    /* Directory, both ends in this sync root; never rename the root itself. */
+    if (!g_started || flags != 7 || !info->RequestKey.QuadPart ||
+        info->FileId.QuadPart == info->SyncRootFileId.QuadPart) return 0;
+    slot = take_slot(&id, 3);
+    if (!slot) return 0;
+    if (!slot->done) slot->done = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!slot->done) { release_slot(slot); return 0; }
+    ResetEvent(slot->done);
+    *id_out = id;
+    if (send_rename_frame("rename-request", id, info, flags, info->NormalizedPath, target) &&
+        WaitForSingleObject(slot->done, 60000) == WAIT_OBJECT_0) ok = slot->ok;
+    release_slot(slot);
+    return ok;
+}
+
+void filees_bridge_say_rename_acked(int id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("rename-acked\t%d\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}
+
+void filees_bridge_say_rename_complete(const CF_CALLBACK_INFO *info,
+    DWORD flags, const WCHAR *source)
+{
+    send_rename_frame("rename-complete", 0, info, flags, source, info->NormalizedPath);
 }

@@ -75,9 +75,16 @@ func (c *anchorMoveProbeClient) LocalTreeMetadata(ctx context.Context, wc, phase
 }
 
 func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
-	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote"} {
+	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote", "explorer-local", "explorer-mixed", "explorer-reply"} {
 		t.Run("phase-"+scenario, func(t *testing.T) {
 			interrupt := scenario
+			explorer := strings.HasPrefix(scenario, "explorer-")
+			if explorer {
+				interrupt = ""
+				if scenario == "explorer-reply" {
+					interrupt = "reply"
+				}
+			}
 			if scenario == "nested" {
 				interrupt = ""
 			}
@@ -89,7 +96,7 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			root := t.TempDir()
 			repo, seed, point := filepath.Join(root, "repo"), filepath.Join(root, "seed"), filepath.Join(root, "point")
 			src, dst := "źródło", "cel"
-			if strings.HasPrefix(scenario, "nested") {
+			if strings.HasPrefix(scenario, "nested") || explorer {
 				dst = "01_PROJEKT/nowa nazwa"
 				if err := os.MkdirAll(filepath.Join(seed, "01_PROJEKT"), 0700); err != nil {
 					t.Fatal(err)
@@ -166,6 +173,11 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 				if err := m.downloadFile(t.Context(), record, src+"/local.txt"); err != nil {
 					t.Fatal("adopt local", err)
 				}
+				if scenario == "explorer-local" {
+					if err := m.downloadFile(t.Context(), record, src+"/cloud.txt"); err != nil {
+						t.Fatal("adopt second file", err)
+					}
+				}
 				m.mu.Lock()
 				activeBridge := m.running[anchorKey(record)].bridge
 				m.mu.Unlock()
@@ -201,7 +213,30 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			if interrupt == "restart" {
 				reader.interrupt = "ack"
 			}
-			if interrupt == "" || interrupt == "remote" {
+			if explorer {
+				// Native pre-effect refusal must preserve the source, and a
+				// new gesture on the same provider must then be usable.
+				state.SetTreeMutationFunc(nil)
+				if e := os.Rename(filepath.Join(point, src), filepath.Join(point, dst)); e == nil || reader.sends.Load() != 0 || commit.HasPendingRemoteTree(point) {
+					t.Fatal("unavailable writer was bypassed", e)
+				}
+				state.SetTreeMutationFunc(func(ctx context.Context, src, dst string, p *watcher.TreeMoveSnapshot, op func(*watcher.TreeMoveSnapshot) error, finish func() error) error {
+					return service.WithRemoteTreeMove(ctx, point, src, dst, p, op, finish)
+				})
+				busy, e := os.OpenFile(filepath.Join(point, src, "local.txt"), os.O_RDWR, 0600)
+				if e != nil {
+					t.Fatal(e)
+				}
+				e = os.Rename(filepath.Join(point, src), filepath.Join(point, dst))
+				busy.Close()
+				if e == nil || reader.sends.Load() != 0 || commit.HasPendingRemoteTree(point) {
+					t.Fatal("busy file was bypassed", e)
+				}
+				err = os.Rename(filepath.Join(point, src), filepath.Join(point, dst))
+				if err == nil {
+					waitFor(t, 30*time.Second, "Explorer move retirement", func() bool { return reader.sends.Load() == 1 && !commit.HasPendingRemoteTree(point) })
+				}
+			} else if interrupt == "" || interrupt == "remote" {
 				adapter := anchorTreeMoveAdapter{m}
 				selection := contract.RepoAnchorMoveSelection{ServerID: "server", RepoID: "repo", Source: src, Destination: dst}
 				preview, e := adapter.MovePlan(t.Context(), selection)
@@ -291,7 +326,11 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			if raw, err := os.ReadFile(filepath.Join(point, dst, "cloud.txt")); err != nil || string(raw) != "original bytes\n" {
 				t.Fatal("fetch new identity", err, string(raw))
 			}
-			if reader.fetches.Load() != oldFetch+1 {
+			wantFetch := oldFetch + 1
+			if scenario == "explorer-local" {
+				wantFetch = oldFetch
+			}
+			if reader.fetches.Load() != wantFetch {
 				t.Fatal("unexpected explicit fetch count", reader.fetches.Load())
 			}
 			if err := m.waitDownloaded(t.Context(), record, dst+"/cloud.txt"); err != nil {

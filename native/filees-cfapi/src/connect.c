@@ -360,15 +360,25 @@ static void CALLBACK on_rename(const CF_CALLBACK_INFO *info, const CF_CALLBACK_P
     CF_OPERATION_INFO operation;
     CF_OPERATION_PARAMETERS answer;
     HRESULT hr;
-    (void)params;
+    int rename_id = 0;
     operation_info(info, CF_OPERATION_TYPE_ACK_RENAME, &operation);
     ZeroMemory(&answer, sizeof answer);
     answer.ParamSize = FILEES_OP_PARAM_SIZE(AckRename);
     answer.AckRename.Flags = CF_OPERATION_ACK_RENAME_FLAG_NONE;
     answer.AckRename.CompletionStatus = (filees_local_identity(info->FileIdentity, info->FileIdentityLength) || own_remote_rename(info))
         ? STATUS_SUCCESS : STATUS_CLOUD_FILE_ACCESS_DENIED;
+    if (answer.AckRename.CompletionStatus != STATUS_SUCCESS &&
+        filees_bridge_rename_request(info, params->Rename.Flags, params->Rename.TargetPath, &rename_id))
+        answer.AckRename.CompletionStatus = STATUS_SUCCESS;
     hr = CfExecute(&operation, &answer);
+    if (rename_id) filees_bridge_say_rename_acked(rename_id,
+        answer.AckRename.CompletionStatus == STATUS_SUCCESS ? hr : E_ACCESSDENIED);
     trace("rename acknowledgement", hr);
+}
+
+static void CALLBACK on_rename_completion(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)
+{
+    filees_bridge_say_rename_complete(info, params->RenameCompletion.Flags, params->RenameCompletion.SourcePath);
 }
 
 static CF_CALLBACK_REGISTRATION k_callbacks[] = {
@@ -377,6 +387,7 @@ static CF_CALLBACK_REGISTRATION k_callbacks[] = {
     {CF_CALLBACK_TYPE_NOTIFY_DELETE, on_delete},
     {CF_CALLBACK_TYPE_NOTIFY_DELETE_COMPLETION, on_delete_completion},
     {CF_CALLBACK_TYPE_NOTIFY_RENAME, on_rename},
+    {CF_CALLBACK_TYPE_NOTIFY_RENAME_COMPLETION, on_rename_completion},
     CF_CALLBACK_REGISTRATION_END
 };
 

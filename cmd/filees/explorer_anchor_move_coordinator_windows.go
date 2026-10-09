@@ -246,6 +246,12 @@ func (m *anchorManager) finishTreeMove(ctx context.Context, record localrepo.Rec
 // Preview and confirmed execution share the same guarded observations. A
 // preview callback must abort with its sentinel, so no scanner ACK occurs.
 func (m *anchorManager) moveTree(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, consent ...func(*anchorMoveObjects, *watcher.TreeMoveSnapshot) error) error {
+	return m.moveTreeWithPhysical(ctx, record, move, nil, consent...)
+}
+
+// External Windows gestures wait for the same durable remote receipt before
+// their native permission is granted. OS completion precedes reconciliation.
+func (m *anchorManager) moveTreeWithPhysical(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, physical func(context.Context) error, consent ...func(*anchorMoveObjects, *watcher.TreeMoveSnapshot) error) error {
 	leave, err := m.enterReleaseIntent()
 	if err != nil {
 		return err
@@ -319,6 +325,11 @@ func (m *anchorManager) moveTree(ctx context.Context, record localrepo.Record, m
 		// changes; parent guards and the durable fence remain throughout.
 		closeAnchorReleaseGuards(pins)
 		pins = nil
+		if physical != nil {
+			if err := physical(ctx); err != nil {
+				return err // remote receipt/fence preserved; never invent OS completion
+			}
+		}
 		_, err = m.advanceTreeMove(ctx, record, connection.bridge, remote, local)
 		return err
 	}, func() error { return m.finishTreeMove(ctx, record, remote, local) })

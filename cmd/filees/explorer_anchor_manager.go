@@ -431,6 +431,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					}
 				}
 				closeDelete := m.bindFileDelete(record, bridge, streams)
+				m.bindExplorerRename(record, bridge, streams)
 				bridge.onConnected = func(providerCtx context.Context) {
 					m.publishDamage(record)
 					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })

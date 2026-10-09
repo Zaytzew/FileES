@@ -109,6 +109,17 @@ func pinMoveObject(record localrepo.Record, rel string, remote bool) (windows.Ha
 	return h, info, err
 }
 
+func readPinnedMoveDirectory(h windows.Handle, name string) ([]os.DirEntry, error) {
+	var duplicate windows.Handle
+	process := windows.CurrentProcess()
+	if err := windows.DuplicateHandle(process, h, process, &duplicate, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(duplicate), name)
+	defer f.Close()
+	return f.ReadDir(-1)
+}
+
 func moveObjectsDigest(proof *anchorMoveObjects) (string, error) {
 	raw, err := json.Marshal(proof)
 	if err != nil || len(raw) > anchorMoveObjectsLimit {
@@ -234,7 +245,10 @@ func (m *anchorManager) captureMoveObjects(ctx context.Context, record localrepo
 			}
 			proof.Objects = append(proof.Objects, object)
 			if s.Directory {
-				entries, err := os.ReadDir(filepath.Join(record.LocalPath, filepath.FromSlash(rel)))
+				// Go's ordinary directory open omits FILE_SHARE_DELETE. During
+				// NOTIFY_RENAME Windows already holds a DELETE handle, so use
+				// the pinned, delete-sharing LIST handle instead of reopening.
+				entries, err := readPinnedMoveDirectory(h, filepath.Join(record.LocalPath, filepath.FromSlash(rel)))
 				if err != nil {
 					return fail(err)
 				}

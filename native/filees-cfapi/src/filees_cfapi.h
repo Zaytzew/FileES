@@ -9,6 +9,7 @@
 #define FILEES_CFAPI_H
 
 #include <windows.h>
+#include <cfapi.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,6 +86,9 @@ void filees_bridge_say_delete_complete(DWORD volume, LONGLONG root_id, LONGLONG 
     const WCHAR *path, DWORD process);
 
 /* Verbs. Each returns a process exit code and has already printed its JSON. */
+int filees_bridge_rename_request(const CF_CALLBACK_INFO *info, DWORD flags, const WCHAR *target, int *id_out);
+void filees_bridge_say_rename_acked(int id, HRESULT hr);
+void filees_bridge_say_rename_complete(const CF_CALLBACK_INFO *info, DWORD flags, const WCHAR *source);
 int filees_cfapi_register(const WCHAR *root, const WCHAR *identity);
 int filees_cfapi_unregister(const WCHAR *root);
 int filees_cfapi_info(const WCHAR *root);

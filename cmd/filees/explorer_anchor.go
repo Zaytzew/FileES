@@ -61,6 +61,7 @@ type anchorBridge struct {
 	deleteComplete  func(context.Context, anchorDeleteCallback) error
 	deleteTimeout   time.Duration
 	deleteRearm     bool // only a fully receipted/retired product coordinator
+	renameTree      func(context.Context, anchorRenameCallback, func(context.Context) error) error
 	stateMu         sync.Mutex
 	stateID         uint64
 	stateWait       map[string]anchorCommandWait
@@ -194,6 +195,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	}
 	deletion := newAnchorDeleteTransport(ctx, bridge.deletePrepare, bridge.deleteComplete, bridge.deleteTimeout, work, bridge.enqueue)
 	deletion.rearm = bridge.deleteRearm
+	renames := newAnchorRenameTransport(ctx, bridge.renameTree, work, bridge.enqueue)
 	if bridge.observe != nil {
 		work(func() { bridge.observe(ctx, bridge) })
 	}
@@ -203,6 +205,8 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	for reader.Scan() {
 		line := reader.Text()
 		switch {
+		case strings.HasPrefix(line, "rename-request\t"), strings.HasPrefix(line, "rename-complete\t"), strings.HasPrefix(line, "rename-acked\t"):
+			renames.receive(line)
 		case strings.HasPrefix(line, "delete-request\t"), strings.HasPrefix(line, "delete-complete\t"), strings.HasPrefix(line, "delete-acked\t"):
 			deletion.receive(line)
 		case strings.HasPrefix(line, "directory-set\t"), strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"), strings.HasPrefix(line, "tree-moved\t"), strings.HasPrefix(line, "tree-identity\t"):

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
 )
@@ -28,6 +29,24 @@ func batchManifest(t *testing.T, contents string) string {
 func batchState(path string, local bool) cfapiAnswer {
 	size := int64(10)
 	return cfapiAnswer{OK: true, Placeholder: true, Partial: !local, Local: local, InSync: true, Size: &size, USN: "42", Identity: path}
+}
+
+func TestAnchorBatchMissingPathIsNotBusyOrACompletePlan(t *testing.T) {
+	manifest := batchManifest(t, "{\"path\":\"a\",\"kind\":\"file\",\"size\":10}\n")
+	for _, action := range []string{"download", "release"} {
+		for _, hr := range []string{"0x80070002", "0x80070003", "0x80070005", ""} {
+			plan, err := anchorBatchPlan(t.Context(), manifest, ".", action, "binding", func([]string) ([]cfapiAnswer, error) {
+				return []cfapiAnswer{{HResult: hr}}, nil
+			})
+			missing := hr == "0x80070002" || hr == "0x80070003"
+			if err == nil || errors.Is(err, ipcserver.ErrAnchorPathMissing) != missing || plan.preview.Fingerprint != "" || len(plan.files) != 0 {
+				t.Fatal(action, hr, plan, err)
+			}
+			if missing && !strings.Contains(err.Error(), `"a"`) {
+				t.Fatal("missing diagnostic path", err)
+			}
+		}
+	}
 }
 
 func TestAnchorBatchPlanUsesOnlySelectedMetadataAndBindsChanges(t *testing.T) {

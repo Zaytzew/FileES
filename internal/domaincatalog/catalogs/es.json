@@ -4,6 +4,7 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_path_missing": "Faltan en esta carpeta algunos archivos del repositorio. Revisa las eliminaciones pendientes y los detalles del registro. FileES no los restaura ni los omite al descargar toda la carpeta.",
     "head.folder_changed": "El contenido o la ubicación de la carpeta cambió fuera de la selección confirmada. Selecciona de nuevo la carpeta y confirma la acción.",
     "head.folder_busy": "La carpeta está terminando una escritura. Espera a que termine.",
     "head.folder_recovery_required": "La publicación de esta carpeta requiere conciliación. Revisa el diario y concilia la publicación; los cambios conservados no se eliminarán.",

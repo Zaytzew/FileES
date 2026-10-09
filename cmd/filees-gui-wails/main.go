@@ -276,11 +276,7 @@ func main() {
 		return close, err
 	}
 	headBrowser.folderComplete = func(ctx context.Context, action string, completed, total int64) {
-		_ = prompts.ShowInfo(ctx, platform.InfoRequest{
-			PresentationKey:  "info.anchorFolder." + action,
-			PresentationArgs: map[string]string{"done": fmt.Sprint(completed), "total": fmt.Sprint(total)},
-			Title:            "Folder FileES", Text: fmt.Sprintf("Działanie zakończone: %d z %d plików.", completed, total),
-		})
+		_ = prompts.ShowInfo(ctx, folderCompletionInfo(action, completed, total))
 	}
 	settingsWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "filees-settings",

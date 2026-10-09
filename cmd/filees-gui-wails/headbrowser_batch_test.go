@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"filees/internal/gui/platform"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 )
 
 type fakeHeadBatchDaemon struct {
@@ -14,6 +16,45 @@ type fakeHeadBatchDaemon struct {
 	plans   []contract.RepoAnchorPlanPayload
 	batches []contract.RepoAnchorBatchPayload
 	partial bool
+}
+
+type missingPathBatchDaemon struct{ fakeHeadBatchDaemon }
+
+func (d *missingPathBatchDaemon) AnchorPlan(_ context.Context, p contract.RepoAnchorPlanPayload) (*contract.RepoAnchorPlan, error) {
+	d.plans = append(d.plans, p)
+	return nil, &ipcclient.ResponseError{Body: contract.ErrorBody{Code: "HEAD-2023", MessageKey: "head.folder_path_missing", Hint: "REQUIRE_ACTION"}}
+}
+
+func TestHeadBrowserMissingPathNeverRetriesOrMutates(t *testing.T) {
+	for _, action := range []string{"download", "release"} {
+		t.Run(action, func(t *testing.T) {
+			snapshot := headBrowserSnapshot()
+			snapshot.Capabilities = append(snapshot.Capabilities, contract.CapRepoAnchorBatch, contract.CapRepoAnchorRelease)
+			service, _ := newTestHeadBrowser(snapshot)
+			d := &missingPathBatchDaemon{}
+			service.daemon = d
+			if err := service.Open("office", "sparse"); err != nil {
+				t.Fatal(err)
+			}
+			service.folderWait = func(context.Context, time.Duration) error { t.Fatal("missing path retried"); return nil }
+			service.confirm = func(context.Context, platform.ConfirmRequest) (bool, error) {
+				t.Fatal("missing path confirmed")
+				return false, nil
+			}
+			service.showProgress = func(context.Context, platform.ProgressRequest) (func(), error) {
+				t.Fatal("missing path waited as busy")
+				return nil, nil
+			}
+			repo, err := service.focused()
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, handled, err := service.folderAction(repo, ".", action)
+			if !handled || err == nil || len(d.plans) != 1 || len(d.batches) != 0 {
+				t.Fatal(handled, err, d.plans, d.batches)
+			}
+		})
+	}
 }
 
 func (f *fakeHeadBatchDaemon) AnchorPlan(_ context.Context, p contract.RepoAnchorPlanPayload) (*contract.RepoAnchorPlan, error) {

@@ -207,6 +207,9 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 		return zero, true, errors.New(service.render("HEAD-2006", "head.materialize_failed", nil))
 	}
 	if plan.Files == 0 {
+		if service.folderComplete != nil {
+			service.folderComplete(ctx, action, 0, 0)
+		}
 		return contract.RepoHeadWriteResult{State: "attached", Path: path, LocalPath: repo.LocalPath}, true, nil
 	}
 	if service.confirm == nil {
@@ -266,6 +269,20 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 		service.folderComplete(ctx, action, result.Completed, result.Total)
 	}
 	return contract.RepoHeadWriteResult{LocalPath: result.LocalPath, Path: result.Path, State: result.State}, true, nil
+}
+
+// No-op plans need feedback too, but must not claim files were transferred.
+func folderCompletionInfo(action string, completed, total int64) platform.InfoRequest {
+	key := "info.anchorFolder." + action
+	text := fmt.Sprintf("Działanie zakończone: %d z %d plików.", completed, total)
+	if completed == 0 && total == 0 {
+		key += ".noWork"
+		text = "Nie ma plików wymagających tego działania. Niczego nie zmieniono."
+	}
+	return platform.InfoRequest{
+		PresentationKey: key, PresentationArgs: map[string]string{"done": fmt.Sprint(completed), "total": fmt.Sprint(total)},
+		Title: "Folder FileES", Text: text,
+	}
 }
 
 func (service *HeadBrowserService) focused() (HeadBrowserRepository, error) {

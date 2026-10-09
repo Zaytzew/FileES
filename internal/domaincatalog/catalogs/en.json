@@ -4,6 +4,7 @@
   "name": "English",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_path_missing": "Some repository files are missing from this folder. Check pending deletions and the journal details. FileES will neither restore them nor skip them when downloading the whole folder.",
     "head.folder_changed": "The folder contents or location changed beyond the confirmed selection. Select the folder again and confirm the action.",
     "head.folder_busy": "The folder is completing a write. Wait for it to finish.",
     "head.folder_recovery_required": "This folder's publication needs reconciliation. Check the journal and reconcile publication; retained changes will not be deleted.",

@@ -27,6 +27,7 @@ func TestAnchorBatchReasonsRemainTyped(t *testing.T) {
 		{commit.ErrLocalStatusBusy, "head.folder_busy"},
 		{ErrAnchorSelectionChanged, "head.folder_changed"},
 		{ErrAnchorRecoveryRequired, "head.folder_recovery_required"},
+		{ErrAnchorPathMissing, "head.folder_path_missing"},
 		{ErrDepthUnavailable, "head.folder_unavailable"},
 		{context.DeadlineExceeded, "head.folder_wait_timeout"},
 		{os.ErrPermission, "head.folder_permission"},
@@ -41,6 +42,9 @@ func TestAnchorBatchReasonsRemainTyped(t *testing.T) {
 			got := s.handleAnchorBatch(contract.Request{RequestID: "test", Payload: payload}, execute)
 			if got.Error == nil || got.Error.MessageKey != tc.key {
 				t.Fatalf("%v execute=%v: %+v", tc.err, execute, got)
+			}
+			if tc.key == "head.folder_path_missing" && (got.Error.Code != "HEAD-2023" || got.Error.Hint != "REQUIRE_ACTION") {
+				t.Fatalf("missing path must not trigger silent retry: %+v", got.Error)
 			}
 		}
 	}

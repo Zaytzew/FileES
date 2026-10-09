@@ -4,6 +4,7 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_path_missing": "Certains fichiers du dépôt sont absents de ce dossier. Vérifiez les suppressions en attente et les détails du journal. FileES ne les restaure pas et ne les ignore pas lors du téléchargement de tout le dossier.",
     "head.folder_changed": "Le contenu ou l’emplacement du dossier a changé au-delà de la sélection confirmée. Sélectionnez à nouveau le dossier et confirmez l’action.",
     "head.folder_busy": "Le dossier termine une écriture. Attendez qu’elle soit terminée.",
     "head.folder_recovery_required": "La publication de ce dossier doit être rapprochée. Consultez le journal et rapprochez la publication ; les modifications conservées ne seront pas supprimées.",

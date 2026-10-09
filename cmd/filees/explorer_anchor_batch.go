@@ -16,6 +16,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcserver"
 )
 
 // Only bounded metadata is retained. No file bytes or filesystem recursion are
@@ -106,6 +107,11 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 			return result, errors.New("incomplete folder metadata")
 		}
 		for i, state := range states {
+			// Absence is not a busy writer or permission to restore a user's
+			// deletion. Refuse the whole selection before any hydration.
+			if !state.OK && (strings.EqualFold(state.HResult, "0x80070002") || strings.EqualFold(state.HResult, "0x80070003")) {
+				return result, fmt.Errorf("%w: %q (hresult=%s)", ipcserver.ErrAnchorPathMissing, batch[i], state.HResult)
+			}
 			usn, usnErr := strconv.ParseInt(state.USN, 10, 64)
 			if !state.OK || state.Size == nil || *state.Size < 0 || usnErr != nil || usn <= 0 {
 				return result, fmt.Errorf("unavailable folder metadata: ok=%v size=%v usn=%q hresult=%s", state.OK, state.Size != nil, state.USN, state.HResult)

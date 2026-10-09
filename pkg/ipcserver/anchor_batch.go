@@ -14,6 +14,7 @@ import (
 
 var ErrAnchorSelectionChanged = errors.New("folder selection changed; preview and confirm again")
 var ErrAnchorRecoveryRequired = errors.New("folder publication requires verified recovery")
+var ErrAnchorPathMissing = errors.New("repository path is absent from the local folder")
 
 // Typed reasons only. Never infer permission to retry from command text or
 // diagnostic Details. Partial results may expose this reason, not raw output.
@@ -23,6 +24,8 @@ func AnchorBatchFailure(err error, action string) (code, key, hint string) {
 		return "HEAD-2016", "head.release_pending", "REQUIRE_ACTION"
 	case errors.Is(err, ErrAnchorRecoveryRequired):
 		return "HEAD-2019", "head.folder_recovery_required", "REQUIRE_ACTION"
+	case errors.Is(err, ErrAnchorPathMissing):
+		return "HEAD-2023", "head.folder_path_missing", "REQUIRE_ACTION"
 	case errors.Is(err, commit.ErrLocalStatusBusy):
 		return "HEAD-2018", "head.folder_busy", "RETRY_LOCAL"
 	case errors.Is(err, ErrAnchorSelectionChanged):

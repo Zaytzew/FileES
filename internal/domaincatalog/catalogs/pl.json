@@ -4,6 +4,7 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_path_missing": "Niektórych plików obecnych w repozytorium brakuje w tym folderze. Sprawdź kolejkę usunięć i szczegóły w dzienniku. FileES nie odtwarza ich ani nie pomija przy pobieraniu całego folderu.",
     "head.folder_changed": "Zawartość lub położenie folderu zmieniły się poza potwierdzonym zakresem. Wybierz folder ponownie i potwierdź działanie.",
     "head.folder_busy": "Folder kończy bieżący zapis. Poczekaj na jego zakończenie.",
     "head.folder_recovery_required": "Publikacja tego folderu wymaga uzgodnienia. Sprawdź dziennik i uzgodnij publikację; zachowane zmiany pozostają bez usuwania.",

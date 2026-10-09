@@ -4,6 +4,7 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "head.folder_path_missing": "Einige Dateien aus dem Repository fehlen in diesem Ordner. Prüfen Sie ausstehende Löschungen und die Details im Protokoll. FileES stellt sie weder wieder her noch überspringt es sie beim Herunterladen des gesamten Ordners.",
     "head.folder_changed": "Inhalt oder Speicherort des Ordners haben sich über die bestätigte Auswahl hinaus geändert. Wählen Sie den Ordner erneut und bestätigen Sie die Aktion.",
     "head.folder_busy": "Der Ordner schließt einen Schreibvorgang ab. Warten Sie, bis er beendet ist.",
     "head.folder_recovery_required": "Die Veröffentlichung dieses Ordners muss abgeglichen werden. Prüfen Sie das Journal und gleichen Sie die Veröffentlichung ab; gesicherte Änderungen werden nicht gelöscht.",

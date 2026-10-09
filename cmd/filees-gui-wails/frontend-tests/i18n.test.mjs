@@ -29,7 +29,7 @@ test("virtual folder result dialogs translate their buttons in every language", 
   for (const language of languages) {
     const text = (key, args) => translate(catalogues, language.code, key, args);
     const renderText = runInNewContext(source.slice(start, end) + "\npromptText", {t: text});
-    for (const action of ["download", "release"]) {
+    for (const action of ["download", "release", "download.noWork", "release.noWork"]) {
       const key = `info.anchorFolder.${action}`;
       const prompt = {presentation_key: key, presentation_args: {done: "1", total: "1"}};
       for (const part of ["title", "text", "confirm", "cancel"]) {
@@ -42,6 +42,8 @@ test("virtual folder result dialogs translate their buttons in every language", 
   }
   assert.equal(catalogues.pl["info.anchorFolder.download.confirm"], "Rozumiem");
   assert.equal(catalogues.pl["info.anchorFolder.release.confirm"], "Rozumiem");
+  assert.match(catalogues.pl["info.anchorFolder.download.noWork.text"], /niczego nie zmieniono/);
+  assert.match(catalogues.pl["info.anchorFolder.release.noWork.text"], /Niczego nie zmieniono/);
 });
 
 test("content availability has all three labels in every language", () => {

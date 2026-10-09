@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -394,5 +395,78 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	}
 	if err := m.waitDownloaded(t.Context(), record, "folder/file-01.txt"); err != nil {
 		t.Fatal("read after release not adopted", err)
+	}
+	// Deleting an adopted local file must remain a missing SVN entry, not an
+	// invitation to download it again. Use only this disposable point/repo.
+	waitFor(t, 15*time.Second, "adopted file admitted for local deletion", func() bool {
+		cursor = ""
+		if err := m.refreshLocalStates(t.Context(), record, bridge, &cursor); err != nil {
+			return false
+		}
+		s, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", "folder/file-01.txt")
+		return err == nil && s.Local && s.InSync && !s.Partial
+	})
+	deletionScanner, err := watcher.NewScanner(watcher.Options{WC: point, StatePath: filepath.Join(root, "delete-manifest.json"), ScanPeriod: 100 * time.Millisecond, DeletedDebounce: 100 * time.Millisecond, RequireSVNMetadata: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletionCtx, stopDeletionScanner := context.WithCancel(t.Context())
+	deletionEvents := deletionScanner.Start(deletionCtx)
+	t.Cleanup(func() {
+		stopDeletionScanner()
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case _, ok := <-deletionEvents:
+				if !ok {
+					return
+				}
+			case <-deadline:
+				t.Error("deletion scanner did not stop")
+				return
+			}
+		}
+	})
+	waitFor(t, 5*time.Second, "local deletion scanner baseline", func() bool { _, known := deletionScanner.WorkingCopySize(); return known })
+	if err := os.Remove(filepath.Join(point, "folder", "file-01.txt")); err != nil {
+		t.Fatal("delete adopted file", err)
+	}
+	deleted := false
+	waitFor(t, 5*time.Second, "adopted deletion reached watcher", func() bool {
+		for {
+			select {
+			case ev, ok := <-deletionEvents:
+				if !ok {
+					return deleted
+				}
+				if ev.Rel == "folder/file-01.txt" && ev.Op == watcher.Deleted {
+					deleted = true
+				}
+			default:
+				return deleted
+			}
+		}
+	})
+	statuses, err := svn.Status(t.Context(), point, []string{"folder/file-01.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := false
+	for _, row := range statuses {
+		if filepath.ToSlash(row.Path) == "folder/file-01.txt" && row.Item == "missing" {
+			missing = true
+		}
+	}
+	if !missing {
+		t.Fatal("adopted deletion lost from SVN status", statuses)
+	}
+	if _, err := adapter.Plan(t.Context(), contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: "folder", Action: "download"}); !errors.Is(err, ipcserver.ErrAnchorPathMissing) {
+		t.Fatal("missing file accepted or classified as retryable", err)
+	}
+	if _, err := os.Lstat(filepath.Join(point, "folder", "file-01.txt")); !os.IsNotExist(err) {
+		t.Fatal("plan restored deliberate deletion", err)
+	}
+	if revision, err := svn.Revision(t.Context(), uri); err != nil || revision != 2 {
+		t.Fatal("plan published deletion", revision, err)
 	}
 }

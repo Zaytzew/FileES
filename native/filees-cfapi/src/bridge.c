@@ -28,6 +28,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #define FILEES_BRIDGE_SLOTS 64
 
@@ -35,6 +38,8 @@ struct slot {
     int used;
     int id;
     int ok;
+    int kind; /* 1 = fetch; 2 = isolated typed delete, never interchangeable */
+    int answered;
     HANDLE done;
     WCHAR path[FILEES_CFAPI_MAX_PATH];
 };
@@ -50,14 +55,18 @@ void filees_bridge_start(void)
     g_started = 1;
 }
 
-static struct slot *take_slot(int *id)
+static struct slot *take_slot(int *id, int kind)
 {
     int i;
     EnterCriticalSection(&g_lock);
+    /* Never wrap and accidentally deliver a late reply to a reused token. */
+    if (g_next_id == INT_MAX) { LeaveCriticalSection(&g_lock); return NULL; }
     for (i = 0; i < FILEES_BRIDGE_SLOTS; ++i) {
         if (!g_slots[i].used) {
             g_slots[i].used = 1;
             g_slots[i].ok = 0;
+            g_slots[i].kind = kind;
+            g_slots[i].answered = 0;
             g_slots[i].id = g_next_id++;
             g_slots[i].path[0] = L'\0';
             *id = g_slots[i].id;
@@ -104,6 +113,8 @@ static int send_request(int id, LONGLONG offset, LONGLONG length, const WCHAR *i
 void filees_bridge_answer(char *line)
 {
     char *kind = line, *cursor, *rest;
+    char *end_id;
+    long parsed_id;
     int id, i;
     cursor = strchr(line, '\t');
     if (!cursor) return;
@@ -111,10 +122,26 @@ void filees_bridge_answer(char *line)
     rest = strchr(cursor, '\t');
     if (!rest) return;
     *rest++ = '\0';
-    id = atoi(cursor);
+    errno = 0;
+    parsed_id = strtol(cursor, &end_id, 10);
+    if (errno || *cursor < '1' || *cursor > '9' || *end_id || parsed_id <= 0 || parsed_id >= INT_MAX) return;
+    id = (int)parsed_id;
     EnterCriticalSection(&g_lock);
     for (i = 0; i < FILEES_BRIDGE_SLOTS; ++i) {
         if (!g_slots[i].used || g_slots[i].id != id) continue;
+#ifdef FILEES_CFAPI_DELETE_PROBE
+        if (g_slots[i].kind == 2) {
+            /* Typed, canonical, exact token. A fetch 'ok' cannot authorize
+             * deletion even if it happens to carry the same numeric id. */
+            if (strcmp(kind, "delete-allow") && strcmp(kind, "delete-deny")) break;
+            if (strcmp(rest, "1") || g_slots[i].answered) break;
+            g_slots[i].answered = 1;
+            g_slots[i].ok = !strcmp(kind, "delete-allow");
+            SetEvent(g_slots[i].done);
+            break;
+        }
+#endif
+        if (strcmp(kind, "ok") && strcmp(kind, "err")) break;
         g_slots[i].ok = !strcmp(kind, "ok") &&
                         MultiByteToWideChar(CP_UTF8, 0, rest, -1, g_slots[i].path, FILEES_CFAPI_MAX_PATH) > 0;
         SetEvent(g_slots[i].done);
@@ -129,7 +156,7 @@ int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG 
     struct slot *slot;
     int id = 0, ok = 0;
     if (!g_started) return 0;
-    slot = take_slot(&id);
+    slot = take_slot(&id, 1);
     if (!slot) return 0;
     if (!slot->done) slot->done = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (!slot->done) {
@@ -236,23 +263,29 @@ void filees_bridge_say_tree_identity(const char *id, HRESULT hr)
 }
 
 #ifdef FILEES_CFAPI_DELETE_PROBE
-int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
-    LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
-    const void *identity, DWORD identity_length, const WCHAR *path, DWORD process)
+static int delete_text(const void *identity, DWORD identity_length, const WCHAR *path,
+    char *utf8, size_t utf8_size, char *full_path, size_t path_size)
 {
     WCHAR wide[FILEES_CFAPI_MAX_IDENTITY];
-    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4], full_path[FILEES_CFAPI_MAX_PATH * 4];
     size_t length;
-    int written;
     if (!identity || identity_length < sizeof(WCHAR) || identity_length > sizeof wide ||
         identity_length % sizeof(WCHAR) || !path) return 0;
     length = identity_length / sizeof(WCHAR);
     memcpy(wide, identity, identity_length);
-    /* Blobs are length-delimited. Do not read beyond them or ignore suffixes. */
     if (wide[length - 1] != L'\0' || wcsnlen(wide, length) != length - 1) return 0;
-    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, utf8, sizeof utf8, NULL, NULL) ||
-        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, full_path, sizeof full_path, NULL, NULL) ||
-        strpbrk(utf8, "\t\r\n") || strpbrk(full_path, "\t\r\n")) return 0;
+    return WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, utf8, (int)utf8_size, NULL, NULL) &&
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, full_path, (int)path_size, NULL, NULL) &&
+        !strpbrk(utf8, "\t\r\n") && !strpbrk(full_path, "\t\r\n");
+}
+
+int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
+    LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
+    const void *identity, DWORD identity_length, const WCHAR *path, DWORD process)
+{
+    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4], full_path[FILEES_CFAPI_MAX_PATH * 4];
+    int written;
+    /* Blobs are length-delimited. Do not read beyond them or ignore suffixes. */
+    if (!delete_text(identity, identity_length, path, utf8, sizeof utf8, full_path, sizeof full_path)) return 0;
     EnterCriticalSection(&g_lock);
     written = printf("delete-probe\t%s\t%lu\t%lld\t%lld\t%lld\t%lu\t%s\t%s\t%lu\n",
         phase, (unsigned long)volume, root_id, file_id, request, (unsigned long)flags,
@@ -260,5 +293,57 @@ int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
     if (fflush(stdout)) written = -1;
     LeaveCriticalSection(&g_lock);
     return written > 0;
+}
+
+static int send_delete_frame(const char *kind, int id, DWORD volume,
+    LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
+    const void *identity, DWORD identity_length, const WCHAR *path, DWORD process)
+{
+    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4], full_path[FILEES_CFAPI_MAX_PATH * 4];
+    int written;
+    if (!delete_text(identity, identity_length, path, utf8, sizeof utf8, full_path, sizeof full_path)) return 0;
+    EnterCriticalSection(&g_lock);
+    written = printf("%s\t%d\t%lu\t%llu\t%llu\t%lld\t%lu\t%s\t%s\t%lu\n",
+        kind, id, (unsigned long)volume, (ULONGLONG)root_id, (ULONGLONG)file_id, request,
+        (unsigned long)flags, utf8, full_path, (unsigned long)process);
+    if (fflush(stdout)) written = -1;
+    LeaveCriticalSection(&g_lock);
+    return written > 0;
+}
+
+int filees_bridge_delete_request(DWORD volume, LONGLONG root_id, LONGLONG file_id,
+    LONGLONG request, DWORD flags, const void *identity, DWORD identity_length,
+    const WCHAR *path, DWORD process, int *id_out)
+{
+    struct slot *slot;
+    int id, ok = 0;
+    if (!g_started || flags || !process || !request) return 0;
+    slot = take_slot(&id, 2);
+    if (!slot) return 0;
+    if (!slot->done) slot->done = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!slot->done) { release_slot(slot); return 0; }
+    ResetEvent(slot->done);
+    *id_out = id;
+    if (send_delete_frame("delete-request", id, volume, root_id, file_id, request,
+        flags, identity, identity_length, path, process) &&
+        WaitForSingleObject(slot->done, 10000) == WAIT_OBJECT_0) ok = slot->ok;
+    release_slot(slot);
+    return ok;
+}
+
+void filees_bridge_say_delete_acked(int id, HRESULT hr)
+{
+    EnterCriticalSection(&g_lock);
+    printf("delete-acked\t%d\t0x%08lx\n", id, (unsigned long)hr);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}
+
+void filees_bridge_say_delete_complete(DWORD volume, LONGLONG root_id, LONGLONG file_id,
+    LONGLONG request, DWORD flags, const void *identity, DWORD identity_length,
+    const WCHAR *path, DWORD process)
+{
+    send_delete_frame("delete-complete", 0, volume, root_id, file_id, request,
+        flags, identity, identity_length, path, process);
 }
 #endif

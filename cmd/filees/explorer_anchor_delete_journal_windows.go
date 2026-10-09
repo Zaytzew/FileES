@@ -28,15 +28,6 @@ import (
 // The coordinator must hold the real WC writer/scanner, authenticate current
 // permission and prove this exact manifest node before calling preparation.
 // Session is supplied by the owning live bridge, never trusted from a frame.
-type anchorDeleteCallback struct {
-	Session                  string
-	Volume                   uint32
-	RootFileID, FileID       uint64
-	RequestKey               int64
-	Flags, ProcessID         uint32
-	Identity, NormalizedPath string
-}
-
 type anchorDeleteIntent struct {
 	Schema, ServerID, RepoID, AttachmentID, WC string
 	ProviderPID                                uint32
@@ -119,13 +110,6 @@ func anchorDeleteDigest(in anchorDeleteIntent) (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 
-func sameAnchorDeleteObject(a, b anchorDeleteCallback) bool {
-	// RequestKey is intentionally excluded: pre can repeat, completion is 0 on
-	// the measured Windows. Flags are phase-specific and checked separately.
-	return a.Session == b.Session && a.Volume == b.Volume && a.RootFileID == b.RootFileID && a.FileID == b.FileID &&
-		a.ProcessID == b.ProcessID && a.Identity == b.Identity && a.NormalizedPath == b.NormalizedPath
-}
-
 func validateAnchorDeleteIntent(in anchorDeleteIntent, record localrepo.Record, root anchorReleaseFileID) error {
 	cb := in.Callback
 	session, err := uuid.Parse(cb.Session)
@@ -165,7 +149,7 @@ func validateAnchorDeleteIntent(in anchorDeleteIntent, record localrepo.Record, 
 	return err
 }
 
-func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallback, request client.RemoteFileDelete, snapshot *watcher.FileDeleteSnapshot, inspect func(context.Context) (cfapiAnswer, error)) error {
+func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallback, request client.RemoteFileDelete, snapshot *watcher.FileDeleteSnapshot, inspect func(context.Context) (anchorDeleteFileState, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.completed || cb.Session != s.id || inspect == nil || snapshot == nil {
@@ -269,10 +253,12 @@ func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallba
 	return nil // Only now may a future callback coordinator grant ACK_DELETE.
 }
 
-func anchorDeleteRemoteState(s cfapiAnswer, identity string) bool {
+func anchorDeleteRemoteState(s anchorDeleteFileState, identity string) bool {
 	_, _, size, valid := parseAnchorRemoteIdentity(identity)
 	usn, err := strconv.ParseInt(s.USN, 10, 64)
-	return valid && s.OK && s.Placeholder && !s.Directory && !s.Local && !s.Partial && s.InSync && s.OnDisk == 0 && s.Modified == 0 &&
+	// A fully nonresident placeholder is normally Partial. Reject resident or
+	// modified bytes, not the lack-of-local-data flag. Missing metrics are NOT 0.
+	return valid && s.sizesKnown && s.OK && s.Placeholder && !s.Directory && !s.Local && s.InSync && s.OnDisk == 0 && s.Modified == 0 &&
 		s.Identity == identity && s.Size != nil && *s.Size == size && err == nil && usn > 0 && strconv.FormatInt(usn, 10) == s.USN
 }
 

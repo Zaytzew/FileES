@@ -63,8 +63,8 @@ func TestAnchorDeleteJournalNativeSVN(t *testing.T) {
 			in.UUID = id
 			cb.Identity, _ = anchorRemoteIdentity(in.Source, 1, 4)
 			size := int64(4)
-			inspect := func(context.Context) (cfapiAnswer, error) {
-				return cfapiAnswer{OK: true, Placeholder: true, InSync: true, Identity: cb.Identity, Size: &size, USN: "100"}, nil
+			inspect := func(context.Context) (anchorDeleteFileState, error) {
+				return anchorDeleteFileState{cfapiAnswer: cfapiAnswer{OK: true, Placeholder: true, Partial: true, InSync: true, Identity: cb.Identity, Size: &size, USN: "100"}, sizesKnown: true}, nil
 			}
 			prepareDeleteJournal(t, s, cb, in, snapshot, inspect)
 			completeDeleteJournal(t, s, cb, in)

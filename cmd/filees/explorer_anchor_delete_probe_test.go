@@ -24,13 +24,14 @@ func TestAnchorRemoteDeleteCallbackNative(t *testing.T) {
 	for _, allow := range []bool{false, true} {
 		t.Run(fmt.Sprintf("allow-%t", allow), func(t *testing.T) {
 			root := t.TempDir()
+			t.Setenv("FILEES_CFAPI_DELETE_PROBE_ALLOW", "1")
+			t.Setenv("FILEES_CFAPI_DELETE_PROBE_BRIDGE", "1")
 			p := newLocalStateProbe(t, root, "", "d\t0\tfolder\tfolder\nf\t8192\tremote 新.bin\tremote 新.bin\n")
 			standard, err := exec.Command(p.helper, "version").Output()
-			if err != nil || strings.Contains(string(standard), "delete_callback_probe_v1") {
+			if err != nil || strings.Contains(string(standard), "delete_callback_probe_v1") || strings.Contains(string(standard), "delete_bridge_probe_v1") {
 				t.Fatal("probe leaked into product helper", err)
 			}
 			// A product provider ignores the probe's environment variable.
-			t.Setenv("FILEES_CFAPI_DELETE_PROBE_ALLOW", "1")
 			if err := os.Remove(filepath.Join(root, "remote 新.bin")); err == nil {
 				t.Fatal("product helper allowed remote deletion")
 			}
@@ -46,7 +47,7 @@ func TestAnchorRemoteDeleteCallbackNative(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, helper, "connect", "--root", root)
 			for _, value := range os.Environ() {
-				if !strings.HasPrefix(strings.ToUpper(value), "FILEES_CFAPI_DELETE_PROBE_ALLOW=") {
+				if !strings.HasPrefix(strings.ToUpper(value), "FILEES_CFAPI_DELETE_PROBE_ALLOW=") && !strings.HasPrefix(strings.ToUpper(value), "FILEES_CFAPI_DELETE_PROBE_BRIDGE=") {
 					cmd.Env = append(cmd.Env, value)
 				}
 			}

@@ -38,7 +38,7 @@ func (s *testFileDeleter) InspectRemoteFileDelete(_ context.Context, in client.R
 
 // Journal/attribute guard unit fixture, NOT proof of Cloud Filter or current
 // authorization. The physical file is ordinary; metadata is a controlled fake.
-func testDeleteJournal(t *testing.T) (*anchorDeleteSession, anchorDeleteCallback, client.RemoteFileDelete, *watcher.FileDeleteSnapshot, func(context.Context) (cfapiAnswer, error)) {
+func testDeleteJournal(t *testing.T) (*anchorDeleteSession, anchorDeleteCallback, client.RemoteFileDelete, *watcher.FileDeleteSnapshot, func(context.Context) (anchorDeleteFileState, error)) {
 	t.Helper()
 	r, move := testTreeMoveIntent(t)
 	in := client.RemoteFileDelete{RootURL: r.RepoURL, UUID: move.UUID, BaseRevision: 19, OperationID: uuid.NewString(), Source: "dokument źródłowy.bin", Message: "Usunięcie pliku"}
@@ -64,13 +64,13 @@ func testDeleteJournal(t *testing.T) (*anchorDeleteSession, anchorDeleteCallback
 	p := &watcher.FileDeleteSnapshot{Schema: "filees.scanner-file-delete/v1", WC: r.LocalPath, Source: in.Source, Session: uuid.NewString(), Sequence: 1,
 		Entry: watcher.PublicationEntry{Path: in.Source, Present: true, Size: 4}}
 	size := int64(4)
-	inspect := func(context.Context) (cfapiAnswer, error) {
-		return cfapiAnswer{OK: true, Placeholder: true, InSync: true, Identity: identity, Size: &size, USN: "100"}, nil
+	inspect := func(context.Context) (anchorDeleteFileState, error) {
+		return anchorDeleteFileState{cfapiAnswer: cfapiAnswer{OK: true, Placeholder: true, Partial: true, InSync: true, Identity: identity, Size: &size, USN: "100"}, sizesKnown: true}, nil
 	}
 	return s, cb, in, p, inspect
 }
 
-func prepareDeleteJournal(t *testing.T, s *anchorDeleteSession, cb anchorDeleteCallback, in client.RemoteFileDelete, p *watcher.FileDeleteSnapshot, inspect func(context.Context) (cfapiAnswer, error)) {
+func prepareDeleteJournal(t *testing.T, s *anchorDeleteSession, cb anchorDeleteCallback, in client.RemoteFileDelete, p *watcher.FileDeleteSnapshot, inspect func(context.Context) (anchorDeleteFileState, error)) {
 	t.Helper()
 	if err := s.prepare(t.Context(), cb, in, p, inspect); err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestAnchorDeleteRejectsForeignCallbacksAndSerializesDuplicates(t *testing.T
 }
 
 func TestAnchorDeletePrepareRefusalsHaveNoFence(t *testing.T) {
-	for _, mode := range []string{"own-projection", "directory", "undelete", "request-zero", "stale-identity", "different-file", "wrong-source", "future-wc", "dirty", "partial", "resident", "cancel"} {
+	for _, mode := range []string{"own-projection", "directory", "undelete", "request-zero", "stale-identity", "different-file", "wrong-source", "future-wc", "dirty", "partial-resident", "unknown-sizes", "resident", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			s, cb, in, p, inspect := testDeleteJournal(t)
 			ctx := t.Context()
@@ -245,15 +245,19 @@ func TestAnchorDeletePrepareRefusalsHaveNoFence(t *testing.T) {
 				p.Source = "other"
 			case "future-wc":
 				p.WC = filepath.Join(p.WC, "other")
-			case "dirty", "partial", "resident":
+			case "dirty", "partial-resident", "unknown-sizes", "resident":
 				old := inspect
-				inspect = func(ctx context.Context) (cfapiAnswer, error) {
+				inspect = func(ctx context.Context) (anchorDeleteFileState, error) {
 					a, e := old(ctx)
 					if mode == "dirty" {
 						a.Modified = 1
 					}
-					if mode == "partial" {
+					if mode == "partial-resident" {
 						a.Partial = true
+						a.OnDisk = 1
+					}
+					if mode == "unknown-sizes" {
+						a.sizesKnown = false
 					}
 					if mode == "resident" {
 						a.Local = true

@@ -52,9 +52,14 @@ import (
 type anchorBridge struct {
 	// Experimental Shell mode retains adopted files as fully local CFAPI
 	// placeholders. Only the daemon's SVN/USN observer may confirm clean.
-	retainLocal     bool
-	observe         func(context.Context, *anchorBridge)
-	onConnected     func(context.Context)
+	retainLocal bool
+	observe     func(context.Context, *anchorBridge)
+	onConnected func(context.Context)
+	// Private transport prerequisite. Nil in product construction: remote
+	// deletion stays refused until the complete coordinator is received.
+	deletePrepare   func(context.Context, anchorDeleteCallback) error
+	deleteComplete  func(context.Context, anchorDeleteCallback) error
+	deleteTimeout   time.Duration
 	stateMu         sync.Mutex
 	stateID         uint64
 	stateWait       map[string]anchorCommandWait
@@ -184,6 +189,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 			run()
 		}()
 	}
+	deletion := newAnchorDeleteTransport(ctx, bridge.deletePrepare, bridge.deleteComplete, bridge.deleteTimeout, work, bridge.enqueue)
 	if bridge.observe != nil {
 		work(func() { bridge.observe(ctx, bridge) })
 	}
@@ -191,8 +197,10 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	connected := false
 	reader.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for reader.Scan() {
-		line := strings.TrimSpace(reader.Text())
+		line := reader.Text()
 		switch {
+		case strings.HasPrefix(line, "delete-request\t"), strings.HasPrefix(line, "delete-complete\t"), strings.HasPrefix(line, "delete-acked\t"):
+			deletion.receive(line)
 		case strings.HasPrefix(line, "directory-set\t"), strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"), strings.HasPrefix(line, "tree-moved\t"), strings.HasPrefix(line, "tree-identity\t"):
 			fields := strings.Split(line, "\t")
 			if len(fields) == 3 {

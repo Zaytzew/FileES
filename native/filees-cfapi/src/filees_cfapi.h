@@ -74,6 +74,14 @@ void filees_bridge_say_hydrated(int id, const WCHAR *identity);
 int filees_bridge_say_delete_probe(const char *phase, DWORD volume,
     LONGLONG root_id, LONGLONG file_id, LONGLONG request, DWORD flags,
     const void *identity, DWORD identity_length, const WCHAR *path, DWORD process);
+/* Typed handshake remains in the isolated executable until full reception. */
+int filees_bridge_delete_request(DWORD volume, LONGLONG root_id, LONGLONG file_id,
+    LONGLONG request, DWORD flags, const void *identity, DWORD identity_length,
+    const WCHAR *path, DWORD process, int *id_out);
+void filees_bridge_say_delete_acked(int id, HRESULT hr);
+void filees_bridge_say_delete_complete(DWORD volume, LONGLONG root_id, LONGLONG file_id,
+    LONGLONG request, DWORD flags, const void *identity, DWORD identity_length,
+    const WCHAR *path, DWORD process);
 #endif
 
 /* Verbs. Each returns a process exit code and has already printed its JSON. */

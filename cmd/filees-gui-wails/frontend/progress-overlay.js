@@ -3,7 +3,7 @@
 // whole main window (progress_service.go). An elegant queue label was not
 // enough: on Fedora, 2026-09-24, a dozen silent seconds after "Create" read as
 // a hang. "Work in the background" (offered after a short while) parks the
-// wait as a strip under the hero; the strip brings it back on top.
+// wait in the stationary notification dock; the strip brings it back on top.
 import { Events } from "/wails/runtime.js";
 import { t } from "./i18n.js";
 
@@ -112,8 +112,8 @@ function ensureStrip() {
   strip.className = "progress-parking";
   strip.innerHTML = `<span class="progress-spinner is-small" aria-hidden="true"></span><span class="progress-parking-text"></span><span class="progress-parking-show"></span>`;
   strip.addEventListener("click", () => { parked = false; render(); });
-  const hero = document.getElementById("top");
-  if (hero?.parentNode) hero.parentNode.insertBefore(strip, hero.nextSibling);
+  const dock = document.getElementById("notification-dock");
+  if (dock) dock.appendChild(strip);
   else document.body.prepend(strip);
   return strip;
 }

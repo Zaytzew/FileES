@@ -1,0 +1,74 @@
+<!doctype html><meta charset="utf-8"><title>Stationary dashboard regression</title>
+<style>body{margin:0}iframe{border:0;display:block}</style>
+<!-- Real production markup/CSS; no Wails bridge, daemon or product scripts. -->
+<iframe sandbox="allow-same-origin" src="../frontend/index.html"></iframe>
+<script>
+const frame=document.querySelector('iframe');
+const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+let count=0;
+const check=(condition,label)=>{if(!condition)throw Error(label);count++;};
+frame.onload=async()=>{
+ try {
+  const doc=frame.contentDocument,win=frame.contentWindow;
+  const content=doc.querySelector('#dashboard-content');
+  const header=doc.querySelector('.dashboard-header');
+  const dock=doc.querySelector('#notification-dock');
+  const toasts=doc.querySelector('#toasts');
+  check(header&&content&&dock&&toasts,'stationary regions missing');
+  for(const id of ['sync-pause-status','memory-safety','announcement-banner','intent-alerts','lock-release-banner','action-status'])
+   check(dock.contains(doc.getElementById(id)),id+' outside stationary dock');
+  check(!content.contains(toasts),'toasts scroll with cards');
+  // Preserve a native narrow-screen scroller (long rows and many cards).
+  doc.querySelector('#repositories').innerHTML=Array.from({length:50},(_,i)=>`<article class="server-panel" style="padding:40px">Synthetic folder ${i}</article>`).join('');
+  const last=doc.createElement('button');last.textContent='last card action';content.appendChild(last);
+  for(const [width,height] of [[1300,850],[1030,650],[760,480]]) {
+   frame.style.width=width+'px';frame.style.height=height+'px';
+   for(const theme of ['light','dark']) {
+    doc.documentElement.dataset.systemTheme=theme;
+    dock.querySelectorAll('.announcement-banner,.intent-alerts,.action-status').forEach(node=>node.hidden=true);
+    toasts.replaceChildren();await settle();
+    const emptyHeight=content.clientHeight;
+    check(win.getComputedStyle(toasts).display==='none','empty toast field takes space');
+    const banner=doc.querySelector('#announcement-banner');banner.hidden=false;
+    for(let i=0;i<6;i++) {
+     const toast=doc.createElement('article');toast.className='toast';
+     toast.innerHTML='<strong>Completed test action</strong><span>'+'Longer notification '.repeat(3)+'</span>';
+     toasts.appendChild(toast);
+    }
+    await settle();
+    const titleTop=doc.querySelector('#titlebar').getBoundingClientRect().top;
+    const bannerTop=banner.getBoundingClientRect().top;
+    const toastTop=toasts.getBoundingClientRect().top;
+    content.scrollTop=content.scrollHeight/2;await settle();
+    check(content.scrollTop>100,'cards cannot scroll');
+    check(doc.querySelector('#titlebar').getBoundingClientRect().top===titleTop,'titlebar moved');
+    check(banner.getBoundingClientRect().top===bannerTop,'banner moved');
+    check(toasts.getBoundingClientRect().top===toastTop,'toasts moved');
+    check(doc.scrollingElement.scrollTop===0,'document scrolls');
+    check(content.clientHeight<emptyHeight,'notifications overlay instead of reserving space');
+    check(content.getBoundingClientRect().top>=header.getBoundingClientRect().bottom-1,'cards overlap header');
+    check(content.getBoundingClientRect().bottom<=toasts.getBoundingClientRect().top+1,'cards overlap toasts');
+    check(toasts.getBoundingClientRect().bottom<=height,'toasts outside viewport');
+    check(toasts.scrollHeight>toasts.clientHeight,'many toasts are not bounded/scrollable');
+    // Overflow of persistent alerts must leave room for the cards.
+    doc.querySelector('#intent-alerts').hidden=false;
+    doc.querySelector('#intent-alerts').innerHTML=Array.from({length:12},(_,i)=>`<div class="announcement-banner"><strong>Test attention ${i}</strong><button>Resolve</button></div>`).join('');
+    await settle();
+    check(dock.clientHeight<=height*.28+1&&dock.scrollHeight>dock.clientHeight,'alert area not bounded');
+    check(content.clientHeight>height*.2,'notifications consumed viewport');
+    const close=doc.querySelector('#window-close').getBoundingClientRect();
+    check(close.right<=width&&close.top>=0,'window control clipped');
+    last.focus();await settle();
+    check(doc.activeElement===last,'last action cannot focus');
+    const box=last.getBoundingClientRect(),viewport=content.getBoundingClientRect();
+    check(box.top>=viewport.top-1&&box.bottom<=viewport.bottom+1,'last action hidden by stationary areas');
+    check(doc.querySelector('#titlebar').getBoundingClientRect().top===titleTop,'focus scroll moved titlebar');
+   }
+  }
+  const message='PASS dashboard layout '+count+' checks, three sizes, both themes';
+  document.title=message;window.webkit?.messageHandlers?.result?.postMessage(message);
+ } catch(error) {
+  const message='FAIL '+error.message;document.title=message;window.webkit?.messageHandlers?.result?.postMessage(message);
+ }
+};
+</script>

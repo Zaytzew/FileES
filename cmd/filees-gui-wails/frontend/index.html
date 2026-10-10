@@ -13,6 +13,7 @@
   <div class="ambient ambient-a"></div>
   <div class="ambient ambient-b"></div>
   <main class="shell">
+    <div class="dashboard-header">
     <header id="titlebar" class="topbar">
       <a class="brand filees-wordmark-surface" href="#top" aria-label="FileES">
         <img class="brand-mark" src="./assets/filees-space-horizontal.svg" alt="filees:space">
@@ -61,13 +62,9 @@
       </div>
     </header>
 
+    <div id="notification-dock" class="notification-dock">
     <aside id="sync-pause-status" class="announcement-banner" role="status" hidden></aside>
     <aside id="memory-safety" class="announcement-banner" role="alert" hidden></aside>
-    <section id="top" class="hero">
-      <div>
-        <p class="eyebrow" data-i18n="hero.eyebrow">FileES · Twoje pliki</p>
-        <h1 id="hero-title">Twoje pliki.<br><span data-i18n="hero.accent">Na właściwej ścieżce.</span></h1>
-        <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
         <div id="announcement-banner" class="announcement-banner" hidden>
           <div role="status" aria-live="polite" aria-atomic="true"><strong id="announcement-banner-count"></strong><p data-i18n="announcement.note">Ogłoszenia pozostają nieprzeczytane do Twojego potwierdzenia.</p></div>
           <button id="open-announcements" type="button" aria-haspopup="dialog" aria-controls="announcement-overlay" data-i18n="announcement.read">Przeczytaj i potwierdź</button>
@@ -77,6 +74,15 @@
           <div role="status" aria-live="polite" aria-atomic="true"><strong id="lock-release-banner-count"></strong><p data-i18n="locks.requestsNote">Ktoś chce edytować wypożyczony przez Ciebie plik. Decyzja należy do Ciebie.</p></div>
           <button id="open-lock-release" type="button" aria-haspopup="dialog" aria-controls="lock-release-overlay" data-i18n="locks.requestsOpen">Zobacz prośby</button>
         </div>
+        <div id="action-status" class="action-status" hidden></div>
+    </div>
+    </div>
+    <div id="dashboard-content" class="dashboard-content" tabindex="0">
+    <section id="top" class="hero">
+      <div>
+        <p class="eyebrow" data-i18n="hero.eyebrow">FileES · Twoje pliki</p>
+        <h1 id="hero-title">Twoje pliki.<br><span data-i18n="hero.accent">Na właściwej ścieżce.</span></h1>
+        <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
       </div>
       <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES" data-i18n-title="projection.state">
         <div class="pulse-orbit orbit-a"></div>
@@ -114,7 +120,6 @@
             <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
           </div>
         </div>
-        <div id="action-status" class="action-status" hidden></div>
         <details class="repo-view-preferences">
           <summary data-i18n="view.title">Widok listy folderów</summary>
           <div class="repo-view-fields">
@@ -194,6 +199,8 @@
       <span data-i18n="hero.footer">FileES pilnuje zmian w Twoich folderach.</span>
       <span id="revision">stan #0</span>
     </footer>
+    </div>
+    <div id="toasts" class="toast-stack dashboard-toasts" aria-live="polite" aria-atomic="false"></div>
   </main>
   <div id="version-overlay" class="version-overlay" hidden>
     <section class="version-dialog" role="dialog" aria-modal="true" aria-labelledby="version-title" aria-describedby="version-status">
@@ -317,7 +324,6 @@
       <div id="journal" class="journal-list"><p class="muted" data-i18n="journal.empty">Brak wpisów.</p></div>
     </section>
   </div>
-  <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

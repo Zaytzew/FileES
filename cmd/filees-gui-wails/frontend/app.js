@@ -1426,6 +1426,8 @@ function showToast(feedback) {
   toast.className = `toast ${level === "critical" ? "critical" : level === "normal" ? "normal" : "low"}`;
   toast.innerHTML = `<strong>${escapeHTML(feedback?.title || "FileES")}</strong>${feedback?.message ? `<span>${escapeHTML(feedback.message)}</span>` : ""}`;
   root.appendChild(toast);
+  // The stationary footer is bounded: keep the newest feedback visible.
+  root.scrollTop = root.scrollHeight;
   window.setTimeout(() => {
     toast.classList.add("is-leaving");
     window.setTimeout(() => toast.remove(), 220);

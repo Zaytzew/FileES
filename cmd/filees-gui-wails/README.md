@@ -18,8 +18,13 @@ ponownie sprawdza stan i jako jedyny woła IPC. Frontend jest celowo bez
 Node/Vite, aby build klienta nie zależał od drugiego toolchainu.
 
 Na Windows okno jest bez natywnej ramki (`Frameless`) i ma własny pasek z
-przeciąganiem oraz kontrolkami okna. CSS ukrywa scrollbar WebView, ale nie
-wyłącza przewijania kółkiem, touchpadem ani klawiaturą.
+przeciąganiem oraz kontrolkami okna. Główne okno ma stały nagłówek z belkami
+komunikatów i dolne pole toastów; karty przewijają się pomiędzy nimi.
+Puste pole toastów nie zajmuje miejsca. Belki i toasty mają ograniczoną
+wysokość oraz własne przewijanie przy większej liczbie wiadomości; najnowszy
+toast pozostaje widoczny. Pasek pracy odłożonej w tło trafia do górnej belki.
+Przewijanie kart działa kółkiem, touchpadem oraz klawiaturą po fokusie;
+pozostałe okna zachowują dotychczasowy układ.
 
 Po otrzymaniu projekcji renderer mierzy naturalną szerokość nazw i całych
 zestawów akcji. Początkowe okno tylko rośnie do rozmiaru potrzebnego panelom,

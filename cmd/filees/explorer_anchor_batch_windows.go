@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"filees/pkg/anchorqueue"
 	"filees/pkg/commit"
@@ -104,6 +105,10 @@ func (a anchorBatchAdapter) record(p contract.RepoAnchorPlanPayload) (localrepo.
 }
 
 func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchorPlanPayload, record localrepo.Record) (anchorBatchSelection, error) {
+	return a.selectionSnapshot(ctx, p, record, nil)
+}
+
+func (a anchorBatchAdapter) selectionSnapshot(ctx context.Context, p contract.RepoAnchorPlanPayload, record localrepo.Record, snapshot *anchorqueue.Snapshot) (anchorBatchSelection, error) {
 	m := a.manager
 	guards, err := guardAnchorReleaseDirectories(record.LocalPath, record.LocalPath)
 	if err != nil {
@@ -113,6 +118,10 @@ func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchor
 	var root windows.ByHandleFileInformation
 	if err := windows.GetFileInformationByHandle(guards[len(guards)-1], &root); err != nil {
 		return anchorBatchSelection{}, err
+	}
+	rootID := fmt.Sprintf("%d:%d", anchorReleaseID(root).Volume, anchorReleaseID(root).Index)
+	if snapshot != nil && snapshot.RootID != rootID {
+		return anchorBatchSelection{}, ipcserver.ErrAnchorSelectionChanged
 	}
 	svn, err := m.svn(record.ServerID)
 	if err != nil {
@@ -141,7 +150,11 @@ func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchor
 	}{
 		record.OperationID, record.ServerID, record.RepoID, record.RepoURL, record.LocalPath, anchorReleaseID(root),
 	})
-	selection, err := anchorBatchPlan(ctx, manifest, p.Path, p.Action, string(binding), func(paths []string) ([]cfapiAnswer, error) {
+	var paths []string
+	if snapshot != nil {
+		paths = snapshot.Paths
+	}
+	selection, err := anchorBatchPlanSnapshot(ctx, manifest, p.Path, p.Action, string(binding), paths, func(paths []string) ([]cfapiAnswer, error) {
 		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
 		if err != nil {
 			return nil, err
@@ -152,8 +165,9 @@ func (a anchorBatchAdapter) selection(ctx context.Context, p contract.RepoAnchor
 		return answer.States, nil
 	})
 	selection.revision = revision
-	// The exact execution still includes HEAD and all metadata. Only the
-	// read-only download consent can survive an unrelated revision/USN change.
+	selection.rootID = rootID
+	// Legacy exact execution includes HEAD and all metadata. Durable release
+	// uses separate fixed membership and checks the current published version.
 	exact := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", selection.preview.Fingerprint, revision)))
 	selection.preview.Fingerprint = hex.EncodeToString(exact[:])
 	return selection, err
@@ -165,6 +179,9 @@ func (a anchorBatchAdapter) Plan(ctx context.Context, p contract.RepoAnchorPlanP
 		return contract.RepoAnchorPlan{}, err
 	}
 	selection, err := a.selection(ctx, p, record)
+	if err == nil && p.Action == "release" && selection.preview.Directory && selection.preview.Files > 0 {
+		a.manager.releasePlans.put(p, selection, record.OperationID, record.RepoURL, record.LocalPath)
+	}
 	return selection.preview, err
 }
 
@@ -173,8 +190,12 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 }
 
 func (a anchorBatchAdapter) execute(ctx context.Context, p contract.RepoAnchorBatchPayload, confirmedFiles int64) (contract.RepoAnchorBatchResult, error) {
+	return a.executeSnapshot(ctx, p, confirmedFiles, nil)
+}
+
+func (a anchorBatchAdapter) executeSnapshot(ctx context.Context, p contract.RepoAnchorBatchPayload, confirmedFiles int64, snapshot *anchorqueue.Snapshot) (contract.RepoAnchorBatchResult, error) {
 	var result contract.RepoAnchorBatchResult
-	if p.Action == "release" {
+	if p.Action == "release" && snapshot == nil {
 		leave, err := a.manager.enterReleaseIntent()
 		if err != nil {
 			return result, err
@@ -190,23 +211,37 @@ func (a anchorBatchAdapter) execute(ctx context.Context, p contract.RepoAnchorBa
 		return result, err
 	}
 	defer closeAnchorReleaseGuards(guards)
-	selection, err := a.selection(ctx, p.RepoAnchorPlanPayload, record)
+	selection, err := a.selectionSnapshot(ctx, p.RepoAnchorPlanPayload, record, snapshot)
 	if err != nil {
+		if snapshot != nil && errors.Is(err, errAnchorReleaseLocalWork) {
+			return result, commit.ErrLocalStatusBusy
+		}
 		return result, err
 	}
-	if !selection.preview.Directory || p.Fingerprint != selection.preview.Fingerprint ||
+	if !selection.preview.Directory || (snapshot == nil && p.Fingerprint != selection.preview.Fingerprint) ||
 		(confirmedFiles >= 0 && selection.preview.Files != confirmedFiles) {
 		return result, ipcserver.ErrAnchorSelectionChanged
 	}
 	result = contract.RepoAnchorBatchResult{LocalPath: record.LocalPath, Path: p.Path, State: "attached", Total: selection.preview.Files}
+	completed := int64(0)
 	result.Completed, err = runAnchorBatch(ctx, selection, func(ctx context.Context, file anchorBatchFile) error {
 		if err := a.manager.currentReleaseRecord(record); err != nil {
 			return err
 		}
 		if p.Action == "release" {
+			if snapshot != nil {
+				err := a.releaseSnapshotFile(ctx, record, file.rel, completed > 0)
+				if err == nil {
+					completed++
+				}
+				return err
+			}
 			if err := a.checkFile(ctx, record, file); err != nil {
 				return err
 			}
+			if file.state.Partial {
+				return nil
+			} // already remote; no destructive operation
 			return a.manager.releaseFileHeld(ctx, record, file.rel)
 		}
 		return a.download(ctx, record, file, selection.revision)
@@ -224,6 +259,45 @@ func (a anchorBatchAdapter) execute(ctx context.Context, p contract.RepoAnchorBa
 		result.FailureDetail = anchorqueue.Diagnostic(err)
 	}
 	return result, nil
+}
+
+// Each retry here is explicitly before any release request/fence. A later
+// journal/native error is not retryable even when no completion was counted.
+func (a anchorBatchAdapter) releaseSnapshotFile(ctx context.Context, record localrepo.Record, rel string, wait bool) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := a.manager.currentReleaseRecord(record); err != nil {
+			return err
+		}
+		state, err := a.manager.call(ctx, "", "file-state", "--root", record.LocalPath, "--rel", rel)
+		if err == nil {
+			if state.OK && state.Placeholder && state.Partial && !state.Local && anchorRemoteMatches(state.Identity, rel) {
+				return nil
+			}
+			if state.OK && state.Placeholder && state.Local && !state.Partial && !state.InSync {
+				err = errAnchorReleasePreEffectBusy
+			} else {
+				// Release the intent/WC guard before waiting, so the ordinary
+				// observer and autocommit can make this very file ready.
+				err = a.manager.releaseFile(ctx, record, rel)
+			}
+		}
+		if !errors.Is(err, errAnchorReleasePreEffectBusy) && !errors.Is(err, errAnchorReleaseMetadataBusy) {
+			return err
+		}
+		if !wait {
+			return fmt.Errorf("%w: %v", errAnchorReleasePreEffectBusy, err)
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (a anchorBatchAdapter) download(ctx context.Context, record localrepo.Record, file anchorBatchFile, revision int64) error {

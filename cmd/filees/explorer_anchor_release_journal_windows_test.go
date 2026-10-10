@@ -8,14 +8,44 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"filees/pkg/portablepath"
 	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
+
+func TestAnchorSnapshotWindowsFoldingBoundary(t *testing.T) {
+	for _, pair := range [][2]string{{"ı.txt", "I.txt"}, {"i.txt", "İ.txt"}, {"straße.txt", "STRASSE.txt"}} {
+		t.Run(pair[0]+"-"+pair[1], func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, pair[0]), []byte("first"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.OpenFile(filepath.Join(dir, pair[1]), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if f != nil {
+				f.Close()
+			}
+			predicted := portablepath.CollisionKey(pair[0]) == portablepath.CollisionKey(pair[1])
+			if err != nil && !errors.Is(err, os.ErrExist) {
+				t.Fatal("model differs from actual Windows create", pair, predicted, err)
+			}
+			if pair[0] == "ı.txt" {
+				// On-volume NTFS folding need not match Go/Win32 uppercase.
+				t.Logf("portable refusal=%v; actual Windows collision=%v", predicted, errors.Is(err, os.ErrExist))
+				if !predicted {
+					t.Fatal("portable policy changed")
+				}
+			} else if predicted || err != nil {
+				t.Fatal("distinct pair incorrectly refused", pair, err)
+			}
+		})
+	}
+}
 
 // Ordinary synthetic fixtures test persistence without requiring the filter.
 // Real preparation of a retained CFAPI file is tested by the native probe.

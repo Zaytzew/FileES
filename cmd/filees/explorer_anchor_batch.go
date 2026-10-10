@@ -12,11 +12,14 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
+	"filees/pkg/anchorqueue"
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/portablepath"
 )
 
 // Only bounded metadata is retained. No file bytes or filesystem recursion are
@@ -24,6 +27,8 @@ import (
 // the helper checks their actual sync-root membership by handle.
 const anchorBatchFileLimit = 20000
 const anchorBatchPathBytes = 8 << 20
+
+var errAnchorReleaseLocalWork = errors.New("folder contains local work awaiting publication")
 
 type anchorBatchFile struct {
 	rel   string
@@ -34,9 +39,61 @@ type anchorBatchSelection struct {
 	preview  contract.RepoAnchorPlan
 	files    []anchorBatchFile
 	revision int64
+	rootID   string
+}
+
+// Bounded daemon-owned confirmations: the GUI submits only the returned digest,
+// never a caller-supplied path list. Restart before enqueue requires a preview.
+type anchorReleasePlan struct {
+	payload              contract.RepoAnchorPlanPayload
+	preview              contract.RepoAnchorPlan
+	snapshot             anchorqueue.Snapshot
+	operation, url, root string
+}
+type anchorReleasePlans struct {
+	mu    sync.Mutex
+	plans []anchorReleasePlan
+}
+
+func (c *anchorReleasePlans) put(p contract.RepoAnchorPlanPayload, s anchorBatchSelection, operation, url, root string) {
+	x := anchorReleasePlan{payload: p, preview: s.preview, snapshot: anchorqueue.Snapshot{RootID: s.rootID}, operation: operation, url: url, root: root}
+	for _, file := range s.files {
+		x.snapshot.Paths = append(x.snapshot.Paths, file.rel)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.plans = append(c.plans, x)
+	bytes := 0
+	for i := len(c.plans) - 1; i >= 0; i-- {
+		for _, path := range c.plans[i].snapshot.Paths {
+			bytes += len(path)
+		}
+		if bytes > anchorBatchPathBytes || len(c.plans)-i > 32 {
+			c.plans = append([]anchorReleasePlan(nil), c.plans[i+1:]...)
+			break
+		}
+	}
+}
+func (c *anchorReleasePlans) get(p contract.RepoAnchorQueuePayload, operation, url, root string) (*anchorqueue.Snapshot, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := len(c.plans) - 1; i >= 0; i-- {
+		x := c.plans[i]
+		if x.payload == p.RepoAnchorPlanPayload && x.preview.Fingerprint == p.Fingerprint && x.preview.Files == p.Files && x.operation == operation && x.url == url && x.root == root {
+			copy := x.snapshot
+			copy.Paths = append([]string(nil), copy.Paths...)
+			return &copy, true
+		}
+	}
+	return nil, false
 }
 
 func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding string,
+	probe func([]string) ([]cfapiAnswer, error)) (anchorBatchSelection, error) {
+	return anchorBatchPlanSnapshot(ctx, manifest, selection, action, binding, nil, probe)
+}
+
+func anchorBatchPlanSnapshot(ctx context.Context, manifest, selection, action, binding string, snapshot []string,
 	probe func([]string) ([]cfapiAnswer, error)) (anchorBatchSelection, error) {
 	var result anchorBatchSelection
 	if (action != "download" && action != "release") ||
@@ -49,6 +106,10 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 	found := selection == "."
 	result.preview.Directory = found
 	seen := make(map[string]bool)
+	wanted := make(map[string]bool)
+	for _, path := range snapshot {
+		wanted[path] = true
+	}
 	consent := sha256.New()
 	consentEncoder := json.NewEncoder(consent)
 	_ = consentEncoder.Encode([]string{binding, selection, action})
@@ -62,7 +123,7 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 		if !anchorBatchSafePath(node.Path) {
 			return errors.New("unsafe folder manifest")
 		}
-		folded := strings.ToLower(node.Path)
+		folded := portablepath.CollisionKey(node.Path)
 		if seen[folded] {
 			return errors.New("ambiguous folder manifest")
 		}
@@ -77,6 +138,9 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 			result.preview.Directory = node.Kind == "dir"
 		}
 		if node.Kind == "file" {
+			if snapshot != nil && !wanted[node.Path] {
+				return nil
+			}
 			if node.Size < 0 {
 				return errors.New("invalid repository file size")
 			}
@@ -90,6 +154,9 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 	}
 	if !found {
 		return result, errors.New("selected path is absent from the repository tree")
+	}
+	if snapshot != nil && len(paths) != len(wanted) {
+		return result, ipcserver.ErrAnchorSelectionChanged
 	}
 	hash := sha256.New()
 	encode := json.NewEncoder(hash)
@@ -124,9 +191,6 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 				if !state.Placeholder || state.Local || !anchorRemoteMatches(state.Identity, batch[i]) || *state.Size != sizes[batch[i]] {
 					return result, errors.New("unrecognised remote placeholder")
 				}
-				if action == "release" {
-					continue
-				}
 			} else {
 				if action == "download" {
 					if state.Placeholder && !state.Local {
@@ -135,7 +199,7 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 					continue
 				}
 				if !state.Placeholder || !state.Local || !state.InSync {
-					return result, errors.New("folder contains local work that cannot be released")
+					return result, errAnchorReleaseLocalWork
 				}
 			}
 			if result.preview.Bytes > math.MaxInt64-*state.Size {
@@ -143,7 +207,9 @@ func anchorBatchPlan(ctx context.Context, manifest, selection, action, binding s
 			}
 			result.files = append(result.files, anchorBatchFile{batch[i], state})
 			result.preview.Files++
-			result.preview.Bytes += *state.Size
+			if action != "release" || !state.Partial {
+				result.preview.Bytes += *state.Size
+			}
 		}
 	}
 	result.preview.Fingerprint = hex.EncodeToString(hash.Sum(nil))

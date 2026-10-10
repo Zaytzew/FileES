@@ -125,7 +125,13 @@ func TestAnchorReleaseJournalNativePreparation(t *testing.T) {
 			if got, err := os.ReadFile(local); err != nil || !bytes.Equal(got, body) {
 				t.Fatal("preparation changed source")
 			}
-			if name == "cancel-after-copy" || name == "stale" {
+			if name == "stale" {
+				entries, err := os.ReadDir(store)
+				if err != nil || len(entries) != 0 {
+					t.Fatal("pre-effect retry leaked copy", entries, err)
+				}
+			}
+			if name == "cancel-after-copy" {
 				entries, err := os.ReadDir(store)
 				if err != nil || len(entries) != 1 {
 					t.Fatalf("retained failed transaction: %v", err)

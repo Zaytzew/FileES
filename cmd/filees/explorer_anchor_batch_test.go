@@ -65,7 +65,7 @@ func TestAnchorBatchPlanUsesOnlySelectedMetadataAndBindsChanges(t *testing.T) {
 		t.Fatal(first, err)
 	}
 	other, err := anchorBatchPlan(t.Context(), manifest, "dir", "release", "point/revision/root", probe)
-	if err != nil || other.preview.Files != 1 || other.files[0].rel != "dir/b" || other.preview.Fingerprint == first.preview.Fingerprint {
+	if err != nil || other.preview.Files != 2 || other.files[1].rel != "dir/b" || other.preview.Fingerprint == first.preview.Fingerprint {
 		t.Fatal(other, err)
 	}
 	usn = "43"

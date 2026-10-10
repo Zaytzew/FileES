@@ -52,9 +52,13 @@ func (a anchorQueuedBatchAdapter) Queue(ctx context.Context, p contract.RepoAnch
 		if err := a.manager.currentReleaseRecord(record); err != nil {
 			return contract.RepoAnchorQueueResult{}, err
 		}
-		// No preview refresh here: the confirmed digest is checked by the batch
-		// when admission becomes available, including HEAD, FileID and USN.
-		x, err := a.manager.releaseQueue.Enqueue(p, record.OperationID, record.RepoURL, record.LocalPath)
+		snapshot, ok := a.manager.releasePlans.get(p, record.OperationID, record.RepoURL, record.LocalPath)
+		if !ok {
+			return contract.RepoAnchorQueueResult{}, ipcserver.ErrAnchorSelectionChanged
+		}
+		// Membership comes from the daemon's confirmed preview, not a refreshed
+		// folder or the caller. Versions/USN will be checked afresh on execution.
+		x, err := a.manager.releaseQueue.EnqueueSnapshot(p, record.OperationID, record.RepoURL, record.LocalPath, snapshot)
 		return x.Result, err
 	}
 	return contract.RepoAnchorQueueResult{}, ipcserver.ErrDepthUnavailable
@@ -99,7 +103,7 @@ func (m *anchorManager) tickReleaseQueue(ctx context.Context) {
 				if !ok || r.LocalPath != x.Root || r.RepoURL != x.RepoURL || r.State != localrepo.StateAttached {
 					return queueFailure(x, ipcserver.ErrAnchorSelectionChanged), nil
 				}
-				result, err := (anchorBatchAdapter{manager: m}).execute(ctx, x.Payload.RepoAnchorBatchPayload, x.Payload.Files)
+				result, err := (anchorBatchAdapter{manager: m}).executeSnapshot(ctx, x.Payload.RepoAnchorBatchPayload, x.Payload.Files, x.Snapshot)
 				if errors.Is(err, commit.ErrLocalStatusBusy) {
 					return result, err
 				}

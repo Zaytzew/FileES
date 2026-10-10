@@ -1,6 +1,6 @@
 // Package anchorqueue stores confirmed local release intentions, not authority
-// to change a repository. Exact selection and live attachment are rechecked by
-// the existing batch executor before any effect.
+// to change a repository. Snapshot membership (or legacy exact selection) and
+// live attachment are rechecked by the existing batch executor before any effect.
 package anchorqueue
 
 import (
@@ -10,12 +10,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"filees/internal/durable"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/portablepath"
 	"github.com/google/uuid"
 )
 
@@ -31,8 +33,25 @@ type Intent struct {
 	OperationID string                          `json:"operation_id"`
 	RepoURL     string                          `json:"repo_url"`
 	Root        string                          `json:"root"`
+	Snapshot    *Snapshot                       `json:"snapshot,omitempty"`
 	CreatedAt   time.Time                       `json:"created_at"`
 	Result      contract.RepoAnchorQueueResult  `json:"result"`
+}
+
+// Snapshot fixes membership, not file versions. RootID binds the same directory
+// object as the user's preview. Old records without it retain exact admission.
+type Snapshot struct {
+	RootID string   `json:"root_id"`
+	Paths  []string `json:"paths"`
+}
+
+func cloneIntent(x Intent) Intent {
+	if x.Snapshot != nil {
+		copy := *x.Snapshot
+		copy.Paths = append([]string(nil), copy.Paths...)
+		x.Snapshot = &copy
+	}
+	return x
 }
 
 type document struct {
@@ -122,6 +141,28 @@ func valid(x Intent) bool {
 			}
 		}
 	}
+	if x.Snapshot != nil {
+		if x.Snapshot.RootID == "" || len(x.Snapshot.RootID) > 128 || len(x.Snapshot.Paths) != int(p.Files) {
+			return false
+		}
+		seen, bytes := map[string]bool{}, 0
+		for _, path := range x.Snapshot.Paths {
+			if path == "" || filepath.IsAbs(path) || filepath.ToSlash(filepath.Clean(path)) != path || strings.ContainsAny(path, "\\:\x00\r\n\t") ||
+				(p.Path != "." && !strings.HasPrefix(path, p.Path+"/")) || seen[portablepath.CollisionKey(path)] {
+				return false
+			}
+			for _, part := range strings.Split(path, "/") {
+				if part == "." || part == ".." || part == "" || strings.EqualFold(part, ".svn") || strings.EqualFold(part, ".filees") || strings.TrimRight(part, " .") != part {
+					return false
+				}
+			}
+			seen[portablepath.CollisionKey(path)] = true
+			bytes += len(path)
+			if bytes > 8<<20 {
+				return false
+			}
+		}
+	}
 	r := x.Result
 	if r.IntentID != p.IntentID || r.ServerID != p.ServerID || r.RepoID != p.RepoID || r.LocalPath != x.Root || r.Path != p.Path ||
 		r.Total != p.Files || r.Completed < 0 || r.Completed > r.Total {
@@ -145,6 +186,10 @@ func valid(x Intent) bool {
 // Enqueue is idempotent even after completion. Only the caller's same immutable
 // confirmation may reuse its ID; a manual retry requires a new confirmation.
 func (s *Store) Enqueue(p contract.RepoAnchorQueuePayload, operationID, url, root string) (Intent, error) {
+	return s.EnqueueSnapshot(p, operationID, url, root, nil)
+}
+
+func (s *Store) EnqueueSnapshot(p contract.RepoAnchorQueuePayload, operationID, url, root string, snapshot *Snapshot) (Intent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.poisoned {
@@ -155,13 +200,16 @@ func (s *Store) Enqueue(p contract.RepoAnchorQueuePayload, operationID, url, roo
 			if x.Payload != p || x.OperationID != operationID || x.RepoURL != url || x.Root != root {
 				return Intent{}, ErrConflict
 			}
-			return x, nil
+			if snapshot != nil && (x.Snapshot == nil || snapshot.RootID != x.Snapshot.RootID || !slices.Equal(snapshot.Paths, x.Snapshot.Paths)) {
+				return Intent{}, ErrConflict
+			}
+			return cloneIntent(x), nil
 		}
 	}
 	now := time.Now().UTC()
-	x := Intent{Payload: p, OperationID: operationID, RepoURL: url, Root: root, CreatedAt: now,
+	x := cloneIntent(Intent{Payload: p, OperationID: operationID, RepoURL: url, Root: root, Snapshot: snapshot, CreatedAt: now,
 		Result: contract.RepoAnchorQueueResult{IntentID: p.IntentID, ServerID: p.ServerID, RepoID: p.RepoID, UpdatedAt: now.Format(time.RFC3339Nano),
-			RepoAnchorBatchResult: contract.RepoAnchorBatchResult{LocalPath: root, Path: p.Path, State: "queued", Total: p.Files}}}
+			RepoAnchorBatchResult: contract.RepoAnchorBatchResult{LocalPath: root, Path: p.Path, State: "queued", Total: p.Files}}})
 	if !valid(x) {
 		return Intent{}, errors.New("invalid release confirmation")
 	}
@@ -194,17 +242,30 @@ func (s *Store) Enqueue(p contract.RepoAnchorQueuePayload, operationID, url, roo
 		}
 	}
 	next = append(next, x)
+	// A proven admission size refusal made no persistence attempt. Do not
+	// poison existing work; failures saving running/results remain fenced.
+	raw, err := json.Marshal(document{Schema: "filees.anchor-release-queue/v1", Intents: next})
+	if err != nil {
+		return Intent{}, err
+	}
+	if len(raw) >= 1<<20 {
+		return Intent{}, ErrFull
+	}
 	if err := s.save(next); err != nil {
 		return Intent{}, err
 	}
 	s.intents = next
-	return x, nil
+	return cloneIntent(x), nil
 }
 
 func (s *Store) List() []Intent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Intent(nil), s.intents...)
+	result := make([]Intent, len(s.intents))
+	for i, x := range s.intents {
+		result[i] = cloneIntent(x)
+	}
+	return result
 }
 
 // Fault is a presentation fence. The disk's pending evidence is not rewritten

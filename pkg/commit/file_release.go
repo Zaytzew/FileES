@@ -14,6 +14,7 @@ import (
 const FileReleasePendingName = "explorer-release.pending.json"
 
 var ErrFileReleasePending = errors.New("local file release recovery is pending")
+var ErrFileReleaseLocalWork = errors.New("file release awaits publication of local changes")
 
 func HasPendingFileRelease(wc string) bool {
 	_, err := os.Lstat(filepath.Join(wc, ".filees", "state", FileReleasePendingName))
@@ -83,7 +84,7 @@ func (s *Service) WithFileRelease(ctx context.Context, wc, rel string, recovery 
 		}
 		if len(rows) != 1 || filepath.ToSlash(rows[0].Path) != rel || rows[0].Item != "normal" ||
 			(rows[0].Props != "normal" && rows[0].Props != "none") || rows[0].Conflicted {
-			return errors.New("file release requires an explicitly clean published file")
+			return ErrFileReleaseLocalWork
 		}
 	}
 	if err := ctx.Err(); err != nil {

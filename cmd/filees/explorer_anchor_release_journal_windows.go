@@ -60,6 +60,21 @@ type anchorReleaseJournal struct {
 
 var anchorReleasePhases = [...]string{"retained", "prepare_requested", "exclude_requested", "restore_requested"}
 
+// Only returned before any journal/fence or mutating provider/native request.
+var errAnchorReleaseMetadataBusy = errors.New("release metadata is settling before any effect")
+
+// USN alone can change as a consequence of opening/reading the retained source.
+// Accept a new token only for the same fully-local clean identity/size, while
+// the source handle denies writes/deletes. Byte equality is checked separately.
+func anchorRetainedMetadataCompatible(a, b cfapiAnswer, size int64) bool {
+	before, e1 := strconv.ParseInt(a.USN, 10, 64)
+	after, e2 := strconv.ParseInt(b.USN, 10, 64)
+	return e1 == nil && e2 == nil && before > 0 && after >= before &&
+		a.OK && b.OK && a.Placeholder && b.Placeholder && a.Local && b.Local &&
+		!a.Partial && !b.Partial && a.InSync && b.InSync && a.Identity == b.Identity &&
+		a.Size != nil && b.Size != nil && *a.Size == size && *b.Size == size
+}
+
 func sameAnchorReleaseState(a, b cfapiAnswer) bool {
 	return a.OK == b.OK && a.Placeholder == b.Placeholder && a.Local == b.Local &&
 		a.Partial == b.Partial && a.InSync == b.InSync && a.USN == b.USN
@@ -326,7 +341,7 @@ func writeAnchorReleaseJSONFileLimit(dir, name string, value any, limit int) err
 // from SVN, not from Shell in-sync. inspect is the real metadata-only helper
 // check for this exact root and path, repeated while the byte guard is held.
 func prepareAnchorReleaseJournal(ctx context.Context, store string, identity anchorReleaseIdentity,
-	inspect func(context.Context) (cfapiAnswer, error)) (*anchorReleaseJournal, error) {
+	inspect func(context.Context) (cfapiAnswer, error)) (journal *anchorReleaseJournal, outcome error) {
 	if err := validateAnchorReleaseIdentity(identity); err != nil {
 		return nil, err
 	}
@@ -354,21 +369,29 @@ func prepareAnchorReleaseJournal(ctx context.Context, store string, identity anc
 		return nil, err
 	}
 	usn, numberErr := strconv.ParseInt(state.USN, 10, 64)
+	if numberErr == nil && usn > 0 && state.OK && state.Placeholder && state.Local && !state.Partial && !state.InSync {
+		return nil, fmt.Errorf("%w: source awaits publication", errAnchorReleaseMetadataBusy)
+	}
 	if numberErr != nil || usn <= 0 || !state.OK || !state.Placeholder || !state.Local || state.Partial || !state.InSync {
 		return nil, errors.New("release source is not a clean full FileES file")
 	}
 	src, info, err := openAnchorReleaseFile(filepath.Join(identity.WC, identity.Rel), true)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			return nil, fmt.Errorf("%w: source is open: %v", errAnchorReleaseMetadataBusy, err)
+		}
 		return nil, err
 	}
 	defer src.Close()
+	size := int64(uint64(info.FileSizeHigh)<<32 | uint64(info.FileSizeLow))
 	guarded, err := inspect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("inspect guarded release source: %w", err)
 	}
-	if !sameAnchorReleaseState(guarded, state) {
-		return nil, errors.New("release metadata changed before copying")
+	if !anchorRetainedMetadataCompatible(state, guarded, size) {
+		return nil, fmt.Errorf("%w: before copying", errAnchorReleaseMetadataBusy)
 	}
+	state = guarded
 	wide, _ := windows.UTF16PtrFromString(identity.WC)
 	root, err := windows.CreateFile(wide, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
 		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
@@ -389,12 +412,25 @@ func prepareAnchorReleaseJournal(ctx context.Context, store string, identity anc
 	if err != nil {
 		return nil, err
 	}
-	defer closeAnchorReleaseGuards(dirGuards)
+	prepared := false
+	defer func() {
+		closeAnchorReleaseGuards(dirGuards)
+		// Only our uncommitted copy exists here: no journal, fence or request.
+		// Other failures preserve evidence; known pre-effect retry retires it.
+		if !prepared && errors.Is(outcome, errAnchorReleaseMetadataBusy) {
+			if err := os.Remove(filepath.Join(dir, "data.bin")); err != nil && !os.IsNotExist(err) {
+				outcome = fmt.Errorf("could not retire pre-effect temporary copy: %v; %v", err, outcome)
+				return
+			}
+			if err := os.Remove(dir); err != nil {
+				outcome = fmt.Errorf("could not retire pre-effect temporary directory: %v; %v", err, outcome)
+			}
+		}
+	}()
 	dst, err := os.OpenFile(filepath.Join(dir, "data.bin"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
 	}
-	size := int64(uint64(info.FileSizeHigh)<<32 | uint64(info.FileSizeLow))
 	digest, err := hashAnchorRelease(ctx, src, dst, size)
 	if err == nil {
 		err = dst.Sync()
@@ -407,17 +443,37 @@ func prepareAnchorReleaseJournal(ctx context.Context, store string, identity anc
 	if err != nil {
 		return nil, fmt.Errorf("inspect retained release source: %w", err)
 	}
-	if !sameAnchorReleaseState(after, state) {
-		return nil, errors.New("release metadata changed while retaining bytes")
+	if !anchorRetainedMetadataCompatible(state, after, size) {
+		return nil, fmt.Errorf("%w: while retaining bytes", errAnchorReleaseMetadataBusy)
+	}
+	if after.USN != state.USN {
+		// Do not substitute a later USN based merely on flags or timestamp.
+		// Re-read the same pinned object and verify every retained byte.
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		verified, err := hashAnchorRelease(ctx, src, nil, size)
+		if err != nil || verified != digest {
+			return nil, errors.Join(err, errors.New("release bytes changed while retaining"))
+		}
+		confirmed, err := inspect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !sameAnchorReleaseState(confirmed, after) || !anchorRetainedMetadataCompatible(after, confirmed, size) {
+			return nil, fmt.Errorf("%w: after byte verification", errAnchorReleaseMetadataBusy)
+		}
+		after = confirmed
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	record := anchorReleaseRecord{Version: 2, ID: id, Identity: identity, Root: anchorReleaseID(rootInfo),
-		Source: anchorReleaseID(info), USN: state.USN, Size: size, SHA256: digest, Phase: anchorReleasePhases[0]}
+		Source: anchorReleaseID(info), USN: after.USN, Size: size, SHA256: digest, Phase: anchorReleasePhases[0]}
 	if err := writeAnchorReleaseRecord(dir, 0, record); err != nil {
 		return nil, err
 	}
+	prepared = true
 	return &anchorReleaseJournal{store: store, identity: identity, id: id}, nil
 }
 

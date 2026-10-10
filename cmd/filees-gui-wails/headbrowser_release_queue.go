@@ -30,7 +30,7 @@ func (s *HeadBrowserService) queuedFolderRelease(ctx context.Context, d headBrow
 		// Typed refusal proves no accepted intention; transport failure does
 		// not. Never submit a second ID to resolve a lost response.
 		var refusal *ipcclient.ResponseError
-		if errors.As(err, &refusal) && (refusal.Body.Code == "HEAD-2014" || refusal.Body.Code == "HEAD-2024" || refusal.Body.Code == "HEAD-2001" || refusal.Body.MessageKey == "proto.invalid_payload") {
+		if errors.As(err, &refusal) && (refusal.Body.Code == "HEAD-2014" || refusal.Body.Code == "HEAD-2017" || refusal.Body.Code == "HEAD-2024" || refusal.Body.Code == "HEAD-2001" || refusal.Body.MessageKey == "proto.invalid_payload") {
 			return contract.RepoAnchorBatchResult{}, approved, s.folderFailure(err)
 		}
 		result, err = d.AnchorReleaseQueueStatus(ctx, status)

@@ -108,6 +108,7 @@ type anchorManager struct {
 	localIntentMu         *sync.Mutex
 	moveWaiters           atomic.Int32 // observers yield to waiting user moves
 	releaseQueue          *anchorqueue.Store
+	releasePlans          anchorReleasePlans
 	releaseRunner         anchorqueue.Runner
 	releaseQueueActive    atomic.Bool
 	releaseQueueJobs      sync.WaitGroup

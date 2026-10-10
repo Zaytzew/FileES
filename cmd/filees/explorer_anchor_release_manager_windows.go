@@ -264,13 +264,13 @@ func (m *anchorManager) resumeAnchorRelease(ctx context.Context, record localrep
 func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record, rel string) error {
 	leave, err := m.enterReleaseIntent()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errAnchorReleasePreEffectBusy, err)
 	}
 	defer leave()
 	return m.releaseFileHeld(ctx, record, rel)
 }
 
-// The caller holds localIntentMu for the whole confirmed folder batch. All
+// The caller holds localIntentMu for the legacy batch or this one snapshot file. All
 // writer, native journal, clean-file and remote-proof checks remain per file.
 func (m *anchorManager) releaseFileHeld(ctx context.Context, record localrepo.Record, rel string) error {
 	if _, ok := cleanAnchorIdentity(rel); !ok {
@@ -337,7 +337,7 @@ func (m *anchorManager) releaseFileHeld(ctx context.Context, record localrepo.Re
 		}
 		return nil
 	}, func() error { return finishManagedAnchorRelease(ctx, j, fence, ops, remote) })
-	if !started && errors.Is(err, commit.ErrLocalStatusBusy) {
+	if !started && (errors.Is(err, commit.ErrLocalStatusBusy) || errors.Is(err, commit.ErrFileReleaseLocalWork)) {
 		return fmt.Errorf("%w: %w", errAnchorReleasePreEffectBusy, err)
 	}
 	return err

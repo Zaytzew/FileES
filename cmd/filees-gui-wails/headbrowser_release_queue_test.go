@@ -8,6 +8,7 @@ import (
 
 	"filees/internal/gui/platform"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 )
 
 type queueBrowserDaemon struct {
@@ -35,6 +36,9 @@ func (d *queueBrowserDaemon) result() *contract.RepoAnchorQueueResult {
 }
 func (d *queueBrowserDaemon) AnchorReleaseQueue(_ context.Context, p contract.RepoAnchorQueuePayload) (*contract.RepoAnchorQueueResult, error) {
 	d.submitted = append(d.submitted, p)
+	if d.variant == "refused-preview" {
+		return nil, &ipcclient.ResponseError{Body: contract.ErrorBody{Code: "HEAD-2017", MessageKey: "head.folder_changed"}}
+	}
 	if d.variant == "lost-submit" {
 		return nil, errors.New("transport lost")
 	}
@@ -52,7 +56,7 @@ func (d *queueBrowserDaemon) AnchorReleaseQueueStatus(_ context.Context, p contr
 }
 
 func TestHeadBrowserDurableReleaseQueuesOnceAndOnlyPolls(t *testing.T) {
-	for _, v := range []string{"complete", "lost-submit", "lost-status", "failed", "timeout", "cancelled"} {
+	for _, v := range []string{"complete", "lost-submit", "lost-status", "failed", "timeout", "cancelled", "refused-preview"} {
 		t.Run(v, func(t *testing.T) {
 			snapshot := headBrowserSnapshot()
 			snapshot.Capabilities = append(snapshot.Capabilities, contract.CapRepoAnchorRelease, contract.CapRepoAnchorBatch, contract.CapRepoAnchorReleaseQueue)
@@ -107,7 +111,7 @@ func TestHeadBrowserDurableReleaseQueuesOnceAndOnlyPolls(t *testing.T) {
 				t.Fatal("confirmation submitted more than once", d.submitted)
 			}
 			switch v {
-			case "failed":
+			case "failed", "refused-preview":
 				if err == nil || d.reads != 0 {
 					t.Fatal(err, d.reads)
 				}

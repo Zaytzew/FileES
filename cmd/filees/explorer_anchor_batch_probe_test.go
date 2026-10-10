@@ -328,34 +328,28 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	queued := anchorQueuedBatchAdapter{adapter}
 	qp := contract.RepoAnchorQueuePayload{IntentID: "a902d47b-46a6-4eb4-8229-a0120ab1de71", Files: 24,
 		RepoAnchorBatchPayload: contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p, Fingerprint: strings.Repeat("cd", 32)}}
-	if _, err := queued.Queue(t.Context(), qp); err != nil {
-		t.Fatal(err)
-	}
-	m.tickReleaseQueue(t.Context())
-	waitFor(t, 30*time.Second, "changed selection refused", func() bool { return !m.releaseQueueActive.Load() })
-	if x := m.releaseQueue.List()[0]; x.Result.State != "failed" || x.Result.FailureKey != "head.folder_changed" {
-		t.Fatal(x)
+	if _, err := queued.Queue(t.Context(), qp); !errors.Is(err, ipcserver.ErrAnchorSelectionChanged) || len(m.releaseQueue.List()) != 0 {
+		t.Fatal("unknown confirmation accepted", err)
 	}
 	qp.IntentID = "a902d47b-46a6-4eb4-8229-a0120ab1de72"
 	qp.Fingerprint = plan.Fingerprint
 	qp.Files = 23
-	if _, err := queued.Queue(t.Context(), qp); err != nil {
-		t.Fatal(err)
-	}
-	m.tickReleaseQueue(t.Context())
-	waitFor(t, 30*time.Second, "changed count refused", func() bool { return !m.releaseQueueActive.Load() })
-	if x := m.releaseQueue.List()[1]; x.Result.State != "failed" || x.Result.Completed != 0 {
-		t.Fatal(x)
+	if _, err := queued.Queue(t.Context(), qp); !errors.Is(err, ipcserver.ErrAnchorSelectionChanged) || len(m.releaseQueue.List()) != 0 {
+		t.Fatal("wrong count accepted", err)
 	}
 	qp.IntentID = "a902d47b-46a6-4eb4-8229-a0120ab1de73"
 	qp.Files = 24
 	if _, err := queued.Queue(t.Context(), qp); err != nil {
 		t.Fatal(err)
 	}
+	lateFile := filepath.Join(point, "folder", "later-local.txt")
+	if err := os.WriteFile(lateFile, []byte("not part of the confirmed snapshot"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	m.localIntentMu.Lock()
 	m.tickReleaseQueue(t.Context())
 	waitFor(t, 30*time.Second, "busy persisted without effect", func() bool { return !m.releaseQueueActive.Load() })
-	if x := m.releaseQueue.List()[2]; x.Result.State != "queued" || x.Result.Completed != 0 {
+	if x := m.releaseQueue.List()[0]; x.Result.State != "queued" || x.Result.Completed != 0 || len(x.Snapshot.Paths) != 24 {
 		t.Fatal(x)
 	}
 	m.releaseQueue, err = anchorqueue.Open(queuePath) // queued resumes from disk, not GUI memory
@@ -368,18 +362,49 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	})
 	m.tickReleaseQueue(t.Context())
 	waitFor(t, 30*time.Second, "writer refused before callback", func() bool { return !m.releaseQueueActive.Load() })
-	if x := m.releaseQueue.List()[2]; x.Result.State != "queued" || x.Result.Completed != 0 {
+	if x := m.releaseQueue.List()[0]; x.Result.State != "queued" || x.Result.Completed != 0 {
 		t.Fatal("first-file pre-effect busy required a second confirmation", x)
 	}
+	calls := 0
+	observerCanProceed := make(chan bool, 1)
 	state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, op, finish func() error) error {
+		calls++
+		if calls == 2 {
+			// A pre-effect collision after one confirmed file must wait without
+			// holding the global observer/commit intent guard.
+			go func() {
+				deadline := time.Now().Add(750 * time.Millisecond)
+				for time.Now().Before(deadline) {
+					if m.localIntentMu.TryLock() {
+						m.localIntentMu.Unlock()
+						observerCanProceed <- true
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				observerCanProceed <- false
+			}()
+			return commit.ErrLocalStatusBusy
+		}
 		return service.WithFileRelease(ctx, point, rel, recovery, op, finish)
 	})
 	m.tickReleaseQueue(t.Context())
 	waitFor(t, 180*time.Second, "durable folder release", func() bool { return !m.releaseQueueActive.Load() })
-	if x := m.releaseQueue.List()[2]; x.Result.State != "attached" || x.Result.Completed != 24 || commit.HasPendingFileRelease(point) {
+	if x := m.releaseQueue.List()[0]; x.Result.State != "attached" || x.Result.Completed != 24 || commit.HasPendingFileRelease(point) {
 		t.Fatal("release folder", x)
 	}
-	if again, err := queued.Queue(t.Context(), qp); err != nil || again.State != "attached" || len(m.releaseQueue.List()) != 3 {
+	if !<-observerCanProceed || calls != 25 {
+		t.Fatal("mid-batch wait blocked observer or replayed completed files", calls)
+	}
+	if got, err := os.ReadFile(lateFile); err != nil || string(got) != "not part of the confirmed snapshot" {
+		t.Fatal("later file changed", err)
+	}
+	// Retire only the new owned test sentinel before the older clean-directory
+	// oracle below; the product intentionally left that untracked file local.
+	if err := os.Remove(lateFile); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := queued.Queue(t.Context(), qp); err != nil || again.State != "attached" || len(m.releaseQueue.List()) != 1 {
 		t.Fatal("completed confirmation replayed", again, err)
 	}
 	checkAvailability(contract.HeadRemote)

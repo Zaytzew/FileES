@@ -121,7 +121,7 @@ out="$root/dist/site-deploy"
 rm -rf "$out"
 mkdir -p "$out/landing"
 cp -R dist/site-publisher "$out/site-publisher"
-for item in index.html release-badge.js android-badge.js demo privacy badges; do
+for item in index.html release-badge.js android-badge.js favicon.ico favicon.svg demo privacy badges ksef; do
 	cp -R "dist/landing-site/$item" "$out/landing/$item"
 done
 # Runs on Linux: strip CRLF a Windows checkout may have added.
@@ -165,7 +165,7 @@ for file in index.html release-badge.js android-badge.js; do
 		failed=1
 	fi
 done
-for page in download/ download-alpha/ privacy/ demo/; do
+for page in download/ download-alpha/ privacy/ demo/ ksef/; do
 	if curl -fsS --max-time 20 -o /dev/null "$SITE_URL/$page"; then
 		echo "ok       $page"
 	else

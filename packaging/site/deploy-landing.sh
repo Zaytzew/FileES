@@ -22,8 +22,8 @@ die() {
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 docroot="${DOCROOT:-/var/www/filees.space}"
 backups=/var/lib/filees-site/landing-backups
-files="index.html release-badge.js android-badge.js"
-dirs="demo privacy badges"
+files="index.html release-badge.js android-badge.js favicon.ico favicon.svg"
+dirs="demo privacy badges ksef"
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo sh deploy-landing.sh)"
 [ -d "$docroot" ] || die "web root not found: $docroot (set DOCROOT)"

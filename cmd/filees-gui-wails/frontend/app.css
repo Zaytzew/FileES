@@ -140,6 +140,16 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .metrics small { color:var(--muted); font-size:12px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
 .metrics strong { margin:5px 0 1px; font-size:31px; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
 .metrics span { color:#7f8da1; font-size:12px; }
+.dashboard-header .metrics { margin:8px 0; border-radius:12px; box-shadow:none; }
+.dashboard-header .metrics article { min-height:76px; padding:10px 16px; }
+.dashboard-header .metrics small { font-size:10px; }
+.dashboard-header .metrics strong { margin:2px 0 0; font-size:24px; }
+.dashboard-header .metrics span { font-size:11px; }
+/* Pinned statistics must still leave usable card space in a short window. */
+@media (max-height:600px) {
+  .notification-dock { max-height:18vh; }
+  .shell>.dashboard-toasts { max-height:18vh; }
+}
 
 .content-grid { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(310px,.72fr); gap:22px; margin-top:24px; }
 .main-column,.side-card { min-width:0; border:1px solid var(--line); border-radius:19px; background:var(--panel); box-shadow:var(--shadow); backdrop-filter:blur(22px); }

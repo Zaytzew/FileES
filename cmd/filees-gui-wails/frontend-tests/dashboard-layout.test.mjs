@@ -22,6 +22,18 @@ test('background progress is placed in the same stationary notification dock',()
  assert.match(js,/if \(dock\) dock.appendChild\(strip\)/);
  assert.doesNotMatch(js,/hero.nextSibling/);
 });
+
+test('all six statistics remain unique in the stationary header before cards',()=>{
+ const html=read('index.html'), header=html.indexOf('class="dashboard-header"');
+ const dock=html.indexOf('id="notification-dock"'), cards=html.indexOf('id="dashboard-content"');
+ for(const id of ['metric-servers','metric-repos','metric-pending','metric-reservations','metric-public-shares','metric-attention']) {
+  const position=html.indexOf(`id="${id}"`);
+  assert.ok(position>header&&position<dock&&position<cards,id);
+  assert.equal(html.split(`id="${id}"`).length,2,'unique '+id);
+ }
+ assert.match(read('app.css'),/\.dashboard-header \.metrics article \{[^}]*min-height:76px/);
+ assert.match(read('app.css'),/@media \(max-height:600px\)/);
+});
 test('actual background progress creates only one strip in the stationary dock',()=>{
  const source=read('progress-overlay.js').replace(/^import .*;\r?\n/gm,'').replace('export function initializeProgressOverlay','function initializeProgressOverlay');
  const children=[];

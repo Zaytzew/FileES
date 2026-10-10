@@ -19,7 +19,8 @@ Node/Vite, aby build klienta nie zależał od drugiego toolchainu.
 
 Na Windows okno jest bez natywnej ramki (`Frameless`) i ma własny pasek z
 przeciąganiem oraz kontrolkami okna. Główne okno ma stały nagłówek z belkami
-komunikatów i dolne pole toastów; karty przewijają się pomiędzy nimi.
+komunikatów oraz kompaktową belką sześciu statystyk i dolne pole toastów;
+karty przewijają się pomiędzy nimi. Niskie okno ogranicza pole powiadomień.
 Puste pole toastów nie zajmuje miejsca. Belki i toasty mają ograniczoną
 wysokość oraz własne przewijanie przy większej liczbie wiadomości; najnowszy
 toast pozostaje widoczny. Pasek pracy odłożonej w tło trafia do górnej belki.

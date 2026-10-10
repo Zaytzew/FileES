@@ -18,6 +18,8 @@ frame.onload=async()=>{
   for(const id of ['sync-pause-status','memory-safety','announcement-banner','intent-alerts','lock-release-banner','action-status'])
    check(dock.contains(doc.getElementById(id)),id+' outside stationary dock');
   check(!content.contains(toasts),'toasts scroll with cards');
+  const metrics=doc.querySelector('.metrics');
+  check(header.contains(metrics)&&!content.contains(metrics),'statistics outside stationary header');
   // Preserve a native narrow-screen scroller (long rows and many cards).
   doc.querySelector('#repositories').innerHTML=Array.from({length:50},(_,i)=>`<article class="server-panel" style="padding:40px">Synthetic folder ${i}</article>`).join('');
   const last=doc.createElement('button');last.textContent='last card action';content.appendChild(last);
@@ -37,11 +39,13 @@ frame.onload=async()=>{
     }
     await settle();
     const titleTop=doc.querySelector('#titlebar').getBoundingClientRect().top;
+    const metricsTop=metrics.getBoundingClientRect().top;
     const bannerTop=banner.getBoundingClientRect().top;
     const toastTop=toasts.getBoundingClientRect().top;
     content.scrollTop=content.scrollHeight/2;await settle();
     check(content.scrollTop>100,'cards cannot scroll');
     check(doc.querySelector('#titlebar').getBoundingClientRect().top===titleTop,'titlebar moved');
+    check(metrics.getBoundingClientRect().top===metricsTop,'statistics moved');
     check(banner.getBoundingClientRect().top===bannerTop,'banner moved');
     check(toasts.getBoundingClientRect().top===toastTop,'toasts moved');
     check(doc.scrollingElement.scrollTop===0,'document scrolls');

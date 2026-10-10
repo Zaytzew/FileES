@@ -27,6 +27,40 @@ type anchorReleaseRetirement struct {
 	Copy    anchorReleaseFileID
 }
 
+const anchorReleaseBaseProofName = "base-verified.json"
+
+// This is an ACK receipt, not another request or a clean-status snapshot.
+// Caller holds the journal guard and the pinned retained handle after a
+// certain bound exclusion. Never called by conditional resume or lost ACK.
+func (j *anchorReleaseJournal) recordBaseProof(ctx context.Context, r anchorReleaseRecord, copy anchorReleaseFileID) error {
+	if r.Phase != "exclude_requested" || r.ID != j.id || r.Identity != j.identity || copy.Index == 0 {
+		return errors.New("invalid bound BASE receipt")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return writeAnchorReleaseJSONFile(filepath.Join(j.store, j.id), anchorReleaseBaseProofName,
+		anchorReleaseRetirement{Version: 2, Record: r, Copy: copy})
+}
+
+// Missing proof is the historical remote-verification path. Present but
+// invalid proof is a refusal, not permission to fall back or replace it.
+func (j *anchorReleaseJournal) verifiedBase(ctx context.Context, r anchorReleaseRecord, copy anchorReleaseFileID) (bool, error) {
+	proof, err := readAnchorReleaseRetirement(ctx, filepath.Join(j.store, j.id, anchorReleaseBaseProofName))
+	if os.IsNotExist(err) || errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+		return false, ctx.Err()
+	}
+	if err != nil {
+		return false, err
+	}
+	expected := r
+	expected.Phase = "exclude_requested"
+	if r.Phase != "restore_requested" || proof.Version != 2 || proof.Record != expected || proof.Copy != copy || copy.Index == 0 {
+		return false, errors.New("bound BASE receipt differs; preserve retained copy")
+	}
+	return true, ctx.Err()
+}
+
 func readAnchorReleaseRetirement(ctx context.Context, path string) (anchorReleaseRetirement, error) {
 	var out anchorReleaseRetirement
 	f, info, err := openAnchorReleaseFile(path, false)
@@ -192,8 +226,14 @@ func (j *anchorReleaseJournal) retireCopy(ctx context.Context, ops anchorRelease
 	if exists, err := observeAnchorReleaseSeed(ctx, r, ops.inspect); err != nil || !exists {
 		return errors.Join(err, errors.New("retirement remote seed unconfirmed"))
 	}
-	if err := verifyAnchorReleaseRemote(ctx, r, remote, j.store); err != nil {
+	verified, err := j.verifiedBase(ctx, r, anchorReleaseID(info))
+	if err != nil {
 		return err
+	}
+	if !verified {
+		if err := verifyAnchorReleaseRemote(ctx, r, remote, j.store); err != nil {
+			return err
+		}
 	}
 	// The byte handle and process/directory guards remain held through the
 	// intent, fresh local checks, and deletion of this handle (not its name).

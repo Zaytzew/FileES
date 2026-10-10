@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 type anchorBatchProbeReader struct {
 	client.Client
 	actual, authority string
+	proofCalls        *atomic.Int32
 }
 
 func (r anchorBatchProbeReader) target(target string) string {
@@ -72,6 +74,9 @@ func (r anchorBatchProbeReader) ResumeRetainedPath(ctx context.Context, wc, rel,
 }
 
 func (r anchorBatchProbeReader) InspectRetainedRemote(ctx context.Context, target string) (client.RetainedRemoteIdentity, error) {
+	if r.proofCalls != nil {
+		r.proofCalls.Add(1)
+	}
 	result, err := r.Client.(anchorReleaseRemoteReader).InspectRetainedRemote(ctx, r.target(target))
 	result.URL = target
 	return result, err
@@ -155,8 +160,9 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var remoteProofCalls atomic.Int32
 	m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) {
-		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
+		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority, proofCalls: &remoteProofCalls}, nil
 	}, log: talk.With("batch-native"), stateEvery: time.Hour, options: &anchorOptions{}}
 	m.options.servers.Store(map[string]bool{record.ServerID: true})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -388,13 +394,18 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		}
 		return service.WithFileRelease(ctx, point, rel, recovery, op, finish)
 	})
+	releaseStarted := time.Now()
 	m.tickReleaseQueue(t.Context())
 	waitFor(t, 180*time.Second, "durable folder release", func() bool { return !m.releaseQueueActive.Load() })
+	t.Logf("24-file confirmed release: %s; redundant remote proof calls=%d", time.Since(releaseStarted), remoteProofCalls.Load())
 	if x := m.releaseQueue.List()[0]; x.Result.State != "attached" || x.Result.Completed != 24 || commit.HasPendingFileRelease(point) {
 		t.Fatal("release folder", x)
 	}
 	if !<-observerCanProceed || calls != 25 {
 		t.Fatal("mid-batch wait blocked observer or replayed completed files", calls)
+	}
+	if got := remoteProofCalls.Load(); got != 0 {
+		t.Fatal("confirmed batch redundantly verified remote bytes", got)
 	}
 	if got, err := os.ReadFile(lateFile); err != nil || string(got) != "not part of the confirmed snapshot" {
 		t.Fatal("later file changed", err)

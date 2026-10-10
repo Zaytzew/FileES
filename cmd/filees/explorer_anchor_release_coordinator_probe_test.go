@@ -72,10 +72,14 @@ func (p releaseProbeExcluder) ResumeRetainedPath(ctx context.Context, wc, rel, r
 
 type retirementProbeRemote struct {
 	anchorReleaseRemoteReader
-	bad string
+	bad                   string
+	infoCalls, fetchCalls *int
 }
 
 func (p retirementProbeRemote) InspectRetainedRemote(ctx context.Context, target string) (client.RetainedRemoteIdentity, error) {
+	if p.infoCalls != nil {
+		*p.infoCalls++
+	}
 	v, err := p.anchorReleaseRemoteReader.InspectRetainedRemote(ctx, target)
 	if p.bad == "uuid" {
 		v.RepositoryUUID = "11111111-1111-1111-1111-111111111111"
@@ -84,6 +88,9 @@ func (p retirementProbeRemote) InspectRetainedRemote(ctx context.Context, target
 }
 
 func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target string, revision int64, out string) (int64, error) {
+	if p.fetchCalls != nil {
+		*p.fetchCalls++
+	}
 	n, err := p.anchorReleaseRemoteReader.HistoryFetchFile(ctx, target, revision, out)
 	if err == nil && p.bad == "bytes" {
 		b, e := os.ReadFile(out)
@@ -102,7 +109,7 @@ func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target stri
 
 // Actual CFAPI and SVN in owned fixtures. No production pair, GUI or copy retirement.
 func TestAnchorReleaseCoordinatorNative(t *testing.T) {
-	for _, name := range []string{"normal", "empty", "large", "retained-usn-advance", "retained-usn-restart", "prepare-byte-proof-refused", "prepare-digest-refused", "prepare-malformed-digest-refused", "prepare-size-refused", "prepare-regressed-usn", "prepare-dirty-refused", "prepare-shared-reader", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "exclude-refused", "exclude-refused-source-changed", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
+	for _, name := range []string{"normal", "empty", "large", "local-retirement", "retained-usn-advance", "retained-usn-restart", "prepare-byte-proof-refused", "prepare-digest-refused", "prepare-malformed-digest-refused", "prepare-size-refused", "prepare-regressed-usn", "prepare-dirty-refused", "prepare-shared-reader", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "exclude-refused", "exclude-refused-source-changed", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			repo, source, point, store := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point"), filepath.Join(root, "evidence")
@@ -286,6 +293,7 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}
 				return err
 			}}
+			ops.retainBaseProof = name != "normal" && name != "empty"
 			if name == "old-runtime" {
 				old := client.New(client.Options{NativeSVNPath: probeTool(t, "FILEES_SVN_UNMODIFIED_PROBE"), SvnPath: filepath.Join(root, "absent-cli.exe"), Timeout: time.Minute})
 				ops.svn = old.(anchorReleaseExcluder)
@@ -338,6 +346,9 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 					return err
 				}
 				remote := c.(anchorReleaseRemoteReader)
+				// The production-shaped path must not need any remote reader
+				// once its bound native BASE receipt has been durably recorded.
+				remote = nil
 				ackFailure := errors.New("fixture durable ack refused")
 				if name == "managed-ack-failure" {
 					service.FenceFileRelease = func(_ context.Context, _ string, op func() error) error {
@@ -390,7 +401,7 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				return
 			}
 			j, out, err := startAnchorRelease(ctx, store, identity, ops)
-			good := name == "normal" || name == "empty" || name == "large" || name == "retained-usn-advance" || name == "lost-prepare-ack" || name == "lost-exclude-ack"
+			good := name == "normal" || name == "empty" || name == "large" || name == "local-retirement" || name == "retained-usn-advance" || name == "lost-prepare-ack" || name == "lost-exclude-ack"
 			if good && (err != nil || !out.seedObserved) {
 				t.Fatalf("cycle: %+v %v", out, err)
 			}
@@ -455,6 +466,11 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 					t.Fatal("refused source lost")
 				}
 			}
+			if name == "lost-exclude-ack" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "exclude-refused" {
+				if _, err := os.Stat(filepath.Join(store, j.id, anchorReleaseBaseProofName)); !os.IsNotExist(err) {
+					t.Fatal("uncertain/recovery exclusion fabricated a BASE receipt", err)
+				}
+			}
 			if got, err := exec.CommandContext(t.Context(), cli, "cat", uri+"/drawing.dwg").Output(); err != nil || !bytes.Equal(got, body) {
 				t.Fatal("repository bytes changed", err)
 			}
@@ -465,6 +481,48 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			case request := <-p.fetch:
 				t.Fatalf("release hydrated data: %v", request)
 			default:
+			}
+			if name == "local-retirement" {
+				recovery := anchorReleaseRecoveryIO{svn: ops.svn, inspect: ops.inspect, restore: ops.restore}
+				copyPath := filepath.Join(store, j.id, "data.bin")
+				changed := append([]byte(nil), body...)
+				changed[0] ^= 32
+				if err := os.WriteFile(copyPath, changed, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := j.retireCopy(t.Context(), recovery, nil); err == nil {
+					t.Fatal("BASE receipt bypassed changed retained bytes")
+				}
+				if got, err := os.ReadFile(copyPath); err != nil || !bytes.Equal(got, changed) {
+					t.Fatal("refused copy was removed", err)
+				}
+				if err := os.WriteFile(copyPath, body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := j.retireCopy(t.Context(), recovery, nil); err != nil {
+					t.Fatal("confirmed BASE retirement contacted the remote backend", err)
+				}
+				fresh := &anchorReleaseJournal{store: store, identity: identity, id: j.id}
+				if err := fresh.retireCopy(t.Context(), recovery, nil); err != nil {
+					t.Fatal("reopened confirmed BASE retirement", err)
+				}
+			}
+			if name == "lost-exclude-ack" {
+				if _, err := os.Stat(filepath.Join(store, j.id, anchorReleaseBaseProofName)); !os.IsNotExist(err) {
+					t.Fatal("lost ACK fabricated a BASE receipt", err)
+				}
+				recovery := anchorReleaseRecoveryIO{svn: ops.svn, inspect: ops.inspect, restore: ops.restore}
+				if err := j.retireCopy(t.Context(), recovery, nil); err == nil {
+					t.Fatal("uncertain ACK bypassed remote proof")
+				}
+				infos, fetches := 0, 0
+				remote := retirementProbeRemote{anchorReleaseRemoteReader: c.(anchorReleaseRemoteReader), infoCalls: &infos, fetchCalls: &fetches}
+				if err := j.retireCopy(t.Context(), recovery, remote); err != nil {
+					t.Fatal("uncertain ACK remote proof recovery", err)
+				}
+				if infos != 2 || fetches != 1 {
+					t.Fatal("uncertain ACK lost independent verification", infos, fetches)
+				}
 			}
 			if name == "normal" || name == "empty" {
 				remote := c.(anchorReleaseRemoteReader)

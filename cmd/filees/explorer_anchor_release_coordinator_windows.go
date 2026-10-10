@@ -41,6 +41,10 @@ type anchorReleaseIO struct {
 	// Persist the restored revision identity in the tree before clearing the
 	// release fence. The observer cannot race this receipt under WC/intent locks.
 	remoteReceipt func(context.Context, anchorReleaseRecord) error
+	// A certain bound exclusion proves source == retained == SVN pristine
+	// while holding the exact source/runtime guards. Persist that proof for
+	// retirement; lost ACK/recovery never synthesizes it from excluded state.
+	retainBaseProof bool
 }
 
 type anchorReleaseResumer interface {
@@ -296,7 +300,7 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		if err := ops.svn.RequireRetainedPathSupport(ctx); err != nil {
 			return err
 		}
-		copyFile, _, err := openAnchorReleaseFile(filepath.Join(j.store, j.id, "data.bin"), false)
+		copyFile, copyInfo, err := openAnchorReleaseFile(filepath.Join(j.store, j.id, "data.bin"), false)
 		if err != nil {
 			return err
 		}
@@ -357,6 +361,7 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		if err := j.request(ctx, "exclude_requested"); err != nil {
 			return err
 		}
+		r.Phase = "exclude_requested"
 		binding, err := anchorReleaseBinding(r)
 		if err != nil {
 			return err
@@ -372,6 +377,14 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 		// independently proven, never an unfinished work queue.
 		if err := checkAnchorReleaseExclusion(ctx, r, ops.svn); err != nil {
 			return errors.Join(excludeErr, err)
+		}
+		if ops.retainBaseProof && excludeErr == nil {
+			// Only the parsed native ACK grants this receipt. Its primitive
+			// compares all bytes with pristine and retained under guards, and
+			// binds UUID/URL/revision/source under the WC runtime write lock.
+			if err := j.recordBaseProof(ctx, r, anchorReleaseID(copyInfo)); err != nil {
+				return err
+			}
 		}
 		return nil
 	}()

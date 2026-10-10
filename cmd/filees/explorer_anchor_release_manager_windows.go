@@ -116,7 +116,7 @@ func (m *anchorManager) releaseIO(record localrepo.Record, bridge *anchorBridge)
 	if !ok {
 		return ops, nil, errors.New("independent release verification is unavailable")
 	}
-	ops = anchorReleaseIO{helper: m.helper, svn: excluder,
+	ops = anchorReleaseIO{helper: m.helper, svn: excluder, retainBaseProof: true,
 		inspect: func(ctx context.Context, rel string) (cfapiAnswer, error) {
 			return m.call(ctx, "", "file-state", "--root", record.LocalPath, "--rel", rel)
 		},
@@ -271,7 +271,8 @@ func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record
 }
 
 // The caller holds localIntentMu for the legacy batch or this one snapshot file. All
-// writer, native journal, clean-file and remote-proof checks remain per file.
+// writer, native journal and clean-file checks remain per file. A certain
+// bound BASE receipt avoids refetching bytes; uncertain recovery remains remote.
 func (m *anchorManager) releaseFileHeld(ctx context.Context, record localrepo.Record, rel string) error {
 	if _, ok := cleanAnchorIdentity(rel); !ok {
 		return errors.New("select one published file for release")

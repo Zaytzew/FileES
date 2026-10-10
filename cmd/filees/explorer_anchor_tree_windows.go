@@ -243,14 +243,14 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 	if refresh.target == nil && time.Now().Before(refresh.next) {
 		return
 	}
-	refresh.next = time.Now().Add(time.Minute)
 	turn, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	unlock, err := m.enterReleaseIntent()
+	unlock, err := m.enterObserverIntent()
 	if err != nil {
 		return
 	}
 	defer unlock()
+	refresh.next = time.Now().Add(time.Minute)
 	if m.currentReleaseRecord(record) != nil || commit.HasPendingLocalMutation(record.LocalPath) {
 		return
 	}

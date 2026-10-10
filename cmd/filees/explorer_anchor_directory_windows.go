@@ -18,7 +18,7 @@ import (
 type anchorDirectoryCursor struct{ after string }
 
 func (m *anchorManager) refreshDirectoryStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *anchorDirectoryCursor) error {
-	unlock, err := m.enterReleaseIntent()
+	unlock, err := m.enterObserverIntent()
 	if err != nil {
 		return err
 	}

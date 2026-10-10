@@ -82,6 +82,11 @@ func anchorLocalStateTurn(ctx context.Context, cursor *string, refresh func(cont
 }
 
 func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) error {
+	leave, err := m.enterObserverIntent()
+	if err != nil {
+		return err // no walk/helper/ACK; retain the existing cursor
+	}
+	defer leave()
 	candidates, paths, err := anchorLocalStateBatch(ctx, record.LocalPath, cursor, func(paths []string) ([]cfapiAnswer, error) {
 		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
 		if err != nil || !answer.OK {

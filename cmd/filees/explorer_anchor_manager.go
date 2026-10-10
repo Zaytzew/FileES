@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"filees/pkg/activity"
@@ -104,6 +105,7 @@ type anchorManager struct {
 	// profile's identity (profileSVN). Tests hand over a local client.
 	newSVN          func(serverID string) (client.Client, error)
 	localIntentMu   *sync.Mutex
+	moveWaiters     atomic.Int32 // observers yield to waiting user moves
 	activity        *activity.Journal
 	activityChanged func(repoID string)
 	guardChanged    func(repoID string)

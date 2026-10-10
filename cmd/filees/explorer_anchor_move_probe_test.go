@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ type anchorMoveProbeClient struct {
 	anchorBatchProbeReader
 	fetches, sends atomic.Int32
 	interrupt      string
+	duringTransfer func()
 }
 
 func (c *anchorMoveProbeClient) HistoryFetchFile(ctx context.Context, target string, revision int64, out string) (int64, error) {
@@ -45,6 +47,9 @@ func (c *anchorMoveProbeClient) HistoryRepositoryUUID(ctx context.Context, targe
 }
 func (c *anchorMoveProbeClient) RemoteTreeMove(ctx context.Context, move client.RemoteTreeMove) (*client.RemoteTreeReceipt, error) {
 	c.sends.Add(1)
+	if c.duringTransfer != nil {
+		c.duringTransfer()
+	}
 	original := move
 	move.RootURL = c.actual
 	got, err := c.Client.(client.RemoteTreeMover).RemoteTreeMove(ctx, move)
@@ -77,7 +82,7 @@ func (c *anchorMoveProbeClient) LocalTreeMetadata(ctx context.Context, wc, phase
 }
 
 func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
-	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote", "explorer-local", "explorer-mixed", "explorer-reply", "explorer-populated", "explorer-stale-directory"} {
+	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote", "explorer-local", "explorer-mixed", "explorer-reply", "explorer-populated", "explorer-stale-directory", "explorer-throttled"} {
 		t.Run("phase-"+scenario, func(t *testing.T) {
 			interrupt := scenario
 			explorer := strings.HasPrefix(scenario, "explorer-")
@@ -171,7 +176,7 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			state.SetTreeMutationFunc(func(ctx context.Context, src, dst string, p *watcher.TreeMoveSnapshot, op func(*watcher.TreeMoveSnapshot) error, finish func() error) error {
 				return service.WithRemoteTreeMove(ctx, point, src, dst, p, op, finish)
 			})
-			m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) { return reader, nil }, log: talk.With("move-native"), stateEvery: time.Hour, options: &anchorOptions{}}
+			m := &anchorManager{activity: journal, helper: helper, profiles: filepath.Join(root, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) { return reader, nil }, log: talk.With("move-native"), stateEvery: time.Hour, options: &anchorOptions{}, localIntentMu: &sync.Mutex{}}
 			m.options.servers.Store(map[string]bool{"server": true})
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan struct{})
@@ -289,7 +294,45 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 				if e == nil || reader.sends.Load() != 0 || commit.HasPendingRemoteTree(point) {
 					t.Fatal("busy file was bypassed", e)
 				}
-				err = os.Rename(filepath.Join(point, src), filepath.Join(point, dst))
+				if scenario == "explorer-throttled" {
+					reader.duringTransfer = func() {
+						m.mu.Lock()
+						bridge := m.running[anchorKey(record)].bridge
+						m.mu.Unlock()
+						// Actual native/SVN send in progress: ticks must not enter
+						// the helper, mutate metadata or delay the next remote pass.
+						cursor := "retained"
+						if e := m.refreshLocalStates(ctx, record, bridge, &cursor); !errors.Is(e, commit.ErrLocalStatusBusy) || cursor != "retained" {
+							t.Error("local tick entered transfer", e, cursor)
+						}
+						if e := m.refreshDirectoryStates(ctx, record, bridge, &anchorDirectoryCursor{}); !errors.Is(e, commit.ErrLocalStatusBusy) {
+							t.Error("directory tick entered transfer", e)
+						}
+						refresh := &anchorTreeRefresh{}
+						m.refreshRemoteTree(ctx, record, bridge, refresh)
+						if refresh.target != nil || !refresh.next.IsZero() {
+							t.Error("deferred remote tick changed its cursor/backoff")
+						}
+					}
+					leave, e := m.enterObserverIntent()
+					if e != nil {
+						t.Fatal(e)
+					}
+					result := make(chan error, 1)
+					go func() { result <- os.Rename(filepath.Join(point, src), filepath.Join(point, dst)) }()
+					waitFor(t, 5*time.Second, "Explorer waiting for observation", func() bool { return m.moveWaiters.Load() == 1 })
+					if reader.sends.Load() != 0 {
+						t.Error("remote send bypassed active observer")
+					}
+					leave()
+					select {
+					case err = <-result:
+					case <-time.After(40 * time.Second):
+						t.Fatal("Explorer admission did not complete")
+					}
+				} else {
+					err = os.Rename(filepath.Join(point, src), filepath.Join(point, dst))
+				}
 				if err == nil {
 					waitFor(t, 30*time.Second, "Explorer move retirement", func() bool { return reader.sends.Load() == 1 && !commit.HasPendingRemoteTree(point) })
 				}

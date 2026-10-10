@@ -252,7 +252,7 @@ func (m *anchorManager) moveTree(ctx context.Context, record localrepo.Record, m
 // External Windows gestures wait for the same durable remote receipt before
 // their native permission is granted. OS completion precedes reconciliation.
 func (m *anchorManager) moveTreeWithPhysical(ctx context.Context, record localrepo.Record, move client.RemoteTreeMove, physical func(context.Context) error, consent ...func(*anchorMoveObjects, *watcher.TreeMoveSnapshot) error) error {
-	leave, err := m.enterReleaseIntent()
+	leave, err := m.enterMoveIntent(ctx)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,52 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 
+test("reservation card uses the same pending count as the header and stops on failure", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const extract = name => { const start = source.indexOf(`function ${name}(`); return start < 0 ? "" : source.slice(start, source.indexOf("\n}", start) + 2); };
+  const nodes = new Map();
+  const get = key => {
+    if (!nodes.has(key)) nodes.set(key, {dataset:{}, setAttribute(name, value) { this[name] = value; }});
+    return nodes.get(key);
+  };
+  const context = {$:get, t:key=>key, escapeHTML:String, replaceHTMLIfChanged:(node, html)=>node.innerHTML=html};
+  runInNewContext(["countWaitsForServer", "renderWaitingCount", "renderReservations"].map(extract).join("\n"), context);
+  const snapshot = {connected:true, projection:{state:"server_unverified"},
+    reservation_status:{state:"partial", unavailable:[], offline:[], stale:[]}};
+  const count = get("#reservations-count");
+  const css = readFileSync(new URL("../frontend/app.css", import.meta.url), "utf8");
+  assert.match(css, /\.count-badge \.metric-spinner\s*\{[^}]*display:inline-block;[^}]*width:12px;[^}]*height:12px;/);
+  for (const state of ["server_unverified", "refreshing"]) {
+    snapshot.projection.state = state;
+    context.renderReservations(snapshot);
+    assert.match(count.innerHTML, /^0\+<span class="action-spinner metric-spinner"/);
+    assert.equal(count["aria-busy"], "true");
+    assert.equal(count["aria-label"], "fresh.refreshing");
+    assert.equal(get("#reservations-card").hidden, false);
+  }
+  for (const state of ["current", "server_unavailable", "daemon_offline"]) {
+    snapshot.projection.state = state;
+    snapshot.connected = state !== "daemon_offline";
+    context.renderReservations(snapshot);
+    assert.equal(count.innerHTML, "");
+    assert.equal(count.textContent, "0+?");
+    assert.equal(count["aria-busy"], "false");
+    assert.equal(count.title, "");
+  }
+  snapshot.connected = true;
+  snapshot.projection.state = "refreshing";
+  snapshot.servers = [{health:"server_unavailable"}];
+  context.renderReservations(snapshot);
+  assert.equal(count.innerHTML, "");
+  snapshot.servers = [];
+  snapshot.reservation_status.state = "complete";
+  context.renderReservations(snapshot);
+  assert.equal(count.innerHTML, "");
+  assert.equal(count.textContent, 0);
+  assert.equal(count["aria-busy"], "false");
+  assert.equal(get("#reservations-card").hidden, true);
+});
+
 test("stale public shares do not claim a connected daemon is offline", () => {
   const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
   const render = source.slice(source.indexOf("function renderMetrics("), source.indexOf("function plural("));

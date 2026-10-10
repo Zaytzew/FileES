@@ -419,9 +419,9 @@ test("freshness and partial locks preserve state and literal server details", ()
   const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
   const extract = name => { const start = source.indexOf(`function ${name}(`); return source.slice(start, source.indexOf("\n}", start) + 2); };
   const nodes = new Map();
-  const node = key => { if (!nodes.has(key)) nodes.set(key, {dataset: {}, classList: {add() {}}}); return nodes.get(key); };
+  const node = key => { if (!nodes.has(key)) nodes.set(key, {dataset: {}, classList: {add() {}}, setAttribute(name, value) { this[name] = value; }}); return nodes.get(key); };
   let locale = "en";
-  const render = runInNewContext(`${extract("renderConnection")}\n${extract("renderReservations")}\n({renderConnection,renderReservations})`, {
+  const render = runInNewContext(`${extract("renderConnection")}\n${extract("countWaitsForServer")}\n${extract("renderWaitingCount")}\n${extract("renderReservations")}\n({renderConnection,renderReservations})`, {
     $: node, t: (key, args) => translate(catalogues, locale, key, args),
     shortDateTime: String, ageInWords: () => "", escapeHTML: value => String(value ?? "").replaceAll("<", "&lt;"),
     replaceHTMLIfChanged: (root, html) => root.html = html,

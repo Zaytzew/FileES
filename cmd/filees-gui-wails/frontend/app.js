@@ -361,20 +361,7 @@ function renderConnection(snapshot) {
 }
 
 function renderMetrics(snapshot) {
-  // Reuse the projection's first-check/refresh verdict, never infer loading
-  // from an unknown count alone. An unavailable server ends the wait display.
-  const waiting = snapshot.connected
-    && ["server_unverified", "refreshing"].includes(snapshot.projection?.state)
-    && !(snapshot.servers || []).some(server => ["server_unavailable", "daemon_offline"].includes(server.health));
-  const renderCount = (selector, value, loading, prefix = "") => {
-    const node = $(selector);
-    node.innerHTML = "";
-    node.textContent = value;
-    node.setAttribute("aria-busy", String(loading));
-    node.setAttribute("aria-label", loading ? t("fresh.refreshing") : String(value));
-    node.title = loading ? t("fresh.refreshing") : "";
-    if (loading) node.innerHTML = `${prefix}<span class="action-spinner metric-spinner" aria-hidden="true"></span>`;
-  };
+  const waiting = countWaitsForServer(snapshot);
   const repos = snapshot.repositories || [];
   const pending = repos.reduce((sum, repo) => sum + Number(repo.pending_files || 0), 0);
   const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
@@ -397,7 +384,7 @@ function renderMetrics(snapshot) {
   $("#metric-repos-note").textContent = t("summary.inView");
   $("#metric-attention-note").textContent = t("summary.notes");
   $("#metric-pending-note").textContent = pending ? t("summary.pendingBytes", { size: bytes(pendingBytes) }) : t("summary.emptyQueue");
-  renderCount("#metric-reservations", reservationsOffline
+  renderWaitingCount("#metric-reservations", reservationsOffline
     ? reservations.length
     : reservationsPartial ? `${reservations.length}+?` : reservations.length,
     waiting && reservationsPartial && !reservationsOffline, `${reservations.length}+`);
@@ -406,7 +393,7 @@ function renderMetrics(snapshot) {
     : reservationsPartial
     ? t("summary.partialLocks", { count: reservations.length, locks: tn("count.locks", reservations.length), missing: reservationState.unavailable.length })
     : tn("count.locks", reservations.length);
-  renderCount("#metric-public-shares", snapshot.public_shares_known && !publicSharesStale ? activePublicShares : "?",
+  renderWaitingCount("#metric-public-shares", snapshot.public_shares_known && !publicSharesStale ? activePublicShares : "?",
     waiting && (!snapshot.public_shares_known || publicSharesStale));
   $("#metric-public-shares-note").textContent = (reservationsOffline || publicSharesStale) && snapshot.public_shares_known
     ? t(snapshot.connected ? "summary.lastKnownUnverified" : "summary.lastKnown")
@@ -431,6 +418,23 @@ function renderMetrics(snapshot) {
     : snapshot.last_refresh
       ? t("hero.cached")
       : t("hero.noCache");
+}
+
+function countWaitsForServer(snapshot) {
+  // Reuse the projection verdict; an unknown count alone is not a pending request.
+  return snapshot.connected
+    && ["server_unverified", "refreshing"].includes(snapshot.projection?.state)
+    && !(snapshot.servers || []).some(server => ["server_unavailable", "daemon_offline"].includes(server.health));
+}
+
+function renderWaitingCount(selector, value, loading, prefix = "") {
+  const node = $(selector);
+  node.innerHTML = "";
+  node.textContent = value;
+  node.setAttribute("aria-busy", String(loading));
+  node.setAttribute("aria-label", loading ? t("fresh.refreshing") : String(value));
+  node.title = loading ? t("fresh.refreshing") : "";
+  if (loading) node.innerHTML = `${prefix}<span class="action-spinner metric-spinner" aria-hidden="true"></span>`;
 }
 
 function plural(value, one, few, many) {
@@ -867,7 +871,8 @@ function renderReservations(snapshot) {
   const reservationsOffline = reservationState.state === "daemon_offline";
   const reservationsPartial = reservationState.state === "partial";
 	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationsPartial && !reservationsOffline && reservationState.offline.length === 0 && reservationState.stale.length === 0;
-  $("#reservations-count").textContent = reservationsPartial ? `${reservations.length}+?` : reservations.length;
+  renderWaitingCount("#reservations-count", reservationsPartial ? `${reservations.length}+?` : reservations.length,
+    countWaitsForServer(snapshot) && reservationsPartial && !reservationsOffline, `${reservations.length}+`);
 	const availabilityHTML = reservationsPartial
 		? `<p class="muted">${escapeHTML(t("locks.partial", { servers: reservationState.unavailable.map((server) => server.display_name || server.id || t("locks.server")).join(", ") }))}</p>`
 		: reservationsOffline && (reservations.length || holderRequests.length)

@@ -40,6 +40,9 @@ Pełna projekcja zawiera także aktywne rezerwacje plikowe. Renderer dostaje
 opaque identyfikator wiersza, opis i capability zwolnienia, ale nigdy token
 fencingowy SVN. Przycisk `Zwolnij` wraca do wspólnego kontrolera, który po
 potwierdzeniu ponownie rozwiązuje identyfikator i przekazuje token demonowi.
+Licznik karty wypożyczeń i statystyki używają wspólnego renderera oczekiwania:
+spinner tylko przy pierwszej weryfikacji/odświeżaniu i żywym IPC, bez znanej
+awarii. Brak danych po zakończeniu odczytu nie udaje ładowania ani zera.
 
 Przycisk `Dziennik` rozwija w panelu tę samą chronologię, którą Fyne buduje w
 `internal/gui/journal`. Skrót używa czasu względnego, pełny widok dokładnego

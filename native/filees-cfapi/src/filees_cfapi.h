@@ -114,6 +114,8 @@ void filees_bridge_say_directory_set(const char *id, HRESULT hr);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);
+HRESULT filees_prepare_release_verified(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn,
+                                       const char *expected_id, LONGLONG expected_size, const char *expected_digest);
 HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLONG size, const WCHAR *remote_identity);
 int filees_local_identity(const void *identity, DWORD length);
 HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,

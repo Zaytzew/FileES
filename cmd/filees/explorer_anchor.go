@@ -392,7 +392,7 @@ func (bridge *anchorBridge) setLocalState(ctx context.Context, rel, usn string, 
 // These commands must run on the provider which owns the connected root.
 // Separate one-shot CFAPI processes cannot safely prepare/restore its file.
 // A matching command ID with the wrong reply type is not an acknowledgement.
-func (bridge *anchorBridge) prepareRelease(ctx context.Context, rel, usn, binding string) error {
+func (bridge *anchorBridge) prepareRelease(ctx context.Context, rel, usn, binding string, size int64, digest string) error {
 	if _, ok := cleanAnchorIdentity(rel); !ok || strings.ContainsAny(rel, "\t\r\n") {
 		return errors.New("invalid release path")
 	}
@@ -409,7 +409,10 @@ func (bridge *anchorBridge) prepareRelease(ctx context.Context, rel, usn, bindin
 	if id, err := strconv.ParseUint(parts[1], 10, 64); err != nil || id == 0 {
 		return errors.New("invalid release file identity")
 	}
-	return bridge.connectedCommand(ctx, "prepare-release-bound", "release-prepared", rel, usn, binding)
+	if size < 0 || len(digest) != 64 || strings.Trim(digest, "0123456789abcdef") != "" {
+		return errors.New("invalid release byte proof")
+	}
+	return bridge.connectedCommand(ctx, "prepare-release-verified", "release-prepared", rel, usn, binding, strconv.FormatInt(size, 10), digest)
 }
 
 func (bridge *anchorBridge) restoreRelease(ctx context.Context, rel string, size int64) error {

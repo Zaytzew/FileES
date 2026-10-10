@@ -120,8 +120,8 @@ func (m *anchorManager) releaseIO(record localrepo.Record, bridge *anchorBridge)
 		inspect: func(ctx context.Context, rel string) (cfapiAnswer, error) {
 			return m.call(ctx, "", "file-state", "--root", record.LocalPath, "--rel", rel)
 		},
-		prepare: func(ctx context.Context, rel, usn string, id anchorReleaseFileID) error {
-			return bridge.prepareRelease(ctx, rel, usn, strconv.FormatUint(uint64(id.Volume), 10)+":"+strconv.FormatUint(id.Index, 10))
+		prepare: func(ctx context.Context, rel, usn string, id anchorReleaseFileID, size int64, digest string) error {
+			return bridge.prepareRelease(ctx, rel, usn, strconv.FormatUint(uint64(id.Volume), 10)+":"+strconv.FormatUint(id.Index, 10), size, digest)
 		},
 		restore: func(ctx context.Context, rel string, size int64) error {
 			base, err := excluder.InspectPathExclusion(ctx, record.LocalPath, rel)

@@ -31,9 +31,9 @@ type anchorReleaseIO struct {
 	helper  string // Exact helper used by the current connected provider.
 	svn     anchorReleaseExcluder
 	inspect func(context.Context, string) (cfapiAnswer, error)
-	// prepare must be prepare-release-bound on the current connected helper,
+	// prepare must be prepare-release-verified on the current connected helper,
 	// not legacy revert. All callbacks finish/reap before returning on cancel.
-	prepare func(context.Context, string, string, anchorReleaseFileID) error
+	prepare func(context.Context, string, string, anchorReleaseFileID, int64, string) error
 	restore func(context.Context, string, int64) error
 	// Production admission persists the WC fence after retaining bytes and
 	// BEFORE any mutating request. Private native probes may leave this nil.
@@ -139,7 +139,7 @@ func requireAnchorReleaseHelper(ctx context.Context, helper string) error {
 	if err := json.Unmarshal(out.buffer.Bytes(), &answer); err != nil {
 		return err
 	}
-	for _, need := range []string{"prepare_release_bound_v1", "restore_release_v1", "release_observation_v1"} {
+	for _, need := range []string{"prepare_release_verified_v1", "restore_release_v1", "release_observation_v1"} {
 		found := false
 		for _, feature := range answer.Features {
 			if feature == need {
@@ -316,7 +316,9 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 			if err != nil {
 				return err
 			}
-			if !state.OK || !state.Placeholder || !state.Local || state.Partial || !state.InSync || state.USN != r.USN {
+			retainedState := state
+			retainedState.USN = r.USN
+			if !anchorRetainedMetadataCompatible(retainedState, state, r.Size) || state.Identity != "filees.local/v1" {
 				return errors.New("retained FileES source changed before preparation")
 			}
 			if err := checkAnchorReleaseSource(ctx, r, true); err != nil {
@@ -326,7 +328,10 @@ func (j *anchorReleaseJournal) advanceRelease(ctx context.Context, ops anchorRel
 				return err
 			}
 			r.Phase = "prepare_requested"
-			prepareErr := ops.prepare(ctx, r.Identity.Rel, r.USN, r.Source)
+			// The retained token remains immutable evidence. The connected helper
+			// independently hashes this same FileID under a share-none handle, and
+			// permits later USN only with exact size/digest and clean CFAPI flags.
+			prepareErr := ops.prepare(ctx, r.Identity.Rel, r.USN, r.Source, r.Size, r.SHA256)
 			if err := ctx.Err(); err != nil {
 				return err
 			}

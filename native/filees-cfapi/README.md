@@ -1,5 +1,24 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Zweryfikowane przygotowanie zwolnienia — 2026-10-10, baza r2071 + WC
+
+Produkcja wymaga `prepare_release_verified_v1`, bez fallbacku do starszego
+helpera. Prywatna linia `prepare-release-verified` ma kolejno ID żądania,
+ścieżkę, zachowany USN, `volume:index`, rozmiar i SHA-256 (64 małe znaki hex),
+oddzielone TAB. Odpowiedź nadal `release-prepared` z dokładnym ID/HRESULT.
+Journal v2 zachowuje pierwotny token; późniejszy USN jest dopuszczalny tylko
+dla tego samego pełnego, czystego, lokalnego FileES. Pomocnik pod uchwytem
+bez współdzielenia sam sprawdza FileID, rozmiar i wszystkie bajty względem
+trwałej kopii, a następnie ponownie kontroluje stan CFAPI przed revert.
+Hash strumieniowy SHA-256 korzysta z systemowego BCrypt, bufor 64 KiB.
+Zmiana bajtów/obiektu, brudny stan, czytelnik/pisarz lub błędny dowód
+odmawiają bez revert. Nie jest to zgoda na ponawianie niepewnych efektów:
+po prepare_requested działa dotychczasowe recovery, bez drugiego prepare.
+Legacy `prepare-release` i `prepare-release-bound` nadal wymagają dokładnego
+USN. Natywne SVN nadal niezależnie weryfikuje kopię/BASE przed wykluczeniem.
+Zgodność starszych rekordów i fence pozostaje; stary program nie dostaje
+automatycznego zaufania do nowego pomocnika. Odbiór live osobno od fixture.
+
 ## Metadane odtworzonego wpisu 2026-10-06
 
 Opcjonalne release_observation_v1 rozszerza odpowiedź pojedynczego

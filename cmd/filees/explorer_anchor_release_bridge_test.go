@@ -22,11 +22,11 @@ func TestAnchorReleaseBridgeRequiresExactReplyType(t *testing.T) {
 			if restore {
 				done <- bridge.restoreRelease(ctx, "drawing.dwg", 0)
 			} else {
-				done <- bridge.prepareRelease(ctx, "drawing.dwg", "123", "456:789")
+				done <- bridge.prepareRelease(ctx, "drawing.dwg", "123", "456:789", 0, strings.Repeat("a", 64))
 			}
 		}()
 		fields := helper.answer(t)
-		prefix, command, suffix := "release-prepared", "prepare-release-bound", "123\t456:789"
+		prefix, command, suffix := "release-prepared", "prepare-release-verified", "123\t456:789\t0\t"+strings.Repeat("a", 64)
 		if restore {
 			prefix, command, suffix = "release-restored", "restore-release", "0"
 		}
@@ -66,7 +66,7 @@ func TestAnchorReleaseBridgeCancelReapsBeforeReturn(t *testing.T) {
 	started, reaped := make(chan struct{}), make(chan struct{})
 	bridge.stopStateWriter = func() { close(started); <-reaped }
 	done := make(chan error, 1)
-	go func() { done <- bridge.prepareRelease(ctx, "file", "123", "456:789") }()
+	go func() { done <- bridge.prepareRelease(ctx, "file", "123", "456:789", 0, strings.Repeat("a", 64)) }()
 	helper.answer(t)
 	cancel()
 	select {
@@ -88,8 +88,19 @@ func TestAnchorReleaseBridgeCancelReapsBeforeReturn(t *testing.T) {
 func TestAnchorReleaseBridgeRefusesMalformedRequestBeforeQueue(t *testing.T) {
 	bridge := &anchorBridge{}
 	for _, binding := range []string{"", "1:0", "1:2\nrestore-release", "1:2:3", "-1:2"} {
-		if bridge.prepareRelease(t.Context(), "file", "123", binding) == nil {
+		if bridge.prepareRelease(t.Context(), "file", "123", binding, 0, strings.Repeat("a", 64)) == nil {
 			t.Fatal("bad source identity accepted")
+		}
+	}
+	for _, proof := range []struct {
+		size   int64
+		digest string
+	}{
+		{-1, strings.Repeat("a", 64)}, {0, ""}, {0, strings.Repeat("A", 64)},
+		{0, strings.Repeat("a", 63) + "\n"}, {0, strings.Repeat("g", 64)},
+	} {
+		if bridge.prepareRelease(t.Context(), "file", "123", "456:789", proof.size, proof.digest) == nil {
+			t.Fatal("invalid byte proof accepted")
 		}
 	}
 	if bridge.restoreRelease(t.Context(), ".filees/private", 1) == nil || bridge.restoreRelease(t.Context(), "file", -1) == nil {

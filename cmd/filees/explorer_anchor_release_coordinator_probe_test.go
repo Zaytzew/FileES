@@ -11,17 +11,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/watcher"
+	"golang.org/x/sys/windows"
 )
 
-func (p *localStateProbe) prepareReleaseBound(rel, usn string, source anchorReleaseFileID) string {
+func (p *localStateProbe) prepareReleaseBound(rel, usn string, source anchorReleaseFileID, size int64, digest string) string {
 	p.t.Helper()
-	p.write(fmt.Sprintf("prepare-release-bound\tprobe\t%s\t%s\t%d:%d", rel, usn, source.Volume, source.Index))
+	p.write(fmt.Sprintf("prepare-release-verified\tprobe\t%s\t%s\t%d:%d\t%d\t%s", rel, usn, source.Volume, source.Index, size, digest))
 	select {
 	case fields := <-p.reply:
 		if fields[0] != "release-prepared" || fields[1] != "probe" {
@@ -99,7 +102,7 @@ func (p retirementProbeRemote) HistoryFetchFile(ctx context.Context, target stri
 
 // Actual CFAPI and SVN in owned fixtures. No production pair, GUI or copy retirement.
 func TestAnchorReleaseCoordinatorNative(t *testing.T) {
-	for _, name := range []string{"normal", "empty", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "exclude-refused", "exclude-refused-source-changed", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
+	for _, name := range []string{"normal", "empty", "large", "retained-usn-advance", "retained-usn-restart", "prepare-byte-proof-refused", "prepare-digest-refused", "prepare-malformed-digest-refused", "prepare-size-refused", "prepare-regressed-usn", "prepare-dirty-refused", "prepare-shared-reader", "managed", "managed-empty", "managed-ack-failure", "lost-prepare-ack", "lost-exclude-ack", "exclude-refused", "exclude-refused-source-changed", "cancel-after-prepare", "cancel-after-exclude", "defer-after-base", "crash-after-base", "prepare-refused", "same-bytes-replacement", "wrong-revision", "wrong-uuid", "wrong-url", "old-runtime", "old-cfapi", "native-unprepared"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			repo, source, point, store := filepath.Join(root, "repo"), filepath.Join(root, "source"), filepath.Join(root, "point"), filepath.Join(root, "evidence")
@@ -111,6 +114,9 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				}
 			}
 			body := bytes.Repeat([]byte("bound retained fixture "), 800)
+			if name == "large" {
+				body = bytes.Repeat([]byte("bound retained fixture "), 8000)
+			}
 			if name == "empty" || name == "managed-empty" {
 				body = []byte{}
 			}
@@ -157,12 +163,42 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			ops := anchorReleaseIO{helper: filepath.Clean(p.helper), svn: svn, inspect: func(ctx context.Context, rel string) (cfapiAnswer, error) {
 				return m.call(ctx, "", "file-state", "--root", point, "--rel", rel)
 			},
-				prepare: func(ctx context.Context, rel, usn string, id anchorReleaseFileID) error {
+				prepare: func(ctx context.Context, rel, usn string, id anchorReleaseFileID, size int64, digest string) error {
 					prepares++
 					if name == "prepare-refused" {
 						id.Index++
 					}
-					if hr := p.prepareReleaseBound(rel, usn, id); hr != hresultOK {
+					if name == "prepare-digest-refused" {
+						digest = strings.Repeat("0", 64)
+					}
+					if name == "prepare-malformed-digest-refused" {
+						digest = strings.Repeat("g", 64)
+					}
+					if name == "prepare-regressed-usn" {
+						usn = "9223372036854775807"
+					}
+					if name == "prepare-dirty-refused" {
+						p.accept(rel, false)
+					}
+					if name == "prepare-size-refused" {
+						size++
+					}
+					if name == "prepare-byte-proof-refused" {
+						changed := append([]byte(nil), body...)
+						changed[0] ^= 32
+						if err := os.WriteFile(path, changed, 0600); err != nil {
+							t.Fatal(err)
+						}
+						p.accept(rel, true) // Even an asserted clean flag cannot bypass byte proof.
+					}
+					if name == "prepare-shared-reader" {
+						f, err := os.Open(path)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer f.Close()
+					}
+					if hr := p.prepareReleaseBound(rel, usn, id, size, digest); hr != hresultOK {
 						return errors.New(hr)
 					}
 					if name == "cancel-after-prepare" {
@@ -179,6 +215,37 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 					}
 					return nil
 				}}
+			if name == "retained-usn-advance" || name == "retained-usn-restart" {
+				ops.retained = func(ctx context.Context, j *anchorReleaseJournal) error {
+					r, err := j.inspect(ctx)
+					if err != nil {
+						return err
+					}
+					wide, err := windows.UTF16PtrFromString(path)
+					if err != nil {
+						return err
+					}
+					attrs, err := windows.GetFileAttributes(wide)
+					if err != nil {
+						return err
+					}
+					if err := windows.SetFileAttributes(wide, attrs^windows.FILE_ATTRIBUTE_HIDDEN); err != nil {
+						return err
+					}
+					p.accept(identity.Rel, true)
+					state := p.state(identity.Rel)
+					old, _ := strconv.ParseInt(r.USN, 10, 64)
+					current, _ := strconv.ParseInt(state.USN, 10, 64)
+					if current <= old || !state.InSync {
+						t.Fatal("fixture did not advance clean USN", r.USN, state)
+					}
+					t.Logf("retained USN %s -> %s with unchanged bytes/revision", r.USN, state.USN)
+					if name == "retained-usn-restart" {
+						return errors.New("fixture interruption after retention")
+					}
+					return nil
+				}
+			}
 			ops.svn = releaseProbeExcluder{anchorReleaseExcluder: svn, exclude: func(ctx context.Context, wc, rel, retained string, b client.RetainedPathBinding) error {
 				excludes++
 				if (name == "exclude-refused" || name == "exclude-refused-source-changed") && excludes == 1 {
@@ -323,7 +390,7 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 				return
 			}
 			j, out, err := startAnchorRelease(ctx, store, identity, ops)
-			good := name == "normal" || name == "empty" || name == "lost-prepare-ack" || name == "lost-exclude-ack"
+			good := name == "normal" || name == "empty" || name == "large" || name == "retained-usn-advance" || name == "lost-prepare-ack" || name == "lost-exclude-ack"
 			if good && (err != nil || !out.seedObserved) {
 				t.Fatalf("cycle: %+v %v", out, err)
 			}
@@ -339,6 +406,12 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 			if j == nil {
 				t.Fatal("missing retained journal", err)
 			}
+			if strings.HasPrefix(name, "prepare-") && name != "prepare-refused" {
+				state := p.state(identity.Rel)
+				if !state.Placeholder || !state.Local || state.Partial || excludes != 0 || restores != 0 {
+					t.Fatal("invalid proof/open file converted or excluded source", state, excludes, restores)
+				}
+			}
 			if got, err := os.ReadFile(filepath.Join(store, j.id, "data.bin")); err != nil || !bytes.Equal(got, body) {
 				t.Fatal("retained bytes lost")
 			}
@@ -349,10 +422,10 @@ func TestAnchorReleaseCoordinatorNative(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if name == "exclude-refused" || name == "exclude-refused-source-changed" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
+			if name == "retained-usn-restart" || name == "exclude-refused" || name == "exclude-refused-source-changed" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base" || name == "prepare-refused" || name == "same-bytes-replacement" || name == "wrong-revision" || name == "wrong-uuid" || name == "wrong-url" {
 				fresh := &anchorReleaseJournal{store: store, identity: identity, id: j.id}
 				out, err = fresh.advanceRelease(t.Context(), ops)
-				want := name == "exclude-refused" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base"
+				want := name == "retained-usn-restart" || name == "exclude-refused" || name == "cancel-after-prepare" || name == "cancel-after-exclude" || name == "defer-after-base" || name == "crash-after-base"
 				if want && (err != nil || !out.seedObserved) {
 					t.Fatalf("fresh resume: %+v %v", out, err)
 				}

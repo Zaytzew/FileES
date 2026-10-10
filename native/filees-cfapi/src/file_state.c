@@ -4,6 +4,7 @@
 #include "filees_cfapi.h"
 #include <cfapi.h>
 #include <winioctl.h>
+#include <bcrypt.h>
 #include <shlobj.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -360,8 +361,47 @@ static void print_state(const struct state *state)
  * A share-none READ handle rejects existing readers/writers and rename while
  * this operation runs, including read-only svn:needs-lock files via WRITE_DAC.
  * No handle or reservation is handed to the subsequent SVN process. */
+/* The caller retains a copy before this request. Verify that exact copy's
+ * digest under the same share-none handle which will revert the placeholder.
+ * Reading/closing a local placeholder may advance USN without changing bytes;
+ * a later USN alone is never publication proof or permission to discard data. */
+static HRESULT verify_release_bytes(HANDLE file, LONGLONG size, const char *expected)
+{
+    BCRYPT_ALG_HANDLE algorithm = NULL;
+    BCRYPT_HASH_HANDLE hash = NULL;
+    BYTE buffer[65536], digest[32];
+    char actual[65];
+    LARGE_INTEGER zero;
+    LONGLONG remaining = size;
+    DWORD read = 0;
+    unsigned i;
+    HRESULT hr = E_FAIL;
+    if (size < 0 || !expected || strlen(expected) != 64) return E_INVALIDARG;
+    for (i = 0; i < 64; ++i)
+        if (!((expected[i] >= '0' && expected[i] <= '9') ||
+              (expected[i] >= 'a' && expected[i] <= 'f'))) return E_INVALIDARG;
+    zero.QuadPart = 0;
+    if (!SetFilePointerEx(file, zero, NULL, FILE_BEGIN)) return HRESULT_FROM_WIN32(GetLastError());
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, NULL, 0) < 0 ||
+        BCryptCreateHash(algorithm, &hash, NULL, 0, NULL, 0, 0) < 0) goto done;
+    while (remaining > 0) {
+        DWORD count = remaining > sizeof buffer ? sizeof buffer : (DWORD)remaining;
+        if (!ReadFile(file, buffer, count, &read, NULL)) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+        if (!read || BCryptHashData(hash, buffer, read, 0) < 0) goto done;
+        remaining -= read;
+    }
+    if (!ReadFile(file, buffer, 1, &read, NULL)) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
+    if (read || BCryptFinishHash(hash, digest, sizeof digest, 0) < 0) goto done;
+    for (i = 0; i < sizeof digest; ++i) sprintf_s(actual + i * 2, sizeof actual - i * 2, "%02x", digest[i]);
+    if (!strcmp(actual, expected)) hr = S_OK;
+done:
+    if (hash) BCryptDestroyHash(hash);
+    if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+    return hr;
+}
+
 static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn,
-                               const char *expected_id)
+                               const char *expected_id, LONGLONG expected_size, const char *expected_digest)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH];
     struct state before;
@@ -374,14 +414,16 @@ static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
     hr = read_state(root, relative, &before);
     if (FAILED(hr)) return hr;
     if (!before.placeholder || !before.local || before.partial || !before.clean ||
-        before.usn != expected_usn || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE))
+        (expected_digest ? before.usn < expected_usn : before.usn != expected_usn) ||
+        (expected_digest && before.size != expected_size) || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE))
         return HRESULT_FROM_WIN32(ERROR_RETRY);
     file = CreateFileW(path, GENERIC_READ | WRITE_DAC, 0, NULL, OPEN_EXISTING,
                        FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = inspect(file, root, &before);
     if (SUCCEEDED(hr) && (!before.placeholder || !before.local || before.partial || !before.clean ||
-                         before.usn != expected_usn || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE)))
+                         (expected_digest ? before.usn < expected_usn : before.usn != expected_usn) ||
+                         (expected_digest && before.size != expected_size) || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE)))
         hr = HRESULT_FROM_WIN32(ERROR_RETRY);
     if (SUCCEEDED(hr)) {
         if (!GetFileInformationByHandle(file, &identity)) hr = HRESULT_FROM_WIN32(GetLastError());
@@ -392,6 +434,15 @@ static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
                       ((unsigned long long)identity.nFileIndexHigh << 32) | identity.nFileIndexLow);
             if (strcmp(actual, expected_id)) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
         }
+    }
+    if (SUCCEEDED(hr) && expected_digest) {
+        hr = verify_release_bytes(file, expected_size, expected_digest);
+        /* The handle still excludes other readers, writers and replacements.
+         * Recheck CFAPI flags after our own read, before any mutation. */
+        if (SUCCEEDED(hr)) hr = inspect(file, root, &before);
+        if (SUCCEEDED(hr) && (!before.placeholder || !before.local || before.partial || !before.clean ||
+                             before.size != expected_size || before.usn < expected_usn ||
+                             (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE))) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
     }
     if (SUCCEEDED(hr)) hr = CfRevertPlaceholder(file, CF_REVERT_FLAG_NONE, NULL);
     if (SUCCEEDED(hr)) {
@@ -411,14 +462,23 @@ static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
 
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn)
 {
-    return prepare_release(root, relative, expected_usn, NULL);
+    return prepare_release(root, relative, expected_usn, NULL, 0, NULL);
 }
 
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative,
                                     LONGLONG expected_usn, const char *expected_id)
 {
     if (!expected_id || !*expected_id || strlen(expected_id) > 32) return E_INVALIDARG;
-    return prepare_release(root, relative, expected_usn, expected_id);
+    return prepare_release(root, relative, expected_usn, expected_id, 0, NULL);
+}
+
+HRESULT filees_prepare_release_verified(const WCHAR *root, const WCHAR *relative,
+                                       LONGLONG expected_usn, const char *expected_id,
+                                       LONGLONG expected_size, const char *expected_digest)
+{
+    if (!expected_id || !*expected_id || strlen(expected_id) > 32 ||
+        expected_size < 0 || !expected_digest || strlen(expected_digest) != 64) return E_INVALIDARG;
+    return prepare_release(root, relative, expected_usn, expected_id, expected_size, expected_digest);
 }
 
 /* Restore just one absent entry from the connected provider. Never convert

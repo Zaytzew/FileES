@@ -75,6 +75,7 @@ $svnModification = Join-Path $SvnPrefix 'FileES-SVN-modification.inc'
 if (Test-Path -LiteralPath $svnModification -PathType Leaf) {
     $notices['FileES-SVN-modification.inc'] = $svnModification
     $notices['FileES-SVN-transformation.cjs'] = Join-Path $SvnPrefix 'FileES-SVN-transformation.cjs'
+    $notices['FileES-SVN-tree-modification.inc'] = Join-Path $SvnPrefix 'FileES-SVN-tree-modification.inc'
 }
 # serf is linked into SVN RA even when it has no separate imported DLL.
 foreach ($port in @('apr','apr-util','expat','openssl','serf','sqlite3','zlib')) {

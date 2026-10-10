@@ -24,7 +24,7 @@ func TestBoundLocalTreePreflightRefusesForeignBindings(t *testing.T) {
 	f.svnRun(t, "update")
 	base := strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "revision", src)))
 	id := strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "repos-uuid")))
-	for _, bad := range []string{"uuid", "url", "base", "properties", "mixed"} {
+	for _, bad := range []string{"uuid", "url", "base", "properties", "future"} {
 		t.Run(bad, func(t *testing.T) {
 			root, uuid, rev := f.repoURL, id, base
 			switch bad {
@@ -36,8 +36,9 @@ func TestBoundLocalTreePreflightRefusesForeignBindings(t *testing.T) {
 				rev = "1"
 			case "properties":
 				f.svnRun(t, "propset", "filees:unsent", "yes", src)
-			case "mixed":
-				f.svnRun(t, "update", "-r", "2", src+"/local.txt")
+			case "future":
+				rev = "2"
+				f.svnRun(t, "update", "--depth", "empty", "-r", "2", src)
 			}
 			before := f.status(t)
 			out, err := execute(t, f.wc, f.probe, "local-tree", "--disposable-wc", f.wc, "--phase", "inspect", "--url", root, "--uuid", uuid, "--base", rev, "--revision", "0", src, dst)
@@ -47,8 +48,8 @@ func TestBoundLocalTreePreflightRefusesForeignBindings(t *testing.T) {
 			if bad == "properties" {
 				f.svnRun(t, "propdel", "filees:unsent", src)
 			}
-			if bad == "mixed" {
-				f.svnRun(t, "update", src+"/local.txt")
+			if bad == "future" {
+				f.svnRun(t, "update", "--depth", "empty", src)
 			}
 		})
 	}
@@ -58,8 +59,9 @@ func TestBoundLocalTreePreflightRefusesForeignBindings(t *testing.T) {
 // copy/delete. Physical moves are ordinary lab renames, not a CFAPI acceptance.
 func TestBoundLocalTreeMetadata(t *testing.T) {
 	for _, sparse := range []bool{false, true} {
-		for _, change := range []string{"none", "bytes", "missing", "unversioned", "property", "add", "delete", "root-property"} {
-			t.Run(map[bool]string{false: "local/", true: "sparse/"}[sparse]+change, func(t *testing.T) {
+		for _, scenario := range []string{"none", "bytes", "missing", "unversioned", "property", "add", "delete", "root-property", "mixed-none", "mixed-bytes", "mixed-property", "mixed-missing", "mixed-unversioned", "mixed-add", "mixed-delete", "mixed-root-property", "mixed-work-queue"} {
+			change := strings.TrimPrefix(scenario, "mixed-")
+			t.Run(map[bool]string{false: "local/", true: "sparse/"}[sparse]+scenario, func(t *testing.T) {
 				f := newFixture(t, "outside.txt")
 				src, dst := "źródło", "folder/cel"
 				old, new := filepath.Join(f.wc, src), filepath.Join(f.wc, filepath.FromSlash(dst))
@@ -85,11 +87,46 @@ func TestBoundLocalTreeMetadata(t *testing.T) {
 					}
 					return out
 				}
+				if strings.HasPrefix(scenario, "mixed-") {
+					if os.PathSeparator != '\\' {
+						t.Skip("mixed-WC normalization uses the reviewed Windows runtime")
+					}
+					childRevision := strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "revision", src+"/local.txt")))
+					write(t, filepath.Join(f.wc, "outside.txt"), "unrelated newer HEAD")
+					f.svnRun(t, "commit", "-m", "advance HEAD", "outside.txt")
+					base = strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "revision", f.repoURL)))
+					call("prepare", "0", true)
+					if got := strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "revision", src+"/local.txt"))); got != childRevision {
+						t.Fatal("prepare updated children", got, childRevision)
+					}
+					if got, err := os.ReadFile(filepath.Join(old, "local.txt")); err != nil || string(got) != "original\n" {
+						t.Fatal("prepare changed bytes", err)
+					}
+				}
 				call("inspect", "0", true)
 				f.svnRun(t, "move", f.repoURL+"/"+src, f.repoURL+"/"+dst, "-m", "remote copy/delete")
 				revision := strings.TrimSpace(string(f.svnRun(t, "info", "--show-item", "revision", f.repoURL)))
 				rename(t, old, new)
 				call("stage", revision, true)
+				if change == "work-queue" {
+					// Deliberate corruption only in this disposable fixture. ACK
+					// must not run unrelated work that appeared after normalization.
+					sqlite := tool(t, "FILEES_TEST_SQLITE", "")
+					db := filepath.Join(f.wc, ".svn", "wc.db")
+					if out, err := execute(t, f.wc, sqlite, db, "INSERT INTO WORK_QUEUE(work) VALUES (CAST('(foreign-work later.txt)' AS BLOB));"); err != nil {
+						t.Fatal(err, string(out))
+					}
+					before, err := execute(t, f.wc, sqlite, "-readonly", db, "SELECT id,hex(work) FROM WORK_QUEUE; SELECT local_relpath,op_depth,presence,revision FROM NODES ORDER BY local_relpath,op_depth;")
+					if err != nil {
+						t.Fatal(err, string(before))
+					}
+					call("ack", revision, false)
+					after, err := execute(t, f.wc, sqlite, "-readonly", db, "SELECT id,hex(work) FROM WORK_QUEUE; SELECT local_relpath,op_depth,presence,revision FROM NODES ORDER BY local_relpath,op_depth;")
+					if err != nil || !bytes.Equal(before, after) {
+						t.Fatal("refusal changed queue or metadata", err, string(after))
+					}
+					return
+				}
 				switch change {
 				case "bytes":
 					write(t, filepath.Join(new, "local.txt"), "later edit\n")
@@ -124,6 +161,12 @@ func TestBoundLocalTreeMetadata(t *testing.T) {
 					}
 				}
 				status := string(f.svnRun(t, "status", "--xml", dst))
+				if strings.Contains(status, `copied="true"`) {
+					t.Fatalf("receipted move retained unsent copy layers: %s", status)
+				}
+				if change == "none" && strings.Contains(status, "<entry") {
+					t.Fatalf("receipted move is not clean: %s", status)
+				}
 				want := map[string]string{"bytes": "modified", "missing": "missing", "unversioned": "unversioned", "property": "modified", "add": "added", "delete": "deleted"}[change]
 				if want != "" && !strings.Contains(status, `"`+want+`"`) {
 					t.Fatalf("unsent %s hidden: %s", change, status)

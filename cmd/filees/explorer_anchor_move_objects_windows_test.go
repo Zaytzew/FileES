@@ -117,3 +117,61 @@ func TestTreeMoveParentReplacementRefusesAndRetirementChecksOpenedRecord(t *test
 		t.Fatal("approved record not retired", err)
 	}
 }
+
+func TestTreeMoveStaleDirectoryIdentityIsBoundButFilesStayExact(t *testing.T) {
+	r, move := testTreeMoveIntent(t)
+	move.BaseRevision = 49
+	root := anchorReleaseFileID{Volume: 7, Index: 10}
+	old, _ := anchorRemoteIdentity(move.Source, 48, 0)
+	current, _ := anchorRemoteIdentity(move.Source, 49, 0)
+	proof := anchorMoveObjects{Schema: "filees.anchor-move-objects/v1", Move: move,
+		Tree: anchorRemoteTree{Schema: "filees.anchor-tree/v1", Operation: r.OperationID, URL: r.RepoURL,
+			Root: root, Revision: 49, Nodes: []anchorRemoteNode{{HistoryTreeNode: client.HistoryTreeNode{Path: move.Source, Kind: "dir"}, Identity: current}}},
+		Objects: []anchorMoveObject{{Path: move.Source, ID: anchorReleaseFileID{Volume: 7, Index: 11}, Directory: true, RemoteIdentity: old}}}
+	for i, parent := range moveParentPaths(move) {
+		id := anchorReleaseFileID{Volume: 7, Index: uint64(20 + i)}
+		if parent == "." {
+			id = root
+		}
+		proof.Parents = append(proof.Parents, anchorMoveObject{Path: parent, Directory: true, ID: id})
+	}
+	if err := validateMoveObjects(&proof, r, root, move); err != nil {
+		t.Fatal("metadata-only directory's older stamp refused", err)
+	}
+	for _, mutation := range []string{"future", "path", "bytes", "physical-size", "missing", "kind", "manifest", "malformed", "stale-file"} {
+		t.Run(mutation, func(t *testing.T) {
+			raw, _ := json.Marshal(proof)
+			var changed anchorMoveObjects
+			if err := json.Unmarshal(raw, &changed); err != nil {
+				t.Fatal(err)
+			}
+			switch mutation {
+			case "future":
+				changed.Objects[0].RemoteIdentity, _ = anchorRemoteIdentity(move.Source, 50, 0)
+			case "path":
+				changed.Objects[0].RemoteIdentity, _ = anchorRemoteIdentity("another", 48, 0)
+			case "bytes":
+				changed.Objects[0].RemoteIdentity, _ = anchorRemoteIdentity(move.Source, 48, 4096)
+			case "physical-size":
+				changed.Objects[0].Size = 4096
+			case "missing":
+				changed.Tree.Nodes = nil
+			case "kind":
+				changed.Tree.Nodes[0].Kind = "file"
+			case "manifest":
+				changed.Tree.Nodes[0].Identity, _ = anchorRemoteIdentity("another", 49, 0)
+			case "malformed":
+				changed.Objects[0].RemoteIdentity = "filees.remote/v1:garbage"
+			case "stale-file":
+				name := move.Source + "/leaf"
+				id, _ := anchorRemoteIdentity(name, 49, 3)
+				prior, _ := anchorRemoteIdentity(name, 48, 3)
+				changed.Tree.Nodes = append(changed.Tree.Nodes, anchorRemoteNode{HistoryTreeNode: client.HistoryTreeNode{Path: name, Kind: "file", Size: 3}, Identity: id})
+				changed.Objects = append(changed.Objects, anchorMoveObject{Path: name, ID: anchorReleaseFileID{Volume: 7, Index: 12}, Size: 3, RemoteIdentity: prior})
+			}
+			if validateMoveObjects(&changed, r, root, move) == nil {
+				t.Fatal("incompatible evidence accepted")
+			}
+		})
+	}
+}

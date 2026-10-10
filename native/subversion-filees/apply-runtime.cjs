@@ -133,6 +133,7 @@ svn_wc__db_filees_resume(svn_wc__db_t *db, const char *path,
   return SVN_NO_ERROR;
 }
 `;
+db += '\n#include "filees_tree.inc"\n';
 files.set('subversion/libsvn_wc/wc_db.c', db);
 let queries = load('subversion/libsvn_wc/wc-queries.sql');
 queries += `
@@ -141,6 +142,70 @@ SELECT id, work FROM work_queue ORDER BY id LIMIT 2
 
 -- STMT_FILEES_WC_LOCKS
 SELECT local_dir_relpath, locked_levels FROM wc_lock WHERE wc_id = ?1 LIMIT 2
+
+-- STMT_FILEES_TREE_PAIR_INVALID
+SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM nodes s
+ JOIN nodes del ON del.wc_id = s.wc_id AND del.local_relpath = s.local_relpath
+ JOIN nodes d ON d.wc_id = s.wc_id AND d.local_relpath = ?3
+ WHERE s.wc_id = ?1 AND s.local_relpath = ?2 AND s.op_depth = 0
+ AND s.kind = MAP_DIR AND s.presence = MAP_NORMAL AND s.revision = ?5
+ AND del.op_depth = ?6 AND del.presence = MAP_BASE_DELETED AND del.moved_to IS NULL
+ AND d.op_depth = ?4 AND d.presence = MAP_NORMAL AND d.kind = MAP_DIR
+ AND d.revision = ?5 AND d.repos_id IS s.repos_id AND d.repos_path IS s.repos_path)
+
+-- STMT_FILEES_TREE_COPY_INVALID
+SELECT 1 FROM nodes d
+LEFT JOIN nodes s ON s.wc_id = d.wc_id AND s.op_depth = 0
+ AND s.local_relpath = RELPATH_SKIP_JOIN(?3, ?2, d.local_relpath)
+WHERE d.wc_id = ?1 AND (d.local_relpath = ?3 OR IS_STRICT_DESCENDANT_OF(d.local_relpath, ?3))
+ AND (s.local_relpath IS NULL OR d.op_depth < ?4 OR d.moved_to IS NOT NULL
+ OR s.file_external IS NOT NULL OR s.revision > ?5
+ OR NOT ((d.op_depth = ?4 AND d.presence = MAP_NOT_PRESENT AND d.local_relpath <> ?3)
+ OR (d.presence IS s.presence AND d.kind IS s.kind AND d.repos_id IS s.repos_id
+ AND d.repos_path IS s.repos_path AND d.revision IS s.revision
+ AND d.checksum IS s.checksum AND d.properties IS s.properties AND d.depth IS s.depth
+ AND d.symlink_target IS s.symlink_target))) LIMIT 1
+
+-- STMT_FILEES_TREE_COPY_MISSING
+SELECT 1 FROM nodes s WHERE s.wc_id = ?1 AND s.op_depth = 0
+ AND (s.local_relpath = ?2 OR IS_STRICT_DESCENDANT_OF(s.local_relpath, ?2))
+ AND (s.file_external IS NOT NULL OR s.revision > ?5
+ OR (s.local_relpath = ?2 AND (s.kind <> MAP_DIR OR s.revision <> ?5))
+ OR NOT EXISTS (SELECT 1 FROM nodes d WHERE d.wc_id = s.wc_id
+ AND d.local_relpath = RELPATH_SKIP_JOIN(?2, ?3, s.local_relpath) AND d.op_depth >= ?4
+ AND d.presence IS s.presence AND d.kind IS s.kind AND d.repos_id IS s.repos_id
+ AND d.repos_path IS s.repos_path AND d.revision IS s.revision
+ AND d.checksum IS s.checksum AND d.properties IS s.properties AND d.depth IS s.depth
+ AND d.symlink_target IS s.symlink_target)) LIMIT 1
+
+-- STMT_FILEES_TREE_COPY_REMOVE
+DELETE FROM nodes WHERE wc_id = ?1 AND op_depth >= ?3
+ AND (local_relpath = ?2 OR IS_STRICT_DESCENDANT_OF(local_relpath, ?2))
+
+-- STMT_FILEES_TREE_FLAT_MISSING
+SELECT 1 FROM nodes s WHERE s.wc_id = ?1 AND s.op_depth = 0
+ AND (s.local_relpath = ?2 OR IS_STRICT_DESCENDANT_OF(s.local_relpath, ?2))
+ AND (s.file_external IS NOT NULL OR s.revision > ?5
+ OR (s.local_relpath = ?2 AND (s.kind <> MAP_DIR OR s.revision <> ?5))
+ OR NOT EXISTS (SELECT 1 FROM nodes d WHERE d.wc_id = s.wc_id
+ AND d.local_relpath = RELPATH_SKIP_JOIN(?2, ?3, s.local_relpath) AND d.op_depth = ?4
+ AND d.presence IS s.presence AND d.kind IS s.kind AND d.repos_id IS s.repos_id
+ AND d.repos_path IS s.repos_path AND d.revision IS s.revision
+ AND d.checksum IS s.checksum AND d.properties IS s.properties AND d.depth IS s.depth
+ AND d.symlink_target IS s.symlink_target)) LIMIT 1
+
+-- STMT_FILEES_TREE_COPY_INSERT
+INSERT INTO nodes (wc_id, local_relpath, op_depth, parent_relpath,
+ repos_id, repos_path, revision, presence, depth, kind, changed_revision,
+ changed_date, changed_author, checksum, properties, symlink_target,
+ inherited_props, translated_size, last_mod_time)
+SELECT wc_id, RELPATH_SKIP_JOIN(?2, ?3, local_relpath), ?4,
+ CASE WHEN local_relpath = ?2 THEN ?5 ELSE
+ RELPATH_SKIP_JOIN(?2, ?3, parent_relpath) END, repos_id, repos_path, revision,
+ presence, depth, kind, changed_revision, changed_date, changed_author,
+ checksum, properties, symlink_target, NULL, NULL, NULL
+FROM nodes WHERE wc_id = ?1 AND op_depth = 0
+ AND (local_relpath = ?2 OR IS_STRICT_DESCENDANT_OF(local_relpath, ?2))
 `;
 files.set('subversion/libsvn_wc/wc-queries.sql', queries);
 let h = load('subversion/libsvn_wc/wc_db.h');
@@ -201,6 +266,20 @@ svn_wc__filees_resume_bound_v1(svn_wc_context_t *wc_ctx,
     const char *expected_uuid, const char *expected_url,
     svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *scratch_pool);
 
+/* Metadata-only staged mixed-copy normalization under an owned WC lock.
+   Not a commit ACK: keeps pristine and ACTUAL data and performs no file IO. */
+svn_error_t *
+svn_wc__filees_tree_flatten_v1(svn_wc_context_t *wc_ctx,
+    const char *source_abspath, const char *destination_abspath,
+    svn_revnum_t base, apr_pool_t *scratch_pool);
+
+/* Read-only completeness proof using the DB whose compatibility lock is owned
+   by ADM. Must precede roots-only ACK; top-layer info can hide deleted copies. */
+svn_error_t *
+svn_wc__filees_tree_check_v1(svn_wc_adm_access_t *adm,
+    const char *source_abspath, const char *destination_abspath,
+    svn_revnum_t base, apr_pool_t *scratch_pool);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */`);
@@ -220,4 +299,5 @@ for (const [p, s] of files) {
   fs.writeFileSync(path.join(root, p), notice + s);
 }
 fs.copyFileSync(path.join(__dirname, 'filees_release.inc'), path.join(root, 'subversion/libsvn_wc/filees_release.inc'));
+fs.copyFileSync(path.join(__dirname, 'filees_tree.inc'), path.join(root, 'subversion/libsvn_wc/filees_tree.inc'));
 console.log(`Applied FileES conditional exclusion v1 to ${root}`);

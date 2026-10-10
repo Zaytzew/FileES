@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 	"github.com/google/uuid"
+	"golang.org/x/sys/windows"
 )
 
 type anchorMoveProbeClient struct {
@@ -75,7 +77,7 @@ func (c *anchorMoveProbeClient) LocalTreeMetadata(ctx context.Context, wc, phase
 }
 
 func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
-	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote", "explorer-local", "explorer-mixed", "explorer-reply"} {
+	for _, scenario := range []string{"", "remote", "reply", "stage", "ack", "restart", "nested", "nested-remote", "explorer-local", "explorer-mixed", "explorer-reply", "explorer-populated", "explorer-stale-directory"} {
 		t.Run("phase-"+scenario, func(t *testing.T) {
 			interrupt := scenario
 			explorer := strings.HasPrefix(scenario, "explorer-")
@@ -109,6 +111,15 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			for _, name := range []string{"local.txt", "cloud.txt"} {
 				if err := os.WriteFile(filepath.Join(seed, src, name), []byte("original bytes\n"), 0600); err != nil {
 					t.Fatal(err)
+				}
+			}
+			populated := scenario == "explorer-populated" || scenario == "explorer-stale-directory"
+			if populated {
+				for i := 0; i < 48; i++ {
+					name := fmt.Sprintf("leaf-%03d-long-enough-to-grow-directory-index.txt", i)
+					if err := os.WriteFile(filepath.Join(seed, src, name), []byte("remote leaf\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			uri := (&url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(repo)}).String()
@@ -186,6 +197,52 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 					t.Fatal("local identity", err)
 				}
 			}
+			baseRevision := int64(1)
+			if populated {
+				// A genuine second SVN revision, then the normal bounded remote
+				// refresh. No bytes are downloaded for the extra remote leaves.
+				probeRun(t, root, cli, "mkdir", "-q", "-m", "unrelated HEAD update", uri+"/unrelated")
+				m.mu.Lock()
+				bridge := m.running[anchorKey(record)].bridge
+				m.mu.Unlock()
+				refresh := &anchorTreeRefresh{}
+				for pass := 0; pass < 10; pass++ {
+					m.refreshRemoteTree(t.Context(), record, bridge, refresh)
+					if refresh.target == nil {
+						break
+					}
+				}
+				guards, id, e := guardAnchorMoveState(record)
+				if e != nil {
+					t.Fatal(e)
+				}
+				tree, e := loadAnchorRemoteTree(record, id)
+				closeAnchorReleaseGuards(guards)
+				if e != nil || tree.Revision != 2 {
+					t.Fatal("remote refresh did not advance manifest", e, tree.Revision)
+				}
+				baseRevision = 2
+				metadata, e := m.call(t.Context(), src+"\n", "tree-states", "--root", point)
+				if e != nil || !metadata.OK || len(metadata.States) != 1 || !metadata.States[0].Directory ||
+					metadata.States[0].Size == nil || *metadata.States[0].Size != 0 || metadata.States[0].Partial {
+					t.Fatal("directory index reported as file bytes", metadata, e)
+				}
+				if scenario == "explorer-stale-directory" {
+					// Reproduce a directory stamp omitted by an earlier refresh.
+					// The current manifest and every file remain at HEAD; only the
+					// byte-free container has its earlier, exact path-bound stamp.
+					h, info, e := pinMoveObject(record, src, true)
+					if e != nil {
+						t.Fatal(e)
+					}
+					closeAnchorReleaseGuards([]windows.Handle{h})
+					old, _ := anchorRemoteIdentity(src, 1, 0)
+					current, _ := anchorRemoteIdentity(src, 2, 0)
+					if e := bridge.connectedCommand(t.Context(), "tree-identity", "tree-identity", src, moveObjectID(anchorReleaseID(info)), current, old); e != nil {
+						t.Fatal("reproduce omitted directory metadata", e)
+					}
+				}
+			}
 			manifest := filepath.Join(point, ".filees", "state", "manifest.json")
 			scanner, err := watcher.NewScanner(watcher.Options{WC: point, StatePath: manifest, UseMD5: false, PublicationPending: func() bool { return commit.HasPendingLocalMutation(point) }})
 			if err != nil {
@@ -205,7 +262,7 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			move := client.RemoteTreeMove{RootURL: authority, UUID: uuidRepo, BaseRevision: 1, OperationID: uuid.NewString(), Source: src, Destination: dst, Message: "isolated tree move"}
+			move := client.RemoteTreeMove{RootURL: authority, UUID: uuidRepo, BaseRevision: baseRevision, OperationID: uuid.NewString(), Source: src, Destination: dst, Message: "isolated tree move"}
 			oldFetch := reader.fetches.Load()
 			if interrupt != "remote" {
 				reader.interrupt = interrupt
@@ -306,6 +363,14 @@ func TestAnchorTreeMoveNativeEndToEnd(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(point, src)); !os.IsNotExist(err) {
 				t.Fatal("source remains", err)
+			}
+			if scenario == "explorer-populated" || scenario == "explorer-stale-directory" {
+				command := exec.Command(cli, "status", "--xml", dst+"/local.txt")
+				command.Dir = point
+				raw, e := command.CombinedOutput()
+				if e != nil || strings.Contains(string(raw), "<entry") || strings.Contains(string(raw), `copied="true"`) {
+					t.Fatal("Explorer move left a copied-add child", e, string(raw))
+				}
 			}
 			if interrupt != "" && interrupt != "remote" {
 				raw, err := os.ReadFile(filepath.Join(point, dst, "local.txt"))

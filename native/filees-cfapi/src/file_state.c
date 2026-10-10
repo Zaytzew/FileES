@@ -104,13 +104,15 @@ static HRESULT inspect_tree(HANDLE file, const WCHAR *root, struct state *out)
         !GetFileInformationByHandleEx(file, FileStandardInfo, &standard, sizeof standard))
         return HRESULT_FROM_WIN32(GetLastError());
     out->directory = (out->attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-    out->size = standard.EndOfFile.QuadPart;
+    /* A populated NTFS directory has a nonzero index EOF. It is a
+     * metadata-only container, not revision-pinned file bytes. */
+    out->size = out->directory ? 0 : standard.EndOfFile.QuadPart;
     hr = CfGetPlaceholderInfo(file, CF_PLACEHOLDER_INFO_STANDARD, info, sizeof data, &returned);
     if (SUCCEEDED(hr)) {
         out->placeholder = 1;
         out->on_disk = info->OnDiskDataSize.QuadPart;
         out->modified = info->ModifiedDataSize.QuadPart;
-        out->partial = info->OnDiskDataSize.QuadPart < standard.EndOfFile.QuadPart;
+        out->partial = !out->directory && info->OnDiskDataSize.QuadPart < out->size;
         out->clean = info->InSyncState == CF_IN_SYNC_STATE_IN_SYNC;
         if (info->FileIdentityLength > 4096 ||
             returned < FIELD_OFFSET(CF_PLACEHOLDER_STANDARD_INFO, FileIdentity) + info->FileIdentityLength)
@@ -133,7 +135,7 @@ static HRESULT inspect_tree(HANDLE file, const WCHAR *root, struct state *out)
     } else if (out->attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
         return E_ACCESSDENIED; /* Never convert another kind of reparse point. */
     }
-    out->partial |= (out->attributes.FileAttributes &
+    out->partial |= !out->directory && (out->attributes.FileAttributes &
                     (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN)) != 0;
     return file_usn(file, &out->usn);
 }

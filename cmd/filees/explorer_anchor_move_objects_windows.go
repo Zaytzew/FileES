@@ -169,9 +169,24 @@ func validateMoveObjects(proof *anchorMoveObjects, record localrepo.Record, root
 		if n.RemoteIdentity != "" {
 			old, ok := known[n.Path]
 			rel, revision, size, valid := parseAnchorRemoteIdentity(n.RemoteIdentity)
-			if !ok || old.Identity != n.RemoteIdentity || !valid || rel != n.Path || revision != move.BaseRevision ||
-				size != n.Size || (old.Kind == "dir") != n.Directory {
+			if !ok || !valid || rel != n.Path || size != n.Size || (old.Kind == "dir") != n.Directory {
 				return errors.New("tree move placeholder differs from its remote manifest")
+			}
+			if n.Directory {
+				// The manifest describes the repository, not a receipt that every
+				// container was restamped by refresh (protected updates may skip).
+				// Directories have no revision-pinned file bytes. Bind their actual
+				// canonical identity/Path/zero size and FileID into this immutable
+				// proof, then retarget that exact identity only after the SVN receipt.
+				wantedPath, wantedRevision, wantedSize, wantedOK := parseAnchorRemoteIdentity(old.Identity)
+				if !wantedOK || wantedPath != n.Path || wantedSize != 0 || n.Size != 0 ||
+					revision <= 0 || revision > wantedRevision || wantedRevision > move.BaseRevision {
+					return errors.New("tree move directory differs from its remote manifest")
+				}
+			} else if old.Identity != n.RemoteIdentity || revision != move.BaseRevision {
+				// A file's older stamp may describe different bytes. It never
+				// inherits the metadata-only directory exception.
+				return errors.New("tree move file differs from its remote manifest")
 			}
 		}
 		previous = n.Path
@@ -240,6 +255,11 @@ func (m *anchorManager) captureMoveObjects(ctx context.Context, record localrepo
 				return fail(errors.New("tree move object kind changed"))
 			}
 			object := anchorMoveObject{Path: rel, ID: anchorReleaseID(info), Directory: s.Directory, Size: *s.Size}
+			if s.Directory {
+				// NTFS directory EOF measures its index, not file content. Keep
+				// logical size zero even when using an older helper's tree-states.
+				object.Size = 0
+			}
 			if remote {
 				object.RemoteIdentity = s.Identity
 			}

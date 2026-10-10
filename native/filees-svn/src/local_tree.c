@@ -12,6 +12,13 @@
 #include <svn_dirent_uri.h>
 #include <svn_path.h>
 #include <svn_string.h>
+#ifdef _WIN32
+/* Private, reviewed runtime extension. No fallback to recursive ACK. */
+svn_error_t *svn_wc__filees_tree_flatten_v1(svn_wc_context_t *, const char *,
+                                           const char *, svn_revnum_t, apr_pool_t *);
+svn_error_t *svn_wc__filees_tree_check_v1(svn_wc_adm_access_t *, const char *,
+                                         const char *, svn_revnum_t, apr_pool_t *);
+#endif
 
 /* Public compatibility WC APIs provide roots-only ACK. Limit suppression to
  * this translation unit, not the rest of the native helper. */
@@ -43,7 +50,17 @@ static svn_error_t *bound_info(void *baton, const char *path,
         return filees_refuse("tree metadata: foreign root, URL, UUID or conflicted selection");
     if (!strcmp(path, b->selection))
         b->exact = svn_client_info2_dup(info, b->pool);
-    if (b->recursive && (info->rev != b->base || w->schedule != svn_wc_schedule_normal ||
+    /* A sparse/hybrid WC is legitimately mixed-revision. Root preparation
+     * pins its own BASE; descendants retain their older pristine/ACTUAL data
+     * and are NOT recursively acknowledged by the receipted roots queue. */
+    if (b->recursive && ((!SVN_IS_VALID_REVNUM(info->rev) ||
+#ifdef _WIN32
+                        info->rev > b->base ||
+#else
+                        info->rev != b->base ||
+#endif
+                        (!strcmp(path, b->selection) && info->rev != b->base)) ||
+                        w->schedule != svn_wc_schedule_normal ||
                         w->copyfrom_url || w->moved_from_abspath || w->moved_to_abspath))
         return filees_refuse("tree metadata: selected BASE differs or has a scheduled mutation");
     return SVN_NO_ERROR;
@@ -119,12 +136,50 @@ static svn_error_t *scheduled_pair(struct binding *b, const char *src, const cha
     sw = s->wc_info; dw = d->wc_info;
     if (s->kind != svn_node_dir || d->kind != svn_node_dir || s->rev != b->base ||
         sw->schedule != svn_wc_schedule_delete || dw->schedule != svn_wc_schedule_add ||
-        !sw->moved_to_abspath || strcmp(sw->moved_to_abspath, dst) ||
-        !dw->moved_from_abspath || strcmp(dw->moved_from_abspath, src) ||
         !dw->copyfrom_url || strcmp(dw->copyfrom_url, svn_path_url_add_component2(b->root,
             svn_dirent_skip_ancestor(b->wc, src), pool)) || dw->copyfrom_rev != b->base)
         return filees_refuse("tree metadata: scheduled copy/delete differs from the receipted move");
+    /* Public move7 deliberately omits local move-tracking for a mixed WC.
+     * Both links absent is the exact copy/delete form, not a second move.
+     * Partial/foreign links remain forbidden. The caller independently owns
+     * the remote receipt, original FileIDs and durable object evidence. */
+    if ((sw->moved_to_abspath || dw->moved_from_abspath) &&
+        (!sw->moved_to_abspath || strcmp(sw->moved_to_abspath, dst) ||
+         !dw->moved_from_abspath || strcmp(dw->moved_from_abspath, src)))
+        return filees_refuse("tree metadata: scheduled move tracking differs from the receipted pair");
     return root_props(dst, ctx, pool);
+}
+
+struct copy_layers {
+    struct binding *binding;
+    const char *origin, *destination;
+};
+
+static svn_error_t *no_move_copy_layer(void *baton, const char *path,
+                                       const svn_client_info2_t *info, apr_pool_t *pool)
+{
+    struct copy_layers *layers = baton;
+    const svn_wc_info_t *w = info->wc_info;
+    SVN_ERR(bound_info(layers->binding, path, info, pool));
+    if (strcmp(path, layers->destination) && w->schedule == svn_wc_schedule_add &&
+        w->copyfrom_url && svn_uri_skip_ancestor(layers->origin, w->copyfrom_url, pool) &&
+        SVN_IS_VALID_REVNUM(w->copyfrom_rev) && w->copyfrom_rev <= layers->binding->base)
+        return filees_refuse("tree metadata: nested move copy layers still require normalization");
+    return SVN_NO_ERROR;
+}
+
+/* Never declare a roots-only ACK complete while older nested copies from the
+ * receipted source remain. New unsent adds/deletes/properties are not ACKed.
+ * This read uses metadata only, including when recovery starts after a cut. */
+static svn_error_t *normalized_copy(struct binding *b, const char *src, const char *dst,
+                                    svn_client_ctx_t *ctx, apr_pool_t *pool)
+{
+    struct copy_layers layers;
+    layers.binding = b; layers.destination = dst;
+    layers.origin = svn_path_url_add_component2(b->root, svn_dirent_skip_ancestor(b->wc, src), pool);
+    b->selection = dst; b->recursive = FALSE; b->count = 0; b->exact = NULL;
+    return svn_client_info4(dst, NULL, NULL, svn_depth_infinity, TRUE, TRUE, FALSE,
+                           NULL, no_move_copy_layer, &layers, ctx, pool);
 }
 
 static svn_error_t *ack_locked(struct binding *b, const char *src, const char *dst,
@@ -133,10 +188,31 @@ static svn_error_t *ack_locked(struct binding *b, const char *src, const char *d
 {
     svn_wc_committed_queue_t *queue;
     SVN_ERR(scheduled_pair(b, src, dst, ctx, pool));
+    SVN_ERR(normalized_copy(b, src, dst, ctx, pool));
+#ifdef _WIN32
+    SVN_ERR(svn_wc__filees_tree_check_v1(adm, src, dst, b->base, pool));
+#endif
     queue = svn_wc_committed_queue_create(pool);
     SVN_ERR(svn_wc_queue_committed2(queue, src, adm, FALSE, NULL, FALSE, FALSE, NULL, pool));
     SVN_ERR(svn_wc_queue_committed2(queue, dst, adm, FALSE, NULL, FALSE, FALSE, NULL, pool));
     return svn_wc_process_committed_queue(queue, adm, revision, NULL, NULL, pool);
+}
+
+static svn_error_t *normalize_copy(struct binding *b, const char *src, const char *dst,
+                                   svn_client_ctx_t *ctx, apr_pool_t *pool)
+{
+    const svn_client_info2_t *s, *d;
+    SVN_ERR(scheduled_pair(b, src, dst, ctx, pool));
+    SVN_ERR(read_bound(&s, b, src, FALSE, ctx, pool));
+    SVN_ERR(read_bound(&d, b, dst, FALSE, ctx, pool));
+    if (!s->wc_info->moved_to_abspath && !d->wc_info->moved_from_abspath) {
+#ifdef _WIN32
+        SVN_ERR(svn_wc__filees_tree_flatten_v1(ctx->wc_ctx, src, dst, b->base, pool));
+#else
+        return filees_refuse("tree metadata: untracked mixed copy requires the reviewed runtime");
+#endif
+    }
+    return SVN_NO_ERROR;
 }
 
 svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolean_t live,
@@ -169,9 +245,9 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
     src = svn_dirent_join(wc, source, pool); dst = svn_dirent_join(wc, destination, pool);
     SVN_ERR(read_bound(&info, &b, wc, FALSE, ctx, pool)); SVN_ERR(plain_dir(info));
     if (!strcmp(phase, "prepare")) {
-        /* Initial virtual directories may not be in the sparse WC metadata.
-         * Admit ONLY missing metadata on existing directories. Never deepen
-         * an existing directory or update its versioned children for a move. */
+        /* Initial virtual directories may not be in the sparse WC metadata;
+         * existing ones may predate the remote manifest. Prepare only each
+         * bound, clean directory at BASE, never deepen/update its children. */
         const char *selected[2] = { src, svn_dirent_dirname(dst, pool) };
         int i;
         SVN_ERR(filees_ra_ctx_auth(ctx, pool));
@@ -179,10 +255,18 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
             const char *ancestor = selected[i];
             apr_array_header_t *paths, *revisions;
             svn_opt_revision_t rev;
+            svn_boolean_t missing = FALSE;
             err = read_bound(&info, &b, selected[i], FALSE, ctx, pool);
-            if (!err) { SVN_ERR(plain_dir(info)); SVN_ERR(root_props(selected[i],ctx,pool)); continue; }
-            if (err->apr_err != SVN_ERR_WC_PATH_NOT_FOUND && err->apr_err != SVN_ERR_UNVERSIONED_RESOURCE) return err;
-            svn_error_clear(err);
+            if (!err) {
+                SVN_ERR(plain_dir(info)); SVN_ERR(root_props(selected[i],ctx,pool));
+                if (!SVN_IS_VALID_REVNUM(info->rev) || info->rev > base)
+                    return filees_refuse("tree metadata: directory preparation has a future BASE");
+                if (info->rev == base) continue;
+            } else {
+                if (err->apr_err != SVN_ERR_WC_PATH_NOT_FOUND && err->apr_err != SVN_ERR_UNVERSIONED_RESOURCE) return err;
+                svn_error_clear(err);
+                missing = TRUE;
+            }
             SVN_ERR(filees_plain_node(selected[i],APR_DIR,FALSE,pool));
             /* Every already-versioned parent must be bound and clean. */
             while (strcmp(ancestor,wc)) {
@@ -194,7 +278,9 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
             }
             paths=apr_array_make(pool,1,sizeof(const char *)); APR_ARRAY_PUSH(paths,const char *)=selected[i];
             rev.kind=svn_opt_revision_number; rev.value.number=base;
-            SVN_ERR(svn_client_update4(&revisions,paths,&rev,svn_depth_empty,TRUE,TRUE,TRUE,TRUE,TRUE,ctx,pool));
+            /* Sticky empty is ONLY for new metadata. Applying it to an
+             * existing full directory would exclude its retained children. */
+            SVN_ERR(svn_client_update4(&revisions,paths,&rev,svn_depth_empty,missing,TRUE,TRUE,TRUE,TRUE,ctx,pool));
             SVN_ERR(read_bound(&info,&b,selected[i],FALSE,ctx,pool)); SVN_ERR(plain_dir(info));
             if (info->rev != base) return filees_refuse("tree metadata: directory preparation has another BASE");
         }
@@ -209,6 +295,7 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
             svn_error_clear(err);
             SVN_ERR(read_bound(&info, &b, dst, FALSE, ctx, pool)); SVN_ERR(plain_dir(info));
             if (info->rev != revision) return filees_refuse("tree metadata: completed destination has a foreign revision");
+            SVN_ERR(normalized_copy(&b, src, dst, ctx, pool));
             SVN_ERR(filees_plain_node(src, APR_DIR, TRUE, pool));
             SVN_ERR(filees_plain_node(dst, APR_DIR, FALSE, pool));
             state = "complete";
@@ -216,7 +303,7 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
         }
         SVN_ERR(err);
         if (!strcmp(phase, "stage") && info->wc_info->schedule == svn_wc_schedule_delete) {
-            SVN_ERR(scheduled_pair(&b, src, dst, ctx, pool));
+            SVN_ERR(normalize_copy(&b, src, dst, ctx, pool));
             SVN_ERR(filees_plain_node(src, APR_DIR, TRUE, pool));
             SVN_ERR(filees_plain_node(dst, APR_DIR, FALSE, pool));
             state = "scheduled";
@@ -237,7 +324,7 @@ svn_error_t *filees_local_tree(const char *phase, const char *wc_arg, svn_boolea
             sources = apr_array_make(pool, 1, sizeof(const char *));
             APR_ARRAY_PUSH(sources, const char *) = src;
             SVN_ERR(svn_client_move7(sources, dst, FALSE, FALSE, TRUE, TRUE, NULL, NULL, NULL, ctx, pool));
-            SVN_ERR(scheduled_pair(&b, src, dst, ctx, pool));
+            SVN_ERR(normalize_copy(&b, src, dst, ctx, pool));
         }
     } else {
         SVN_ERR(filees_plain_node(src, APR_DIR, TRUE, pool));

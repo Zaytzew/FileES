@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"filees/pkg/anchorqueue"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
@@ -168,7 +169,18 @@ func (a anchorBatchAdapter) Plan(ctx context.Context, p contract.RepoAnchorPlanP
 }
 
 func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBatchPayload) (contract.RepoAnchorBatchResult, error) {
+	return a.execute(ctx, p, -1)
+}
+
+func (a anchorBatchAdapter) execute(ctx context.Context, p contract.RepoAnchorBatchPayload, confirmedFiles int64) (contract.RepoAnchorBatchResult, error) {
 	var result contract.RepoAnchorBatchResult
+	if p.Action == "release" {
+		leave, err := a.manager.enterReleaseIntent()
+		if err != nil {
+			return result, err
+		}
+		defer leave()
+	}
 	record, err := a.record(p.RepoAnchorPlanPayload)
 	if err != nil {
 		return result, err
@@ -182,7 +194,8 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 	if err != nil {
 		return result, err
 	}
-	if !selection.preview.Directory || p.Fingerprint != selection.preview.Fingerprint {
+	if !selection.preview.Directory || p.Fingerprint != selection.preview.Fingerprint ||
+		(confirmedFiles >= 0 && selection.preview.Files != confirmedFiles) {
 		return result, ipcserver.ErrAnchorSelectionChanged
 	}
 	result = contract.RepoAnchorBatchResult{LocalPath: record.LocalPath, Path: p.Path, State: "attached", Total: selection.preview.Files}
@@ -194,17 +207,21 @@ func (a anchorBatchAdapter) Execute(ctx context.Context, p contract.RepoAnchorBa
 			if err := a.checkFile(ctx, record, file); err != nil {
 				return err
 			}
-			return a.manager.releaseFile(ctx, record, file.rel)
+			return a.manager.releaseFileHeld(ctx, record, file.rel)
 		}
 		return a.download(ctx, record, file, selection.revision)
 	})
 	if err != nil {
+		if result.Completed == 0 && errors.Is(err, errAnchorReleasePreEffectBusy) {
+			return result, commit.ErrLocalStatusBusy
+		}
 		// Once a file action has started, zero confirmations do not prove zero
 		// effects (hydration can precede adoption). Never return a retryable
 		// pre-effect refusal from this phase, even for the first file.
 		a.manager.log.Warnf("Explorer folder action interrupted: %v", err)
 		result.State = "partial"
 		result.FailureCode, result.FailureKey, _ = ipcserver.AnchorBatchFailure(err, p.Action)
+		result.FailureDetail = anchorqueue.Diagnostic(err)
 	}
 	return result, nil
 }

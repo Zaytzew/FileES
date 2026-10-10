@@ -4,6 +4,8 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "head.release_queue_full": "Kolejka zwolnień miejsca jest pełna. Sprawdź wyniki wcześniejszych działań i spróbuj później.",
+    "head.release_queue_interrupted": "Zwalnianie miejsca przerwano bez pewnego wyniku. Sprawdź folder i dziennik; potwierdź ponownie tylko pozostałe pliki.",
     "head.move_read_only": "Nie masz teraz prawa do zmiany tego repozytorium.",
     "head.move_refused": "Nie można bezpiecznie przenieść folderu. Zamknij używające go programy i poczekaj na zakończenie pobierania lub publikacji. Sprawdź szczegóły w dzienniku; niczego nie usuwaj ręcznie.",
     "head.folder_path_missing": "Niektórych plików obecnych w repozytorium brakuje w tym folderze. Sprawdź kolejkę usunięć i szczegóły w dzienniku. FileES nie odtwarza ich ani nie pomija przy pobieraniu całego folderu.",

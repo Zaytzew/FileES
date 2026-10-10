@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "journal.releaseQueue.waiting": "Zwalnianie miejsca czeka — %s",
+  "journal.releaseQueue.running": "Zwalnianie miejsca trwa — %s",
+  "journal.releaseQueue.completed": "Zwolniono miejsce — %s",
+  "info.anchorFolder.releaseQueued.title": "Zwalnianie miejsca czeka",
+  "info.anchorFolder.releaseQueued.text": "Potwierdzone zwolnienie miejsca pozostaje w kolejce demona, także po restarcie. Wynik lub przyczynę zatrzymania znajdziesz w dzienniku.",
+  "info.anchorFolder.releaseQueued.confirm": "Rozumiem",
+  "info.anchorFolder.releaseQueued.cancel": "Zamknij",
+  "info.anchorFolder.releaseUnknown.title": "Wynik zwalniania miejsca nie jest jeszcze znany",
+  "info.anchorFolder.releaseUnknown.text": "Nie udało się odczytać potwierdzenia działania. Nie ponawiaj go w ciemno. Sprawdź stan folderu i dziennik po odzyskaniu połączenia.",
+  "info.anchorFolder.releaseUnknown.confirm": "Rozumiem",
+  "info.anchorFolder.releaseUnknown.cancel": "Zamknij",
   "headBrowser.move": "Przenieś / zmień nazwę",
   "headBrowser.moveTarget": "Nowa ścieżka w repozytorium (wraz z nazwą folderu)",
   "headBrowser.moveHint": "Folder nadrzędny musi już istnieć. Przykład: 01_PROJEKT/DOKUMENTY_FORMALNE. Zdalne pliki nie będą pobierane.",

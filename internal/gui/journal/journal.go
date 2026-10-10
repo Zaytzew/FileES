@@ -175,6 +175,21 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 	}
 
 	entries := make([]Entry, 0, len(groups)+len(vm.Errors))
+	for _, intent := range vm.AnchorReleaseQueue {
+		if intent.Superseded || intent.State == "failed" {
+			continue
+		} // failures use the structured error below
+		summary := texts.chrome("journal.releaseQueue.waiting", "Zwalnianie miejsca czeka — %s")
+		if intent.State == "running" {
+			summary = texts.chrome("journal.releaseQueue.running", "Zwalnianie miejsca trwa — %s")
+		}
+		if intent.State == "attached" {
+			summary = texts.chrome("journal.releaseQueue.completed", "Zwolniono miejsce — %s")
+		}
+		entries = append(entries, Entry{ID: "release-queue:" + intent.IntentID, Timestamp: intent.UpdatedAt,
+			Repo: repoName(names, intent.RepoID), Summary: fmt.Sprintf(summary, intent.Path),
+			Details: fmt.Sprintf("%d / %d", intent.Completed, intent.Total), Severity: "info", time: parseTime(intent.UpdatedAt)})
+	}
 	mergedErrors := make(map[string]bool)
 	for key, group := range groups {
 		if group.stage == "failed" && group.errorID != "" {

@@ -424,6 +424,9 @@ func (s *Server) capabilities() []string {
 	if s.anchorBatchService() != nil {
 		caps = append(caps, contract.CapRepoAnchorBatch)
 	}
+	if s.anchorQueueService() != nil {
+		caps = append(caps, contract.CapRepoAnchorReleaseQueue)
+	}
 	if s.anchorMoveService() != nil {
 		caps = append(caps, contract.CapRepoAnchorMove)
 	}

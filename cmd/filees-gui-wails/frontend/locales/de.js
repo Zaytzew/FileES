@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "journal.releaseQueue.waiting": "Speicherfreigabe wartet — %s",
+  "journal.releaseQueue.running": "Speicherfreigabe läuft — %s",
+  "journal.releaseQueue.completed": "Speicher freigegeben — %s",
+  "info.anchorFolder.releaseQueued.title": "Speicherfreigabe wartet",
+  "info.anchorFolder.releaseQueued.text": "Die bestätigte Speicherfreigabe bleibt auch nach einem Neustart in der Warteschlange des Dienstes. Ergebnis oder Abbruchgrund stehen im Journal.",
+  "info.anchorFolder.releaseQueued.confirm": "Verstanden",
+  "info.anchorFolder.releaseQueued.cancel": "Schließen",
+  "info.anchorFolder.releaseUnknown.title": "Ergebnis der Speicherfreigabe noch unbekannt",
+  "info.anchorFolder.releaseUnknown.text": "Die Bestätigung konnte nicht gelesen werden. Wiederholen Sie die Aktion nicht ungeprüft. Prüfen Sie nach dem Verbindungsaufbau Ordner und Journal.",
+  "info.anchorFolder.releaseUnknown.confirm": "Verstanden",
+  "info.anchorFolder.releaseUnknown.cancel": "Schließen",
   "headBrowser.move": "Verschieben / umbenennen",
   "headBrowser.moveTarget": "Neuer Pfad im Repository (einschließlich Ordnername)",
   "headBrowser.moveHint": "Der übergeordnete Ordner muss bereits existieren. Beispiel: 01_PROJEKT/DOKUMENTE. Remote-Dateien werden nicht heruntergeladen.",

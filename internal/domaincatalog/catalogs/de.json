@@ -4,6 +4,8 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "head.release_queue_full": "Die Warteschlange zur Speicherfreigabe ist voll. Prüfen Sie frühere Ergebnisse und versuchen Sie es später erneut.",
+    "head.release_queue_interrupted": "Die Speicherfreigabe wurde ohne sicheres Ergebnis unterbrochen. Prüfen Sie Ordner und Journal; bestätigen Sie nur verbleibende Dateien erneut.",
     "head.move_read_only": "Sie dürfen dieses Repository derzeit nicht ändern.",
     "head.move_refused": "Der Ordner lässt sich nicht sicher verschieben. Schließen Sie Programme, die ihn verwenden, und warten Sie auf Downloads oder Veröffentlichungen. Prüfen Sie das Protokoll; löschen Sie nichts manuell.",
     "head.folder_path_missing": "Einige Dateien aus dem Repository fehlen in diesem Ordner. Prüfen Sie ausstehende Löschungen und die Details im Protokoll. FileES stellt sie weder wieder her noch überspringt es sie beim Herunterladen des gesamten Ordners.",

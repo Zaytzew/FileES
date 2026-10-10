@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "journal.releaseQueue.waiting": "Space release is waiting — %s",
+  "journal.releaseQueue.running": "Space release is running — %s",
+  "journal.releaseQueue.completed": "Space freed — %s",
+  "info.anchorFolder.releaseQueued.title": "Space release is waiting",
+  "info.anchorFolder.releaseQueued.text": "Confirmed space release remains in the daemon queue, including after restart. The journal shows the result or the reason it stopped.",
+  "info.anchorFolder.releaseQueued.confirm": "Understood",
+  "info.anchorFolder.releaseQueued.cancel": "Close",
+  "info.anchorFolder.releaseUnknown.title": "Space-release outcome is not yet known",
+  "info.anchorFolder.releaseUnknown.text": "The action acknowledgement could not be read. Do not blindly repeat it. Check the folder and journal after reconnecting.",
+  "info.anchorFolder.releaseUnknown.confirm": "Understood",
+  "info.anchorFolder.releaseUnknown.cancel": "Close",
   "headBrowser.move": "Move / rename",
   "headBrowser.moveTarget": "New repository path (including the folder name)",
   "headBrowser.moveHint": "The parent folder must already exist. Example: 01_PROJECT/FORMAL_DOCUMENTS. Remote files will not be downloaded.",

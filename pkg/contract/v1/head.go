@@ -49,13 +49,14 @@ type RepoAnchorBatchPayload struct {
 }
 
 type RepoAnchorBatchResult struct {
-	LocalPath   string `json:"local_path"`
-	Path        string `json:"path"`
-	State       string `json:"state"` // attached or partial; never an atomic folder transaction
-	Completed   int64  `json:"completed"`
-	Total       int64  `json:"total"`
-	FailureCode string `json:"failure_code,omitempty"`
-	FailureKey  string `json:"failure_key,omitempty"`
+	LocalPath     string `json:"local_path"`
+	Path          string `json:"path"`
+	State         string `json:"state"` // attached or partial; never an atomic folder transaction
+	Completed     int64  `json:"completed"`
+	Total         int64  `json:"total"`
+	FailureCode   string `json:"failure_code,omitempty"`
+	FailureKey    string `json:"failure_key,omitempty"`
+	FailureDetail string `json:"failure_detail,omitempty"` // diagnostics only, never ordinary UI wording or retry authority
 }
 
 type RepoAnchorReleasePayload struct {

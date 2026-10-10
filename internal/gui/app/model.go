@@ -339,6 +339,7 @@ type ViewModel struct {
 	LockReleaseRequests []LockReleaseRequest
 	Recoveries          []RecoveryViewModel
 	Errors              []ErrorViewModel
+	AnchorReleaseQueue  []contract.RepoAnchorQueueResult
 	Activity            []ActivityViewModel
 	Notices             []NoticeViewModel
 	Detachments         []DetachmentViewModel

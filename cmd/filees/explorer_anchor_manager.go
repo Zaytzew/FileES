@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"filees/pkg/activity"
+	"filees/pkg/anchorqueue"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/cloudfiles"
@@ -103,13 +104,18 @@ type anchorManager struct {
 	stateEvery     time.Duration
 	// newSVN builds the client for a server; nil means the activated
 	// profile's identity (profileSVN). Tests hand over a local client.
-	newSVN          func(serverID string) (client.Client, error)
-	localIntentMu   *sync.Mutex
-	moveWaiters     atomic.Int32 // observers yield to waiting user moves
-	activity        *activity.Journal
-	activityChanged func(repoID string)
-	guardChanged    func(repoID string)
-	options         *anchorOptions
+	newSVN                func(serverID string) (client.Client, error)
+	localIntentMu         *sync.Mutex
+	moveWaiters           atomic.Int32 // observers yield to waiting user moves
+	releaseQueue          *anchorqueue.Store
+	releaseRunner         anchorqueue.Runner
+	releaseQueueActive    atomic.Bool
+	releaseQueueJobs      sync.WaitGroup
+	releaseQueueLastError string
+	activity              *activity.Journal
+	activityChanged       func(repoID string)
+	guardChanged          func(repoID string)
+	options               *anchorOptions
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -244,6 +250,7 @@ func anchorKey(record localrepo.Record) string { return record.ServerID + "\x00"
 
 // run reconciles until ctx ends: every attached anchor gets one connect.
 func (m *anchorManager) run(ctx context.Context) {
+	defer m.releaseQueueJobs.Wait()
 	period := m.reconcileEvery
 	if period <= 0 {
 		period = 3 * time.Second
@@ -252,6 +259,7 @@ func (m *anchorManager) run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		m.reconcile(ctx)
+		m.tickReleaseQueue(ctx)
 		select {
 		case <-ctx.Done():
 			return

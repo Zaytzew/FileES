@@ -11,10 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"filees/pkg/activity"
+	"filees/pkg/anchorqueue"
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
@@ -159,7 +161,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	m.options.servers.Store(map[string]bool{record.ServerID: true})
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
-	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
+	m.running = map[string]anchorConnection{anchorKey(record): {root: point, ctx: ctx, cancel: cancel, done: done}}
 	go func() { m.keep(ctx, record); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	waitFor(t, 30*time.Second, "connected batch provider", func() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.running[anchorKey(record)].bridge != nil })
@@ -313,13 +315,72 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	probeRun(t, point, cli, "propdel", "filees:directory-probe", "folder/file-00.txt")
 	observeFolder(true)
 	p.Action = "release"
+	m.localIntentMu = &sync.Mutex{}
 	plan, err = adapter.Plan(t.Context(), p)
 	if err != nil || plan.Files != 24 {
 		t.Fatal("release preview", plan, err)
 	}
-	result, err = adapter.Execute(t.Context(), contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p, Fingerprint: plan.Fingerprint})
-	if err != nil || result.State != "attached" || result.Completed != 24 || commit.HasPendingFileRelease(point) {
-		t.Fatal("release folder", result, err)
+	queuePath := filepath.Join(root, "release-queue.json")
+	m.releaseQueue, err = anchorqueue.Open(queuePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued := anchorQueuedBatchAdapter{adapter}
+	qp := contract.RepoAnchorQueuePayload{IntentID: "a902d47b-46a6-4eb4-8229-a0120ab1de71", Files: 24,
+		RepoAnchorBatchPayload: contract.RepoAnchorBatchPayload{RepoAnchorPlanPayload: p, Fingerprint: strings.Repeat("cd", 32)}}
+	if _, err := queued.Queue(t.Context(), qp); err != nil {
+		t.Fatal(err)
+	}
+	m.tickReleaseQueue(t.Context())
+	waitFor(t, 30*time.Second, "changed selection refused", func() bool { return !m.releaseQueueActive.Load() })
+	if x := m.releaseQueue.List()[0]; x.Result.State != "failed" || x.Result.FailureKey != "head.folder_changed" {
+		t.Fatal(x)
+	}
+	qp.IntentID = "a902d47b-46a6-4eb4-8229-a0120ab1de72"
+	qp.Fingerprint = plan.Fingerprint
+	qp.Files = 23
+	if _, err := queued.Queue(t.Context(), qp); err != nil {
+		t.Fatal(err)
+	}
+	m.tickReleaseQueue(t.Context())
+	waitFor(t, 30*time.Second, "changed count refused", func() bool { return !m.releaseQueueActive.Load() })
+	if x := m.releaseQueue.List()[1]; x.Result.State != "failed" || x.Result.Completed != 0 {
+		t.Fatal(x)
+	}
+	qp.IntentID = "a902d47b-46a6-4eb4-8229-a0120ab1de73"
+	qp.Files = 24
+	if _, err := queued.Queue(t.Context(), qp); err != nil {
+		t.Fatal(err)
+	}
+	m.localIntentMu.Lock()
+	m.tickReleaseQueue(t.Context())
+	waitFor(t, 30*time.Second, "busy persisted without effect", func() bool { return !m.releaseQueueActive.Load() })
+	if x := m.releaseQueue.List()[2]; x.Result.State != "queued" || x.Result.Completed != 0 {
+		t.Fatal(x)
+	}
+	m.releaseQueue, err = anchorqueue.Open(queuePath) // queued resumes from disk, not GUI memory
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.localIntentMu.Unlock()
+	state.SetFileReleaseFunc(func(context.Context, string, bool, func() error, func() error) error {
+		return commit.ErrLocalStatusBusy
+	})
+	m.tickReleaseQueue(t.Context())
+	waitFor(t, 30*time.Second, "writer refused before callback", func() bool { return !m.releaseQueueActive.Load() })
+	if x := m.releaseQueue.List()[2]; x.Result.State != "queued" || x.Result.Completed != 0 {
+		t.Fatal("first-file pre-effect busy required a second confirmation", x)
+	}
+	state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, op, finish func() error) error {
+		return service.WithFileRelease(ctx, point, rel, recovery, op, finish)
+	})
+	m.tickReleaseQueue(t.Context())
+	waitFor(t, 180*time.Second, "durable folder release", func() bool { return !m.releaseQueueActive.Load() })
+	if x := m.releaseQueue.List()[2]; x.Result.State != "attached" || x.Result.Completed != 24 || commit.HasPendingFileRelease(point) {
+		t.Fatal("release folder", x)
+	}
+	if again, err := queued.Queue(t.Context(), qp); err != nil || again.State != "attached" || len(m.releaseQueue.List()) != 3 {
+		t.Fatal("completed confirmation replayed", again, err)
 	}
 	checkAvailability(contract.HeadRemote)
 	observeFolder(true)
@@ -394,7 +455,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	m.options.servers.Store(map[string]bool{record.ServerID: true})
 	ctx, cancel = context.WithCancel(t.Context())
 	done = make(chan struct{})
-	m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
+	m.running = map[string]anchorConnection{anchorKey(record): {root: point, ctx: ctx, cancel: cancel, done: done}}
 	go func() { m.keep(ctx, record); close(done) }()
 	waitFor(t, 30*time.Second, "reconnected provider after partial tree turn", func() bool {
 		m.mu.Lock()

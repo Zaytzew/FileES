@@ -93,6 +93,16 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 			MessageKey: record.MessageKey, Message: record.Msg, Details: record.Details,
 		})
 	}
+	for _, intent := range system.AnchorReleaseQueue {
+		if intent.State != "failed" || intent.Superseded {
+			continue
+		}
+		s.errors = append(s.errors, ErrorViewModel{
+			ID: "release-queue:" + intent.IntentID, RepoID: intent.RepoID, Timestamp: intent.UpdatedAt,
+			Code: intent.FailureCode, Severity: "ERROR", Hint: "REQUIRE_ACTION", MessageKey: intent.FailureKey,
+			MessageDetail: intent.Path, Details: intent.FailureDetail,
+		})
+	}
 	s.activity = make([]ActivityViewModel, 0, len(activityRecords))
 	for _, record := range activityRecords {
 		s.activity = append(s.activity, ActivityViewModel{RepoID: record.RepoID, Path: record.Path, Kind: record.Kind, Stage: record.Stage, UpdatedAt: record.UpdatedAt, Revision: record.Revision, ErrorID: record.ErrorID, Size: record.Size})
@@ -387,6 +397,7 @@ func (s appState) viewModel() ViewModel {
 		Reservations:        append([]Reservation(nil), s.reservationItems...),
 		LockReleaseRequests: append([]LockReleaseRequest(nil), s.lockReleaseRequests...),
 		Errors:              append([]ErrorViewModel(nil), s.errors...),
+		AnchorReleaseQueue:  append([]contract.RepoAnchorQueueResult(nil), s.system.AnchorReleaseQueue...),
 		Activity:            append([]ActivityViewModel(nil), s.activity...),
 		Notices:             append([]NoticeViewModel(nil), s.notices...),
 		PublicShares:        append([]PublicShareViewModel(nil), s.publicShares...),

@@ -166,6 +166,10 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleAnchorBatch(req, false)
 	case contract.CmdRepoAnchorBatch:
 		return s.handleAnchorBatch(req, true)
+	case contract.CmdRepoAnchorReleaseQueue:
+		return s.handleAnchorQueue(req, true)
+	case contract.CmdRepoAnchorReleaseQueueStatus:
+		return s.handleAnchorQueue(req, false)
 	case contract.CmdRepoAnchorMovePlan, contract.CmdRepoAnchorMove, contract.CmdRepoAnchorMoveRecover:
 		return s.handleAnchorMove(req)
 	case contract.CmdRepoAnchorConsent:
@@ -1707,6 +1711,7 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 // handleSystemStatus implements system.status.
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	result := contract.SystemStatusResult{
+		AnchorReleaseQueue:  s.visibleQueuedReleases(),
 		MemorySafety:        s.MemorySafety(),
 		SyncPause:           s.pauseStatus(),
 		State:               "running",

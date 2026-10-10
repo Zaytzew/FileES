@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"filees/pkg/anchorqueue"
 	"filees/pkg/commit"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -23,6 +24,14 @@ func anchorReleaseLocation(r localrepo.Record) anchorReleaseIdentity {
 func (m *anchorManager) wireRelease(ipc *ipcserver.Server) {
 	ipc.SetAnchorRelease(m.release)
 	ipc.SetAnchorBatch(anchorBatchAdapter{manager: m})
+	if dir, err := m.releaseStore(); err != nil {
+		m.log.Warnf("Explorer release queue unavailable: %v", err)
+	} else if queue, err := anchorqueue.Open(filepath.Join(dir, "queue.json")); err != nil {
+		m.log.Warnf("Explorer release queue unavailable: %v", err)
+	} else {
+		m.releaseQueue = queue
+		ipc.SetAnchorBatch(anchorQueuedBatchAdapter{anchorBatchAdapter{manager: m}})
+	}
 	m.wireTreeMove(ipc)
 }
 
@@ -253,14 +262,20 @@ func (m *anchorManager) resumeAnchorRelease(ctx context.Context, record localrep
 
 // Explicit single-file action. No ordinary SVN fallback.
 func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record, rel string) error {
-	if _, ok := cleanAnchorIdentity(rel); !ok {
-		return errors.New("select one published file for release")
-	}
 	leave, err := m.enterReleaseIntent()
 	if err != nil {
 		return err
 	}
 	defer leave()
+	return m.releaseFileHeld(ctx, record, rel)
+}
+
+// The caller holds localIntentMu for the whole confirmed folder batch. All
+// writer, native journal, clean-file and remote-proof checks remain per file.
+func (m *anchorManager) releaseFileHeld(ctx context.Context, record localrepo.Record, rel string) error {
+	if _, ok := cleanAnchorIdentity(rel); !ok {
+		return errors.New("select one published file for release")
+	}
 	if err := m.currentReleaseRecord(record); err != nil {
 		return err
 	}
@@ -299,7 +314,9 @@ func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record
 		}
 		return err
 	}
-	return repo.WithFileRelease(ctx, rel, false, func() error {
+	started := false
+	err = repo.WithFileRelease(ctx, rel, false, func() error {
+		started = true
 		if err := m.currentReleaseRecord(record); err != nil {
 			return err
 		}
@@ -320,4 +337,10 @@ func (m *anchorManager) releaseFile(ctx context.Context, record localrepo.Record
 		}
 		return nil
 	}, func() error { return finishManagedAnchorRelease(ctx, j, fence, ops, remote) })
+	if !started && errors.Is(err, commit.ErrLocalStatusBusy) {
+		return fmt.Errorf("%w: %w", errAnchorReleasePreEffectBusy, err)
+	}
+	return err
 }
+
+var errAnchorReleasePreEffectBusy = errors.New("release writer refused before entering the operation")

@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "journal.releaseQueue.waiting": "Libération d’espace en attente — %s",
+  "journal.releaseQueue.running": "Libération d’espace en cours — %s",
+  "journal.releaseQueue.completed": "Espace libéré — %s",
+  "info.anchorFolder.releaseQueued.title": "La libération d’espace attend",
+  "info.anchorFolder.releaseQueued.text": "La libération confirmée reste dans la file du service, même après un redémarrage. Le journal indique le résultat ou la raison de l’arrêt.",
+  "info.anchorFolder.releaseQueued.confirm": "Compris",
+  "info.anchorFolder.releaseQueued.cancel": "Fermer",
+  "info.anchorFolder.releaseUnknown.title": "Résultat de la libération d’espace encore inconnu",
+  "info.anchorFolder.releaseUnknown.text": "La confirmation n’a pas pu être lue. Ne répétez pas l’action à l’aveugle. Vérifiez le dossier et le journal après la reconnexion.",
+  "info.anchorFolder.releaseUnknown.confirm": "Compris",
+  "info.anchorFolder.releaseUnknown.cancel": "Fermer",
   "headBrowser.move": "Déplacer / renommer",
   "headBrowser.moveTarget": "Nouveau chemin dans le dépôt (avec le nom du dossier)",
   "headBrowser.moveHint": "Le dossier parent doit déjà exister. Exemple : 01_PROJET/DOCUMENTS. Les fichiers distants ne seront pas téléchargés.",

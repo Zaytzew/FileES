@@ -285,13 +285,14 @@ type ShoutDraftResult struct {
 }
 
 type SystemStatusResult struct {
-	VirtualFolders *VirtualFoldersStatus `json:"virtual_folders,omitempty"`
-	SyncPause      SyncPauseStatus       `json:"sync_pause"`
-	MemorySafety   *MemorySafetyStatus   `json:"memory_safety,omitempty"`
-	State          string                `json:"state"` // "running" | "stopping"
-	UptimeSec      int64                 `json:"uptime_sec"`
-	Repos          int                   `json:"repos"`
-	Activations    []ActivationStatus    `json:"activations"`
+	AnchorReleaseQueue []RepoAnchorQueueResult `json:"anchor_release_queue,omitempty"`
+	VirtualFolders     *VirtualFoldersStatus   `json:"virtual_folders,omitempty"`
+	SyncPause          SyncPauseStatus         `json:"sync_pause"`
+	MemorySafety       *MemorySafetyStatus     `json:"memory_safety,omitempty"`
+	State              string                  `json:"state"` // "running" | "stopping"
+	UptimeSec          int64                   `json:"uptime_sec"`
+	Repos              int                     `json:"repos"`
+	Activations        []ActivationStatus      `json:"activations"`
 	// Detachments are the relationships that ended, beside the ones that
 	// exist. They are a separate list rather than a flag on an activation
 	// because after a detachment there is no activation left to carry it:

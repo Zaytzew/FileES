@@ -113,6 +113,11 @@ func folderDigest(value string) bool {
 // subtree and no increase beyond the confirmed workload. Release never does
 // this. Every execution still carries a fresh exact fingerprint.
 func (s *HeadBrowserService) folderExecute(ctx context.Context, d headBrowserBatchDaemon, repo HeadBrowserRepository, focus HeadBrowserContext, p contract.RepoAnchorPlanPayload, approved contract.RepoAnchorPlan) (contract.RepoAnchorBatchResult, contract.RepoAnchorPlan, error) {
+	if p.Action == "release" && s.releaseQueueOffered() {
+		if queue, ok := s.daemon.(headBrowserReleaseQueueDaemon); ok {
+			return s.queuedFolderRelease(ctx, queue, repo, focus, p, approved)
+		}
+	}
 	var zero contract.RepoAnchorBatchResult
 	plan := approved
 	delay := 500 * time.Millisecond

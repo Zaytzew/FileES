@@ -4,6 +4,8 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "head.release_queue_full": "La file de libération d’espace est pleine. Vérifiez les résultats précédents et réessayez plus tard.",
+    "head.release_queue_interrupted": "La libération d’espace a été interrompue sans résultat certain. Vérifiez le dossier et le journal ; confirmez à nouveau uniquement les fichiers restants.",
     "head.move_read_only": "Vous ne pouvez pas modifier ce dépôt actuellement.",
     "head.move_refused": "Le dossier ne peut pas être déplacé en toute sécurité. Fermez les programmes qui l’utilisent et attendez la fin du téléchargement ou de la publication. Vérifiez le journal ; ne supprimez rien manuellement.",
     "head.folder_path_missing": "Certains fichiers du dépôt sont absents de ce dossier. Vérifiez les suppressions en attente et les détails du journal. FileES ne les restaure pas et ne les ignore pas lors du téléchargement de tout le dossier.",

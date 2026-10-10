@@ -1,5 +1,16 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "journal.releaseQueue.waiting": "Liberación de espacio en espera — %s",
+  "journal.releaseQueue.running": "Liberación de espacio en curso — %s",
+  "journal.releaseQueue.completed": "Espacio liberado — %s",
+  "info.anchorFolder.releaseQueued.title": "La liberación de espacio está esperando",
+  "info.anchorFolder.releaseQueued.text": "La liberación confirmada permanece en la cola del servicio, incluso tras reiniciar. El diario muestra el resultado o el motivo de la interrupción.",
+  "info.anchorFolder.releaseQueued.confirm": "Entendido",
+  "info.anchorFolder.releaseQueued.cancel": "Cerrar",
+  "info.anchorFolder.releaseUnknown.title": "El resultado de liberar espacio aún es desconocido",
+  "info.anchorFolder.releaseUnknown.text": "No se pudo leer la confirmación de la acción. No la repitas a ciegas. Revisa la carpeta y el diario al recuperar la conexión.",
+  "info.anchorFolder.releaseUnknown.confirm": "Entendido",
+  "info.anchorFolder.releaseUnknown.cancel": "Cerrar",
   "headBrowser.move": "Mover / renombrar",
   "headBrowser.moveTarget": "Nueva ruta en el repositorio (con el nombre de la carpeta)",
   "headBrowser.moveHint": "La carpeta superior debe existir. Ejemplo: 01_PROYECTO/DOCUMENTOS. Los archivos remotos no se descargarán.",

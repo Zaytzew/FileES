@@ -267,6 +267,20 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 	if err != nil {
 		return zero, true, err
 	}
+	if result.State == "queued" || result.State == "queue_unknown" {
+		if service.folderComplete != nil {
+			kind := "releaseQueued"
+			if result.State == "queue_unknown" {
+				kind = "releaseUnknown"
+			}
+			// The waiting deadline may have elapsed. The information window
+			// still needs its own bounded lifetime; it cannot cancel the daemon job.
+			infoCtx, infoCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer infoCancel()
+			service.folderComplete(infoCtx, kind, 0, currentPlan.Files)
+		}
+		return contract.RepoHeadWriteResult{LocalPath: repo.LocalPath, Path: path, State: result.State}, true, nil
+	}
 	if result.State != "attached" || result.Completed != result.Total || result.Total != currentPlan.Files {
 		partial := fmt.Sprintf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
 		if result.FailureKey != "" {
@@ -282,6 +296,10 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 
 // No-op plans need feedback too, but must not claim files were transferred.
 func folderCompletionInfo(action string, completed, total int64) platform.InfoRequest {
+	if action == "releaseQueued" || action == "releaseUnknown" {
+		return platform.InfoRequest{PresentationKey: "info.anchorFolder." + action,
+			Title: "Zwalnianie miejsca", Text: "Sprawdź wynik w dzienniku FileES. Nie ponawiaj potwierdzonej operacji w ciemno."}
+	}
 	key := "info.anchorFolder." + action
 	text := fmt.Sprintf("Działanie zakończone: %d z %d plików.", completed, total)
 	if completed == 0 && total == 0 {

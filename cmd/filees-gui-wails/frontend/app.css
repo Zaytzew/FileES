@@ -31,7 +31,9 @@ button:focus-visible,a:focus-visible { outline:3px solid color-mix(in srgb,var(-
 .ambient-b { bottom:-270px; left:-180px; background:#1264a3; }
 .shell { position:relative; z-index:1; display:grid; grid-template-rows:auto minmax(0,1fr) auto; width:min(1680px,calc(100% - 72px)); height:100%; margin:0 auto; }
 /* Only cards scroll. Notification growth takes space, never covers a row. */
-.dashboard-header { grid-row:1; min-width:0; position:relative; z-index:30; background:var(--background); }
+.dashboard-header { grid-row:1; min-width:0; position:relative; z-index:30; }
+/* The opaque header spans the window, not just the last control's edge. */
+.dashboard-header::before { content:""; position:absolute; top:0; bottom:0; left:50%; width:100vw; transform:translateX(-50%); z-index:-1; background:var(--background); pointer-events:none; }
 .notification-dock { max-height:28vh; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--muted) transparent; }
 .notification-dock>.announcement-banner,.notification-dock .intent-alerts>.announcement-banner { margin:8px 0; padding:10px 14px; }
 .notification-dock .progress-parking,.notification-dock .action-status { margin:8px 0; }
@@ -140,15 +142,15 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .metrics small { color:var(--muted); font-size:12px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
 .metrics strong { margin:5px 0 1px; font-size:31px; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
 .metrics span { color:#7f8da1; font-size:12px; }
-.dashboard-header .metrics { margin:8px 0; border-radius:12px; box-shadow:none; }
+.dashboard-header .metrics { margin:8px 0 24px; border-radius:12px; box-shadow:none; }
 .dashboard-header .metrics article { min-height:76px; padding:10px 16px; }
 .dashboard-header .metrics small { font-size:10px; }
 .dashboard-header .metrics strong { margin:2px 0 0; font-size:24px; }
 .dashboard-header .metrics span { font-size:11px; }
 /* Pinned statistics must still leave usable card space in a short window. */
 @media (max-height:600px) {
-  .notification-dock { max-height:18vh; }
-  .shell>.dashboard-toasts { max-height:18vh; }
+  .notification-dock { max-height:16vh; }
+  .shell>.dashboard-toasts { max-height:16vh; }
 }
 
 .content-grid { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(310px,.72fr); gap:22px; margin-top:24px; }

@@ -30,6 +30,8 @@ frame.onload=async()=>{
     dock.querySelectorAll('.announcement-banner,.intent-alerts,.action-status').forEach(node=>node.hidden=true);
     toasts.replaceChildren();await settle();
     const emptyHeight=content.clientHeight;
+    check(Math.abs(parseFloat(win.getComputedStyle(header,'::before').width)-width)<1,'header background does not reach window edges');
+    check(parseFloat(win.getComputedStyle(metrics).marginBottom)>=24,'statistics lack breathing room');
     check(win.getComputedStyle(toasts).display==='none','empty toast field takes space');
     const banner=doc.querySelector('#announcement-banner');banner.hidden=false;
     for(let i=0;i<6;i++) {

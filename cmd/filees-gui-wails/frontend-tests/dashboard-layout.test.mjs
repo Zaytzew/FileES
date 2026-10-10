@@ -47,6 +47,12 @@ test('actual background progress creates only one strip in the stationary dock',
  assert.equal(children.length,1);
  assert.equal(children[0].className,'progress-parking');
 });
+
+test('header background spans both themed window edges and statistics have breathing room',()=>{
+ const css=read('app.css');
+ assert.match(css,/\.dashboard-header::before \{[^}]*width:100vw[^}]*background:var\(--background\)[^}]*pointer-events:none/);
+ assert.match(css,/\.dashboard-header \.metrics \{[^}]*margin:8px 0 24px/);
+});
 test('actual toast renderer keeps the latest result visible without changing expiry',()=>{
  const source=read('app.js');
  const start=source.indexOf('function showToast('),end=source.indexOf('function deletedCopyRepo(',start);

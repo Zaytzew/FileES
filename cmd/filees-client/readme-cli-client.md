@@ -16,6 +16,55 @@ na końcu istniejącego łańcucha:
 
 ## Polecenia
 
+Instalacja i aktualizacja Linux/amd64 oraz OpenBSD/amd64 korzystają wyłącznie
+z osobnego podpisanego kanału CLI. Pierwsze uruchomienie wymaga zaufanego
+archiwum dystrybucyjnego z poleceniem `install`: przed uruchomieniem sprawdź
+podpis manifestu znanym kluczem wydawcy oraz rozmiar i SHA-256 archiwum.
+Dotychczasowa paczka 0.1.0+r2016 nie zawiera tego polecenia.
+Na OpenBSD zainstaluj wcześniej pakiet `subversion`; na Linux wymagany
+jest systemowy `svn`. Instalator nie pobiera zależności systemowych.
+
+```
+# Z rozpakowanego, zweryfikowanego archiwum (administrator):
+doas ./bin/filees-client install                 # OpenBSD
+sudo ./bin/filees-client install                 # Linux
+
+# Następne uruchomienia, także z własnego harmonogramu:
+doas /usr/local/bin/filees-client update
+sudo /usr/local/bin/filees-client update
+
+# Instalacja bez roota, do własnego katalogu:
+./bin/filees-client install --prefix "$HOME/.local"
+"$HOME/.local/bin/filees-client" update --prefix "$HOME/.local" --check
+```
+
+`install` i `update` wykonują ten sam przebieg. `--prefix` jest absolutnym,
+czystym katalogiem bez symlinków (domyślnie `/usr/local`); powtórzenia muszą
+używać tego samego prefiksu. `--check` sprawdza podpisy kanału i manifestu
+oraz ochronę przed cofnięciem, ale nie pobiera archiwum ani nie podmienia
+plików. Tworzy prywatny katalog stanu i blokadę, więc również wymaga prawa
+zapisu w prefiksie. `--timeout` domyślnie wynosi `30m`; `--svn` wskazuje
+alternatywny program SVN. Build developerski bez wbudowanego klucza wydawcy
+odmawia instalacji z sieci.
+
+Instalator sprawdza podpisy, związanie komponentu i platformy, ważność
+kanału, rozmiar i SHA-256 paczki oraz dokładnie trzy oczekiwane pliki.
+Instaluje `bin/filees-client`, `share/doc/filees-client/README.md` i manual
+(`man/man1` na OpenBSD, `share/man/man1` na Linux). Nie zmienia konfiguracji,
+aktywacji, kopii roboczych ani crona. Zamiana każdego pliku jest atomowa;
+program jest zamieniany na końcu. Przerwanie może pozostawić nowszy opis
+obok starego programu: ponów tę samą komendę, aby dokończyć instalację.
+
+Stan w `share/filees-client-update` ma tryb 0700. Zawiera trwały próg
+rewizji/epoki bezpieczeństwa, blokadę instalacji, jedną sprawdzaną przy
+ponownym użyciu paczkę w cache i jeden poprzedni program
+`previous-filees-client`. Próg jest zapisywany przed pierwszą podmianą;
+starsze wydanie jest odrzucane również po przerwaniu. Dokładne ponowienie
+tej samej wersji jest dozwolone. Pierwszą instalację dodatkowo chroni
+rewizja wbudowana w uruchamiany instalator. Nie usuwaj katalogu stanu,
+aby wymusić cofnięcie; zachowany poprzedni program nie jest automatycznym
+mechanizmem downgrade. Instalator nie przerywa już trwającego syncu.
+
 Aktywacja nowej instalacji albo join do istniejącego realmu (bilet z
 `--join-realm-alias` to ten sam przebieg, nie osobny program):
 

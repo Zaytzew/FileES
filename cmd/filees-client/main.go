@@ -36,6 +36,8 @@ func main() {
 		}
 	case "activate-begin":
 		code = cmdActivateBegin(os.Args[2:])
+	case "install", "update":
+		code = cmdInstall(os.Args[2:])
 	case "activate-finish":
 		code = cmdActivateFinish(os.Args[2:])
 	case "activate-resume":
@@ -64,6 +66,7 @@ func usage() {
 
 commands:
   version          show the standalone client version and source revision
+  install, update  install/update signed CLI code, preserving activation/config
   activate-begin    start onboarding (new realm, or a join ticket)
   activate-finish   read one OTP from stdin and finish activation
   activate-resume   resume an OTP-authorized activation

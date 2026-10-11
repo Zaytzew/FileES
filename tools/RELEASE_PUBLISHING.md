@@ -389,4 +389,23 @@ RELEASE_ID=rNNNN-cli CHANNEL=cli sh tools/release-sign-and-publish.sh
 Promotor podpisuje manifesty i notatki oraz publikuje `channels/cli.json`.
 Kandydat ma `built-for-channel=cli`; nie wolno kierować go na desktop,
 Android ani kanały serwera. Retencja obejmuje osobno sufiks `-cli`.
-CLI nie ma automatycznego aktualizatora: archiwum instaluje operator.
+Od źródeł r2089 + zmiana z 2026-10-11 CLI ma polecenia `install`/`update`
+dla Linux/amd64 i OpenBSD/amd64. Producent wymaga publicznego klucza
+`FILEES_RELEASE_PUBKEY` (domyślnie `$FILEES_BIN_WC/FILEESrelease.pub`) i
+wstrzykuje go razem z `KEY_ID` oraz `FILEES_RELEASE_REPO_URL` (domyślnie
+`svn://cloud.atmprojekt.pl/FILEES-BIN`). Klucza prywatnego nie używa.
+Sam `cmd/filees-client/build.sh` wymaga podania wszystkich trzech zmiennych
+`FILEES_RELEASE_PUBKEY`, `FILEES_RELEASE_KEY_ID`, `FILEES_RELEASE_REPO_URL`
+albo żadnej; developerski build bez trust root nie instaluje z sieci.
+
+Przed podpisem sprawdzić także pierwszy install, update i `--check` z
+rzeczywistym SVN na obu platformach, w tym OpenBSD pledge/unveil. Instalator
+sprawdza osobny kanał, oba podpisy, platformę, ważność i sumy; zachowuje
+trwały próg antyrollback przed podmianą, pojedynczy poprzedni program i
+sprawdzaną paczkę w cache. Źródłowa rewizja instalatora jest dodatkowym
+progiem pierwszej instalacji. Dokładne retry jest dopuszczalne.
+Weryfikacja wstępnego archiwum znanym kluczem wydawcy pozostaje obowiązkiem
+operatora przed wykonaniem jego programu. Paczka r2016 nie ma instalatora;
+do bootstrapa potrzebne jest przyszłe podpisane wydanie z tą zmianą.
+Przebieg nie zmienia profili, aktywacji ani crona. Szczegóły prefiksu i
+wznowienia: `cmd/filees-client/readme-cli-client.md`, `filees-client(1)`.

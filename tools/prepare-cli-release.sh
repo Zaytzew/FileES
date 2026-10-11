@@ -6,6 +6,8 @@ FILEES_BIN_WC=${FILEES_BIN_WC:-"$HOME/FILEES-BIN"}
 SOURCE_REVISION=${SOURCE_REVISION:-}
 KEY_ID=${KEY_ID:-release-2026-a}
 NOTES_FILE=${NOTES_FILE:-}
+FILEES_RELEASE_PUBKEY=${FILEES_RELEASE_PUBKEY:-"$FILEES_BIN_WC/FILEESrelease.pub"}
+FILEES_RELEASE_REPO_URL=${FILEES_RELEASE_REPO_URL:-svn://cloud.atmprojekt.pl/FILEES-BIN}
 die() { echo "filees-prepare-cli: $*" >&2; exit 1; }
 case "$SOURCE_REVISION" in r*) number=${SOURCE_REVISION#r} ;; *) die "SOURCE_REVISION=rNNNN is required" ;; esac
 case "$number" in *[!0-9]*|'') die "invalid source revision" ;; esac
@@ -13,6 +15,7 @@ case "$number" in *[!0-9]*|'') die "invalid source revision" ;; esac
 [ -d "$FILEES_BIN_WC/.svn" ] || die "not a FILEES-BIN working copy"
 [ -z "$(svn status "$FILEES_BIN_WC")" ] || die "FILEES-BIN has local changes"
 [ -f "$NOTES_FILE" ] || die "NOTES_FILE must name reviewed bilingual release notes"
+[ -f "$FILEES_RELEASE_PUBKEY" ] || die "release public key is required for managed CLI installation"
 if [ -d "$root/.svn" ]; then
 	[ "$(svnversion "$root")" = "$number" ] || die "source must be a clean, uniform working copy of $SOURCE_REVISION; an exact SVN export also works"
 fi
@@ -29,7 +32,9 @@ go build -trimpath -buildvcs=false -o "$work/notes" ./cmd/filees-release-notes
 "$work/notes" lint -release-id "$release_id" -sequence "$number" "$NOTES_FILE"
 grep -Eq '"component"[[:space:]]*:[[:space:]]*"cli"' "$NOTES_FILE" || die "notes must belong to cli"
 for platform in linux-amd64 openbsd-amd64; do
-	SOURCE_REVISION="$SOURCE_REVISION" DIST="$work/dist" sh cmd/filees-client/build.sh "$platform"
+	SOURCE_REVISION="$SOURCE_REVISION" DIST="$work/dist" \
+		FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY" FILEES_RELEASE_KEY_ID="$KEY_ID" \
+		FILEES_RELEASE_REPO_URL="$FILEES_RELEASE_REPO_URL" sh cmd/filees-client/build.sh "$platform"
 	destination="$stage/cli/$platform"
 	mkdir -p "$destination"
 	cp "$work/dist/filees-client-$platform.tar.gz" "$destination/"

@@ -1,4 +1,4 @@
-.Dd October 8, 2026
+.Dd October 11, 2026
 .Dt FILEES-CLIENT 1
 .Os
 .Sh NAME
@@ -7,6 +7,12 @@
 .Sh SYNOPSIS
 .Nm
 .Cm version
+.Nm
+.Cm install | update
+.Op Fl -prefix Ar directory
+.Op Fl -check
+.Op Fl -svn Ar path
+.Op Fl -timeout Ar duration
 .Nm
 .Cm activate-begin
 .Fl -server-id Ar id
@@ -64,6 +70,39 @@ It uses an activated FileES identity and a pinned SSH host key.
 It is distributed separately from the desktop daemon and the server bundle.
 .Cm version
 prints the standalone client version and the source revision.
+.Pp
+.Cm install
+and
+.Cm update
+verify and install the latest signed standalone CLI release.
+They require a distribution build containing the trusted release key and
+a system Subversion client.
+Before executing the initial distribution, verify its manifest signature
+with the publisher's trusted public key and check the archive size and SHA-256.
+The dedicated CLI channel cannot install desktop or server bundles.
+.Fl -prefix
+defaults to
+.Pa /usr/local
+and must be an absolute directory without symbolic links.
+Use the same prefix for every subsequent update.
+.Fl -check
+verifies metadata without downloading the archive or replacing files;
+it still creates private update state and requires write access to the prefix.
+.Fl -svn
+selects the Subversion executable, otherwise found in PATH.
+The default installation timeout is 30 minutes.
+.Pp
+Installation checks signatures, platform binding, expiry, archive size and
+SHA-256, and exactly the binary, README and manual.
+Each file is replaced atomically, with the executable replaced last.
+An interruption may leave newer documentation beside the old program;
+repeat the command to finish.
+The durable rollback watermark is saved before replacement and permits
+retrying the same release while refusing older releases.
+The installer's compiled source revision also sets a minimum on first install.
+The updater preserves one previous executable and one verified archive.
+It does not alter activation, configuration, working copies or cron,
+and does not stop a running sync operation.
 .Pp
 .Cm checkout
 creates a working copy at the path selected by
@@ -173,6 +212,14 @@ Example invocation profile; the actual path is supplied by
 .Fl -config .
 .It Pa /var/log/filees-client
 Default private journal directory; create it before running the client.
+.It Pa /usr/local/share/filees-client-update
+Private update state (mode 0700), lock, verified archive cache and
+.Pa previous-filees-client .
+Below a custom prefix, the same relative path is used.
+Do not remove this state to bypass rollback protection.
+.It Pa /usr/local/man/man1/filees-client.1
+Installed manual on OpenBSD; Linux uses
+.Pa /usr/local/share/man/man1/filees-client.1 .
 .It Pa state/job.json
 Durable
 .Cm dump-load
@@ -186,6 +233,9 @@ Usage errors return 2.
 Transport, repository, journal and interrupted-operation errors return 1.
 .Sh EXAMPLES
 .Bd -literal -offset indent
+doas ./bin/filees-client install
+doas /usr/local/bin/filees-client update --check
+sudo /usr/local/bin/filees-client update
 filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc
 filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -restore-set
 filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -reverse-reconcile-set

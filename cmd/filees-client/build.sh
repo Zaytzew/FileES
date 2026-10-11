@@ -12,6 +12,24 @@ case "$revision" in
 	r*) number=${revision#r}; case "$number" in *[!0-9]*|'') echo "invalid SOURCE_REVISION" >&2; exit 2 ;; esac ;;
 	*) echo "SOURCE_REVISION must be rNNNN or development" >&2; exit 2 ;;
 esac
+
+# Release builds carry the same public trust root as the desktop/server,
+# routed exclusively to the standalone CLI channel. Source builds remain
+# usable for sync but deliberately cannot install code from a remote channel.
+release_ldflags=""
+if [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || [ -n "${FILEES_RELEASE_KEY_ID:-}" ] || [ -n "${FILEES_RELEASE_REPO_URL:-}" ]; then
+	[ -f "${FILEES_RELEASE_PUBKEY:-}" ] && [ -n "${FILEES_RELEASE_KEY_ID:-}" ] && [ -n "${FILEES_RELEASE_REPO_URL:-}" ] || {
+		echo "CLI release public key, key ID and repository must be supplied together" >&2; exit 2;
+	}
+	case "$FILEES_RELEASE_KEY_ID" in [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*|'') echo "invalid CLI release key ID" >&2; exit 2 ;; esac
+	case "$FILEES_RELEASE_REPO_URL" in *[[:space:]]*) echo "invalid CLI release repository" >&2; exit 2 ;; esac
+	case "$FILEES_RELEASE_REPO_URL" in svn://*|https://*) ;; *) echo "CLI release repository must use svn or https" >&2; exit 2 ;; esac
+	if grep -Eq 'PLACEHOLDER|xxxx' "$FILEES_RELEASE_PUBKEY"; then
+		echo "refusing placeholder CLI release key" >&2; exit 2
+	fi
+	public_key_b64=$(base64 < "$FILEES_RELEASE_PUBKEY" | tr -d '\r\n')
+	release_ldflags="-X main.injectedCLIReleasePublicKeyB64=$public_key_b64 -X main.injectedCLIReleaseKeyID=$FILEES_RELEASE_KEY_ID -X main.injectedCLIReleaseRepoURL=$FILEES_RELEASE_REPO_URL"
+fi
 case "$target" in
 	openbsd-amd64) goos=openbsd; goarch=amd64 ;;
 	linux-amd64) goos=linux; goarch=amd64 ;;
@@ -25,7 +43,7 @@ mkdir -p "$stage/bin" "$stage/share/doc/filees-client" "$stage/share/man/man1"
 (
 	cd "$root"
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
-		-ldflags "-X main.cliVersion=$version -X main.cliSourceRevision=$revision" \
+		-ldflags "-X main.cliVersion=$version -X main.cliSourceRevision=$revision $release_ldflags" \
 		-o "$stage/bin/filees-client" ./cmd/filees-client
 )
 chmod 755 "$stage/bin/filees-client"

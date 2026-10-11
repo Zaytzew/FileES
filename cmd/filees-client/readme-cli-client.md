@@ -9,18 +9,72 @@ Katalog opublikowany przez `ksefpuck` (`target.root`, np.
 na końcu istniejącego łańcucha:
 
 ```
-0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client sync --config /etc/filees/filees-client.conf --wc wc-01 -nwc --message ksefpuck
+0 9,15,20 * * * /usr/local/bin/ksefuck --notify && /usr/local/bin/syschat --drain-queue && /usr/local/bin/pdfuck && /usr/local/bin/ksefpuck && /usr/local/bin/filees-client publish faktury-2026 --message ksefpuck
 ```
 
 `&&` zostaje. Sync rusza tylko wtedy, gdy `ksefpuck` skończy z kodem 0.
+Profil `faktury-2026` przygotuj wcześniej jako ten sam użytkownik, który
+uruchamia cron. Przy własnym katalogu stanu dodaj w cronie `--config-root`.
+Starszy `sync --config ... --wc ... -nwc` pozostaje obsługiwany.
 
 ## Polecenia
+
+### Autokonfiguracja istniejącej aktywacji
+
+Nie trzeba ponownie aktywować instalacji ani przepisywać klucza, portu i UUID.
+Najpierw zobacz dostępne repozytoria, potem wskaż dokładną nazwę i źródło:
+
+```sh
+filees-client autoconfig
+filees-client autoconfig --repo 'Faktury 2026' \
+  --source /home/ksefUCK/published/2026 --name faktury-2026
+filees-client publish faktury-2026
+```
+
+Domyślnie aktywacje pochodzą z `$XDG_DATA_HOME/filees/servers` albo
+`~/.local/share/filees/servers`. `--state-root /var/filees-client-ksef/servers`
+wskazuje starszą lokalizację; przy wielu serwerach dodaj `--server NAZWA`
+(nazwa lub ID). Można także użyć `--profile /abs/client-profile.json` albo
+`--activation /abs/servers/ID` dla starego CLI z `onboard.json` i aktywną
+tożsamością. CLI korzysta z istniejących plików, nie kopiuje klucza.
+
+Źródło jest jawne. W przykładzie repozytorium otrzyma bezpośrednio miesiące
+roku 2026; wskazanie rodzica opublikowałoby także inne lata i jego pozostałe
+podkatalogi. CLI nie dodaje filtrów ani nie poszerza źródła. Przy konfiguracji
+wypisuje kanoniczne źródło i repozytorium. Katalog nie może być WC ani
+korzeniem systemu; symlinki i nietypowe pliki wewnątrz źródła są odrzucane.
+
+Prywatny profil i dziennik trafiają do `$XDG_CONFIG_HOME/filees-cli/NAZWA`
+albo `~/.config/filees-cli/NAZWA`. `--config-root /abs/jobs` działa w obu
+komendach i musi być poza źródłem; istniejący katalog musi już być prywatny.
+Ponowienie identycznej konfiguracji jest bezpieczne. Zmiana źródła lub
+repozytorium wymaga nowej nazwy. Narzędzia SVN, svnmucc i SSH wykrywane są
+na PATH przy konfiguracji, a ich absolutne ścieżki zapisywane na potrzeby
+crona; można je wskazać przez `--svn`, `--svnmucc`, `--ssh`.
+
+`publish NAZWA` sprawdza świeże prawa na serwerze. Odmawia przy braku
+łączności, cofnięciu praw, zmianie tożsamości/URL, cofnięciu projekcji albo
+obowiązkowym wypożyczeniu. Zmiana nazwy repo na serwerze zachowuje binding UUID.
+Publikacja jest no-WC: dodaje lub aktualizuje, nie propaguje lokalnych
+usunięć i nie przywraca zdalnie skasowanych plików. Nie przyjmuje flag
+`restore-set` ani `reverse-reconcile-set`.
+
+Postęp na stderr podaje etap/liczby bez nazw plików. Zmienione pliki trafiają
+do jednego atomowego commitu. CLI automatycznie zapewnia soft limit uchwytów
+dla svnmucc (liczba zmian + 64 zapasu); niewystarczający hard limit zatrzymuje
+operację przed commit. Nie dzieli zbioru na partie. `--message` ustawia opis
+commitu; `--timeout` (domyślnie 30m) obejmuje publikację wraz z odczytem praw,
+z dodatkowym sprawdzeniem niepewnej odpowiedzi commitu przez maksymalnie 30s.
+Powtórka bez zmian kończy się `clean`. Konfiguracja nie instaluje crona.
+
+### Podpisana instalacja i aktualizacja
 
 Instalacja i aktualizacja Linux/amd64 oraz OpenBSD/amd64 korzystają wyłącznie
 z osobnego podpisanego kanału CLI. Pierwsze uruchomienie wymaga zaufanego
 archiwum dystrybucyjnego z poleceniem `install`: przed uruchomieniem sprawdź
 podpis manifestu znanym kluczem wydawcy oraz rozmiar i SHA-256 archiwum.
-Dotychczasowa paczka 0.1.0+r2016 nie zawiera tego polecenia.
+Dotychczasowa paczka 0.1.0+r2016 nie zawiera install/update ani autoconfig/publish;
+potrzebne jest nowe podpisane wydanie CLI.
 Na OpenBSD zainstaluj wcześniej pakiet `subversion`; na Linux wymagany
 jest systemowy `svn`. Instalator nie pobiera zależności systemowych.
 
@@ -75,6 +129,8 @@ filees-client activate-resume --server-id ID --server HOST --known-hosts /abs/kn
 ```
 
 `activate-finish` czyta jedno hasło jednorazowe ze standardowego wejścia.
+Finish i resume korzystają z zapisanego portu odpowiedzi onboarding; stary
+passport bez portu wymaga jawnego `--remote-port`, bez zgadywania 42000.
 
 Checkout i sync nie przyjmują ścieżki źródłowej ani URL z linii poleceń.
 `--wc` to identyfikator z configu. Bez `-nwc` jego `path` musi być WC:

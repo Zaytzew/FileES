@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="cmd/filees-client/man/filees-client.1 sha256:a6d7c2fbdbd542595a85da3e9a9731e169151de4c38259977e119d15babf357c">
+<meta name="filees-mandoc-source" content="cmd/filees-client/man/filees-client.1 sha256:33343220907ff2a5d6204f096c70937a37d9c25b2be70826ce46c7f39862b193">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-client(1) — FileES manual pages</title>
@@ -31,26 +31,63 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<table class="head">
-  <tr>
-    <td class="head-ltitle">FILEES-CLIENT(1)</td>
-    <td class="head-vol">General Commands Manual</td>
-    <td class="head-rtitle">FILEES-CLIENT(1)</td>
-  </tr>
-</table>
-<div class="manual-text">
+<div class="head" role="doc-pageheader" aria-label="Manual header
+  line"><span class="head-ltitle">FILEES-CLIENT(1)</span>
+  <span class="head-vol">General Commands Manual</span>
+  <span class="head-rtitle">FILEES-CLIENT(1)</span></div>
+<main class="manual-text">
 <section class="Sh">
-<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
 <p class="Pp"><code class="Nm">filees-client</code> &#x2014;
-    <span class="Nd">run one FileES client operation without a background
-    daemon</span></p>
+    <span class="Nd" role="doc-subtitle">run one FileES client operation without
+    a background daemon</span></p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
 <table class="Nm">
   <tr>
     <td><code class="Nm">filees-client</code></td>
     <td><code class="Cm">version</code></td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">autoconfig</code> [<code class="Fl">--profile</code>
+      <var class="Ar">path</var> | <code class="Fl">--activation</code>
+      <var class="Ar">directory</var>] [<code class="Fl">--state-root</code>
+      <var class="Ar">directory</var>] [<code class="Fl">--server</code>
+      <var class="Ar">name</var>] [<code class="Fl">--repo</code>
+      <var class="Ar">name</var>] [<code class="Fl">--source</code>
+      <var class="Ar">directory</var>] [<code class="Fl">--name</code>
+      <var class="Ar">name</var>] [<code class="Fl">--config-root</code>
+      <var class="Ar">directory</var>] [<code class="Fl">--svn</code>
+      <var class="Ar">path</var>] [<code class="Fl">--svnmucc</code>
+      <var class="Ar">path</var>] [<code class="Fl">--ssh</code>
+      <var class="Ar">path</var>] [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">publish</code> <var class="Ar">name</var>
+      [<code class="Fl">--config-root</code> <var class="Ar">directory</var>]
+      [<code class="Fl">--message</code> <var class="Ar">text</var>]
+      [<code class="Fl">--timeout</code> <var class="Ar">duration</var>]</td>
+  </tr>
+</table>
+<br/>
+<table class="Nm">
+  <tr>
+    <td><code class="Nm">filees-client</code></td>
+    <td><code class="Cm">install</code> | <code class="Cm">update</code>
+      [<code class="Fl">--prefix</code> <var class="Ar">directory</var>]
+      [<code class="Fl">--check</code>] [<code class="Fl">--svn</code>
+      <var class="Ar">path</var>] [<code class="Fl">--timeout</code>
+      <var class="Ar">duration</var>]</td>
   </tr>
 </table>
 <br/>
@@ -138,13 +175,69 @@
 </table>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
 <p class="Pp"><code class="Nm">filees-client</code> is a one-shot FileES client
     for Linux and <span class="Ux">OpenBSD</span>. It exits after one operation
     and may be called by a user's cron job. It uses an activated FileES identity
     and a pinned SSH host key. It is distributed separately from the desktop
     daemon and the server bundle. <code class="Cm">version</code> prints the
     standalone client version and the source revision.</p>
+<p class="Pp"><code class="Cm">install</code> and <code class="Cm">update</code>
+    verify and install the latest signed standalone CLI release. They require a
+    distribution build containing the trusted release key and a system
+    Subversion client. Before executing the initial distribution, verify its
+    manifest signature with the publisher's trusted public key and check the
+    archive size and SHA-256. The dedicated CLI channel cannot install desktop
+    or server bundles. <code class="Fl">--prefix</code> defaults to
+    <span class="Pa">/usr/local</span> and must be an absolute directory without
+    symbolic links. Use the same prefix for every subsequent update.
+    <code class="Fl">--check</code> verifies metadata without downloading the
+    archive or replacing files; it still creates private update state and
+    requires write access to the prefix. <code class="Fl">--svn</code> selects
+    the Subversion executable, otherwise found in PATH. The default installation
+    timeout is 30 minutes.</p>
+<p class="Pp">Installation checks signatures, platform binding, expiry, archive
+    size and SHA-256, and exactly the binary, README and manual. Each file is
+    replaced atomically, with the executable replaced last. An interruption may
+    leave newer documentation beside the old program; repeat the command to
+    finish. The durable rollback watermark is saved before replacement and
+    permits retrying the same release while refusing older releases. The
+    installer's compiled source revision also sets a minimum on first install.
+    The updater preserves one previous executable and one verified archive. It
+    does not alter activation, configuration, working copies or cron, and does
+    not stop a running sync operation.</p>
+<p class="Pp"><code class="Cm">autoconfig</code> uses an existing activated
+    profile or an older CLI activation directory, without another OTP or copying
+    identity keys. With no repository name it lists the live server
+    repositories. Select an exact, unambiguous repository display name and an
+    explicit absolute source directory; the source is canonicalized and never
+    widened to its parent. Only active, writable ordinary repositories without
+    mandatory edit locks qualify. The default activation root is
+    XDG_DATA_HOME/filees/servers or ~/.local/share/filees/servers; use
+    --state-root or --server to select another. Private jobs are stored below
+    XDG_CONFIG_HOME/filees-cli or ~/.config/filees-cli. Both commands accept
+    --config-root outside the source. An existing root must already be private.
+    Tool paths are discovered once and stored as absolute paths for cron.
+    Repeating the same configuration is idempotent; another binding needs
+    another name.</p>
+<p class="Pp"><code class="Cm">publish</code> <var class="Ar">name</var>
+    refreshes the server projection and checks saved client, realm and
+    repository identities, URL, permissions and monotonic generation before
+    publishing. Offline or revoked access refuses publication. It uses the
+    no-working-copy publisher, preserving remotely deleted paths and never
+    propagating local deletions. It does not accept restoration or
+    reverse-reconcile flags. Progress on stderr reports stages and counts
+    without file names. All changed files are committed atomically; the process
+    automatically sets the inherited descriptor soft limit for svnmucc,
+    requiring changes plus 64 spare descriptors within the hard limit. An
+    insufficient hard limit refuses before commit; publication is never split.
+    The timeout defaults to 30 minutes including permission refresh; an
+    uncertain commit reply permits an additional 30-second confirmation. No
+    command installs cron.</p>
+<p class="Pp"><code class="Cm">activate-finish</code> and
+    <code class="Cm">activate-resume</code> use the reverse port saved by
+    onboarding. An old passport without a saved port requires explicit
+    --remote-port.</p>
 <p class="Pp"><code class="Cm">checkout</code> creates a working copy at the
     path selected by <code class="Fl">--wc</code>. Without
     <code class="Fl">--nwc</code>, <code class="Cm">sync</code> requires that
@@ -193,7 +286,7 @@
     it again.</p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h1>
+<h2 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h2>
 <p class="Pp">The INI file named by <code class="Fl">--config</code> contains
     &#x2018;tools&#x2019; (absolute paths for
     <a class="permalink" href="#svn"><b class="Sy" id="svn">svn</b></a>,
@@ -209,7 +302,7 @@
     from a <code class="Cm">sync</code> command line.</p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
+<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
 <dl class="Bl-tag">
   <dt><span class="Pa">/etc/filees/filees-client.conf</span></dt>
   <dd>Example invocation profile; the actual path is supplied by
@@ -217,23 +310,34 @@
   <dt><span class="Pa">/var/log/filees-client</span></dt>
   <dd>Default private journal directory; create it before running the
     client.</dd>
+  <dt><span class="Pa">/usr/local/share/filees-client-update</span></dt>
+  <dd>Private update state (mode 0700), lock, verified archive cache and
+      <span class="Pa">previous-filees-client</span>. Below a custom prefix, the
+      same relative path is used. Do not remove this state to bypass rollback
+      protection.</dd>
+  <dt><span class="Pa">/usr/local/man/man1/filees-client.1</span></dt>
+  <dd>Installed manual on OpenBSD; Linux uses
+      <span class="Pa">/usr/local/share/man/man1/filees-client.1</span>.</dd>
   <dt><span class="Pa">state/job.json</span></dt>
   <dd>Durable <code class="Cm">dump-load</code> identity, stored below the
       chosen <code class="Fl">--state</code> directory.</dd>
 </dl>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
-  STATUS</a></h1>
+<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h2>
 <p class="Pp">The <code class="Nm">filees-client</code> utility exits&#x00A0;0
     on success, and&#x00A0;&gt;0 if an error occurs. Usage errors return 2.
     Transport, repository, journal and interrupted-operation errors return
   1.</p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
+<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
 <div class="Bd Bd-indent Li">
-<pre>filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc
+<pre>doas ./bin/filees-client install
+doas /usr/local/bin/filees-client update --check
+sudo /usr/local/bin/filees-client update
+filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc
 filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -restore-set
 filees-client sync --config /etc/filees/filees-client.conf --wc invoices -nwc -reverse-reconcile-set
 filees-client dump-load --profile /home/user/.filees/client-profile.json \
@@ -245,15 +349,13 @@ filees-client dump-load --profile /home/user/.filees/client-profile.json \
     publish a partial output.</p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h1>
-<p class="Pp"><span class="Xr">ssh(1)</span>,
-    <span class="Xr">svn(1)</span>,
-    <span class="Xr">svnmucc(1)</span>,
+<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h2>
+<p class="Pp"><span class="Xr">ssh(1)</span>, <span class="Xr">svn(1)</span>, <span class="Xr">svnmucc(1)</span>,
     <span class="Xr">crontab(5)</span></p>
 </section>
 <section class="Sh">
-<h1 class="Sh" id="CAVEATS"><a class="permalink" href="#CAVEATS">CAVEATS</a></h1>
+<h2 class="Sh" id="CAVEATS"><a class="permalink" href="#CAVEATS">CAVEATS</a></h2>
 <p class="Pp">The repository path in a <code class="Fl">--nwc</code> profile
     must be its root. Symbolic links and non-regular source files are refused.
     Reverse reconciliation stages downloaded files before changing the local
@@ -261,13 +363,11 @@ filees-client dump-load --profile /home/user/.filees/client-profile.json \
     after an interruption. Keep activation keys, profiles and operation state
     outside published folders.</p>
 </section>
-</div>
-<table class="foot">
-  <tr>
-    <td class="foot-date">October 8, 2026</td>
-    <td class="foot-os">Linux 7.2.8-200.fc44.x86_64</td>
-  </tr>
-</table>
+</main>
+<div class="foot" role="doc-pagefooter" aria-label="Manual footer
+  line"><span class="foot-left">OpenBSD 7.9</span>
+  <span class="foot-date">October 11, 2026</span>
+  <span class="foot-right">FILEES-CLIENT(1)</span></div>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

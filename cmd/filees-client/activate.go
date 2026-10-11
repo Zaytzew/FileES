@@ -56,11 +56,16 @@ func cmdActivateFinish(args []string) int {
 	var common activationFlags
 	var remotePort int
 	addActivationFlags(flags, &common)
-	flags.IntVar(&remotePort, "remote-port", 42000, "server-assigned reverse loopback port")
+	flags.IntVar(&remotePort, "remote-port", 0, "override saved reverse port (legacy passports only)")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 2
 	}
 	passport, err := deploy.LoadOnboardPassport(common.stateRoot, common.profile())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "activate-finish:", err)
+		return 1
+	}
+	remotePort, err = activationRemotePort(passport, remotePort)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "activate-finish:", err)
 		return 1
@@ -97,11 +102,16 @@ func cmdActivateResume(args []string) int {
 	var common activationFlags
 	var remotePort int
 	addActivationFlags(flags, &common)
-	flags.IntVar(&remotePort, "remote-port", 42000, "server-assigned reverse loopback port")
+	flags.IntVar(&remotePort, "remote-port", 0, "override saved reverse port (legacy passports only)")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 2
 	}
 	passport, err := deploy.LoadOnboardPassport(common.stateRoot, common.profile())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "activate-resume:", err)
+		return 1
+	}
+	remotePort, err = activationRemotePort(passport, remotePort)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "activate-resume:", err)
 		return 1
@@ -115,4 +125,14 @@ func cmdActivateResume(args []string) int {
 	}
 	fmt.Fprintf(os.Stdout, "active server_id=%s\n", passport.ServerID)
 	return 0
+}
+
+func activationRemotePort(passport deploy.OnboardPassport, explicit int) (int, error) {
+	if explicit == 0 {
+		explicit = passport.RemotePort
+	}
+	if explicit < 1 || explicit > 65535 {
+		return 0, errors.New("saved activation port is missing or invalid; legacy passport requires --remote-port")
+	}
+	return explicit, nil
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,6 +47,10 @@ func main() {
 		code = cmdCheckout(os.Args[2:])
 	case "sync":
 		code = cmdSync(os.Args[2:])
+	case "autoconfig":
+		code = cmdAutoconfig(os.Args[2:])
+	case "publish":
+		code = cmdPublish(os.Args[2:])
 	case "dump-load":
 		code = cmdDumpLoad(os.Args[2:])
 	case "whale-put", "whale-get-quote", "whale-get-confirm", "whale-status", "whale-retry", "whale-resume":
@@ -70,6 +75,8 @@ commands:
   activate-begin    start onboarding (new realm, or a join ticket)
   activate-finish   read one OTP from stdin and finish activation
   activate-resume   resume an OTP-authorized activation
+  autoconfig       select an activated repository and save an exact source
+  publish NAME     publish the saved source with fresh repository access
   checkout          create or resume one configured working copy
   sync              update WC and publish changes; -nwc publishes without WC
   dump-load         create a new repository from a SVN dump and new WC
@@ -90,6 +97,8 @@ type runFlags struct {
 	config, wc, message                            string
 	timeout                                        time.Duration
 	noWorkingCopy, restoreSet, reverseReconcileSet bool
+	sandboxLocked                                  bool
+	progress                                       io.Writer
 }
 
 func addRunFlags(flags *flag.FlagSet, values *runFlags, checkout bool) {

@@ -8,6 +8,24 @@
 .Nm
 .Cm version
 .Nm
+.Cm autoconfig
+.Op Fl -profile Ar path | Fl -activation Ar directory
+.Op Fl -state-root Ar directory
+.Op Fl -server Ar name
+.Op Fl -repo Ar name
+.Op Fl -source Ar directory
+.Op Fl -name Ar name
+.Op Fl -config-root Ar directory
+.Op Fl -svn Ar path
+.Op Fl -svnmucc Ar path
+.Op Fl -ssh Ar path
+.Op Fl -timeout Ar duration
+.Nm
+.Cm publish Ar name
+.Op Fl -config-root Ar directory
+.Op Fl -message Ar text
+.Op Fl -timeout Ar duration
+.Nm
 .Cm install | update
 .Op Fl -prefix Ar directory
 .Op Fl -check
@@ -103,6 +121,46 @@ The installer's compiled source revision also sets a minimum on first install.
 The updater preserves one previous executable and one verified archive.
 It does not alter activation, configuration, working copies or cron,
 and does not stop a running sync operation.
+.Pp
+.Cm autoconfig
+uses an existing activated profile or an older CLI activation directory,
+without another OTP or copying identity keys.
+With no repository name it lists the live server repositories.
+Select an exact, unambiguous repository display name and an explicit absolute
+source directory; the source is canonicalized and never widened to its parent.
+Only active, writable ordinary repositories without mandatory edit locks
+qualify.
+The default activation root is XDG_DATA_HOME/filees/servers or
+~/.local/share/filees/servers; use --state-root or --server to select another.
+Private jobs are stored below XDG_CONFIG_HOME/filees-cli or
+~/.config/filees-cli.
+Both commands accept --config-root outside the source.
+An existing root must already be private.
+Tool paths are discovered once and stored as absolute paths for cron.
+Repeating the same configuration is idempotent;
+another binding needs another name.
+.Pp
+.Cm publish Ar name
+refreshes the server projection and checks saved client, realm and repository
+identities, URL, permissions and monotonic generation before publishing.
+Offline or revoked access refuses publication.
+It uses the no-working-copy publisher, preserving remotely deleted paths
+and never propagating local deletions.
+It does not accept restoration or reverse-reconcile flags.
+Progress on stderr reports stages and counts without file names.
+All changed files are committed atomically; the process automatically sets
+the inherited descriptor soft limit for svnmucc, requiring changes plus 64
+spare descriptors within the hard limit.
+An insufficient hard limit refuses before commit; publication is never split.
+The timeout defaults to 30 minutes including permission refresh;
+an uncertain commit reply permits an additional 30-second confirmation.
+No command installs cron.
+.Pp
+.Cm activate-finish
+and
+.Cm activate-resume
+use the reverse port saved by onboarding.
+An old passport without a saved port requires explicit --remote-port.
 .Pp
 .Cm checkout
 creates a working copy at the path selected by

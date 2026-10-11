@@ -27,14 +27,19 @@ type nwcChange struct {
 }
 
 func cmdSyncNoWC(cfg Config, spec workingCopySpec, values runFlags) int {
-	if err := checkNWCSource(spec.Path, cfg.effectiveLogDir()); err != nil {
-		fmt.Fprintln(os.Stderr, "sync -nwc:", err)
-		return 2
+	if !values.sandboxLocked {
+		if err := checkNWCSource(spec.Path, cfg.effectiveLogDir()); err != nil {
+			fmt.Fprintln(os.Stderr, "sync -nwc:", err)
+			return 2
+		}
+		if err := lockPublishSandbox(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "sync -nwc:", err)
+			return 1
+		}
 	}
-	if err := lockPublishSandbox(cfg); err != nil {
-		fmt.Fprintln(os.Stderr, "sync -nwc:", err)
-		return 1
-	}
+	// The named publisher already validates canonical source/state paths
+	// before locking unveil. Repeating EvalSymlinks afterwards would require
+	// read access to unrelated state ancestors (e.g. /home for a /var source).
 	if err := prepareSSHPath(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "sync -nwc:", err)
 		return 1
@@ -137,6 +142,7 @@ func readNWCLocal(root string) (map[string]nwcLocal, error) {
 }
 
 func syncWithoutWC(ctx context.Context, cfg Config, spec workingCopySpec, values runFlags) error {
+	nwcProgress(values.progress, "reading repository and scanning source")
 	workDir, err := prepareNWCTemp(cfg.effectiveLogDir(), spec.ID)
 	if err != nil {
 		return err
@@ -161,7 +167,7 @@ func syncWithoutWC(ctx context.Context, cfg Config, spec workingCopySpec, values
 	if values.reverseReconcileSet {
 		return reverseReconcileNWC(ctx, remote, rev, head, local, spec.Path, workDir)
 	}
-	return publishNWC(ctx, remote, rev, head, local, workDir, values.message, values.restoreSet)
+	return publishNWC(ctx, remote, rev, head, local, workDir, values.message, values.restoreSet, values.progress)
 }
 
 // A killed process cannot run defer. The next invocation under the per-ID
@@ -188,7 +194,11 @@ func prepareNWCTemp(logDir, id string) (string, error) {
 	return target, nil
 }
 
-func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[string]nwcEntry, local map[string]nwcLocal, workDir, message string, restore bool) error {
+func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[string]nwcEntry, local map[string]nwcLocal, workDir, message string, restore bool, progress ...io.Writer) error {
+	var out io.Writer
+	if len(progress) > 0 {
+		out = progress[0]
+	}
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return errors.New("commit message is empty")
@@ -221,7 +231,13 @@ func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[strin
 	var changes []nwcChange
 	var skipped int
 	neededDirs := map[string]bool{}
-	for _, rel := range files {
+	nwcProgress(out, "comparing and staging %d files", len(files))
+	lastProgress := time.Now()
+	for index, rel := range files {
+		if index%10 == 0 || time.Since(lastProgress) >= 2*time.Second {
+			nwcProgress(out, "checked=%d/%d changed=%d skipped-deleted=%d", index, len(files), len(changes), skipped)
+			lastProgress = time.Now()
+		}
 		entry := local[rel]
 		var existingHash string
 		if current, ok := head[rel]; ok {
@@ -263,6 +279,7 @@ func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[strin
 		}
 		changes = append(changes, nwcChange{rel: rel, spool: spool, hash: hash})
 	}
+	nwcProgress(out, "checked=%d/%d changed=%d skipped-deleted=%d", len(files), len(files), len(changes), skipped)
 	if len(changes) == 0 {
 		fmt.Fprintf(os.Stdout, "clean skipped-deleted=%d\n", skipped)
 		return nil
@@ -288,10 +305,15 @@ func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[strin
 	if err := os.WriteFile(actionFile, []byte(strings.Join(args, "\n")+"\n"), 0o600); err != nil {
 		return err
 	}
+	if err := ensureNWCDescriptorLimit(len(changes)); err != nil {
+		return err
+	}
+	nwcProgress(out, "committing %d files atomically", len(changes))
 	if err := remote.commit(ctx, rev, message, actionFile); err != nil {
 		// A lost reply can follow a successful atomic commit. Confirm the
 		// desired bytes at HEAD before deciding that this invocation failed.
 		checkCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		nwcProgress(out, "confirming repository after uncertain commit reply")
 		defer cancel()
 		if ok, checkErr := nwcChangesAtHead(checkCtx, remote, changes); checkErr == nil && ok {
 			fmt.Fprintf(os.Stdout, "published=%d skipped-deleted=%d (confirmed after lost reply)\n", len(changes), skipped)
@@ -301,6 +323,12 @@ func publishNWC(ctx context.Context, remote nwcRemote, rev int64, head map[strin
 	}
 	fmt.Fprintf(os.Stdout, "published=%d skipped-deleted=%d\n", len(changes), skipped)
 	return nil
+}
+
+func nwcProgress(out io.Writer, format string, args ...any) {
+	if out != nil {
+		fmt.Fprintf(out, "publish: "+format+"\n", args...)
+	}
 }
 
 func nwcChangesAtHead(ctx context.Context, remote nwcRemote, changes []nwcChange) (bool, error) {

@@ -1100,6 +1100,7 @@ type RepoSummary struct {
 	// Sparse marks a working copy holding only the paths chosen in the
 	// unattached browser: attached, but not the whole tree.
 	Sparse               bool   `json:"sparse,omitempty"`
+	ExplorerShortcut     *bool  `json:"explorer_shortcut,omitempty"` // nil: not a controllable local virtual WC
 	LifecycleOperationID string `json:"lifecycle_operation_id,omitempty"`
 	LifecycleError       string `json:"lifecycle_error,omitempty"`
 	CanRetryLifecycle    bool   `json:"can_retry_lifecycle,omitempty"`

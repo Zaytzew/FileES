@@ -3,7 +3,8 @@
  * Verbs:
  *   version
  *   register   --root <anchor> --identity <server id \0 repo id, as text>
- *   shell-register --root <anchor> --identity <text> --icon <absolute .ico>
+ *   shell-register --root <anchor> --identity <text> --icon <absolute .ico> [--visible 0|1]
+ *   shell-visibility --root <anchor> --visible 0|1
  *   shell-hide-obsolete --root <missing former anchor> --registration-id <owned ID>
  *   unregister --root <anchor>
  *   info       --root <anchor>
@@ -20,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "shell-register", "shell-hide-obsolete", "unregister", "info", "file-state", "file-states", "tree-states", "hydrate", "placeholders", "connect", "revert", NULL};
+static const char *const k_verbs[] = {"version", "register", "shell-register", "shell-visibility", "shell-hide-obsolete", "unregister", "info", "file-state", "file-states", "tree-states", "hydrate", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -37,7 +38,7 @@ static void print_version(void)
 #ifdef FILEES_CFAPI_DELETE_PROBE
     printf(",\"delete_callback_probe_v1\",\"delete_bridge_probe_v1\"");
 #endif
-    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\"");
+    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\",\"shell_visibility_v1\"");
     puts("]}");
     fflush(stdout);
 }
@@ -98,9 +99,24 @@ static int run(int argc, char **argv)
                 filees_cfapi_fail("icon_invalid", E_INVALIDARG);
                 return 2;
             }
-            return filees_cfapi_shell_register(root, identity, icon);
+            value = option(argc, argv, "--visible");
+            if (value && strcmp(value,"0") && strcmp(value,"1")) {
+                filees_cfapi_fail("shell_visibility_invalid", E_INVALIDARG);
+                return 2;
+            }
+            // No navigation shortcut without explicit opt-in, including callers
+            // predating the separate per-WC setting.
+            return filees_cfapi_shell_register(root, identity, icon, value && !strcmp(value,"1"));
         }
         return filees_cfapi_register(root, identity);
+    }
+    if (!strcmp(verb, "shell-visibility")) {
+        value = option(argc, argv, "--visible");
+        if (!value || (strcmp(value,"0") && strcmp(value,"1"))) {
+            filees_cfapi_fail("shell_visibility_invalid", E_INVALIDARG);
+            return 2;
+        }
+        return filees_cfapi_shell_visibility(root, !strcmp(value,"1"));
     }
     if (!strcmp(verb, "shell-hide-obsolete")) {
         value = option(argc, argv, "--registration-id");

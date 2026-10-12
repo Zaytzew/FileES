@@ -26,6 +26,7 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogAddFolder, "add_folder", "add", "Dodaj folder do FileES", false, false},
 	{SettingsDialogConnectRepos, "connect_repositories", "connect", "Połącz z istniejącymi udziałami strefy", true, true},
 	{SettingsDialogLocateFolder, "locate_folder", "locate", "Wskaż przeniesioną kopię roboczą", true, false},
+	{SettingsDialogExplorerShortcut, "explorer_shortcut", "explorer_shortcut", "Skrót w panelu Eksploratora…", true, false},
 	{SettingsDialogRetryLifecycle, "retry_lifecycle", "retry_lifecycle", "Ponów niedokończone działanie", true, false},
 	{SettingsDialogAbandonLifecycle, "abandon_lifecycle", "abandon_lifecycle", "Zakończ starą próbę lokalną", true, false},
 	{SettingsDialogManageGrants, "manage_grants", "manage_grants", "Uprawnienia gości", true, false},
@@ -137,6 +138,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 		return folder.CanConnect
 	case SettingsDialogLocateFolder:
 		return folder.CanLocate
+	case SettingsDialogExplorerShortcut:
+		return folder.CanExplorerShortcut
 	case SettingsDialogManageGrants:
 		return folder.CanManageGrants
 	case SettingsDialogEditingPolicy:
@@ -176,6 +179,8 @@ func settingsActionFromID(id string) SettingsDialogAction {
 		return SettingsDialogConnectRepos
 	case "locate_folder", "locate":
 		return SettingsDialogLocateFolder
+	case "explorer_shortcut":
+		return SettingsDialogExplorerShortcut
 	case "detach_folder", "detach", "Odłącz folder":
 		return SettingsDialogDetachFolder
 	case "delete_repository", "delete", "Odłącz trwale":

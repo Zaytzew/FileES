@@ -88,6 +88,8 @@ func TestAnchorShellRegistrationAndDetachAreIndependent(t *testing.T) {
 		}
 		if names := shellRootsForPath(t, root); len(names) != 1 {
 			t.Fatalf("shell registrations: %v", names)
+		} else if shellRootPinned(t, names[0]) != 0 {
+			t.Fatal("registration implicitly pinned navigation shortcut")
 		}
 		answer, err := m.call(ctx, "", "info", "--root", root)
 		if err != nil || !answer.OK || !answer.Ours || !cloudfiles.IsSyncRoot(root) {
@@ -165,7 +167,7 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 		if err := os.Mkdir(root, 0700); err != nil {
 			t.Fatal(err)
 		}
-		for _, args := range [][]string{{"register", "--root", root, "--identity", "synthetic-shell"}, {"shell-register", "--root", root, "--identity", "synthetic-shell", "--icon", icon}} {
+		for _, args := range [][]string{{"register", "--root", root, "--identity", "synthetic-shell"}, {"shell-register", "--root", root, "--identity", "synthetic-shell", "--icon", icon, "--visible", "1"}} {
 			answer, err := m.call(ctx, "", args...)
 			if err != nil || !answer.OK {
 				t.Fatal(args, answer, err)
@@ -186,6 +188,15 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(old, "kept.txt"), []byte("retained bytes"), 0600); err != nil {
 		t.Fatal(err)
+	}
+	for _, value := range []string{"0", "1", "0", "1"} {
+		answer, err := m.call(ctx, "", "shell-visibility", "--root", old, "--visible", value)
+		if err != nil || !answer.OK || !cloudfiles.IsSyncRoot(old) || shellRootPinned(t, ids[0]) != uint64(value[0]-'0') {
+			t.Fatal("visibility changed CFAPI or did not apply", answer, err)
+		}
+	}
+	if answer, err := m.call(ctx, "", "shell-visibility", "--root", parent, "--visible", "1"); err != nil || answer.OK || !cloudfiles.IsSyncRoot(old) {
+		t.Fatal("ordinary folder visibility accepted", answer, err)
 	}
 	answer, err := m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", ids[0])
 	if err != nil || answer.OK {
@@ -261,6 +272,44 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 	siblings := shellRootsForPath(t, sibling)
 	if len(siblings) != 1 || !cloudfiles.IsSyncRoot(sibling) || shellRootPinned(t, siblings[0]) != 1 {
 		t.Fatal("active sibling changed")
+	}
+	// Native daemon preference roundtrip on this fixture only, no owner roots.
+	r, err := store.BeginAnchorAttach("test", "sibling", sibling, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.ApproveAttach(r.OperationID, "test", "sibling", "svn+ssh://example/sibling", "rw"); err != nil {
+		t.Fatal(err)
+	}
+	r, err = store.MarkAttached(r.OperationID, "sibling")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.options = &anchorOptions{}
+	m.options.servers.Store(map[string]bool{"test": true})
+	if err = m.registerShellPreference(ctx, r, icon); err != nil || shellRootPinned(t, siblings[0]) != 0 {
+		t.Fatal("implicit shortcut or registration failed", err)
+	}
+	for _, visible := range []bool{true, false, true} {
+		state, err := m.ExplorerShortcut(ctx, "test", "sibling", &visible, r.OperationID)
+		if err != nil || state.Visible != visible || shellRootPinned(t, siblings[0]) != uint64(boolInt(visible)) || !cloudfiles.IsSyncRoot(sibling) || !cloudfiles.IsSyncRoot(moved) {
+			t.Fatal("scoped preference changed native roots", state, err)
+		}
+	}
+	if _, err := m.ExplorerShortcut(ctx, "other", "sibling", nil, ""); err == nil {
+		t.Fatal("unknown server accepted")
+	}
+	reopened, err := localrepo.Open(filepath.Join(parent, "fixture-lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.lifecycle = reopened
+	if state, err := m.ExplorerShortcut(ctx, "test", "sibling", nil, ""); err != nil || !state.Visible {
+		t.Fatal("restart lost preference", state, err)
+	}
+	no := false
+	if _, err := m.ExplorerShortcut(ctx, "test", "sibling", &no, "previous-copy"); err == nil || shellRootPinned(t, siblings[0]) != 1 {
+		t.Fatal("old confirmation changed another WC")
 	}
 }
 

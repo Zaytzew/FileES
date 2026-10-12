@@ -77,6 +77,7 @@ type Record struct {
 	// takes paths in as they are opened. The daemon keeps the anchor connected
 	// for as long as the copy is attached, across restarts.
 	Anchor           bool   `json:"anchor,omitempty"`
+	ExplorerShortcut bool   `json:"explorer_shortcut,omitempty"` // local WC preference, default off
 	DisplayName      string `json:"display_name,omitempty"`
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
@@ -1064,6 +1065,17 @@ func (s *Store) update(operationID string, mutate func(*Record) error) (Record, 
 		return Record{}, err
 	}
 	return record, nil
+}
+
+// SetExplorerShortcut changes presentation only, never attachment or bytes.
+func (s *Store) SetExplorerShortcut(operationID string, visible bool) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if !record.Anchor || record.State != StateAttached || record.PendingLocalPath != "" {
+			return errors.New("an attached virtual folder is required")
+		}
+		record.ExplorerShortcut = visible
+		return nil
+	})
 }
 
 func (s *Store) List() []Record {

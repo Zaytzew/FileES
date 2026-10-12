@@ -42,6 +42,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleSystemStatus(req)
 	case contract.CmdVirtualFolders:
 		return s.handleVirtualFolders(req)
+	case contract.CmdRepoExplorerShortcut:
+		return s.handleExplorerShortcut(req)
 	case contract.CmdSystemRestart:
 		return s.handleSystemLifecycle(req, true)
 	case contract.CmdSystemShutdown:
@@ -1809,6 +1811,13 @@ func (s *Server) handleRepoList(req contract.Request) contract.Response {
 	summaries := make([]contract.RepoSummary, len(repos))
 	for i, rs := range repos {
 		summaries[i] = rs.Summary()
+		if service := s.explorerShortcutService(); service != nil && summaries[i].Attached {
+			state, err := service.ExplorerShortcut(context.Background(), summaries[i].ServerID, summaries[i].ID, nil, "")
+			if err == nil {
+				value := state.Visible
+				summaries[i].ExplorerShortcut = &value
+			}
+		}
 	}
 	return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: summaries})
 }

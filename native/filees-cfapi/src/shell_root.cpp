@@ -181,7 +181,35 @@ HRESULT filees_own_sync_root(const WCHAR *root) {
     }
 }
 
-int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon) {
+int filees_cfapi_shell_visibility(const WCHAR *root, BOOL visible) {
+    try {
+        check_hresult(filees_own_sync_root(root));
+        auto path = canonical_path(root);
+        auto namespaces = orphan_namespaces(root_id(root),path);
+        if (namespaces.empty()) throw hresult_access_denied();
+        for (auto const &clsid : namespaces) {
+            registry_key shell, properties;
+            auto key = L"Software\\Classes\\CLSID\\"+clsid;
+            check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,key.c_str(),0,
+                KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_ENUMERATE_SUB_KEYS,&shell.value)));
+            check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(shell.value,L"Instance\\InitPropertyBag",0,KEY_READ,&properties.value)));
+            if (canonical_path(registry_string(properties.value,L"TargetFolderPath").c_str()) != path ||
+                registry_string(shell.value,nullptr).rfind(L"FileES — ",0)!=0) throw hresult_access_denied();
+            check_hresult(filees_own_sync_root(root));
+            DWORD pinned = visible ? 1 : 0;
+            check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
+                REG_DWORD,reinterpret_cast<const BYTE*>(&pinned),sizeof pinned)));
+        }
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+        filees_cfapi_ok("shell_visibility");
+        return 0;
+    } catch (...) {
+        filees_cfapi_fail("shell_visibility", to_hresult());
+        return 1;
+    }
+}
+
+int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon, BOOL visible) {
     try {
         apartment runtime;
         check_hresult(filees_own_sync_root(root));
@@ -208,9 +236,9 @@ int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const 
         auto length = static_cast<uint32_t>((wcslen(identity)+1)*sizeof(WCHAR));
         info.Context(CryptographicBuffer::CreateFromByteArray(array_view<const uint8_t>(first, first+length)));
         StorageProviderSyncRootManager::Register(info);
-        SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW, root, nullptr);
-        filees_cfapi_ok("shell_registered");
-        return 0;
+        // SDK registration and navigation visibility are separate. Never
+        // unregister a sync root merely to hide its navigation shortcut.
+        return filees_cfapi_shell_visibility(root,visible);
     } catch (...) {
         filees_cfapi_fail("register_shell_root", to_hresult());
         return 1;

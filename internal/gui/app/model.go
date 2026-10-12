@@ -57,6 +57,7 @@ type RepoViewModel struct {
 	ParentRepoID         string
 	// Sparse: attached, holding only paths chosen in the unattached browser.
 	Sparse                 bool
+	ExplorerShortcut       *bool
 	URL                    string
 	LocalPath              string
 	State                  string
@@ -368,7 +369,8 @@ func (vm ViewModel) CanApplyUpdate() bool {
 }
 
 // HasCap reports whether the daemon advertised the given capability.
-func (vm ViewModel) HasCap(cap string) bool { return vm.Capabilities[cap] }
+func (vm ViewModel) HasCap(cap string) bool    { return vm.Capabilities[cap] }
+func (vm ViewModel) CanExplorerShortcut() bool { return vm.HasCap(contract.CapRepoExplorerShortcut) }
 
 // CanFoldInactive protects current work and attention from presentation-only folding.
 func (vm ViewModel) CanFoldInactive(repo RepoViewModel) bool {

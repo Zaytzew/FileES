@@ -98,7 +98,8 @@ int filees_cfapi_placeholders(const WCHAR *root, const WCHAR *relative);
 int filees_cfapi_connect(const WCHAR *root);
 
 /* Windows Runtime is isolated behind this C ABI; no network or SVN access. */
-int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon);
+int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon, BOOL visible);
+int filees_cfapi_shell_visibility(const WCHAR *root, BOOL visible);
 HRESULT filees_shell_unregister(const WCHAR *root);
 int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registration_id);
 HRESULT filees_own_sync_root(const WCHAR *root);

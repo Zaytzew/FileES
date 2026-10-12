@@ -419,6 +419,7 @@ type SettingsFolder struct {
 	CanConnect               bool // connect selected unattached repository
 	CanLocate                bool // adopt an existing moved working copy
 	CanMove                  bool // controlled move of the current working copy
+	CanExplorerShortcut      bool // local virtual WC navigation visibility
 	CanDetach                bool // detach_folder (non-destructive)
 	CanDelete                bool // delete_repository
 	CanLoadDump              bool // load_dump
@@ -440,6 +441,7 @@ const (
 	SettingsDialogConnectRepos          SettingsDialogAction = "connect_repositories"
 	SettingsDialogLocateFolder          SettingsDialogAction = "locate_folder"
 	SettingsDialogMoveFolder            SettingsDialogAction = "move_folder"
+	SettingsDialogExplorerShortcut      SettingsDialogAction = "explorer_shortcut"
 	SettingsDialogDetachFolder          SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo            SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump              SettingsDialogAction = "load_dump"

@@ -34,6 +34,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		return nil
 	}
 	intents := make(chan tray.Intent, 32)
+	shortcut, _ := repositoryRelocator.(actions.ExplorerShortcutManager)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
 		Text:                 service.localizeText,
@@ -61,6 +62,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		UnportableRenamer:    unportableRenamer,
 		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
+		ExplorerShortcut:     shortcut,
 		RealmGrantBrowser:    realmGrantBrowser,
 		RealmBranding:        realmBranding,
 		SettingsBrowser:      settings,

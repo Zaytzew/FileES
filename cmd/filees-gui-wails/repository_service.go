@@ -986,6 +986,9 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 	if folder.CanMove {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogMoveFolder), LabelKey: "repoAction.move_folder.label", DescriptionKey: "repoAction.move_folder.description", Tone: "primary"})
 	}
+	if folder.CanExplorerShortcut {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogExplorerShortcut), LabelKey: "repoAction.explorer_shortcut.label", DescriptionKey: "repoAction.explorer_shortcut.description", Tone: "primary"})
+	}
 	if folder.CanRetryLifecycle {
 		// Lifecycle repair is separate from interpreting an unscheduled rename.
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRetryLifecycle), LabelKey: "repoAction.retry_lifecycle.label", DescriptionKey: "repoAction.retry_lifecycle.description", Tone: "primary"})

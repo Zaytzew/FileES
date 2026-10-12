@@ -114,6 +114,18 @@ func TestRepositoryServiceProjectsControlledMoveSeparatelyFromLocate(t *testing.
 	}
 }
 
+func TestRepositorySettingsShortcutIsAnExplicitScopedAction(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{ID: "spot", Folders: []platform.SettingsFolder{{ID: "docs", Name: "Folder", CanExplorerShortcut: enabled}}}}})
+		if !ok || len(snapshot.Actions) != map[bool]int{false: 0, true: 1}[enabled] {
+			t.Fatal(snapshot, ok)
+		}
+		if enabled && snapshot.Actions[0].ID != string(platform.SettingsDialogExplorerShortcut) {
+			t.Fatal(snapshot.Actions)
+		}
+	}
+}
+
 func TestRepositoryServiceProjectsCurrentEditingPolicyAction(t *testing.T) {
 	for _, test := range []struct {
 		lockRequired bool

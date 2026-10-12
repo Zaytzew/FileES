@@ -285,6 +285,7 @@ func (s appState) viewModel() ViewModel {
 			Purpose:                firstNonEmpty(snap.Purpose, sum.Purpose),
 			ParentRepoID:           firstNonEmpty(snap.ParentRepoID, sum.ParentRepoID),
 			Sparse:                 snap.Sparse || sum.Sparse,
+			ExplorerShortcut:       sum.ExplorerShortcut,
 			URL:                    sum.URL,
 			LocalPath:              sum.LocalPath,
 			State:                  snap.State,

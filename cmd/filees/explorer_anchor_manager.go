@@ -73,6 +73,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	anchors.options = loadAnchorOptions(filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "virtual-folders.json"), records...)
 	provisioner.anchorEnabled = anchors.virtualEnabled
 	ipc.SetVirtualFoldersService(anchors)
+	anchors.wireExplorerShortcut(ipc)
 	anchors.wireRelease(ipc)
 	ipc.SetAnchorConsent(anchors.consent)
 	anchors.guardChanged = func(repoID string) {
@@ -593,9 +594,8 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	} else if m.virtualEnabled(record.ServerID) {
 		// Opt-in until visual/large-tree acceptance and the remaining sparse
 		// operations are complete. Metadata observations share the WC guard.
-		answer, err := m.call(ctx, "", "shell-register", "--root", record.LocalPath, "--identity", record.ServerID+"\x1f"+record.RepoID, "--icon", icon)
-		if err != nil || !answer.OK {
-			talk.With("anchor").Warnf("register Explorer provider: %s (%s): %v", answer.Error, answer.HResult, err)
+		if err := m.registerShellPreference(ctx, record, icon); err != nil {
+			talk.With("anchor").Warnf("register Explorer provider: %v", err)
 		}
 	}
 	if _, err := os.Stat(anchorSeedPath(record.LocalPath)); err == nil {

@@ -1,5 +1,23 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Widoczność skrótu osobno dla lokalnej WC
+
+2026-10-12, baza r2098 + WC: shell_visibility_v1 rozdziela integrację CFAPI
+od przypięcia do panelu nawigacji. shell-register przyjmuje --visible 0|1,
+bez argumentu domyślnie 0. shell-visibility --root <własny punkt> --visible
+0|1 zmienia tylko istniejący DWORD HKCU; sprawdza rzeczywisty własny root,
+namespace powiązany z bieżącym SID/ścieżką, TargetFolderPath i nazwę FileES.
+Nie wyrejestrowuje SDK ani CFAPI i nie zmienia danych. Natywne przełączenie
+0/1 z zachowaniem sąsiada i bajtów PASS, wizualny Explorer osobno.
+
+Demon zapisuje lokalną preferencję w lifecycle konkretnej WC, domyślnie
+false także dla starych rekordów bez pola. Odtwarza ją przy rejestracji
+punktu, po move/restart. Zapis odbywa się przed efektem Shell; utrata
+odpowiedzi/odmowa nie cofa preferencji i nie potwierdza widoczności.
+GUI używa istniejących ustawień folderu i osobnego potwierdzenia pokaż/
+ukryj; nie jest to ustawienie globalne ani serwera. Opcjonalna capability
+wymaga nowego pomocnika; stary helper nie dostaje nowego ustawienia GUI.
+
 ## Ukrywanie nieaktualnych skrótów Explorera
 
 2026-10-12, baza r2096 + WC: opcjonalne `shell_hide_obsolete_v1` dodaje

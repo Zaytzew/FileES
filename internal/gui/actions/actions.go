@@ -423,6 +423,7 @@ type Config struct {
 	AnchorRepairSettle   time.Duration
 	RepositoryLocator    RepositoryLocator
 	RepositoryRelocator  RepositoryRelocator
+	ExplorerShortcut     ExplorerShortcutManager
 	RepositoryDetacher   RepositoryDetacher
 	RepositoryRepairer   RepositoryLifecycleRepairer
 	IntentResolver       IntentResolver
@@ -746,6 +747,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogMoveFolder:
 			c.endOperation(operationKey)
 			c.startMoveRepository(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogExplorerShortcut:
+			c.startExplorerShortcut(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogDetachFolder:
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogDeleteRepo:
@@ -1096,6 +1099,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanConnect:               repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:                repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanMove:                  repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
+			CanExplorerShortcut:      repo.Purpose == "" && repo.ExplorerShortcut != nil && repo.Attached && !locallyProvisioning && vm.Connected && !vm.Stale && vm.CanExplorerShortcut(),
 			CanDetach:                repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
 			CanDelete:                repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
 			CanLoadDump:              repo.Purpose == "" && !locallyProvisioning && repo.Attached && ownedAndCreatable,

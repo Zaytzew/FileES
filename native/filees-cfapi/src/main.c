@@ -4,6 +4,7 @@
  *   version
  *   register   --root <anchor> --identity <server id \0 repo id, as text>
  *   shell-register --root <anchor> --identity <text> --icon <absolute .ico>
+ *   shell-hide-obsolete --root <missing former anchor> --registration-id <owned ID>
  *   unregister --root <anchor>
  *   info       --root <anchor>
  *   file-state --root <anchor> --rel <file>                (metadata only)
@@ -19,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "shell-register", "unregister", "info", "file-state", "file-states", "tree-states", "hydrate", "placeholders", "connect", "revert", NULL};
+static const char *const k_verbs[] = {"version", "register", "shell-register", "shell-hide-obsolete", "unregister", "info", "file-state", "file-states", "tree-states", "hydrate", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -36,7 +37,7 @@ static void print_version(void)
 #ifdef FILEES_CFAPI_DELETE_PROBE
     printf(",\"delete_callback_probe_v1\",\"delete_bridge_probe_v1\"");
 #endif
-    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\"");
+    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\"");
     puts("]}");
     fflush(stdout);
 }
@@ -100,6 +101,14 @@ static int run(int argc, char **argv)
             return filees_cfapi_shell_register(root, identity, icon);
         }
         return filees_cfapi_register(root, identity);
+    }
+    if (!strcmp(verb, "shell-hide-obsolete")) {
+        value = option(argc, argv, "--registration-id");
+        if (!value || !*value || !filees_cfapi_widen(value, identity, FILEES_CFAPI_MAX_IDENTITY)) {
+            filees_cfapi_fail("shell_registration_id_invalid", E_INVALIDARG);
+            return 2;
+        }
+        return filees_cfapi_shell_hide_obsolete(root, identity);
     }
     if (!strcmp(verb, "unregister")) return filees_cfapi_unregister(root);
     if (!strcmp(verb, "info")) return filees_cfapi_info(root);

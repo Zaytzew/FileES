@@ -63,6 +63,100 @@ StorageProviderSyncRootInfo existing(const std::wstring &id) {
     }
     return nullptr;
 }
+
+struct registry_key {
+    HKEY value = nullptr;
+    ~registry_key() { if (value) RegCloseKey(value); }
+};
+
+// Orphan records can be absent from GetCurrentSyncRoots. Read-only registry
+// metadata binds the deterministic ID to this user's exact former path.
+std::wstring registry_string(HKEY key, const WCHAR *name) {
+    DWORD bytes = 0;
+    check_hresult(HRESULT_FROM_WIN32(RegGetValueW(key, nullptr, name, RRF_RT_REG_SZ, nullptr, nullptr, &bytes)));
+    if (bytes < sizeof(WCHAR) || bytes > FILEES_CFAPI_MAX_PATH*sizeof(WCHAR) || bytes % sizeof(WCHAR))
+        throw hresult_invalid_argument();
+    std::vector<WCHAR> stored(bytes/sizeof(WCHAR));
+    check_hresult(HRESULT_FROM_WIN32(RegGetValueW(key, nullptr, name, RRF_RT_REG_SZ, nullptr, stored.data(), &bytes)));
+    size_t length = wcsnlen_s(stored.data(), stored.size());
+    if (!length || length == stored.size()) throw hresult_access_denied();
+    for (size_t i = length; i < stored.size(); ++i)
+        if (stored[i]) throw hresult_access_denied();
+    return std::wstring(stored.data(),length);
+}
+
+std::vector<std::wstring> orphan_namespaces(const std::wstring &id, const std::wstring &path) {
+    auto sid_end = id.find(L'!', 7);
+    if (sid_end == std::wstring::npos) throw hresult_invalid_argument();
+    auto sid = id.substr(7, sid_end - 7); // after FileES!
+    auto key_path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SyncRootManager\\" + id;
+    std::vector<std::wstring> result;
+    for (HKEY hive : {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE}) {
+        registry_key key;
+        LSTATUS status = RegOpenKeyExW(hive, key_path.c_str(), 0, KEY_READ | KEY_WOW64_64KEY, &key.value);
+        if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) continue;
+        check_hresult(HRESULT_FROM_WIN32(status));
+        registry_key roots;
+        check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(key.value,L"UserSyncRoots",0,KEY_READ,&roots.value)));
+        auto stored = registry_string(roots.value,sid.c_str());
+        if (canonical_path(stored.c_str()) != path) throw hresult_access_denied();
+        auto clsid = registry_string(key.value,L"NamespaceCLSID");
+        GUID guid{};
+        if (clsid.size()!=38 || clsid.front()!=L'{' || clsid.back()!=L'}') throw hresult_invalid_argument();
+        check_hresult(CLSIDFromString(clsid.c_str(),&guid));
+        result.push_back(clsid);
+    }
+    return result;
+}
+
+void require_missing_online_root(const std::wstring &path) {
+    // Do not interpret a disconnected drive/share as an obsolete point.
+    if (path.size() <= 3 || path[1] != L':' || path[2] != L'\\') throw hresult_invalid_argument();
+    auto drive = path.substr(0,3);
+    if (GetDriveTypeW(drive.c_str()) != DRIVE_FIXED) throw hresult_access_denied();
+    check_bool(GetVolumeInformationW(drive.c_str(), nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0));
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) throw hresult_access_denied();
+    DWORD error = GetLastError();
+    if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+        check_hresult(HRESULT_FROM_WIN32(error));
+}
+
+}
+
+int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registration_id) {
+    const char *stage = "obsolete_shell_id";
+    try {
+        auto path = canonical_path(root);
+        auto id = root_id(root);
+        if (id != registration_id) throw hresult_access_denied();
+        stage = "obsolete_shell_missing";
+        require_missing_online_root(path);
+        stage = "obsolete_shell_binding";
+        for (auto const &clsid : orphan_namespaces(id,path)) {
+            auto class_path = L"Software\\Classes\\CLSID\\"+clsid;
+            registry_key shell, properties;
+            check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,class_path.c_str(),0,
+                KEY_QUERY_VALUE|KEY_SET_VALUE|KEY_ENUMERATE_SUB_KEYS,&shell.value)));
+            check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(shell.value,L"Instance\\InitPropertyBag",0,KEY_READ,&properties.value)));
+            auto target = registry_string(properties.value,L"TargetFolderPath");
+            auto label = registry_string(shell.value,nullptr);
+            if (canonical_path(target.c_str()) != path || label.rfind(L"FileES — ",0)!=0)
+                throw hresult_access_denied();
+            require_missing_online_root(path);
+            stage = "obsolete_shell_visibility";
+            DWORD hidden = 0;
+            check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
+                REG_DWORD,reinterpret_cast<const BYTE*>(&hidden),sizeof hidden)));
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+        }
+        // Do not call WinRT Unregister or CfUnregisterSyncRoot: either may
+        // disconnect a still-live moved folder tracked by its FileID.
+        filees_cfapi_ok("obsolete_shell_hidden");
+        return 0;
+    } catch (...) {
+        filees_cfapi_fail(stage, to_hresult());
+        return 1;
+    }
 }
 
 HRESULT filees_own_sync_root(const WCHAR *root) {

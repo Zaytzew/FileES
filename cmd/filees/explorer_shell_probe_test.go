@@ -8,9 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"filees/pkg/cloudfiles"
+	"filees/pkg/localrepo"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -145,4 +147,158 @@ func TestAnchorShellRegistrationAndDetachAreIndependent(t *testing.T) {
 			t.Fatal("sibling registration removed")
 		}
 	}
+}
+
+func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
+	helper := probeTool(t, "FILEES_CFAPI")
+	icon, err := anchorFolderIconPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &anchorManager{helper: helper}
+	ctx := t.Context()
+	parent := t.TempDir()
+	old := filepath.Join(parent, "Old-Zażółć-東京")
+	moved := filepath.Join(parent, "Moved-Zażółć-東京")
+	sibling := filepath.Join(parent, "Active-sibling")
+	for _, root := range []string{old, sibling} {
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"register", "--root", root, "--identity", "synthetic-shell"}, {"shell-register", "--root", root, "--identity", "synthetic-shell", "--icon", icon}} {
+			answer, err := m.call(ctx, "", args...)
+			if err != nil || !answer.OK {
+				t.Fatal(args, answer, err)
+			}
+		}
+	}
+	t.Cleanup(func() {
+		for _, root := range []string{old, moved, sibling} {
+			out, err := exec.Command(helper, "unregister", "--root", root).CombinedOutput()
+			if err != nil {
+				t.Errorf("fixture cleanup %s: %s %v", root, out, err)
+			}
+		}
+	})
+	ids := shellRootsForPath(t, old)
+	if len(ids) != 1 {
+		t.Fatal("fixture root", ids)
+	}
+	if err := os.WriteFile(filepath.Join(old, "kept.txt"), []byte("retained bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", ids[0])
+	if err != nil || answer.OK {
+		t.Fatal("existing root must be refused", answer, err)
+	}
+	if err := os.Rename(old, moved); err != nil {
+		t.Fatal("move unconnected fixture", err)
+	}
+	if !cloudfiles.IsSyncRoot(moved) {
+		t.Fatal("moved native root was removed")
+	}
+	if len(shellRootsForPath(t, old)) != 1 {
+		t.Fatal("fixture did not retain old Shell entry")
+	}
+	wrong := ids[0] + "x"
+	answer, err = m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", wrong)
+	if err != nil || answer.OK || len(shellRootsForPath(t, old)) != 1 {
+		t.Fatal("wrong ID changed registration", answer, err)
+	}
+	// Refuse an unrelated namespace target even when the outer ID/path match.
+	properties, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\CLSID\`+shellRootNamespace(t, ids[0])+`\Instance\InitPropertyBag`, registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, _, err := properties.GetStringValue("TargetFolderPath")
+	if err != nil {
+		properties.Close()
+		t.Fatal(err)
+	}
+	if err := properties.SetStringValue("TargetFolderPath", sibling); err != nil {
+		properties.Close()
+		t.Fatal(err)
+	}
+	answer, callErr := m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", ids[0])
+	restoreErr := properties.SetStringValue("TargetFolderPath", original)
+	properties.Close()
+	if restoreErr != nil {
+		t.Fatal("restore fixture binding", restoreErr)
+	}
+	if callErr != nil || answer.OK || shellRootPinned(t, ids[0]) != 1 || !cloudfiles.IsSyncRoot(moved) || !cloudfiles.IsSyncRoot(sibling) {
+		t.Fatal("wrong namespace target changed either root", answer, callErr)
+	}
+	for range 2 {
+		answer, err = m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", ids[0])
+		if err != nil || !answer.OK {
+			t.Fatal("hide obsolete shortcut/retry", answer, err)
+		}
+		if len(shellRootsForPath(t, old)) != 1 || shellRootPinned(t, ids[0]) != 0 || !cloudfiles.IsSyncRoot(moved) {
+			t.Fatal("shortcut not hidden or native registration changed")
+		}
+	}
+	// Exercise the daemon's sweep with discovery explicitly limited to this
+	// fixture. Never feed production registrations to a test manager.
+	store, err := localrepo.Open(filepath.Join(parent, "fixture-lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.lifecycle, m.localIntentMu = store, new(sync.Mutex)
+	calls := 0
+	discover := func(string) ([]anchorShellRoot, error) {
+		calls++
+		return []anchorShellRoot{{id: ids[0], path: old}}, nil
+	}
+	if !m.reconcileShellWith(ctx, discover) || !m.reconcileShellWith(ctx, discover) || calls != 1 {
+		t.Fatal("sweep is not bounded to lifecycle changes", calls)
+	}
+	if shellRootPinned(t, ids[0]) != 0 || !cloudfiles.IsSyncRoot(moved) {
+		t.Fatal("daemon sweep changed the native point")
+	}
+	if raw, err := os.ReadFile(filepath.Join(moved, "kept.txt")); err != nil || string(raw) != "retained bytes" {
+		t.Fatal("bytes changed", err)
+	}
+	siblings := shellRootsForPath(t, sibling)
+	if len(siblings) != 1 || !cloudfiles.IsSyncRoot(sibling) || shellRootPinned(t, siblings[0]) != 1 {
+		t.Fatal("active sibling changed")
+	}
+}
+
+func shellRootNamespace(t *testing.T, id string) string {
+	t.Helper()
+	var namespace string
+	for _, hive := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		key, err := registry.OpenKey(hive, `Software\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\`+id, registry.READ)
+		if err == registry.ErrNotExist {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		namespace, _, err = key.GetStringValue("NamespaceCLSID")
+		key.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	if namespace == "" {
+		t.Fatal("missing fixture namespace")
+	}
+	return namespace
+}
+
+func shellRootPinned(t *testing.T, id string) uint64 {
+	t.Helper()
+	namespace := shellRootNamespace(t, id)
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\CLSID\`+namespace, registry.READ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Close()
+	value, _, err := key.GetIntegerValue("System.IsPinnedToNameSpaceTree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }

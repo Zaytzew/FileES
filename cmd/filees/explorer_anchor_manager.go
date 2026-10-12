@@ -117,6 +117,7 @@ type anchorManager struct {
 	activityChanged       func(repoID string)
 	guardChanged          func(repoID string)
 	options               *anchorOptions
+	shellState            string // localIntentMu; registry sweep only when lifecycle paths change
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -260,6 +261,7 @@ func (m *anchorManager) run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		m.reconcile(ctx)
+		m.reconcileShell(ctx)
 		m.tickReleaseQueue(ctx)
 		select {
 		case <-ctx.Done():

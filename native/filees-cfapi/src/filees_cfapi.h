@@ -100,6 +100,7 @@ int filees_cfapi_connect(const WCHAR *root);
 /* Windows Runtime is isolated behind this C ABI; no network or SVN access. */
 int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const WCHAR *icon);
 HRESULT filees_shell_unregister(const WCHAR *root);
+int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registration_id);
 HRESULT filees_own_sync_root(const WCHAR *root);
 
 /* Availability does not prove publication. SVN is checked between a read-only

@@ -1,5 +1,25 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Ukrywanie nieaktualnych skrótów Explorera
+
+2026-10-12, baza r2096 + WC: opcjonalne `shell_hide_obsolete_v1` dodaje
+`shell-hide-obsolete --root <stara ścieżka> --registration-id <ID>`.
+To wyłącznie zmiana widoczności istniejącego skrótu: DWORD
+`System.IsPinnedToNameSpaceTree=0` w dokładnej klasie HKCU i powiadomienie
+Shell. Rejestracja SDK/CFAPI oraz pliki pozostają. Nie używać Unregister
+do sprzątania brakującej starej ścieżki: Windows może nadal śledzić
+przeniesiony działający punkt po FileID, co wykazała próba natywna.
+
+Pomocnik niezależnie wiąże ID z bieżącym SID i SHA-256 ścieżki, odczytuje
+SyncRootManager/UserSyncRoots oraz NamespaceCLSID, sprawdza TargetFolderPath
+i nazwę FileES w istniejącej klasie. Wymaga brakującej ścieżki na dostępnym
+lokalnym stałym woluminie; istniejący/nieznany/odłączony cel odmawia.
+Nie tworzy ani nie usuwa kluczy. Go chroni wszystkie ścieżki lifecycle,
+w tym pending/preserved, i wykonuje bounded sweep pod istniejącą blokadą
+raz przy starcie lub zmianie zestawu ścieżek. Stary helper jest pomijany.
+Warianty Linux/nocfapi bez nowych efektów. Native fixtures i regresje PASS;
+żywy Explorer i dystrybucja nadal osobno. Brak globalnego przełącznika GUI.
+
 ## Zweryfikowane przygotowanie zwolnienia — 2026-10-10, baza r2071 + WC
 
 Produkcja wymaga `prepare_release_verified_v1`, bez fallbacku do starszego

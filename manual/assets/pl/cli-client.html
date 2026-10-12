@@ -4,7 +4,7 @@
 <meta name="filees-source-revision" content="$Rev$">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Jednorazowy klient CLI — Podręcznik FileES</title>
+<title>Klient CLI — przewodnik użytkownika — Podręcznik FileES</title>
 <link rel="alternate" hreflang="pl" href="cli-client.html"/>
 <link rel="alternate" hreflang="en" href="../en/cli-client.html"/>
 <link rel="stylesheet" href="../css/manual.css"/>
@@ -15,46 +15,146 @@
 <header class="masthead"><div class="brand-lockup"><div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div><div class="brand-copy"><strong class="brand-name">filees<span class="colon">:</span>space</strong><span class="brand-subtitle">dokumentacja systemu FileES</span></div></div>
 <nav class="lang-switch" aria-label="Język"><a href="../../index.html" class="lang-home">filees:space</a><a href="../en/cli-client.html" lang="en" hreflang="en">EN</a><a href="cli-client.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a></nav></header>
 <nav class="site-nav" aria-label="Rozdziały podręcznika"><a href="index.html">Przegląd</a><span class="nav-group" aria-label="Obsługa"><span class="nav-pillar">Obsługa</span><a href="user-guide.html">Pulpit</a><a href="android.html">Android</a><a href="cli-client.html" class="is-current">Klient CLI</a><a href="public-shares.html">Udziały</a><a href="administration.html">Administracja</a></span><span class="nav-group" aria-label="Technika"><span class="nav-pillar">Technika</span><a href="architecture.html">Architektura</a><a href="install.html">Instalacja</a><a href="operations.html">Eksploatacja</a><a href="security.html">Bezpieczeństwo</a><a href="man-pages.html">Polecenia</a></span></nav>
-<div class="manual-layout"><nav aria-label="Spis treści strony" id="toc"><div class="toc-head"><span class="toc-kicker">filees:space / ta strona</span><h2>Na tej stronie</h2></div><ol><li><a href="#cli-purpose">Cel i zakres</a></li><li><a href="#cli-config">Konfiguracja i aktywacja</a></li><li><a href="#cli-sync">Dwa tryby synchronizacji</a></li><li><a href="#cli-cron">Producent i cron</a></li><li><a href="#cli-extra">Import i Whale</a></li><li><a href="#cli-limits">Przerwania i ponowienia</a></li></ol></nav><div class="manual-content">
-<h1 id="cli-purpose">Jednorazowy klient CLI</h1>
-<p><span class="status status-implemented">Zaimplementowane</span> <code>filees-client</code> wykonuje jedną operację i kończy pracę. To osobne binarium dla Linux/OpenBSD, uruchamiane przez użytkownika albo jego cron. Nie wymaga demona desktopowego i nie wchodzi do paczki serwera. Archiwum wersji 0.1.0 zawiera program, README i <a href="../man/filees-client.1.html">filees-client(1)</a> w <code>share/man/man1/</code>. Polecenie <code>filees-client version</code> pokazuje wersję i rewizję źródeł.</p>
-<p>Klient używa aktywowanej tożsamości FileES i przypiętego klucza hosta SSH. Tożsamość, konfigurację, dziennik i stan operacji trzymaj poza folderami publikowanymi. Dla ścisłej izolacji lokalnej użyj odrębnego konta systemowego. Program nie obsługuje półek, szuflad, udziałów publicznych ani Maszyny czasu.</p>
-<h2 id="cli-config">Konfiguracja i aktywacja</h2>
-<p>W nowym CLI <code>autoconfig</code> pobiera listę repozytoriów istniejącej aktywacji. Wybierz dokładną nazwę i jawny folder źródłowy; klucz, port i UUID pochodzą z aktywacji. Starszy katalog serwerów wskaż przez <code>--state-root</code>, a istniejący profil przez <code>--profile</code> lub katalog jednej aktywacji przez <code>--activation</code>. Nowy OTP nie jest potrzebny. Przy wielu aktywacjach wybierz <code>--server NAZWA</code>.</p>
-<pre><code>filees-client autoconfig
-filees-client autoconfig --repo 'Faktury 2026' --source /home/user/published/2026 --name faktury-2026
-filees-client publish faktury-2026</code></pre>
-<p>Źródło nie jest poszerzane do rodzica: przykład wysyła bezpośrednio miesiące roku 2026. Prywatny profil i dziennik są w <code>$XDG_CONFIG_HOME/filees-cli</code> albo <code>~/.config/filees-cli</code>; własny <code>--config-root</code> podaj w obu komendach i trzymaj poza źródłem. Powtórka tej samej konfiguracji jest idempotentna; inne źródło lub repo wymaga nowej nazwy. Narzędzia są wykrywane na PATH i zapisywane jako absolutne ścieżki. Poniższy INI pozostaje obsługiwanym sposobem konfiguracji starszych poleceń.</p>
-<p>Aktywacja przebiega przez <code>activate-begin</code>, <code>activate-finish</code> (jedno OTP ze standardowego wejścia) i <code>activate-resume</code>. Przenoszenie profilu aktywacji wymaga świadomie uprawnionego procesu. Do synchronizacji plik INI wskazuje dokładne ścieżki narzędzi, tożsamość, <code>known_hosts</code>, prywatny <code>log_dir</code> i nazwane sekcje <code>[wc "id"]</code>. Parametr <code>--wc</code> wybiera identyfikator, nigdy dowolną ścieżkę ani URL. Opcjonalne <code>only=!id</code> ogranicza dozwolone wpisy. Dziennik jest prywatny, rotuje po 5 MiB i musi dać się zapisać przed rozpoczęciem synchronizacji.</p>
+<div class="manual-layout"><nav aria-label="Spis treści strony" id="toc"><div class="toc-head"><span class="toc-kicker">filees:space / ta strona</span><h2>Na tej stronie</h2></div><ol>
+<li><a href="#cli-purpose">Cel i zakres</a></li>
+<li><a href="#cli-install">1. Instalacja</a></li>
+<li><a href="#cli-config">2. Aktywacja</a></li>
+<li><a href="#cli-publish">3. Pierwsza publikacja</a></li>
+<li><a href="#cli-cron">4. Cron</a></li>
+<li><a href="#cli-update">5. Aktualizacja</a></li>
+<li><a href="#cli-sync">Kopia robocza i INI</a></li>
+<li><a href="#cli-extra">Import i duże pliki</a></li>
+<li><a href="#cli-limits">Rozwiązywanie problemów</a></li>
+</ol></nav><div class="manual-content">
+<h1 id="cli-purpose">Klient CLI — przewodnik użytkownika</h1>
+<p><code>filees-client</code> dla OpenBSD/amd64 i Linux/amd64 wysyła pliki do FileES na żądanie albo z crona. Wykonuje jedną operację i kończy pracę. Możesz publikować zwykły katalog bez kopii roboczej SVN; aplikacja desktopowa i dodatkowy demon nie są potrzebne.</p>
+<div class="canonical-note"><strong>Wersja programu:</strong> kroki poniżej wymagają CLI z poleceniami <code>install</code>, <code>update</code>, <code>autoconfig</code> i <code>publish</code>. Starsza paczka <code>0.1.0+r2016</code> ich nie zawiera. Sam numer <code>0.1.0</code> nie rozstrzyga o dostępności — sprawdź <code>filees-client version</code> i <code>filees-client help</code>.</div>
+<p>Najkrótsza droga: zainstaluj program, użyj istniejącej aktywacji, wybierz repozytorium po nazwie i wskaż dokładny folder źródłowy. Następne wysyłki to jedno <code>filees-client publish faktury-2026</code>. Jeśli masz już aktywowaną instalację, pomiń <a href="#cli-config">krok 2</a>.</p>
+
+<h2 id="cli-install">1. Zainstaluj CLI</h2>
+<p>Potrzebujesz archiwum CLI dla swojej platformy, programów <code>svn</code>, <code>svnmucc</code> oraz <code>ssh</code>. Na OpenBSD zależności zapewnia pakiet <code>subversion</code> i systemowy OpenSSH; na Linux zainstaluj Subversion i klienta OpenSSH pakietami swojej dystrybucji. Instalator FileES nie instaluje tych zależności.</p>
+<p>Otrzymaj paczkę z zaufanej dystrybucji. Przed uruchomieniem pierwszego programu sprawdź podpis manifestu znanym kluczem wydawcy oraz rozmiar i SHA-256 archiwum zgodnie z manifestem. Rozpakuj sprawdzone archiwum i przejdź do jego katalogu. Zawiera <code>bin/filees-client</code>, README i <a href="../man/filees-client.1.html">filees-client(1)</a>.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">System</th><th scope="col">Instalacja systemowa z rozpakowanej paczki</th></tr></thead><tbody>
+<tr><td>OpenBSD</td><td><code>doas ./bin/filees-client install</code></td></tr>
+<tr><td>Linux</td><td><code>sudo ./bin/filees-client install</code></td></tr>
+</tbody></table></div>
+<p>Program trafi do <code>/usr/local/bin/filees-client</code>. Instalacja bez uprawnień administratora jest również możliwa:</p>
+<pre><code>./bin/filees-client install --prefix "$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+filees-client version</code></pre>
+<p>W przykładach dalej <code>filees-client</code> musi być na PATH. Jeśli używasz instalacji użytkownika, zachowaj tę ścieżkę także w kolejnych sesjach i użyj jej pełnej postaci w cronie. Aktywację i publikację wykonuj jako użytkownik, który ma czytać źródło i uruchamiać harmonogram.</p>
+
+<h2 id="cli-config">2. Aktywuj nową instalację</h2>
+<p>Gdy instalacja jest już aktywna w CLI lub aplikacji desktopowej, przejdź do <a href="#cli-publish">kroku 3</a>. Dla nowej instalacji operator serwera poda adres, plik <code>known_hosts</code> z przypiętym kluczem hosta oraz sposób otrzymania biletu aktywacji. W przykładach zastąp <code>filees.example.net</code> i adres e-mail swoimi danymi; <code>biuro</code> jest lokalną nazwą serwera.</p>
+<p>Przygotuj katalog poza źródłem publikacji. Plik otrzymany od operatora zapisz jako <code>~/.local/share/filees/known_hosts</code>:</p>
+<pre><code>install -d -m 700 "$HOME/.local/share/filees/servers"</code></pre>
+<p>Rozpocznij aktywację:</p>
+<pre><code>filees-client activate-begin \
+  --server-id biuro --server filees.example.net \
+  --known-hosts "$HOME/.local/share/filees/known_hosts" \
+  --state-root "$HOME/.local/share/filees/servers" \
+  --email user@example.net</code></pre>
+<p>Wynik <code>accepted</code> oznacza przyjęcie zgłoszenia, a nie zakończoną aktywację. Gdy otrzymasz hasło jednorazowe, uruchom następne polecenie, wpisz lub wklej hasło w osobnej linii i naciśnij Enter. Hasła nie dodawaj do argumentów polecenia.</p>
+<pre><code>filees-client activate-finish \
+  --server-id biuro --server filees.example.net \
+  --known-hosts "$HOME/.local/share/filees/known_hosts" \
+  --state-root "$HOME/.local/share/filees/servers"</code></pre>
+<p>Sukces kończy się wynikiem <code>active</code>. Jeśli po wysłaniu hasła połączenie zostało przerwane, wznowienie używa zachowanej tożsamości, bez ponownego podawania hasła:</p>
+<pre><code>filees-client activate-resume \
+  --server-id biuro --server filees.example.net \
+  --known-hosts "$HOME/.local/share/filees/known_hosts" \
+  --state-root "$HOME/.local/share/filees/servers"</code></pre>
+<p>Finish i resume korzystają z portu zapisanego podczas rozpoczęcia aktywacji. Starszy stan bez portu wymaga <code>--remote-port PORT</code> z wartością przydzieloną przez serwer. Zachowaj katalog aktywacji i klucz prywatny; nie umieszczaj ich w publikowanych plikach.</p>
+
+<h2 id="cli-publish">3. Wybierz repozytorium i wyślij pliki</h2>
+<p>Wyświetl repozytoria istniejącej aktywacji:</p>
+<pre><code>filees-client autoconfig</code></pre>
+<p>Domyślnie serwery są szukane w <code>$XDG_DATA_HOME/filees/servers</code> albo <code>~/.local/share/filees/servers</code>. Dla innej lokalizacji dodaj <code>--state-root /absolutna/sciezka/servers</code>; przy kilku serwerach wybierz <code>--server NAZWA</code> (nazwa lub ID). Możesz też wskazać istniejący <code>--profile /abs/client-profile.json</code> albo <code>--activation /abs/servers/biuro</code> starszego CLI. Tego samego wyboru użyj przy zapisywaniu konfiguracji.</p>
+<p>Na serwerze musi już istnieć repozytorium, do którego masz prawo zapisu. Wybierz jego dokładną, jednoznaczną nazwę. Autokonfiguracja nie tworzy repozytorium. Przykład zapisuje zadanie <code>faktury-2026</code> i wskazuje rok jako źródło:</p>
+<pre><code>filees-client autoconfig \
+  --repo 'Faktury 2026' \
+  --source /home/user/published/2026 \
+  --name faktury-2026</code></pre>
+<p>Zastąp ścieżkę swoim rzeczywistym katalogiem. Jeśli zawiera <code>01/</code>, <code>02/</code> itd., miesiące znajdą się bezpośrednio w repozytorium. Wskazanie <code>/home/user/published</code> wysłałoby również inne lata i jego pozostałe podkatalogi. Program nie dodaje domyślnych filtrów i nie poszerza źródła do rodzica.</p>
+<p>Sprawdź wypisane repozytorium i kanoniczne źródło. Ten krok zapisuje konfigurację, ale jeszcze nie wysyła plików. Następnie uruchom:</p>
+<pre><code>filees-client publish faktury-2026</code></pre>
+<p>Opcjonalny <code>--message 'Faktury za październik'</code> ustawia opis commitu, a <code>--timeout 45m</code> wydłuża czas operacji (domyślnie 30 minut).</p>
+<p>Program sprawdza aktualne prawa, porównuje pliki i pokazuje postęp na stderr. Wynik <code>published=N</code> podaje liczbę wysłanych plików, a <code>clean</code> oznacza brak zmian do wysłania. Wszystkie zmienione pliki trafiają do jednego atomowego commitu. Katalog źródłowy pozostaje bez <code>.svn</code>.</p>
+<p>Publikacja dodaje nowe pliki i aktualizuje zmienione. Nie pobiera zdalnych zmian, nie przenosi lokalnych usunięć do repo i nie przywraca ścieżek usuniętych na serwerze. Licznik <code>skipped-deleted=N</code> pokazuje te pominięcia. Polecenie <code>publish</code> nie przyjmuje flag przywracania ani odwrotnego uzgadniania.</p>
+<h3 id="cli-state">Gdzie jest konfiguracja</h3>
+<p>Profil zadania, blokada i prywatny dziennik są w <code>$XDG_CONFIG_HOME/filees-cli/NAZWA</code> albo <code>~/.config/filees-cli/NAZWA</code>. Narzędzia SVN, svnmucc i SSH są wykrywane podczas konfiguracji, a ich absolutne ścieżki zachowywane na potrzeby crona. Możesz je wybrać flagami <code>--svn</code>, <code>--svnmucc</code> i <code>--ssh</code>.</p>
+<p>Powtórzenie identycznej konfiguracji jest bezpieczne. Inne źródło lub repozytorium wymaga nowej nazwy zadania. Zmiana nazwy repozytorium na serwerze zachowuje wybór jego tożsamości. Do stanu poza katalogiem domowym używaj tej samej flagi w obu poleceniach:</p>
+<pre><code>filees-client autoconfig --repo 'Faktury 2026' \
+  --source /home/user/published/2026 --name faktury-2026 \
+  --config-root /home/user/filees-jobs
+filees-client publish faktury-2026 --config-root /home/user/filees-jobs</code></pre>
+<p>Katalog stanu musi leżeć poza źródłem. Jeśli istnieje, musi już być prywatny i zapisywalny przez użytkownika. Autokonfiguracja wykorzystuje klucz i port istniejącej aktywacji, bez ich kopiowania i bez nowego hasła jednorazowego.</p>
+
+<h2 id="cli-cron">4. Dodaj uruchamianie z crona</h2>
+<p>Najpierw uzyskaj poprawną publikację ręczną. Potem w crontabie tego samego użytkownika można dodać poniższy przykład. Dopasuj godziny, pełną ścieżkę programu oraz ścieżkę logu; log powinien leżeć poza źródłem.</p>
+<pre><code>0 9,15,20 * * * umask 077; /usr/local/bin/filees-client publish faktury-2026 --timeout 30m &gt;&gt; /home/user/filees-publish.log 2&gt;&amp;1</code></pre>
+<p>Własny <code>--config-root</code> podaj także w cronie. Dla instalacji użytkownika wskaż <code>/home/user/.local/bin/filees-client</code>. Cron musi korzystać z tej samej aktywacji i profilu; samo użycie innego użytkownika, np. root, nie przenosi konfiguracji. Polecenia FileES nie instalują wpisu crona automatycznie.</p>
+<p>Jeśli pliki tworzy inny program, uruchamiaj FileES po jego sukcesie. Przykład dla <code>ksefpuck</code>:</p>
+<pre><code>/usr/local/bin/ksefpuck &amp;&amp; /usr/local/bin/filees-client publish faktury-2026 --message ksefpuck</code></pre>
+<p>Zachowaj <code>&amp;&amp;</code>, aby błąd producenta zatrzymał łańcuch. Źródło powinno zawierać gotowy wynik producenta. Równoległa wysyłka tego samego zadania jest odrzucana przez blokadę; powtórny przebieg bez zmian nie tworzy kolejnego commitu.</p>
+
+<h2 id="cli-update">5. Aktualizuj program</h2>
+<p>Aktualizacja używa osobnego podpisanego kanału CLI i zachowuje aktywację, profile oraz cron. Uruchamiaj ją z prawem zapisu do tego samego prefiksu co przy instalacji:</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">Instalacja</th><th scope="col">Aktualizacja</th></tr></thead><tbody>
+<tr><td>OpenBSD, systemowa</td><td><code>doas /usr/local/bin/filees-client update</code></td></tr>
+<tr><td>Linux, systemowa</td><td><code>sudo /usr/local/bin/filees-client update</code></td></tr>
+<tr><td>Użytkownika</td><td><code>"$HOME/.local/bin/filees-client" update --prefix "$HOME/.local"</code></td></tr>
+</tbody></table></div>
+<p><code>--check</code> sprawdza dostępne wydanie bez pobierania archiwum i podmiany programu, ale nadal zapisuje stan i blokadę w prefiksie. Po przerwaniu instalacji ponów tę samą komendę; pliki są zamieniane osobno, z programem na końcu. Nie kasuj stanu instalatora, żeby wymusić starsze wydanie. Build developerski bez klucza wydawcy nie wykonuje instalacji z sieci.</p>
+<p>Manual po instalacji czytaj przez <code>man filees-client</code>. W rozpakowanej paczce obu platform jest dostępny przez <code>man -M ./share/man filees-client</code>. Instalator umieszcza go pod prefiksem w <code>man/man1</code> na OpenBSD i <code>share/man/man1</code> na Linux.</p>
+
+<h2 id="cli-sync">Zaawansowane: kopia robocza i starszy INI</h2>
+<p>Starsze polecenia <code>checkout</code> i <code>sync</code> nadal używają pliku INI. <code>--wc</code> wybiera jego wpis, a nie dowolną ścieżkę. Poniżej przykład dla OpenBSD; na Linux dostosuj absolutne ścieżki narzędzi. Zastąp też tożsamość, przypięty host i URL danymi istniejącej aktywacji. URL trybu bez WC musi wskazywać korzeń repozytorium.</p>
 <pre><code>[tools]
 svn=/usr/local/bin/svn
 svnmucc=/usr/local/bin/svnmucc
 ssh=/usr/bin/ssh
-log_dir=/var/log/filees-client
+log_dir=/home/user/filees-log
 [realm]
-identity=/home/user/.filees/identity
-known_hosts=/home/user/.filees/known_hosts
-host=server.example
+identity=/home/user/.local/share/filees/servers/biuro/identity/id_ed25519
+known_hosts=/home/user/.local/share/filees/known_hosts
+host=filees.example.net
 port=22
 only=!invoices
 [wc "invoices"]
-path=/home/user/published
-url=svn+ssh://_filees-data@server.example/UUID_REPO</code></pre>
-<h2 id="cli-sync">Dwa tryby synchronizacji</h2>
-<p><code>checkout --config … --wc invoices</code> zakłada zwykłą kopię roboczą SVN. Późniejsze <code>sync --config … --wc invoices</code> aktualizuje ją, dodaje nowe pliki, przenosi lokalne usunięcia i commituje; konflikt zatrzymuje publikację do ręcznego rozstrzygnięcia.</p>
-<p><code>sync --config … --wc invoices -nwc</code> traktuje wskazany katalog jako zwykły folder bez <code>.svn</code>. Tworzy potrzebne katalogi, dodaje nowe pliki i aktualizuje zmienione jednym commitem przez <code>svnmucc</code>. Nie wysyła lokalnych usunięć. Ścieżkę skasowaną w repo domyślnie pomija; <code>-restore-set</code> pozwala ją jawnie przywrócić, gdy nadal istnieje lokalnie. <code>-reverse-reconcile-set</code> zamiast tego doprowadza lokalny folder do jednej dostępnej rewizji repo, również usuwając lokalny nadmiar, bez commitu. Obie dodatkowe flagi wykluczają się i wymagają <code>-nwc</code>. Faza lokalnego zastosowania odwrotnego uzgodnienia nie jest atomowa; po przerwaniu uruchom ją ponownie.</p>
-<p>To zachowanie programu, a nie zawężenie praw na serwerze. Zwykła aktywacja desktopowa zachowuje nadane prawa także wtedy, gdy jej klucz wykorzysta inny klient. Dla <code>-nwc</code> URL w konfiguracji musi wskazywać korzeń repo. Dowiązania symboliczne i pliki nieregularne w źródle są odrzucane.</p>
-<h2 id="cli-cron">Producent i cron</h2>
-<p>Klienta uruchamiaj po pomyślnym zakończeniu programu tworzącego pliki. Zachowaj łańcuch <code>&amp;&amp;</code>, żeby błąd producenta nie uruchomił FileES. Cron użytkownika może wykonać jeden przebieg według harmonogramu; dodatkowy demon nie jest potrzebny.</p>
-<pre><code>ksefuck &amp;&amp; /usr/local/bin/filees-client publish faktury-2026 --message ksefuck</code></pre>
-<p>Profil przygotuj jako użytkownik crona. <code>publish</code> sprawdza świeże prawa na serwerze i odmawia offline, po cofnięciu praw lub zmianie bindingu. Dodaje/aktualizuje jednym atomowym commitem, bez propagowania lokalnych usunięć i bez przywracania zdalnie skasowanych plików. Postęp podaje etap i liczby. CLI zapewnia soft limit uchwytów dla SVN, lecz przy niewystarczającym hard limicie odmawia przed commit; nie dzieli partii. Polecenia nie instalują crona. Podpisana paczka r2016 nie ma autoconfig/publish ani install/update — potrzebne jest nowe wydanie.</p>
-<p>Ścieżki i harmonogram dopasuj do wdrożenia. Powtórny przebieg bez zmian nie tworzy nowego commitu. Błąd producenta zatrzymuje łańcuch; nie zmieniaj <code>&amp;&amp;</code> na bezwarunkowe wywołanie klienta.</p>
-<h2 id="cli-extra">Import i Whale</h2>
-<p><code>dump-load --profile PROFIL --dump DUMP --name NAZWA --target NOWA_WC --state PRYWATNY_STAN</code> tworzy nowe repozytorium i nową kopię roboczą. Aktywacja musi mieć prawo tworzenia repo. Gdy wynik jest niepewny, ponów dokładnie te same argumenty i katalog stanu; zapisane ID operacji wznawia ten sam import. Istniejącego celu program nie nadpisuje.</p>
-<p><code>whale-put</code> publikuje duży plik. Przy pobieraniu <code>whale-get-quote</code> podaje rozmiar i ID operacji, a <code>whale-get-confirm --id ID</code> jawnie uruchamia transfer. <code>whale-status</code>, <code>whale-retry</code> i <code>whale-resume</code> korzystają z tego samego prywatnego katalogu stanu.</p>
-<h2 id="cli-limits">Przerwania i ponowienia</h2>
-<p>Przed pierwszym uruchomieniem rozpakuj archiwum właściwej platformy i zapewnij dostęp do SVN oraz SSH w ścieżkach z konfiguracji. Stronę podręcznika można czytać przez <code>man -M /ścieżka/do/pakietu/share/man filees-client</code>. Polecenia zwracają 0 przy sukcesie, 1 przy błędzie operacji i 2 przy błędnych argumentach. W cron używaj pełnych ścieżek.</p>
-<p>Przy Whale sukces pobrania oznacza sprawdzony plik oraz potwierdzenie zwolnienia serwerowego cache i rezerwacji miejsca. Plik może już być na dysku, gdy operacja jeszcze czeka na potwierdzenie. Sprawdź <code>whale-status --id ID</code>; po błędzie użyj <code>whale-retry --id ID</code>, po przerwaniu procesu <code>whale-resume --id ID</code>, zawsze z tym samym profilem i katalogiem stanu. Klient sprawdzi plik i ponowi zwolnienie bez pobierania go drugi raz.</p>
-<p>Po konflikcie zwykłej kopii roboczej rozstrzygnij go w SVN przed ponowieniem <code>sync</code>. Po przerwaniu odwrotnego uzgodnienia ponów ten sam przebieg; zastosowanie całego drzewa lokalnego nie jest atomowe.</p>
-</div><nav class="page-nav"><a href="android.html">← Android</a><a href="public-shares.html">Udziały →</a></nav></div></div>
+path=/home/user/published/2026
+url=svn+ssh://_filees-data@filees.example.net/UUID_REPO</code></pre>
+<p>Katalog <code>log_dir</code> utwórz wcześniej jako prywatny, zapisywalny i poza źródłem. Dziennik zawiera czas, etap i wynik, rotuje po 5 MiB. Przykładowy INI zapisz poza źródłem, np. jako <code>/home/user/filees-client.conf</code>.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">Przebieg</th><th scope="col">Zachowanie</th></tr></thead><tbody>
+<tr><td><code>checkout</code>, potem <code>sync</code></td><td>Tworzy WC, pobiera zmiany, wysyła dodatki, modyfikacje i lokalne usunięcia. Konflikt zatrzymuje commit.</td></tr>
+<tr><td><code>sync -nwc</code></td><td>Publikuje zwykły katalog jak <code>publish</code>, bez pobierania zmian i propagowania lokalnych usunięć.</td></tr>
+<tr><td><code>sync -nwc -restore-set</code></td><td>Jawnie pozwala ponownie dodać pliki źródła wcześniej skasowane w repo.</td></tr>
+<tr><td><code>sync -nwc -reverse-reconcile-set</code></td><td>Pobiera jedną rewizję i doprowadza lokalny folder do jej stanu, także przez nadpisanie i usunięcie lokalnego nadmiaru. Nie commituje.</td></tr>
+</tbody></table></div>
+<pre><code>filees-client sync --config /home/user/filees-client.conf --wc invoices -nwc</code></pre>
+<p>Do <code>checkout</code> wybierz osobny, nowy katalog WC w INI. Nie używaj go jako źródła <code>publish</code>. Flagi <code>restore-set</code> i <code>reverse-reconcile-set</code> wymagają <code>-nwc</code> i wykluczają się; odwrotne zastosowanie lokalnego drzewa nie jest atomowe. Dowiązania symboliczne i nieregularne pliki wewnątrz źródła no-WC są odrzucane.</p>
+
+<h2 id="cli-extra">Import repozytorium i duże pliki</h2>
+<p><code>dump-load</code> tworzy nowe repozytorium i nową WC z dumpa SVN. Wymaga istniejącego <code>client-profile.json</code>, prawa tworzenia repo oraz nowego katalogu docelowego i prywatnego stanu:</p>
+<pre><code>filees-client dump-load --profile /abs/client-profile.json \
+  --dump /abs/archive.dump --name 'Archiwum' \
+  --target /home/user/archiwum-wc --state /home/user/import-001</code></pre>
+<p>Rodzic katalogu stanu i celu musi istnieć. Po przerwaniu ponów dokładnie te same argumenty i stan; zachowane żądanie wznawia ten sam import. Istniejącego repo ani WC program nie nadpisuje.</p>
+<p>Do pojedynczych dużych plików służy Whale. <code>whale-put</code> wysyła plik. Pobieranie zaczyna się od <code>whale-get-quote</code>, które podaje rozmiar i ID operacji; dopiero <code>whale-get-confirm --id ID</code> uruchamia transfer. <code>whale-status</code>, <code>whale-retry</code> i <code>whale-resume</code> używają tego samego profilu i prywatnego stanu. Pełne argumenty są w <a href="../man/filees-client.1.html">manualu poleceń</a>.</p>
+
+<h2 id="cli-limits">Gdy operacja się nie powiedzie</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">Sytuacja</th><th scope="col">Co zrobić</th></tr></thead><tbody>
+<tr><td>Nie ma polecenia <code>autoconfig</code> lub <code>publish</code></td><td>Sprawdź wersję i ścieżkę uruchamianego programu. Zainstaluj sprawdzoną paczkę zawierającą te polecenia.</td></tr>
+<tr><td>Nie znaleziono aktywacji albo wybór jest niejednoznaczny</td><td>Użyj właściwego użytkownika, <code>--state-root</code>, <code>--server</code>, <code>--profile</code> lub <code>--activation</code>.</td></tr>
+<tr><td>Repo nie jest dostępne do publikacji</td><td>Sprawdź dokładną nazwę oraz prawa u operatora. Publikacja wymaga aktywnego repo do zapisu, bez obowiązkowego wypożyczenia.</td></tr>
+<tr><td>Brak łączności, cofnięte prawa lub cofnięta generacja</td><td>Przywróć łączność albo wyjaśnij stan z operatorem. CLI nie korzysta wtedy ze starej listy praw.</td></tr>
+<tr><td>Zadanie już działa</td><td>Poczekaj na zakończenie wcześniejszego przebiegu. Nie usuwaj blokady, żeby dopuścić drugą wysyłkę.</td></tr>
+<tr><td>Zbyt niski hard limit otwartych plików</td><td>Administrator musi zwiększyć limit dla użytkownika lub usługi. Soft limit CLI dostosowuje samo; zbyt duża partia jest odrzucana przed commit, bez cichego podziału.</td></tr>
+<tr><td>Przerwane połączenie podczas commitu</td><td>CLI sprawdza, czy pliki znalazły się na serwerze. Po zgłoszonym błędzie przywróć połączenie i ponów to samo zadanie; niezmienione pliki nie tworzą nowego commitu.</td></tr>
+<tr><td>Konflikt zwykłej WC</td><td>Rozstrzygnij go w SVN przed kolejnym <code>sync</code>. CLI nie rozstrzyga konfliktów automatycznie.</td></tr>
+</tbody></table></div>
+<p>Przy Whale plik może już być na dysku, choć operacja czeka jeszcze na potwierdzenie zwolnienia serwerowego cache i rezerwacji. Sprawdź <code>whale-status --id ID</code>; po błędzie użyj <code>whale-retry --id ID</code>, a po przerwaniu procesu <code>whale-resume --id ID</code>, z tym samym profilem i stanem.</p>
+<p>Kod 0 oznacza sukces; niezerowy wynik zatrzymuje łańcuch <code>&amp;&amp;</code>. Błędy operacji zwykle zwracają 1, a błędna składnia argumentów 2. Zachowuj stan aktywacji, konfigurację zadania oraz prywatny dziennik poza publikowanymi folderami.</p>
+
+</div><nav class="page-nav"><a href="android.html">← Android</a><a href="public-shares.html">Udziały →</a></nav></div>
 <footer class="manual-footer">FileES</footer></main></body></html>

@@ -64,6 +64,9 @@ test("stale public shares do not claim a connected daemon is offline", () => {
   snapshot.connected=false;
   context.renderMetrics(snapshot);
   assert.equal(get("#metric-public-shares-note").textContent, "summary.lastKnown");
+  snapshot.errors = [{severity:"INFO",message_key:"commit.recovery_resolved"},{severity:"WARN"}];
+  context.renderMetrics(snapshot);
+  assert.equal(get("#metric-attention").textContent, 1);
   snapshot.connected=true; snapshot.public_shares[0].stale=false;
   context.renderMetrics(snapshot);
   assert.equal(get("#metric-public-shares").textContent, 1);

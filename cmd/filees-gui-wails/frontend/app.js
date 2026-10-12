@@ -374,7 +374,7 @@ function renderMetrics(snapshot) {
   const publicSharesStale = publicShares.some((share) => share.stale);
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
-  const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0)
+  const attention = conflicts + unreadAnnouncements + (snapshot.errors || []).filter(error => error.severity !== "INFO").length
     + (snapshot.lock_release_requests || []).filter(request => request.role === "holder" && request.state === "pending").length;
 
   $("#metric-servers").textContent = snapshot.servers?.length ?? 0;

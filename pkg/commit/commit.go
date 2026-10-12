@@ -209,11 +209,12 @@ type Service struct {
 	offlineJournalGeneration uint64
 	connectivityJournalDelay time.Duration // tests may shorten; <=0 uses the default
 
-	cacheResumed          atomic.Int64
-	alreadyAccepted       atomic.Int64
-	commitBatches         atomic.Int64
-	recoveryDiagnosticKey string // guarded by wcOpMu; not a recovery decision
-	recoveryDiagnosticAt  time.Time
+	cacheResumed           atomic.Int64
+	alreadyAccepted        atomic.Int64
+	commitBatches          atomic.Int64
+	recoveryDiagnosticKey  string // guarded by wcOpMu; not a recovery decision
+	recoveryDiagnosticAt   time.Time
+	recoveryJournalChecked string // transaction ID; guarded by wcOpMu; presentation only
 }
 
 // RecoveryStats is a point-in-time diagnostic snapshot; it is not an IPC type.

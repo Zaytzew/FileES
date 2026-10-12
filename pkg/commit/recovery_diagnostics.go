@@ -3,6 +3,7 @@ package commit
 import (
 	"crypto/sha256"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"filees/pkg/errcat"
@@ -23,12 +24,14 @@ func (e *recoveryFailure) Unwrap() error { return e.cause }
 // No state transition, retry or filesystem cleanup depends on this diagnostic.
 func (s *Service) reportRecovery(in *commitIntent, err error, now time.Time) error {
 	if err == nil {
+		s.confirmRecoveryDiagnostic(in, now)
 		if s.recoveryDiagnosticKey != "" {
 			s.Logger.Infof("commit recovery resumed; previous HOLD cleared")
 		}
 		s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = "", time.Time{}
 		return nil
 	}
+	s.recoveryJournalChecked = ""
 	id, phase := "unavailable", "unreadable"
 	var revision int64
 	var targets int
@@ -51,4 +54,27 @@ func (s *Service) reportRecovery(in *commitIntent, err error, now time.Time) err
 		s.recoveryDiagnosticKey, s.recoveryDiagnosticAt = key, now
 	}
 	return &recoveryFailure{cause: fault, detail: detail}
+}
+
+// Called only after recoverCommit has really succeeded. Replay after restart
+// also closes legacy HOLD records for this exact retained transaction. A failed
+// journal read remains retryable and does not manufacture a confirmation.
+func (s *Service) confirmRecoveryDiagnostic(in *commitIntent, now time.Time) {
+	if in == nil || s.recoveryJournalChecked == in.ID || s.wc == "" {
+		return
+	}
+	pending, err := errmap.RecoveryPending(filepath.Join(s.wc, ".filees", "logs", "errors.jsonl"), in.ID)
+	if err != nil {
+		s.Logger.Warnf("inspect recovery diagnostic history: %v", err)
+		return
+	}
+	if !pending {
+		s.recoveryJournalChecked = in.ID
+		return
+	}
+	entry := errmap.Classify(errcat.New(errcat.KeyCommitRecoveryResolved, nil, nil))
+	entry.Details = fmt.Sprintf("commit recovery confirmed: transaction=%s revision=%d", in.ID, in.Revision)
+	s.ErrSink.EmitAt(now, entry)
+	// Re-read on the next successful inspection. Sink is best-effort: a failed
+	// append must not permanently suppress the durable closing record.
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -142,5 +143,59 @@ func TestRecoveryDiagnosticBounded(t *testing.T) {
 	err := s.reportRecovery(nil, errors.New(strings.Repeat("x", 30000)), time.Now())
 	if len(err.Error()) > 8300 || !strings.Contains(err.Error(), "truncated") {
 		t.Fatal("unbounded diagnostic")
+	}
+}
+
+func TestRecoveryConfirmationClosesPersistedHoldWithoutCommit(t *testing.T) {
+	s, base, wc := conflictRecoveryFixture(t)
+	in, err := s.readIntent(wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Phase = "done"
+	if err := s.writeIntent(wc, in); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(wc, ".filees", "logs", "errors.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	s.ErrSink = errmap.NewSink(f, "commit:fixture")
+	c := &writerRecoveryClient{conflictRecoveryClient: base, inspectErr: errors.New("actual inspection failure")}
+	s.Cli = c
+	if _, err := s.recoverCommit(t.Context(), wc); err == nil {
+		t.Fatal("fault hidden")
+	}
+	before, _ := os.ReadFile(transactionPath(wc))
+	// Recreate the presentation state as a new daemon would; persistent HOLD
+	// must be found without relying on the old in-memory diagnostic key.
+	s.recoveryDiagnosticKey = ""
+	s.recoveryJournalChecked = ""
+	c.inspectErr = nil
+	for range 3 {
+		if _, err := s.recoverCommit(t.Context(), wc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log, err := os.ReadFile(path)
+	if err != nil || bytes.Count(log, []byte("commit.recovery_resolved")) != 1 {
+		t.Fatal("closing missing/duplicated", err, string(log))
+	}
+	after, err := os.ReadFile(transactionPath(wc))
+	if err != nil || !bytes.Equal(before, after) || c.mutations != 0 {
+		t.Fatal("publication or transaction changed", err)
+	}
+	// A later real failure of the same transaction must remain active.
+	c.inspectErr = errors.New("new real failure")
+	if _, err := s.recoverCommit(t.Context(), wc); err == nil {
+		t.Fatal("new fault hidden")
+	}
+	if pending, err := errmap.RecoveryPending(path, in.ID); err != nil || !pending {
+		t.Fatal(pending, err)
 	}
 }

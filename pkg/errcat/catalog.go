@@ -29,6 +29,7 @@ const (
 	KeyInitialContentUnavailable Key = "repo.initial_content_unavailable"
 	KeyServerStorageHeld         Key = "commit.server_storage_held"
 	KeyCommitRecoveryHeld        Key = "commit.recovery_held"
+	KeyCommitRecoveryResolved    Key = "commit.recovery_resolved"
 	KeyCommitRecoveryRefused     Key = "commit.recovery_refused"
 	KeyCommitRecoveryUnavailable Key = "commit.recovery_unavailable"
 	KeyCommitOutdated            Key = "commit.outdated"
@@ -137,6 +138,7 @@ var specs = []Spec{
 	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, detailOnly(), "Commit failed"},
 	{"STORAGE-3001", KeyServerStorageHeld, SevWarn, HintNone, nil, "Publication is waiting for confirmation that server storage is available. Local changes are retained."},
 	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, detailOnly(), "Publication recovery paused — inspect diagnostics; do not remove pending state"},
+	{CodeCommitFail, KeyCommitRecoveryResolved, SevInfo, HintNone, detailOnly(), "Completed — correct publication state confirmed by a successful inspection"},
 	{CodeCommitFail, KeyCommitRecoveryRefused, SevError, HintRequireAction, detailOnly(), "Publication remains paused. The previous write could not be safely reconciled; check the diagnostics."},
 	{CodeCommitFail, KeyCommitRecoveryUnavailable, SevError, HintRequireAction, nil, "Publication recovery is unavailable for this folder."},
 	{CodeRecon, KeyReconConflict, SevError, HintRequireAction, nil, "Conflict detected during update"},

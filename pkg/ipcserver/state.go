@@ -16,6 +16,7 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errmap"
 	"filees/pkg/watcher"
 )
 
@@ -917,6 +918,7 @@ func readLastErrors(logPath string, n int) []string {
 			lines = append(lines, t)
 		}
 	}
+	lines = errmap.ResolveRecoveryLines(lines)
 	if len(lines) <= n {
 		return lines
 	}

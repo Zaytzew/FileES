@@ -8,6 +8,14 @@ import (
 	"filees/internal/gui/app"
 )
 
+func TestResolvedRecoveryIsHistoricalNotAnActionableError(t *testing.T) {
+	vm := app.ViewModel{Errors: []app.ErrorViewModel{{ID: "old", RepoID: "docs", Timestamp: "2026-10-12T15:14:30Z", Code: "COMMIT-3100", Severity: "INFO", Hint: "NONE", MessageKey: "commit.recovery_resolved", Message: "Completed — correct state confirmed", Details: "original HOLD diagnostics"}}}
+	rows := Build(vm, Texts{})
+	if len(rows) != 1 || rows[0].Emphasized || strings.Contains(rows[0].Summary, "⚠") || rows[0].Details != "" || rows[0].Diagnostics != "original HOLD diagnostics" {
+		t.Fatal("resolved history presented as active error", rows)
+	}
+}
+
 func TestBuildMergesErrorsAndAggregatesPublishedRevisionNewestFirst(t *testing.T) {
 	vm := app.ViewModel{
 		Repos: []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},

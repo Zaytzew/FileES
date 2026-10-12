@@ -439,12 +439,17 @@ func errorEntry(record app.ErrorViewModel, repo string, activity []app.ActivityV
 		}
 		details += paths
 	}
-	return Entry{
+	entry := Entry{
 		ID: "error:" + record.ID, Timestamp: record.Timestamp, Repo: repo,
 		Summary: fmt.Sprintf("%s · %s — [%s] %s", texts.chrome("journal.errorPrefix", "⚠ BŁĄD"), repo, record.Code, record.Message),
 		Details: details, Diagnostics: strings.TrimSpace(record.Details),
 		Severity: record.Severity, Emphasized: true, time: parseTime(record.Timestamp),
 	}
+	if record.MessageKey == "commit.recovery_resolved" {
+		entry.Summary = repo + " — " + record.Message
+		entry.Emphasized = false
+	}
+	return entry
 }
 
 func activityDetails(items []app.ActivityViewModel) string {

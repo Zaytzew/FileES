@@ -392,7 +392,7 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, res
 		// An interrupted read is deferred work, not an operator-action HOLD.
 		// Keep the error and all durable state; only a later live inspection
 		// may settle the transaction. An unrelated failure still gets reported.
-		if ctx.Err() != nil && errors.Is(resultErr, ctx.Err()) {
+		if (ctx.Err() != nil && errors.Is(resultErr, ctx.Err())) || client.IsShutdownInterruption(resultErr) {
 			resultErr = &recoveryFailure{cause: resultErr, detail: resultErr.Error()}
 			return
 		}

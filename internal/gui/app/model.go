@@ -43,6 +43,7 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
+	LocalCopy            *contract.LocalCopySummary
 	AnchorDownloadBlocks []contract.AnchorDownloadBlock
 	AnchorDamage         *contract.AnchorDamage
 	ID                   string
@@ -578,6 +579,9 @@ func (r RepoViewModel) CanWrite() bool { return r.Access == contract.AccessReadW
 // import Attached is deliberately false (there is no usable SVN working copy
 // yet), but LocalPath remains durable local ownership of the operation.
 func (r RepoViewModel) LocallyProvisioning() bool {
+	if r.LocalCopy != nil && r.LocalCopy.Lifecycle != "repository_created" {
+		return false // restoring a known local copy is not a new import
+	}
 	if r.Attached || r.ServerDeleted || strings.TrimSpace(r.LocalPath) == "" {
 		return false
 	}
@@ -587,6 +591,18 @@ func (r RepoViewModel) LocallyProvisioning() bool {
 	default:
 		return false
 	}
+}
+
+// CanOpenLocalFolder is independent of server/runtime readiness. Presence
+// means the recorded directory was observed, not that every file is hydrated.
+func (r RepoViewModel) CanOpenLocalFolder() bool {
+	if strings.TrimSpace(r.LocalPath) == "" {
+		return false
+	}
+	if r.LocalCopy != nil {
+		return r.LocalCopy.Path == r.LocalPath && r.LocalCopy.Presence == "present"
+	}
+	return r.Attached // compatibility with daemons without local observations
 }
 
 // NeedsLocate is the missing-WC signal: the attachment is still claimed, the

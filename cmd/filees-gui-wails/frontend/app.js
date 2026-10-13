@@ -393,8 +393,9 @@ function renderMetrics(snapshot) {
     : reservationsPartial
     ? t("summary.partialLocks", { count: reservations.length, locks: tn("count.locks", reservations.length), missing: reservationState.unavailable.length })
     : tn("count.locks", reservations.length);
-  const sharesLoading = snapshot.connected && (snapshot.public_shares_loading
-    || (snapshot.public_shares_loading === undefined && waiting && (!snapshot.public_shares_known || publicSharesStale)));
+  // Refreshing a known inventory is routine, not a loss of knowledge.
+  const sharesLoading = snapshot.connected && !snapshot.public_shares_known && (snapshot.public_shares_loading
+    || (snapshot.public_shares_loading === undefined && waiting));
   renderWaitingCount("#metric-public-shares", snapshot.public_shares_known ? activePublicShares : "?",
     sharesLoading, snapshot.public_shares_known ? `${activePublicShares} ` : "");
   $("#metric-public-shares-note").textContent = sharesLoading
@@ -621,12 +622,22 @@ function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
   const localProvisioning = Boolean(repo.local_provisioning);
+  const localPresent = repo.local_copy_presence === "present";
+  const localCheck = repo.local_copy_presence === "checking";
+  const localUnavailable = repo.local_copy_presence === "unavailable";
+  const checkingCopy = localPresent && (!repo.attached || ["initializing", "baselining"].includes(state));
   const pending = deleted
     ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
     : localProvisioning
       ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : t("queue.importRunning"))
-    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : t("queue.empty"));
-  const source = repo.sparse
+    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}`
+      : localUnavailable ? t("copy.localUnavailable")
+      : localCheck ? t("copy.checking")
+      : localPresent && (state === "offline" || repo.local_copy_waiting_connection) ? t("copy.waitingConnection")
+      : checkingCopy ? t("copy.refreshing") : t("queue.empty"));
+  const source = ["working_copy", "sparse", "virtual"].includes(repo.local_copy_kind) && repo.local_path
+    ? `${repo.local_path} · ${t(`copy.kind.${repo.local_copy_kind}`)}`
+    : repo.sparse
     ? `${repo.local_path || t("repo.folder")} · ${t("repo.sparse")}`
     : repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
@@ -648,17 +659,17 @@ function renderRepo(repo) {
     repo.can_publish ? repoAction("publish", t("repo.publish"), repoIcons.publish, "publish") : "",
   ].join("");
   const stateLabel = localizedStates.has(state) ? t(`state.${state}`) : state;
-  const disconnected = repo.connectivity !== "online" || ["offline", "unattached", "disabled", "revoked", "unknown"].includes(state);
+  const disconnected = !localPresent && (repo.connectivity !== "online" || ["offline", "unattached", "disabled", "revoked", "unknown"].includes(state));
   const stateOverlay = disconnected
     ? '<span class="repo-state-overlay" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M5.2 10.8 3.8 12.2a2 2 0 0 1-2.8-2.8l2.1-2.1M10.8 5.2l1.4-1.4A2 2 0 0 1 15 6.6l-2.1 2.1"/></svg></span>'
     : state === "attention"
       ? '<span class="repo-state-overlay is-attention" aria-hidden="true">!</span>'
-      : state === "busy" || state === "initializing" || state === "baselining" || localProvisioning
+      : !repo.local_copy_waiting_connection && (state === "busy" || state === "initializing" || state === "baselining" || localProvisioning || localCheck || checkingCopy)
         ? '<span class="repo-state-overlay is-busy" aria-hidden="true"></span>'
         : "";
   const iconContents = `<span class="repo-icon" aria-hidden="true">${stateOverlay}</span>`;
   const open = repo.can_open
-    ? `<button class="repo-open hint-button state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="${escapeHTML(t("repo.open", { state: stateLabel }))}" aria-label="${escapeHTML(t("repo.open", { state: stateLabel }))}">${iconContents}</button>`
+    ? `<button class="repo-open hint-button ${localPresent ? "is-local" : ""} state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="${escapeHTML(t("repo.open", { state: stateLabel }))}" aria-label="${escapeHTML(t("repo.open", { state: stateLabel }))}">${iconContents}</button>`
     : `<span class="repo-open is-disabled state-${escapeHTML(state)}" title="${escapeHTML(stateLabel)}" aria-label="${escapeHTML(stateLabel)}">${iconContents}</span>`;
   const settings = deleted ? "" : repoAction("settings", t("repo.settings"), repoIcons.settings, "repo-settings");
   const size = repo.attached && repo.working_copy_size_known && Number.isFinite(Number(repo.working_copy_bytes ?? 0))

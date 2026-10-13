@@ -48,6 +48,7 @@ type Server struct {
 	editingPolicy        EditingPolicyService
 	publicShares         PublicShareService
 	publicShareAggregate PublicShareSource
+	localRepositories    LocalRepositorySource
 	uploadChannels       UploadChannelService
 	ownerLabels          OwnerLabelResolver
 	lockReleases         LockReleaseService

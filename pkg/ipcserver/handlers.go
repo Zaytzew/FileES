@@ -1829,7 +1829,7 @@ func (s *Server) handleRepoList(req contract.Request) contract.Response {
 			}
 		}
 	}
-	return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: summaries})
+	return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: s.mergeLocalRepositories(summaries)})
 }
 
 // handleRepoStatus implements repo.status — full snapshot (§8).
@@ -1840,6 +1840,9 @@ func (s *Server) handleRepoStatus(req contract.Request) contract.Response {
 	}
 	rs := s.repoByID(req.RepoID)
 	if rs == nil {
+		if local := s.localRepositoryStatus(req.RepoID); local != nil {
+			return contract.OKResponse(req.RequestID, *local)
+		}
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0005", "ERROR", "NONE", "proto.repo_not_found",
 			map[string]string{"repo_id": req.RepoID})

@@ -18,6 +18,29 @@ import (
 
 type brandingClientStub struct{}
 
+func TestLocalCopyDuringStartupIsOpenableButCannotMutate(t *testing.T) {
+	vm := guiapp.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoPublish: true, contract.CapRepoLock: true, contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true},
+		Repos: []guiapp.RepoViewModel{{ID: "repo", ServerID: "office", LocalPath: "/local", Access: "rw", State: contract.StateInitializing,
+			LocalCopy: &contract.LocalCopySummary{Path: "/local", Presence: "present", Kind: "virtual", Lifecycle: "attached"}}}}
+	row := projectViewModel(vm, journal.Texts{}).Repositories[0]
+	if !row.CanOpen || row.CanPublish || row.CanLock || row.CanAttach || row.CanCreateAnchor || row.LocalProvisioning || row.LocalCopyKind != "virtual" {
+		t.Fatalf("local copy UI grants mutation or import: %+v", row)
+	}
+	for _, kind := range []tray.IntentKind{tray.IntentPublish, tray.IntentLock, tray.IntentAttachRepository, tray.IntentCreateAnchor} {
+		if _, ok := translateAction(vm, ActionRequest{Kind: string(kind), RepoID: "repo"}); ok {
+			t.Fatalf("startup allows %s", kind)
+		}
+	}
+	if _, ok := translateAction(vm, ActionRequest{Kind: string(tray.IntentOpenFolder), RepoID: "repo"}); !ok {
+		t.Fatal("known local folder requires server/runtime")
+	}
+	vm.Servers = []guiapp.ServerViewModel{{ID: "office", ViewSyncFailures: 1, ViewSyncError: "unreachable"}}
+	row = projectViewModel(vm, journal.Texts{}).Repositories[0]
+	if !row.CanOpen || !row.LocalCopyWaitingConnection {
+		t.Fatalf("failed server check masked a local copy: %+v", row)
+	}
+}
+
 func (brandingClientStub) RealmPublicBranding(context.Context, string) (*contract.RealmPublicBrandingResult, error) {
 	return &contract.RealmPublicBrandingResult{Branding: realmbranding.Default()}, nil
 }

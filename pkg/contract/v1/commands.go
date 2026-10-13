@@ -1080,27 +1080,30 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID                  string `json:"id"`
-	ServerID            string `json:"server_id"`
-	DisplayName         string `json:"display_name"`
-	Attached            bool   `json:"attached"`
-	Access              string `json:"access"`
-	URL                 string `json:"url"`
-	LocalPath           string `json:"local_path"`
-	State               string `json:"state"`
-	OwnerRealmID        string `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy    string `json:"attachment_policy"`
-	ServerDeleted       bool   `json:"server_deleted,omitempty"`
-	LocalCopyPreserved  bool   `json:"local_copy_preserved,omitempty"`
-	LocalCopyStatus     string `json:"local_copy_status,omitempty"`
-	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
-	RetainUntil         string `json:"retain_until,omitempty"`
-	RecoveryOperationID string `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable   bool   `json:"recovery_available,omitempty"`
-	RecoveryPending     bool   `json:"recovery_pending,omitempty"`
-	CleanupError        string `json:"cleanup_error,omitempty"`
-	Purpose             string `json:"purpose,omitempty"`
-	ParentRepoID        string `json:"parent_repo_id,omitempty"`
+	// LocalCopy describes local filesystem knowledge, not attachment readiness
+	// or server authorization. Absent on older daemons and remote-only rows.
+	LocalCopy           *LocalCopySummary `json:"local_copy,omitempty"`
+	ID                  string            `json:"id"`
+	ServerID            string            `json:"server_id"`
+	DisplayName         string            `json:"display_name"`
+	Attached            bool              `json:"attached"`
+	Access              string            `json:"access"`
+	URL                 string            `json:"url"`
+	LocalPath           string            `json:"local_path"`
+	State               string            `json:"state"`
+	OwnerRealmID        string            `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy    string            `json:"attachment_policy"`
+	ServerDeleted       bool              `json:"server_deleted,omitempty"`
+	LocalCopyPreserved  bool              `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus     string            `json:"local_copy_status,omitempty"`
+	LocalCleanupPending bool              `json:"local_cleanup_pending,omitempty"`
+	RetainUntil         string            `json:"retain_until,omitempty"`
+	RecoveryOperationID string            `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable   bool              `json:"recovery_available,omitempty"`
+	RecoveryPending     bool              `json:"recovery_pending,omitempty"`
+	CleanupError        string            `json:"cleanup_error,omitempty"`
+	Purpose             string            `json:"purpose,omitempty"`
+	ParentRepoID        string            `json:"parent_repo_id,omitempty"`
 	// Sparse marks a working copy holding only the paths chosen in the
 	// unattached browser: attached, but not the whole tree.
 	Sparse               bool   `json:"sparse,omitempty"`
@@ -1109,6 +1112,16 @@ type RepoSummary struct {
 	LifecycleError       string `json:"lifecycle_error,omitempty"`
 	CanRetryLifecycle    bool   `json:"can_retry_lifecycle,omitempty"`
 	CanAbandonLifecycle  bool   `json:"can_abandon_lifecycle,omitempty"`
+}
+
+// LocalCopySummary keeps local presence separate from the syncing runtime.
+// Kind is working_copy, sparse or virtual; Presence is present, unavailable
+// or checking. A directory observation never proves that all bytes are local.
+type LocalCopySummary struct {
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	Presence  string `json:"presence"`
+	Lifecycle string `json:"lifecycle"`
 }
 
 // RepoPublishPayload is the required comment for a shouting commit.

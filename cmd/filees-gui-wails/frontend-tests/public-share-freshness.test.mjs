@@ -73,7 +73,7 @@ test("stale public shares do not claim a connected daemon is offline", () => {
   assert.equal(get("#metric-public-shares-note").textContent, "count.links");
 });
 
-test("public share spinner follows its own aggregate read after projection is current", () => {
+test("public share spinner only waits for an unknown inventory and keeps known counts calm", () => {
  const source=readFileSync(new URL("../frontend/app.js",import.meta.url),"utf8");
  const nodes=new Map(); const get=key=>{if(!nodes.has(key))nodes.set(key,{dataset:{},setAttribute(name,value){this[name]=value}});return nodes.get(key)};
  const ctx={$:get,t:key=>key,tn:key=>key,bytes:()=>""};
@@ -85,7 +85,12 @@ test("public share spinner follows its own aggregate read after projection is cu
  assert.equal(get("#metric-public-shares-note").textContent,"fresh.refreshing");
  snapshot.public_shares_known=true; snapshot.public_shares_stale=true; snapshot.public_shares=[{state:"active",stale:true}];
  ctx.renderMetrics(snapshot);
- assert.match(get("#metric-public-shares").innerHTML,/^1 .*metric-spinner/);
+ assert.equal(get("#metric-public-shares")["aria-busy"],"false");
+ assert.equal(get("#metric-public-shares").textContent,1);
+ assert.equal(get("#metric-public-shares-note").textContent,"summary.lastKnownUnverified");
+ snapshot.public_shares_stale=false; snapshot.public_shares[0].stale=false; ctx.renderMetrics(snapshot);
+ assert.equal(get("#metric-public-shares-note").textContent,"count.links");
+ snapshot.public_shares_stale=true;
  snapshot.public_shares_loading=false; ctx.renderMetrics(snapshot);
  assert.equal(get("#metric-public-shares").textContent,1);
  assert.equal(get("#metric-public-shares")["aria-busy"],"false");

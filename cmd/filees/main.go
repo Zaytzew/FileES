@@ -236,6 +236,9 @@ func runDaemon() {
 	ipc.SetActivitySource(activityJournal)
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
+	ipc.SetLocalRepositorySource(&localCopyPresentation{store: lifecycleStore, active: func(serverID string) bool {
+		return provisioner.ClientID(serverID) != ""
+	}})
 	provisioner.admission = ipc.OperationAdmission()
 	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	provisioner.recoveryRegistry = recoveryRegistry

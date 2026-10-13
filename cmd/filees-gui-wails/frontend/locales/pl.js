@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "copy.kind.working_copy": "Kopia robocza na tym komputerze",
+  "copy.kind.sparse": "Kopia częściowa na tym komputerze",
+  "copy.kind.virtual": "Folder wirtualny na tym komputerze",
+  "copy.checking": "Sprawdzanie lokalnego folderu",
+  "copy.localUnavailable": "Lokalny folder jest teraz niedostępny",
+  "copy.waitingConnection": "Kopia dostępna — synchronizacja czeka na połączenie",
+  "copy.refreshing": "Aktualizacja danych kopii",
   "select.createArchive.title": "Zawartość nowego repozytorium",
   "select.createArchive.eyebrow": "Import archiwum",
   "select.createArchive.text": "Folder jest pusty. Utworzyć puste repozytorium czy odtworzyć projekt i historię z archiwum SVN?",

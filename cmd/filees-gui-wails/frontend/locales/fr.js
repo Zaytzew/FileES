@@ -1,5 +1,12 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "copy.kind.working_copy": "Copie de travail sur cet ordinateur",
+  "copy.kind.sparse": "Copie partielle sur cet ordinateur",
+  "copy.kind.virtual": "Dossier virtuel sur cet ordinateur",
+  "copy.checking": "Vérification du dossier local",
+  "copy.localUnavailable": "Le dossier local est actuellement indisponible",
+  "copy.waitingConnection": "Copie disponible — synchronisation en attente de connexion",
+  "copy.refreshing": "Actualisation des informations de la copie",
   "select.createArchive.title": "Contenu du nouveau dépôt",
   "select.createArchive.eyebrow": "Import d’archive",
   "select.createArchive.text": "Le dossier est vide. Créer un dépôt vide ou restaurer un projet et son historique depuis une archive SVN ?",

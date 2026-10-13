@@ -146,28 +146,31 @@ type ServerProjection struct {
 type RepoProjection struct {
 	// Problem names a state the folder window explains (app.FolderProblem
 	// kinds); the row only points there.
-	Problem              string `json:"problem,omitempty"`
-	CanDetachLocalCopy   bool   `json:"can_detach_local_copy"`
-	ID                   string `json:"id"`
-	ServerID             string `json:"server_id"`
-	DisplayName          string `json:"display_name"`
-	OwnName              string `json:"own_name,omitempty"`
-	LocalPath            string `json:"local_path,omitempty"`
-	URL                  string `json:"url,omitempty"`
-	Attached             bool   `json:"attached"`
-	LocalProvisioning    bool   `json:"local_provisioning,omitempty"`
-	Access               string `json:"access"`
-	Ownership            string `json:"ownership"`
-	AttachmentPolicy     string `json:"attachment_policy"`
-	State                string `json:"state"`
-	DisplayState         string `json:"display_state"`
-	Connectivity         string `json:"connectivity"`
-	LocalRevision        int64  `json:"local_revision"`
-	HeadRevision         int64  `json:"head_revision"`
-	WorkingCopyBytes     int64  `json:"working_copy_bytes,omitempty"`
-	WorkingCopySizeKnown bool   `json:"working_copy_size_known,omitempty"`
-	PendingFiles         int    `json:"pending_files"`
-	PendingBytes         int64  `json:"pending_bytes"`
+	Problem                    string `json:"problem,omitempty"`
+	CanDetachLocalCopy         bool   `json:"can_detach_local_copy"`
+	ID                         string `json:"id"`
+	ServerID                   string `json:"server_id"`
+	DisplayName                string `json:"display_name"`
+	OwnName                    string `json:"own_name,omitempty"`
+	LocalPath                  string `json:"local_path,omitempty"`
+	URL                        string `json:"url,omitempty"`
+	Attached                   bool   `json:"attached"`
+	LocalProvisioning          bool   `json:"local_provisioning,omitempty"`
+	LocalCopyPresence          string `json:"local_copy_presence,omitempty"`
+	LocalCopyKind              string `json:"local_copy_kind,omitempty"`
+	LocalCopyWaitingConnection bool   `json:"local_copy_waiting_connection,omitempty"`
+	Access                     string `json:"access"`
+	Ownership                  string `json:"ownership"`
+	AttachmentPolicy           string `json:"attachment_policy"`
+	State                      string `json:"state"`
+	DisplayState               string `json:"display_state"`
+	Connectivity               string `json:"connectivity"`
+	LocalRevision              int64  `json:"local_revision"`
+	HeadRevision               int64  `json:"head_revision"`
+	WorkingCopyBytes           int64  `json:"working_copy_bytes,omitempty"`
+	WorkingCopySizeKnown       bool   `json:"working_copy_size_known,omitempty"`
+	PendingFiles               int    `json:"pending_files"`
+	PendingBytes               int64  `json:"pending_bytes"`
 	// Publish* is the publication running now (progress-overlay.js draws the
 	// bar from it); all zero when nothing is being sent.
 	PublishFilesDone         int                        `json:"publish_files_done,omitempty"`
@@ -896,9 +899,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentRetryLifecycle):
 		return tray.Intent{Kind: tray.IntentRetryLifecycle, RepoID: repo.ID, ServerID: repo.ServerID}, canRetryDeletion(vm, repo)
 	case string(tray.IntentOpenFolder):
-		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.CanOpenLocalFolder()
 	case string(tray.IntentAttachRepository):
-		allowed := repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		allowed := repo.Purpose == "" && repo.LocalCopy == nil && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
 		return tray.Intent{Kind: tray.IntentAttachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, allowed
 	case string(tray.IntentCreateAnchor):
 		return tray.Intent{Kind: tray.IntentCreateAnchor, RepoID: repo.ID, ServerID: repo.ServerID}, canCreateAnchor(vm, repo)
@@ -936,7 +939,7 @@ func canCreateAnchor(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
 	if vm.VirtualFolders != nil && !vm.VirtualFolders.Servers[repo.ServerID] {
 		return false
 	}
-	return repo.Purpose == "" && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository() && vm.HasCap(contract.CapRepoExplorerAnchor)
+	return repo.Purpose == "" && repo.LocalCopy == nil && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository() && vm.HasCap(contract.CapRepoExplorerAnchor)
 }
 
 // canRetryDeletion: a deleted repository whose deletion stopped on an error.
@@ -1131,14 +1134,23 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		if repo.CurrentOp != nil {
 			operation = *repo.CurrentOp
 		}
-		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+		canOpen := repo.CanOpenLocalFolder()
+		runtimeOpen := repo.Attached && canOpen
+		localPresence, localKind := "", ""
+		if repo.LocalCopy != nil {
+			localPresence, localKind = repo.LocalCopy.Presence, repo.LocalCopy.Kind
+		}
+		localWaitingConnection := localPresence == "present" && repo.Connectivity == contract.ConnOffline
+		if server, ok := serversByID[repo.ServerID]; ok && localPresence == "present" {
+			localWaitingConnection = localWaitingConnection || projectServerHealth(vm, server) == "server_unavailable"
+		}
 		ordinary := repo.Purpose == ""
-		canAttach := ordinary && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		canAttach := ordinary && repo.LocalCopy == nil && !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
 		canBrowseHead := ordinary && !repo.ServerDeleted && (repo.Access == "r" || repo.Access == "rw") &&
 			(!repo.Attached || repo.Sparse) && vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoHeadBrowse)
-		canLock := ordinary && vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
-		canUnlock := ordinary && vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
-		canPublish := ordinary && vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
+		canLock := ordinary && vm.CanMutateLock() && runtimeOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
+		canUnlock := ordinary && vm.CanMutateUnlock() && runtimeOpen && repo.CanWrite() && repo.ReservationCount > 0
+		canPublish := ordinary && vm.Connected && !vm.Stale && vm.CanPublish() && runtimeOpen && repo.CanWrite()
 		canReviewQuarantine := false
 		ownership := "unclassified"
 		if server, ok := serversByID[repo.ServerID]; ok && server.RealmID != "" && repo.OwnerRealmID != "" {
@@ -1160,7 +1172,9 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			CanDetachLocalCopy: vm.CanDetachDeletedCopy(repo),
 			ID:                 repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached, LocalProvisioning: repo.LocallyProvisioning(),
-			Access: repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
+			LocalCopyPresence: localPresence, LocalCopyKind: localKind,
+			LocalCopyWaitingConnection: localWaitingConnection,
+			Access:                     repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,
 			LocalRevision: repo.LocalRev, HeadRevision: repo.HeadRev,
 			WorkingCopyBytes: repo.WorkingCopyBytes, WorkingCopySizeKnown: repo.WorkingCopySizeKnown,

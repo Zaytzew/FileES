@@ -3,7 +3,6 @@ package actions
 import (
 	"context"
 	"errors"
-	contract "filees/pkg/contract/v1"
 	"filees/pkg/errcat"
 	"time"
 )
@@ -27,7 +26,7 @@ func (c *Controller) createAnchorWhenReady(ctx context.Context, creator Reposito
 			return "", errcat.New("head.anchor_wait_timeout", nil, nil)
 		}
 		vm := c.cfg.ViewModel()
-		if _, ok := attachableRepository(vm, serverID, repoID); !ok || !vm.HasCap(contract.CapRepoExplorerAnchor) {
+		if _, ok := attachableRepository(vm, serverID, repoID); !ok || !vm.CanExplorerAnchor() {
 			return "", errcat.New("head.folder_unavailable", nil, nil)
 		}
 		remaining := time.Until(deadline)

@@ -374,6 +374,7 @@ func (vm ViewModel) CanApplyUpdate() bool {
 
 // HasCap reports whether the daemon advertised the given capability.
 func (vm ViewModel) HasCap(cap string) bool    { return vm.Capabilities[cap] }
+func (vm ViewModel) CanExplorerAnchor() bool   { return vm.HasCap(contract.CapRepoExplorerAnchor) }
 func (vm ViewModel) CanExplorerShortcut() bool { return vm.HasCap(contract.CapRepoExplorerShortcut) }
 
 // CanFoldInactive protects current work and attention from presentation-only folding.

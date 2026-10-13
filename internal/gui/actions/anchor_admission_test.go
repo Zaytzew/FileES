@@ -75,3 +75,14 @@ func TestAnchorAdmissionTimeoutDoesNotSubmitAnotherAttempt(t *testing.T) {
 		t.Fatal(err, a.calls)
 	}
 }
+
+func TestAnchorAdmissionRefusesMissingCapabilityEvenForAttachableRepository(t *testing.T) {
+	c := admissionController()
+	view := c.cfg.ViewModel()
+	delete(view.Capabilities, contract.CapRepoExplorerAnchor)
+	c.cfg.ViewModel = func() app.ViewModel { return view }
+	a := &admissionCreator{}
+	if _, err := c.createAnchorWhenReady(t.Context(), a, "spot", "repo", "/point"); err == nil || a.calls != 0 {
+		t.Fatal("missing anchor capability admitted", err, a.calls)
+	}
+}

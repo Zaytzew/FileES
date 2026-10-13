@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchor.title": "Creando una carpeta virtual",
+  "progress.anchor.text": "«{name}» — esperando otras operaciones locales y preparando la carpeta virtual.",
   "storageCapacity.details": "Almacén de repositorios: {percent}% ocupado o reservado · {free} libres de {total}",
   "storageCapacity.stale": "última medición — datos desactualizados",
   "storageCapacity.unknown": "Almacén de repositorios: sin medición",

@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchor.title": "Virtuellen Ordner erstellen",
+  "progress.anchor.text": "„{name}“ — andere lokale Vorgänge werden abgeschlossen und der virtuelle Ordner wird vorbereitet.",
   "storageCapacity.details": "Repository-Speicher: {percent}% belegt oder reserviert · {free} frei von {total}",
   "storageCapacity.stale": "letzte Messung — veraltet",
   "storageCapacity.unknown": "Repository-Speicher: keine Messung",

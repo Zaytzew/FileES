@@ -253,6 +253,8 @@ var specs = []Spec{
 	{"HEAD-2025", "head.release_queue_interrupted", SevError, HintRequireAction, nil, "Interrupted release queue outcome must not be replayed"},
 	{"HEAD-2024", "head.move_read_only", SevError, HintNone, nil, "Tree mutation requires current read-write access"},
 	{"HEAD-2025", "head.move_refused", SevError, HintRequireAction, nil, "Tree move preflight or proof was refused without a speculative replay"},
+	{"HEAD-2026", "head.anchor_busy", SevInfo, HintRetryLocal, nil, "Anchor admission is busy; no local intent has begun"},
+	{"HEAD-2027", "head.anchor_wait_timeout", SevWarn, HintRetryLocal, nil, "Anchor admission wait expired without a confirmed start"},
 	{"HEAD-2012", "head.partial_is_anchor", SevError, HintRequireAction, nil, "On this computer a partial copy is an Explorer anchor"},
 
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish"},

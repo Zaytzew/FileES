@@ -4,6 +4,8 @@
   "name": "English",
   "dictionary_version": "1",
   "messages": {
+    "head.anchor_busy": "FileES is completing another local operation. The virtual folder has not been created yet; waiting is safe.",
+    "head.anchor_wait_timeout": "The wait ended without confirmation that virtual folder creation started. Check the folder status and try again.",
     "head.release_queue_full": "The space-release queue is full. Check earlier outcomes and try again later.",
     "head.release_queue_interrupted": "Space release stopped without a certain outcome. Check the folder and journal; confirm only the remaining files again.",
     "head.move_read_only": "You do not currently have permission to change this repository.",

@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchor.title": "Creating a virtual folder",
+  "progress.anchor.text": "“{name}” — waiting for other local operations and preparing the virtual folder.",
   "storageCapacity.details": "Repository storage: {percent}% used or reserved · {free} free of {total}",
   "storageCapacity.stale": "last measurement — out of date",
   "storageCapacity.unknown": "Repository storage: no measurement",

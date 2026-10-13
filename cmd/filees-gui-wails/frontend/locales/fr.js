@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchor.title": "Création d’un dossier virtuel",
+  "progress.anchor.text": "« {name} » — attente de la fin des autres opérations locales et préparation du dossier virtuel.",
   "storageCapacity.details": "Stockage des dépôts : {percent}% utilisé ou réservé · {free} libres sur {total}",
   "storageCapacity.stale": "dernière mesure — données périmées",
   "storageCapacity.unknown": "Stockage des dépôts : aucune mesure",

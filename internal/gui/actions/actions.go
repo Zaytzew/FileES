@@ -1539,11 +1539,12 @@ func (c *Controller) startCreateAnchor(ctx context.Context, serverID, repoID str
 			return
 		}
 		localPath := filepath.Join(filepath.Clean(picked.Path), anchorFolderName(name, repo.ID))
+		defer c.showProgressKey(ctx, "progress.anchor", map[string]string{"name": name, "path": localPath}, "Tworzenie punktu zaczepienia", name+" — oczekuję na wolny termin i przygotowuję folder wirtualny…")()
 		actionID := c.startProjectedAction(app.PendingAction{
 			Kind: string(tray.IntentCreateAnchor), ServerID: serverID, RepoID: repoID,
 			Label: c.uiText("pending.anchor", "Tworzenie punktu zaczepienia"), ExpectedRepoAttached: true,
 		})
-		operationID, err := creator.CreateAnchor(ctx, serverID, repoID, localPath)
+		operationID, err := c.createAnchorWhenReady(ctx, creator, serverID, repoID, localPath)
 		if err != nil {
 			c.finishProjectedAction(actionID)
 			c.reportActionError(ctx, key, c.uiText("feedback.anchorFailed", "Nie można utworzyć punktu zaczepienia"), name+" — "+c.actionErrorBody(err))

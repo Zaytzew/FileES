@@ -1,5 +1,7 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "progress.anchor.title": "Tworzenie punktu zaczepienia",
+  "progress.anchor.text": "„{name}” — czekam na zakończenie innych operacji lokalnych i przygotowuję folder wirtualny.",
   "storageCapacity.details": "Magazyn repozytoriów: {percent}% zajęte lub zarezerwowane · wolne {free} z {total}",
   "storageCapacity.stale": "ostatni pomiar — dane nieaktualne",
   "storageCapacity.unknown": "Magazyn repozytoriów: brak pomiaru",

@@ -2,6 +2,7 @@ package ipcserver
 
 import (
 	"errors"
+	"filees/pkg/commit"
 	"path/filepath"
 	"testing"
 
@@ -60,6 +61,20 @@ func TestAnAnchorIsAnAttachmentWithNothingChosen(t *testing.T) {
 	}
 	if !hasCapability(server.capabilities(), contract.CapRepoExplorerAnchor) {
 		t.Fatal("a daemon that can make anchors must say so")
+	}
+}
+
+func TestAnchorBusyIsTypedOnlyBeforeAnIntentBegins(t *testing.T) {
+	server, stub := anchorServer(t, func(string) error { return nil })
+	stub.anchorErr = commit.ErrLocalStatusBusy
+	response := server.dispatch(lifecycleRequest(contract.CmdRepoAnchorCreate, contract.RepoAnchorCreatePayload{ServerID: "primary", RepoID: "repo-1", LocalPath: filepath.Join(t.TempDir(), "point")}))
+	if response.Error == nil || response.Error.Code != "HEAD-2026" || response.Error.MessageKey != "head.anchor_busy" || stub.approveCalls != 0 || stub.anchorCalls != 0 {
+		t.Fatal(response, stub)
+	}
+	server.SetAnchorPrecheck(func(string) error { return commit.ErrLocalStatusBusy })
+	response = server.dispatch(lifecycleRequest(contract.CmdRepoAnchorCreate, contract.RepoAnchorCreatePayload{ServerID: "primary", RepoID: "repo-1", LocalPath: filepath.Join(t.TempDir(), "point")}))
+	if response.Error.Code == "HEAD-2026" {
+		t.Fatal("precheck error gained admission retry")
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,18 +20,21 @@ import (
 )
 
 type repositoryLifecycleService struct {
-	localIntentMu *sync.Mutex
-	anchorEnabled func(string) bool
-	store         *localrepo.Store
-	provisioning  *provisioning.Store
-	clientID      func(string) string
-	existingRoots []string
-	onCreate      func(string)
-	onAttach      func(attachmentRequest)
-	onRelocate    func(string)
-	onDetach      func(context.Context, string) (localrepo.Record, error)
-	onLoadDump    func(string)
-	onRepair      func(context.Context, string, string) (localrepo.Record, error)
+	localIntentMu          *sync.Mutex
+	anchorAdmissionCtx     context.Context
+	anchorAdmissionWaiters *atomic.Int32
+	anchorAdmissionCheck   func(string, string) error
+	anchorEnabled          func(string) bool
+	store                  *localrepo.Store
+	provisioning           *provisioning.Store
+	clientID               func(string) string
+	existingRoots          []string
+	onCreate               func(string)
+	onAttach               func(attachmentRequest)
+	onRelocate             func(string)
+	onDetach               func(context.Context, string) (localrepo.Record, error)
+	onLoadDump             func(string)
+	onRepair               func(context.Context, string, string) (localrepo.Record, error)
 	// importProgress answers the running initial publication, if any.
 	importProgress func(string) *contract.PublishProgress
 }
@@ -379,11 +384,22 @@ func (service repositoryLifecycleService) BeginSparseAttach(serverID, repoID, lo
 // lifecycle: an empty root, nothing chosen, placeholders seeded afterwards by
 // the anchor manager.
 func (service repositoryLifecycleService) BeginAnchorAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
-	leave, err := service.enterLocalIntent()
+	parent := service.anchorAdmissionCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 4*time.Second)
+	defer cancel()
+	leave, err := service.waitForAnchorTurn(ctx)
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
 	defer leave()
+	if service.anchorAdmissionCheck != nil {
+		if err := service.anchorAdmissionCheck(serverID, repoID); err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
+	}
 	if service.anchorEnabled != nil && !service.anchorEnabled(serverID) {
 		return contract.RepoLifecycleResult{}, errors.New("virtual folders are disabled")
 	}
@@ -393,6 +409,40 @@ func (service repositoryLifecycleService) BeginAnchorAttach(serverID, repoID, lo
 	}
 	record, err := service.store.BeginAnchorAttach(serverID, repoID, check.CanonicalPath, required)
 	return lifecycleResult(record), err
+}
+
+// Bounded admission only, within the normal IPC deadline. Observers yield to
+// this same creation priority; no transaction, checkout or network is retried.
+// All path/activation checks still run AFTER admission, with the fence held.
+func (service repositoryLifecycleService) waitForAnchorTurn(ctx context.Context) (func(), error) {
+	if service.anchorAdmissionWaiters != nil {
+		service.anchorAdmissionWaiters.Add(1)
+		defer service.anchorAdmissionWaiters.Add(-1)
+	}
+	retry := time.NewTicker(25 * time.Millisecond)
+	defer retry.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, commit.ErrLocalStatusBusy
+			}
+			return nil, err
+		}
+		if service.localIntentMu == nil {
+			return func() {}, nil
+		}
+		if service.localIntentMu.TryLock() {
+			if err := ctx.Err(); err != nil {
+				service.localIntentMu.Unlock()
+				return nil, err
+			}
+			return service.localIntentMu.Unlock, nil
+		}
+		select {
+		case <-ctx.Done():
+		case <-retry.C:
+		}
+	}
 }
 
 // MarkFullDepth records that a sparse working copy now holds the whole tree,

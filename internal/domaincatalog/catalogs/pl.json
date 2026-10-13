@@ -4,6 +4,8 @@
   "name": "Polski",
   "dictionary_version": "1",
   "messages": {
+    "head.anchor_busy": "FileES kończy inną operację lokalną. Punkt zaczepienia jeszcze nie został utworzony; oczekiwanie jest bezpieczne.",
+    "head.anchor_wait_timeout": "Nie udało się potwierdzić rozpoczęcia tworzenia punktu w czasie oczekiwania. Sprawdź stan folderu i spróbuj ponownie.",
     "head.release_queue_full": "Kolejka zwolnień miejsca jest pełna. Sprawdź wyniki wcześniejszych działań i spróbuj później.",
     "head.release_queue_interrupted": "Zwalnianie miejsca przerwano bez pewnego wyniku. Sprawdź folder i dziennik; potwierdź ponownie tylko pozostałe pliki.",
     "head.move_read_only": "Nie masz teraz prawa do zmiany tego repozytorium.",

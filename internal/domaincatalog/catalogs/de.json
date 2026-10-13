@@ -4,6 +4,8 @@
   "name": "Deutsch",
   "dictionary_version": "1",
   "messages": {
+    "head.anchor_busy": "FileES schließt einen anderen lokalen Vorgang ab. Der virtuelle Ordner wurde noch nicht erstellt; das Warten ist sicher.",
+    "head.anchor_wait_timeout": "Die Wartezeit endete ohne Bestätigung, dass die Erstellung des virtuellen Ordners begonnen hat. Prüfen Sie den Ordnerstatus und versuchen Sie es erneut.",
     "head.release_queue_full": "Die Warteschlange zur Speicherfreigabe ist voll. Prüfen Sie frühere Ergebnisse und versuchen Sie es später erneut.",
     "head.release_queue_interrupted": "Die Speicherfreigabe wurde ohne sicheres Ergebnis unterbrochen. Prüfen Sie Ordner und Journal; bestätigen Sie nur verbleibende Dateien erneut.",
     "head.move_read_only": "Sie dürfen dieses Repository derzeit nicht ändern.",

@@ -62,7 +62,7 @@ function published(done, total, bytesSent, bytesTotal) {
 function measure(item) {
 	// Folder hydration/release has only a final batch receipt. Do not borrow
 	// publication counters and pretend they measure this different operation.
-	if (item.presentation_key?.startsWith("progress.anchorFolder.")) return { line: "", share: null };
+	if (item.presentation_key === "progress.anchor" || item.presentation_key?.startsWith("progress.anchorFolder.")) return { line: "", share: null };
   // The initial publication of a new repository runs before the repository
   // is in the snapshot; the daemon measures it and the wait itself carries it.
   const own = item.measure;

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errcat"
 )
@@ -14,6 +15,16 @@ import (
 // RepositoryLifecycleService, like SparseAttacher.
 type AnchorAttacher interface {
 	BeginAnchorAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
+}
+
+// Revalidate the active, unattached selector after a bounded local admission
+// wait, before recording any intent. It is not another command or permission.
+func (s *Server) ValidateAnchorAdmission(serverID, repoID string) error {
+	repo, summary, _, ok := s.headRepo("", serverID, repoID)
+	if !ok || summary.Attached || repo.ProjectedState() != contract.StateActive || s.anchorPrecheck() == nil {
+		return errcat.New("head.folder_unavailable", nil, nil)
+	}
+	return nil
 }
 
 // AnchorPrecheck refuses a folder that cannot be an anchor on this machine:
@@ -111,6 +122,9 @@ func (s *Server) handleAnchorCreate(req contract.Request) contract.Response {
 		return contract.ErrResponse(req.RequestID, "REPO-2004", "ERROR", "RETRY", "repo.not_attachable", nil)
 	}
 	begun, err := anchor.BeginAnchorAttach(p.ServerID, p.RepoID, local, summary.AttachmentPolicy == "required")
+	if errors.Is(err, commit.ErrLocalStatusBusy) && begun.OperationID == "" && begun.State == "" && begun.LocalPath == "" {
+		return contract.ErrResponse(req.RequestID, "HEAD-2026", "INFO", "RETRY_LOCAL", "head.anchor_busy", nil)
+	}
 	var fault errcat.Fault
 	if errors.As(err, &fault) {
 		// Not empty, inside another working copy, overlapping a repository:

@@ -594,17 +594,28 @@ func TestControllerDetachCanAlsoDeleteTheFolderAfterAskingAboutUnpublishedChange
 type anchorAttacher struct {
 	fakeRepositoryAttacher
 	anchors chan attachCall
+	release <-chan struct{}
 }
 
-func (a *anchorAttacher) CreateAnchor(_ context.Context, serverID, repoID, localPath string) (string, error) {
+func (a *anchorAttacher) CreateAnchor(ctx context.Context, serverID, repoID, localPath string) (string, error) {
 	a.anchors <- attachCall{serverID: serverID, repoID: repoID, localPath: localPath}
+	if a.release != nil {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-a.release:
+		}
+	}
 	return "anchor-" + repoID, nil
 }
 
 // Owner, 2026-09-28: "Utwórz kotwicę w Eksploratorze". The user picks where;
 // the anchor is a new folder named after the repository inside it.
 func TestControllerCreatesAnAnchorInANewFolderNamedAfterTheRepository(t *testing.T) {
-	attacher := &anchorAttacher{fakeRepositoryAttacher: fakeRepositoryAttacher{calls: make(chan attachCall, 1)}, anchors: make(chan attachCall, 1)}
+	release := make(chan struct{})
+	defer close(release)
+	progress := &recordedProgress{}
+	attacher := &anchorAttacher{fakeRepositoryAttacher: fakeRepositoryAttacher{calls: make(chan attachCall, 1)}, anchors: make(chan attachCall, 1), release: release}
 	parent := filepath.Join(os.TempDir(), "FileES-Kotwice")
 	var pickerTitle string
 	platformFake := &platformtest.Fake{PickFolderFunc: func(_ context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
@@ -620,11 +631,14 @@ func TestControllerCreatesAnAnchorInANewFolderNamedAfterTheRepository(t *testing
 	}
 	intents, cancel := setup(actions.Config{
 		ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake,
-		RepositoryAttacher: attacher, Notifier: platformFake, CreationStatusPollInterval: time.Millisecond,
+		RepositoryAttacher: attacher, Notifier: platformFake, Progress: progress, CreationStatusPollInterval: time.Millisecond,
 	})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentCreateAnchor, ServerID: "office", RepoID: "oppo"})
 	call := awaitCh(t, attacher.anchors, "anchor")
+	if keys, open := progress.state(); len(keys) != 1 || keys[0] != "progress.anchor:Oppo: Reno" || open != 1 {
+		t.Fatal("pinning lacks visible spinner", keys, open)
+	}
 	if call.serverID != "office" || call.repoID != "oppo" || call.localPath != filepath.Join(parent, "Oppo_ Reno") {
 		t.Fatalf("anchor call = %+v", call)
 	}

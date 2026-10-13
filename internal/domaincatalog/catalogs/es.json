@@ -4,6 +4,8 @@
   "name": "Español",
   "dictionary_version": "1",
   "messages": {
+    "head.anchor_busy": "FileES está terminando otra operación local. La carpeta virtual todavía no se ha creado; esperar es seguro.",
+    "head.anchor_wait_timeout": "La espera terminó sin confirmar el inicio de la creación de la carpeta virtual. Comprueba su estado e inténtalo de nuevo.",
     "head.release_queue_full": "La cola para liberar espacio está llena. Revisa los resultados anteriores e inténtalo más tarde.",
     "head.release_queue_interrupted": "La liberación de espacio se interrumpió sin un resultado seguro. Revisa la carpeta y el diario; confirma de nuevo solo los archivos restantes.",
     "head.move_read_only": "Actualmente no tienes permiso para modificar este repositorio.",

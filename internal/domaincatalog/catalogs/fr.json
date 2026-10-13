@@ -4,6 +4,8 @@
   "name": "Français",
   "dictionary_version": "1",
   "messages": {
+    "head.anchor_busy": "FileES termine une autre opération locale. Le dossier virtuel n’a pas encore été créé ; l’attente est sûre.",
+    "head.anchor_wait_timeout": "L’attente s’est terminée sans confirmation du début de création du dossier virtuel. Vérifiez son état et réessayez.",
     "head.release_queue_full": "La file de libération d’espace est pleine. Vérifiez les résultats précédents et réessayez plus tard.",
     "head.release_queue_interrupted": "La libération d’espace a été interrompue sans résultat certain. Vérifiez le dossier et le journal ; confirmez à nouveau uniquement les fichiers restants.",
     "head.move_read_only": "Vous ne pouvez pas modifier ce dépôt actuellement.",

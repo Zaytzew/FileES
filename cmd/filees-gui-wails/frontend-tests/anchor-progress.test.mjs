@@ -14,5 +14,8 @@ test("folder spinner never borrows publication percentages", () => {
     assert.equal(result.share, null);
     assert.equal(result.line, "");
   }
+	const pinning = sandbox.inspect.measure({presentation_key:"progress.anchor",presentation_args:{path:"D:/folder"}});
+	assert.equal(pinning.share,null);
+	assert.equal(pinning.line,"");
   assert.equal(sandbox.inspect.measure({ presentation_key: "progress.attach", presentation_args: { path: "D:/folder" } }).share, 0.7);
 });

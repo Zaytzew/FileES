@@ -264,11 +264,9 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 }
 
 func (service repositoryLifecycleService) BeginCreateArchive(serverID, displayName, localPath, archivePath string) (contract.RepoLifecycleResult, error) {
-	leave, err := service.enterLocalIntent()
-	if err != nil {
-		return contract.RepoLifecycleResult{}, err
-	}
-	defer leave()
+	// Accept and reserve the durable intent, not the execution turn. Store
+	// serialises competing root reservations; the provisioner waits for the
+	// shared local fence before revalidating and doing any preparation.
 	if service.provisioning == nil {
 		return contract.RepoLifecycleResult{}, errors.New("archive provisioning is unavailable")
 	}
@@ -443,6 +441,9 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 				continue
 			}
 			roots = append(roots, record.LocalPath)
+			if record.PendingLocalPath != "" {
+				roots = append(roots, record.PendingLocalPath)
+			}
 		}
 	}
 	return roots

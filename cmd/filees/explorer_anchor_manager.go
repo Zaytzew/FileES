@@ -66,6 +66,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
+	anchors.creationWaiters = &provisioner.creationWaiters
 	var records []localrepo.Record
 	if lifecycle != nil {
 		records = lifecycle.List()
@@ -107,7 +108,8 @@ type anchorManager struct {
 	// profile's identity (profileSVN). Tests hand over a local client.
 	newSVN                func(serverID string) (client.Client, error)
 	localIntentMu         *sync.Mutex
-	moveWaiters           atomic.Int32 // observers yield to waiting user moves
+	moveWaiters           atomic.Int32  // observers yield to waiting user moves
+	creationWaiters       *atomic.Int32 // queued creation also has priority over background ticks
 	releaseQueue          *anchorqueue.Store
 	releasePlans          anchorReleasePlans
 	releaseRunner         anchorqueue.Runner

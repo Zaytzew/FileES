@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,11 +38,13 @@ type daemonProvisioner struct {
 	provisioning     *provisioning.Store
 	mu               sync.RWMutex
 	detachMu         sync.Mutex
-	localIntentMu    sync.Mutex // lifecycle intent admission versus explicit CFAPI actions
+	localIntentMu    sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
+	creationWaiters  atomic.Int32 // metadata observers yield to queued creation preparation
 	detachAnchor     func(context.Context, localrepo.Record) error
 	anchorEnabled    func(string) bool // immutable wiring; reads per-server durable preference
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
+	queued           map[string]bool // deduplicate wakeups; durable journals remain authoritative
 	attachments      chan<- provisionedAttachment
 	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
 	recoveryRegistry recoverykit.Registry
@@ -215,10 +218,19 @@ func (p *daemonProvisioner) Profile(serverID string) (clientprofile.Profile, boo
 }
 
 func (p *daemonProvisioner) Enqueue(operationID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.queued == nil {
+		p.queued = make(map[string]bool)
+	}
+	if p.queued[operationID] {
+		return
+	}
 	select {
 	case p.queue <- operationID:
+		p.queued[operationID] = true
 	default:
-		talk.With("provisioning").Warnf("queue full; operation %s remains durable for restart", operationID)
+		talk.With("provisioning").Warnf("queue full; operation %s remains durable for retry", operationID)
 	}
 }
 
@@ -234,7 +246,11 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 			return
 		case <-cleanupRetry.C:
 			p.retryPendingCleanup(ctx)
+			p.requeuePendingCreations()
 		case operationID := <-p.queue:
+			p.mu.Lock()
+			delete(p.queued, operationID)
+			p.mu.Unlock()
 			p.runOne(ctx, operationID)
 		}
 	}
@@ -434,6 +450,13 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	}
 	if record.RepoID != "" && record.State != localrepo.StateRepositoryCreated {
 		p.runAttach(ctx, record, profile)
+		return
+	}
+	record, profile, err := p.prepareQueuedCreation(ctx, record.OperationID)
+	if err != nil {
+		if !errors.Is(err, errCreationIntentEnded) {
+			p.recordCreateFailureContext(ctx, operationID, err)
+		}
 		return
 	}
 	if operation, err := p.provisioning.Get(operationID); err == nil && operation.ArchivePending() {
@@ -1523,6 +1546,9 @@ func (p *daemonProvisioner) otherRoots(operationID string) []string {
 				continue
 			}
 			roots = append(roots, record.LocalPath)
+			if record.PendingLocalPath != "" {
+				roots = append(roots, record.PendingLocalPath)
+			}
 		}
 	}
 	return roots

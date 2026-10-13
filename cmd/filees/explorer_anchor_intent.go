@@ -54,12 +54,16 @@ func (m *anchorManager) enterObserverIntent() (func(), error) {
 	if m.localIntentMu == nil {
 		return func() {}, nil
 	}
-	if m.moveWaiters.Load() != 0 || !m.localIntentMu.TryLock() {
+	if m.observerMustYield() || !m.localIntentMu.TryLock() {
 		return nil, commit.ErrLocalStatusBusy
 	}
-	if m.moveWaiters.Load() != 0 {
+	if m.observerMustYield() {
 		m.localIntentMu.Unlock()
 		return nil, commit.ErrLocalStatusBusy
 	}
 	return m.localIntentMu.Unlock, nil
+}
+
+func (m *anchorManager) observerMustYield() bool {
+	return m.moveWaiters.Load() != 0 || (m.creationWaiters != nil && m.creationWaiters.Load() != 0)
 }

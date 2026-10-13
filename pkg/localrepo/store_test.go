@@ -15,6 +15,25 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestQueuedCreateCannotReservePendingRelocationTarget(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	repoID := uuid.NewString()
+	if _, _, err := s.EnsureConfiguredAttached("office", repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(root, "old"), "Old"); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "moving-here")
+	if _, err := s.BeginRelocation("office", repoID, target, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.BeginCreate("office", "Other", filepath.Join(target, "nested")); err == nil {
+		t.Fatal("queued creation stole pending relocation target")
+	}
+}
+
 func TestDeletionPersistsServerBoundaryRecoveryAndLocalCleanupSeparately(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)

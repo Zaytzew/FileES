@@ -403,7 +403,7 @@ func (s *Store) beginLocked(record Record) (Record, error) {
 		if existing.ServerID == record.ServerID && record.RepoID != "" && existing.RepoID == record.RepoID {
 			return Record{}, errors.New("repository already has a local lifecycle record")
 		}
-		if pathsOverlap(existing.LocalPath, record.LocalPath) {
+		if pathsOverlap(existing.LocalPath, record.LocalPath) || (existing.PendingLocalPath != "" && pathsOverlap(existing.PendingLocalPath, record.LocalPath)) {
 			return Record{}, errors.New("local path overlaps another FileES repository root")
 		}
 	}

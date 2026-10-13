@@ -6,12 +6,28 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"filees/pkg/commit"
 	"filees/pkg/localrepo"
 )
+
+func TestObserverYieldsToQueuedRepositoryCreation(t *testing.T) {
+	var waiters atomic.Int32
+	m := &anchorManager{localIntentMu: &sync.Mutex{}, creationWaiters: &waiters}
+	waiters.Store(1)
+	if _, err := m.enterObserverIntent(); !errors.Is(err, commit.ErrLocalStatusBusy) {
+		t.Fatal("tick overtook queued creation", err)
+	}
+	waiters.Store(0)
+	leave, err := m.enterObserverIntent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leave()
+}
 
 func TestAnchorMoveWaitsForObserverAndThrottlesTicksThroughCompletion(t *testing.T) {
 	m := &anchorManager{localIntentMu: &sync.Mutex{}}

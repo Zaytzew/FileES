@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/cloudfiles"
 	"filees/pkg/localrepo"
+	"github.com/google/uuid"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -88,7 +89,7 @@ func TestAnchorShellRegistrationAndDetachAreIndependent(t *testing.T) {
 		}
 		if names := shellRootsForPath(t, root); len(names) != 1 {
 			t.Fatalf("shell registrations: %v", names)
-		} else if shellRootPinned(t, names[0]) != 0 {
+		} else if shellRootPinned(t, names[0]) != 0 || shellRootEnumerated(t, names[0]) {
 			t.Fatal("registration implicitly pinned navigation shortcut")
 		}
 		answer, err := m.call(ctx, "", "info", "--root", root)
@@ -191,10 +192,54 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 	}
 	for _, value := range []string{"0", "1", "0", "1"} {
 		answer, err := m.call(ctx, "", "shell-visibility", "--root", old, "--visible", value)
-		if err != nil || !answer.OK || !cloudfiles.IsSyncRoot(old) || shellRootPinned(t, ids[0]) != uint64(value[0]-'0') {
+		if err != nil || !answer.OK || !cloudfiles.IsSyncRoot(old) || shellRootPinned(t, ids[0]) != uint64(value[0]-'0') || shellRootEnumerated(t, ids[0]) != (value == "1") {
 			t.Fatal("visibility changed CFAPI or did not apply", answer, err)
 		}
 	}
+	// A label is not enough to own a navigation link. Refuse foreign/default
+	// metadata, extra values and child keys before changing its pin or deleting.
+	link, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\`+shellRootNamespace(t, ids[0]), registry.ALL_ACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, malformed := range []string{"foreign-id", "extra-value", "child"} {
+		switch malformed {
+		case "foreign-id":
+			err = link.SetStringValue("", "another-provider")
+		case "extra-value":
+			err = link.SetDWordValue("Unrelated", 42)
+		case "child":
+			var child registry.Key
+			child, _, err = registry.CreateKey(link, "Unrelated", registry.ALL_ACCESS)
+			child.Close()
+		}
+		if err != nil {
+			link.Close()
+			t.Fatal(err)
+		}
+		answer, callErr := m.call(ctx, "", "shell-visibility", "--root", old, "--visible", "0")
+		if callErr != nil || answer.OK || shellRootPinned(t, ids[0]) != 1 || !cloudfiles.IsSyncRoot(old) {
+			link.Close()
+			t.Fatal("unknown navigation metadata changed", malformed, answer, callErr)
+		}
+		switch malformed {
+		case "foreign-id":
+			err = link.SetStringValue("", ids[0])
+		case "extra-value":
+			err = link.DeleteValue("Unrelated")
+		case "child":
+			err = registry.DeleteKey(link, "Unrelated")
+		}
+		if err != nil {
+			link.Close()
+			t.Fatal("restore disposable navigation link", err)
+		}
+		if !shellRootEnumerated(t, ids[0]) {
+			link.Close()
+			t.Fatal("unknown link removed")
+		}
+	}
+	link.Close()
 	if answer, err := m.call(ctx, "", "shell-visibility", "--root", parent, "--visible", "1"); err != nil || answer.OK || !cloudfiles.IsSyncRoot(old) {
 		t.Fatal("ordinary folder visibility accepted", answer, err)
 	}
@@ -239,13 +284,75 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 	if callErr != nil || answer.OK || shellRootPinned(t, ids[0]) != 1 || !cloudfiles.IsSyncRoot(moved) || !cloudfiles.IsSyncRoot(sibling) {
 		t.Fatal("wrong namespace target changed either root", answer, callErr)
 	}
+	// A previous registration can leave another Desktop link for the same ID
+	// that is no longer referenced by SyncRootManager.NamespaceCLSID.
+	duplicate := "{" + uuid.NewString() + "}"
+	duplicateClass := `Software\Classes\CLSID\` + duplicate
+	duplicateLink := `Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\` + duplicate
+	for _, fixture := range []struct{ path, name, value string }{
+		{duplicateClass, "", "FileES — retired fixture"},
+		{duplicateClass + `\Instance\InitPropertyBag`, "TargetFolderPath", old},
+		{duplicateLink, "", ids[0]},
+	} {
+		key, _, err := registry.CreateKey(registry.CURRENT_USER, fixture.path, registry.ALL_ACCESS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = key.SetStringValue(fixture.name, fixture.value)
+		key.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, duplicateClass+`\ShellFolder`, registry.ALL_ACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = key.SetDWordValue("Attributes", 0xF080004D)
+	key.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err = registry.OpenKey(registry.CURRENT_USER, duplicateClass, registry.ALL_ACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = key.SetDWordValue("System.IsPinnedToNameSpaceTree", 1)
+	key.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, path := range []string{duplicateLink, duplicateClass + `\Instance\InitPropertyBag`, duplicateClass + `\Instance`, duplicateClass + `\ShellFolder`, duplicateClass} {
+			if err := registry.DeleteKey(registry.CURRENT_USER, path); err != nil && err != registry.ErrNotExist {
+				t.Error("remove exact disposable namespace key", err)
+			}
+		}
+	})
 	for range 2 {
 		answer, err = m.call(ctx, "", "shell-hide-obsolete", "--root", old, "--registration-id", ids[0])
 		if err != nil || !answer.OK {
 			t.Fatal("hide obsolete shortcut/retry", answer, err)
 		}
-		if len(shellRootsForPath(t, old)) != 1 || shellRootPinned(t, ids[0]) != 0 || !cloudfiles.IsSyncRoot(moved) {
+		if len(shellRootsForPath(t, old)) != 1 || shellRootPinned(t, ids[0]) != 0 || shellRootEnumerated(t, ids[0]) || !cloudfiles.IsSyncRoot(moved) {
 			t.Fatal("shortcut not hidden or native registration changed")
+		}
+		key, err := registry.OpenKey(registry.CURRENT_USER, duplicateLink, registry.READ)
+		if err == nil {
+			key.Close()
+			t.Fatal("unreferenced duplicate navigation link remains")
+		}
+		if err != registry.ErrNotExist {
+			t.Fatal(err)
+		}
+		key, err = registry.OpenKey(registry.CURRENT_USER, duplicateClass+`\ShellFolder`, registry.READ)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flags, _, err := key.GetIntegerValue("Attributes")
+		key.Close()
+		if err != nil || flags != 0xF090004D {
+			t.Fatal("duplicate class changed unrelated flags or remains enumerable", flags, err)
 		}
 	}
 	// Exercise the daemon's sweep with discovery explicitly limited to this
@@ -292,7 +399,7 @@ func TestAnchorShellHideObsoletePreservesMovedNativeRoot(t *testing.T) {
 	}
 	for _, visible := range []bool{true, false, true} {
 		state, err := m.ExplorerShortcut(ctx, "test", "sibling", &visible, r.OperationID)
-		if err != nil || state.Visible != visible || shellRootPinned(t, siblings[0]) != uint64(boolInt(visible)) || !cloudfiles.IsSyncRoot(sibling) || !cloudfiles.IsSyncRoot(moved) {
+		if err != nil || state.Visible != visible || shellRootPinned(t, siblings[0]) != uint64(boolInt(visible)) || shellRootEnumerated(t, siblings[0]) != visible || !cloudfiles.IsSyncRoot(sibling) || !cloudfiles.IsSyncRoot(moved) {
 			t.Fatal("scoped preference changed native roots", state, err)
 		}
 	}
@@ -350,4 +457,35 @@ func shellRootPinned(t *testing.T, id string) uint64 {
 		t.Fatal(err)
 	}
 	return value
+}
+
+// Desktop enumeration, unlike the pin, also controls "Show all folders".
+func shellRootEnumerated(t *testing.T, id string) bool {
+	t.Helper()
+	namespace := shellRootNamespace(t, id)
+	attributes, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\CLSID\`+namespace+`\ShellFolder`, registry.READ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags, _, err := attributes.GetIntegerValue("Attributes")
+	attributes.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\`+namespace, registry.READ)
+	if err == registry.ErrNotExist {
+		if flags&0x00100000 == 0 {
+			t.Fatal("hidden namespace class remains enumerable")
+		}
+		return false
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Close()
+	value, _, err := key.GetStringValue("")
+	if err != nil || value != id || flags&0x00100000 != 0 {
+		t.Fatal("unexpected Desktop namespace binding", value, err)
+	}
+	return true
 }

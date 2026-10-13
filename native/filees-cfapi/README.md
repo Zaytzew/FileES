@@ -5,10 +5,24 @@
 2026-10-12, baza r2098 + WC: shell_visibility_v1 rozdziela integrację CFAPI
 od przypięcia do panelu nawigacji. shell-register przyjmuje --visible 0|1,
 bez argumentu domyślnie 0. shell-visibility --root <własny punkt> --visible
-0|1 zmienia tylko istniejący DWORD HKCU; sprawdza rzeczywisty własny root,
+0|1 zmienia prezentację HKCU; sprawdza rzeczywisty własny root,
 namespace powiązany z bieżącym SID/ścieżką, TargetFolderPath i nazwę FileES.
 Nie wyrejestrowuje SDK ani CFAPI i nie zmienia danych. Natywne przełączenie
 0/1 z zachowaniem sąsiada i bajtów PASS, wizualny Explorer osobno.
+
+2026-10-13: samo pin=0 nie ukrywa wpisu przy „Pokaż wszystkie foldery”.
+`shell_namespace_visibility_v1` usuwa przy ukryciu tylko odwołanie HKCU
+Desktop/NameSpace/CLSID, ustawia SFGAO_NONENUMERATED w klasie skrótu
+(pozostałe flagi zachowane), a przy pokazaniu odtwarza odwołanie z tym
+samym ID i zdejmuje tę flagę. Klasa CLSID i SyncRootManager pozostają.
+Odwołanie musi mieć wyłącznie domyślną wartość dokładnego ID, bez dzieci;
+obce wartości/podklucze odmawiają przed zmianą. Powiadomienie dokładnego
+namespace i pulpitu odświeża otwarte drzewa, bez restartu powłoki.
+Przy ukrywaniu pomocnik wyszukuje także dodatkowe liście Desktop/NameSpace
+z dokładnym ID, które poprzednie Register pozostawiło poza bieżącym
+NamespaceCLSID. Odczyt ograniczony do 512 liści; każda klasa ponownie
+sprawdzana względem ścieżki i etykiety FileES. „Pokaż” odtwarza tylko
+bieżący skrót, nie martwe duplikaty.
 
 Demon zapisuje lokalną preferencję w lifecycle konkretnej WC, domyślnie
 false także dla starych rekordów bez pola. Odtwarza ją przy rejestracji
@@ -23,7 +37,8 @@ wymaga nowego pomocnika; stary helper nie dostaje nowego ustawienia GUI.
 2026-10-12, baza r2096 + WC: opcjonalne `shell_hide_obsolete_v1` dodaje
 `shell-hide-obsolete --root <stara ścieżka> --registration-id <ID>`.
 To wyłącznie zmiana widoczności istniejącego skrótu: DWORD
-`System.IsPinnedToNameSpaceTree=0` w dokładnej klasie HKCU i powiadomienie
+`System.IsPinnedToNameSpaceTree=0`, SFGAO_NONENUMERATED w dokładnej klasie
+HKCU, usunięcie związanego odwołania Desktop/NameSpace i powiadomienie
 Shell. Rejestracja SDK/CFAPI oraz pliki pozostają. Nie używać Unregister
 do sprzątania brakującej starej ścieżki: Windows może nadal śledzić
 przeniesiony działający punkt po FileID, co wykazała próba natywna.
@@ -32,7 +47,7 @@ Pomocnik niezależnie wiąże ID z bieżącym SID i SHA-256 ścieżki, odczytuje
 SyncRootManager/UserSyncRoots oraz NamespaceCLSID, sprawdza TargetFolderPath
 i nazwę FileES w istniejącej klasie. Wymaga brakującej ścieżki na dostępnym
 lokalnym stałym woluminie; istniejący/nieznany/odłączony cel odmawia.
-Nie tworzy ani nie usuwa kluczy. Go chroni wszystkie ścieżki lifecycle,
+Nie usuwa klasy CLSID ani rejestracji dostawcy. Go chroni wszystkie ścieżki lifecycle,
 w tym pending/preserved, i wykonuje bounded sweep pod istniejącą blokadą
 raz przy starcie lub zmianie zestawu ścieżek. Stary helper jest pomijany.
 Warianty Linux/nocfapi bez nowych efektów. Native fixtures i regresje PASS;

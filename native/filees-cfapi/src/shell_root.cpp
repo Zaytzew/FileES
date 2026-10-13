@@ -85,7 +85,7 @@ std::wstring registry_string(HKEY key, const WCHAR *name) {
     return std::wstring(stored.data(),length);
 }
 
-std::vector<std::wstring> orphan_namespaces(const std::wstring &id, const std::wstring &path) {
+std::vector<std::wstring> orphan_namespaces(const std::wstring &id, const std::wstring &path, bool navigation_copies = false) {
     auto sid_end = id.find(L'!', 7);
     if (sid_end == std::wstring::npos) throw hresult_invalid_argument();
     auto sid = id.substr(7, sid_end - 7); // after FileES!
@@ -106,6 +106,42 @@ std::vector<std::wstring> orphan_namespaces(const std::wstring &id, const std::w
         check_hresult(CLSIDFromString(clsid.c_str(),&guid));
         result.push_back(clsid);
     }
+    // Register can replace NamespaceCLSID while an earlier Desktop link stays
+    // behind. Discovery by SyncRootManager alone misses that duplicate. Only
+    // hiding discovers such copies; showing recreates the current link once.
+    if (navigation_copies) {
+        registry_key desktop;
+        LSTATUS status = RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace",
+            0,KEY_READ | KEY_WOW64_64KEY,&desktop.value);
+        if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) return result;
+        check_hresult(HRESULT_FROM_WIN32(status));
+        DWORD count = 0;
+        check_hresult(HRESULT_FROM_WIN32(RegQueryInfoKeyW(desktop.value,nullptr,nullptr,nullptr,
+            &count,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr)));
+        if (count > 512) throw hresult_invalid_argument();
+        for (DWORD i = 0; i < count; ++i) {
+            WCHAR name[256]{};
+            DWORD length = ARRAYSIZE(name);
+            status = RegEnumKeyExW(desktop.value,i,name,&length,nullptr,nullptr,nullptr,nullptr);
+            if (status == ERROR_NO_MORE_ITEMS) break;
+            check_hresult(HRESULT_FROM_WIN32(status));
+            registry_key link;
+            check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(desktop.value,name,0,KEY_READ,&link.value)));
+            WCHAR owner[256]{};
+            DWORD bytes = sizeof owner;
+            status = RegGetValueW(link.value,nullptr,nullptr,RRF_RT_REG_SZ,nullptr,owner,&bytes);
+            if (status != ERROR_SUCCESS || wcsnlen_s(owner,ARRAYSIZE(owner)) == ARRAYSIZE(owner) || id != owner)
+                continue;
+            std::wstring clsid(name,length);
+            GUID guid{};
+            if (clsid.size()!=38 || clsid.front()!=L'{' || clsid.back()!=L'}') throw hresult_invalid_argument();
+            check_hresult(CLSIDFromString(clsid.c_str(),&guid));
+            bool found = false;
+            for (auto const &known : result) found = found || !_wcsicmp(known.c_str(),clsid.c_str());
+            if (!found) result.push_back(clsid);
+        }
+    }
     return result;
 }
 
@@ -121,18 +157,95 @@ void require_missing_online_root(const std::wstring &path) {
         check_hresult(HRESULT_FROM_WIN32(error));
 }
 
+// Pin=0 only hides an extension in the default navigation view. Remove the
+// Desktop enumeration link as well, without unregistering SDK/native CFAPI.
+// The link is a leaf containing this exact sync-root ID; unknown data refuses.
+void navigation_visibility(const std::wstring &clsid, const std::wstring &id, BOOL visible) {
+    const WCHAR *base = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace";
+    registry_key parent;
+    check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,base,0,
+        KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,&parent.value)));
+    registry_key attributes;
+    auto shell_folder = L"Software\\Classes\\CLSID\\"+clsid+L"\\ShellFolder";
+    check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,shell_folder.c_str(),0,
+        KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_64KEY,&attributes.value)));
+    DWORD flags = 0, bytes = sizeof flags;
+    check_hresult(HRESULT_FROM_WIN32(RegGetValueW(attributes.value,nullptr,L"Attributes",RRF_RT_REG_DWORD,
+        nullptr,&flags,&bytes)));
+    registry_key link;
+    LSTATUS status = RegOpenKeyExW(parent.value,clsid.c_str(),0,KEY_READ,&link.value);
+    bool missing = status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND;
+    if (!missing) {
+        check_hresult(HRESULT_FROM_WIN32(status));
+        DWORD children = 0, values = 0;
+        check_hresult(HRESULT_FROM_WIN32(RegQueryInfoKeyW(link.value,nullptr,nullptr,nullptr,
+            &children,nullptr,nullptr,&values,nullptr,nullptr,nullptr,nullptr)));
+        if (children || values != 1 || registry_string(link.value,nullptr) != id)
+            throw hresult_access_denied();
+        RegCloseKey(link.value);
+        link.value = nullptr;
+    }
+    if (!visible) {
+        if (!missing) check_hresult(HRESULT_FROM_WIN32(RegDeleteKeyW(parent.value,clsid.c_str())));
+        flags |= SFGAO_NONENUMERATED;
+        check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(attributes.value,L"Attributes",0,REG_DWORD,
+            reinterpret_cast<const BYTE*>(&flags),sizeof flags)));
+        return;
+    }
+    auto show = [&]() {
+        flags &= ~static_cast<DWORD>(SFGAO_NONENUMERATED);
+        check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(attributes.value,L"Attributes",0,REG_DWORD,
+            reinterpret_cast<const BYTE*>(&flags),sizeof flags)));
+    };
+    if (!missing) { show(); return; }
+    DWORD disposition = 0;
+    check_hresult(HRESULT_FROM_WIN32(RegCreateKeyExW(parent.value,clsid.c_str(),0,nullptr,
+        REG_OPTION_NON_VOLATILE,KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_ENUMERATE_SUB_KEYS,
+        nullptr,&link.value,&disposition)));
+    // Never overwrite a link another process created between the two calls.
+    if (disposition != REG_CREATED_NEW_KEY) {
+        DWORD children = 0, values = 0;
+        check_hresult(HRESULT_FROM_WIN32(RegQueryInfoKeyW(link.value,nullptr,nullptr,nullptr,
+            &children,nullptr,nullptr,&values,nullptr,nullptr,nullptr,nullptr)));
+        if (children || values != 1 || registry_string(link.value,nullptr) != id)
+            throw hresult_access_denied();
+        show();
+        return;
+    }
+    check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(link.value,nullptr,0,REG_SZ,
+        reinterpret_cast<const BYTE*>(id.c_str()),static_cast<DWORD>((id.size()+1)*sizeof(WCHAR)))));
+    show();
+}
+
+void notify_navigation(const std::wstring &clsid, BOOL visible) {
+    // Association changes invalidate icons, not the already-open tree. Notify
+    // the exact namespace item, never the underlying filesystem folder.
+    PIDLIST_ABSOLUTE item = nullptr;
+    auto name = L"::" + clsid;
+    if (SUCCEEDED(SHParseDisplayName(name.c_str(),nullptr,&item,0,nullptr))) {
+        SHChangeNotify(visible ? SHCNE_MKDIR : SHCNE_RMDIR,SHCNF_IDLIST | SHCNF_FLUSHNOWAIT,item,nullptr);
+        CoTaskMemFree(item);
+    }
+    PIDLIST_ABSOLUTE desktop = nullptr;
+    if (SUCCEEDED(SHGetSpecialFolderLocation(nullptr,CSIDL_DESKTOP,&desktop))) {
+        SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_IDLIST | SHCNF_FLUSHNOWAIT,desktop,nullptr);
+        CoTaskMemFree(desktop);
+    }
+}
+
 }
 
 int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registration_id) {
     const char *stage = "obsolete_shell_id";
     try {
+        apartment runtime;
         auto path = canonical_path(root);
         auto id = root_id(root);
         if (id != registration_id) throw hresult_access_denied();
         stage = "obsolete_shell_missing";
         require_missing_online_root(path);
         stage = "obsolete_shell_binding";
-        for (auto const &clsid : orphan_namespaces(id,path)) {
+        for (auto const &clsid : orphan_namespaces(id,path,true)) {
             auto class_path = L"Software\\Classes\\CLSID\\"+clsid;
             registry_key shell, properties;
             check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,class_path.c_str(),0,
@@ -144,9 +257,11 @@ int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registratio
                 throw hresult_access_denied();
             require_missing_online_root(path);
             stage = "obsolete_shell_visibility";
+            navigation_visibility(clsid,id,FALSE);
             DWORD hidden = 0;
             check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
                 REG_DWORD,reinterpret_cast<const BYTE*>(&hidden),sizeof hidden)));
+            notify_navigation(clsid,FALSE);
             SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
         }
         // Do not call WinRT Unregister or CfUnregisterSyncRoot: either may
@@ -183,9 +298,10 @@ HRESULT filees_own_sync_root(const WCHAR *root) {
 
 int filees_cfapi_shell_visibility(const WCHAR *root, BOOL visible) {
     try {
+        apartment runtime;
         check_hresult(filees_own_sync_root(root));
         auto path = canonical_path(root);
-        auto namespaces = orphan_namespaces(root_id(root),path);
+        auto namespaces = orphan_namespaces(root_id(root),path,!visible);
         if (namespaces.empty()) throw hresult_access_denied();
         for (auto const &clsid : namespaces) {
             registry_key shell, properties;
@@ -196,9 +312,11 @@ int filees_cfapi_shell_visibility(const WCHAR *root, BOOL visible) {
             if (canonical_path(registry_string(properties.value,L"TargetFolderPath").c_str()) != path ||
                 registry_string(shell.value,nullptr).rfind(L"FileES — ",0)!=0) throw hresult_access_denied();
             check_hresult(filees_own_sync_root(root));
+            navigation_visibility(clsid,root_id(root),visible);
             DWORD pinned = visible ? 1 : 0;
             check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
                 REG_DWORD,reinterpret_cast<const BYTE*>(&pinned),sizeof pinned)));
+            notify_navigation(clsid,visible);
         }
         SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
         filees_cfapi_ok("shell_visibility");

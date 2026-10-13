@@ -100,6 +100,47 @@ func (j *Journal) Record(entry Entry) error {
 	return j.record(entry)
 }
 
+// RepairCompletedPublication closes an existing unfinished presentation row
+// using a completed receipt. Missing/terminal/newer rows are never replayed:
+// absence may mean retention, and the receipt is not a new user action.
+// receiptWrittenAt is only a conservative presentation fence (local intent
+// file metadata), not proof of the remote commit time. Keep both old times.
+func (j *Journal) RepairCompletedPublication(receipt Entry, receiptWrittenAt time.Time) (bool, error) {
+	if receipt.Stage != Published || receipt.Revision <= 0 || receipt.ErrorID != "" {
+		return false, errors.New("completed activity repair requires a published receipt")
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	k := key(receipt.RepoID, receipt.Path)
+	old, exists := j.entries[k]
+	if !exists || receiptWrittenAt.IsZero() || old.UpdatedAt.After(receiptWrittenAt) || old.Kind != receipt.Kind {
+		return false, nil
+	}
+	switch old.Stage {
+	case Detected, Pending, Publishing:
+	default:
+		return false, nil // Never replace received, published, reconciled or failed work.
+	}
+	updated := old
+	updated.Stage, updated.Revision = Published, receipt.Revision
+	if err := validate(updated); err != nil {
+		return false, err
+	}
+	// Retention can discard groups when a pending row joins a published one.
+	// On failure restore the whole projection so another attempt can persist it.
+	before := make(map[string]Entry, len(j.entries))
+	for key, entry := range j.entries {
+		before[key] = entry
+	}
+	j.entries[k] = updated
+	j.trim()
+	if err := j.persist(); err != nil {
+		j.entries = before
+		return false, err
+	}
+	return true, nil
+}
+
 // RecordHydration records a completed virtual-file download, not an outgoing
 // change or a proof that today's local file is clean. Check and write under the
 // same journal lock: a concurrent pipeline entry must never be overwritten by

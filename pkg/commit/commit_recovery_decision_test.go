@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/watcher"
@@ -125,6 +126,7 @@ func TestDoneIntentRepairsLegacyPendingDirectoryActivity(t *testing.T) {
 	if err := journal.Record(activity.Entry{RepoID: s.repoID, Path: "gone", Kind: activity.Deleted, Stage: activity.Pending}); err != nil {
 		t.Fatal(err)
 	}
+	original := journal.List()[0]
 	in := &commitIntent{
 		Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc,
 		Phase: "done", FirstRevision: 46, Revision: 46, Paths: []string{"gone"},
@@ -133,15 +135,132 @@ func TestDoneIntentRepairsLegacyPendingDirectoryActivity(t *testing.T) {
 	if err := s.writeIntent(wc, in); err != nil {
 		t.Fatal(err)
 	}
+	// Establish the old row/receipt order explicitly. Filesystem mtime can be
+	// coarser than time.Now; uncertain same-quantum ordering must stay deferred.
+	completed := original.UpdatedAt.Add(time.Second)
+	if err := os.Chtimes(transactionPath(wc), completed, completed); err != nil {
+		t.Fatal(err)
+	}
 	if found, err := s.recoverCommit(t.Context(), wc); err != nil || found {
 		t.Fatalf("done recovery: found=%v err=%v", found, err)
 	}
 	for _, entry := range journal.List() {
 		if entry.Path == "gone" && entry.Stage == activity.Published && entry.Revision == 46 {
+			if !entry.UpdatedAt.Equal(original.UpdatedAt) || !entry.DetectedAt.Equal(original.DetectedAt) {
+				t.Fatal("repair made an old operation look new", entry)
+			}
 			return
 		}
 	}
 	t.Fatal("legacy pending directory activity was not repaired")
+}
+
+func TestDoneIntentDoesNotResurrectRetainedHistoryAcrossPollAndRestart(t *testing.T) {
+	s, _, journal, wc := transactionFixture(t)
+	path := filepath.Join(t.TempDir(), "recent.json")
+	var err error
+	journal.Journal, err = activity.Open(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := activity.Entry{RepoID: s.repoID, Path: "old-dir", Kind: activity.Deleted, Stage: activity.Published, Revision: 8}
+	if err := journal.Record(receipt); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Record(activity.Entry{RepoID: "another-repo", Path: "new.txt", Kind: activity.Added, Stage: activity.Published, Revision: 60}); err != nil {
+		t.Fatal(err)
+	}
+	in := &commitIntent{Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc,
+		Phase: "done", FirstRevision: 8, Revision: 8, Paths: []string{"old-dir"}, Items: []intentItem{{Rel: "old-dir", Op: watcher.Deleted, IsDir: true}}}
+	if err := s.writeIntent(wc, in); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		journal.Journal, err = activity.Open(path, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found, err := s.recoverCommit(t.Context(), wc); found || err != nil {
+			t.Fatal(found, err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil || string(after) != string(original) {
+			t.Fatal("completed receipt resurrected pruned history or evicted a new event", err)
+		}
+	}
+}
+
+func TestDoneIntentDoesNotReplaceLaterActivityOrCurrentStaging(t *testing.T) {
+	for _, stage := range []activity.Stage{activity.Published, activity.Received, activity.Reconciled, activity.Pending} {
+		t.Run(string(stage), func(t *testing.T) {
+			s, _, journal, wc := transactionFixture(t)
+			in := &commitIntent{Schema: transactionSchema, ID: uuid.NewString(), RepoURL: s.RepoURL, RepoID: s.repoID, WC: wc,
+				Phase: "done", FirstRevision: 8, Revision: 8, Paths: []string{"a.txt"}, Items: []intentItem{{Rel: "a.txt", Op: watcher.Modified}}}
+			if err := s.writeIntent(wc, in); err != nil {
+				t.Fatal(err)
+			}
+			old := time.Date(2026, 9, 28, 12, 17, 40, 0, time.UTC)
+			if err := os.Chtimes(transactionPath(wc), old, old); err != nil {
+				t.Fatal(err)
+			}
+			entry := activity.Entry{RepoID: s.repoID, Path: "a.txt", Kind: activity.Modified, Stage: stage}
+			if stage == activity.Published || stage == activity.Received {
+				entry.Revision = 9
+			}
+			if err := journal.Record(entry); err != nil {
+				t.Fatal(err)
+			}
+			before := journal.List()[0]
+			if found, err := s.recoverCommit(t.Context(), wc); found || err != nil {
+				t.Fatal(found, err)
+			}
+			after := journal.List()[0]
+			if after.Stage != before.Stage || after.Revision != before.Revision || !after.UpdatedAt.Equal(before.UpdatedAt) {
+				t.Fatal("old receipt overwrote later activity/current staging", before, after)
+			}
+		})
+	}
+}
+
+type recordOnlyCompletedJournal struct{ calls int }
+
+func (j *recordOnlyCompletedJournal) Record(activity.Entry) error { j.calls++; return nil }
+func (j *recordOnlyCompletedJournal) Forget(string, string) error { return nil }
+
+func TestDoneIntentHasNoUnsafeFallbackOrCrossRepositoryRepair(t *testing.T) {
+	s, _, journal, _ := transactionFixture(t)
+	entry := activity.Entry{RepoID: s.repoID, Path: "a.txt", Kind: activity.Modified, Stage: activity.Pending}
+	if err := journal.Record(entry); err != nil {
+		t.Fatal(err)
+	}
+	before := journal.List()[0]
+	in := &commitIntent{RepoID: s.repoID, RepoURL: s.RepoURL, Phase: "done", Revision: 8,
+		Items: []intentItem{{Rel: "a.txt", Op: watcher.Modified}}, loadedModifiedAt: before.UpdatedAt.Add(time.Hour)}
+	// A queued newer operation is protected even if filesystem time is ahead.
+	if err := s.recordIntentPublishedActivity(in); err != nil {
+		t.Fatal(err)
+	}
+	if got := journal.List()[0]; got.Stage != activity.Pending {
+		t.Fatal("current staging completed by old receipt", got)
+	}
+	delete(s.staging, "a.txt")
+	in.RepoURL = "file:///former-repository"
+	if err := s.recordIntentPublishedActivity(in); err != nil {
+		t.Fatal(err)
+	}
+	if got := journal.List()[0]; got.Stage != activity.Pending {
+		t.Fatal("foreign receipt changed current repository", got)
+	}
+	in.RepoURL = s.RepoURL
+	sink := &recordOnlyCompletedJournal{}
+	s.Activity = sink
+	if err := s.recordIntentPublishedActivity(in); err != nil || sink.calls != 0 {
+		t.Fatal("custom journal fell back to destructive replay", sink.calls, err)
+	}
 }
 
 func TestOrphanPendingActivityReconcilesOnlyCleanUnstagedPaths(t *testing.T) {

@@ -1606,7 +1606,8 @@ window.addEventListener("filees:theme-changed", updateThemeToggle);
 updateThemeToggle();
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
-$(".side-column").addEventListener("click", (event) => {
+// Cards also live in the stationary notification dock, outside side-column.
+$(".shell").addEventListener("click", (event) => {
   const toggle = event.target.closest("[data-toggle-card]");
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.toggleCard);

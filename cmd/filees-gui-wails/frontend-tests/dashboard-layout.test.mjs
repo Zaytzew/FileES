@@ -3,6 +3,51 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const read=name=>readFileSync(new URL('../frontend/'+name,import.meta.url),'utf8');
+
+test('collapse actions reach the fixed update dock and sidebar exactly once and survive refresh',()=>{
+ const source=read('app.js');
+ const toggle=source.indexOf('const toggle = event.target.closest("[data-toggle-card]")');
+ const start=source.lastIndexOf('$(',toggle),end=source.indexOf('document.querySelectorAll("[data-toggle-card]")',toggle);
+ assert.ok(start>=0&&end>start);
+ const nodes=new Map(),listeners=new Map();
+ const node=id=>{
+  if(!nodes.has(id)) nodes.set(id,{hidden:false,dataset:{},attributes:{},
+   addEventListener(type,fn){listeners.set(id,fn)},
+   getAttribute(name){return this.attributes[name]},
+   setAttribute(name,value){this.attributes[name]=value},
+  });
+  return nodes.get(id);
+ };
+ const context={$:node,t:key=>key,updateDownloadLine:()=>'',bytes:String,
+  document:{getElementById:id=>node('#'+id)},
+ };
+ runInNewContext(source.slice(start,end),context);
+ const click=(id,ancestry)=>{
+  const button=node(id);
+  let calls=0;
+  for(const ancestor of ancestry) if(listeners.has(ancestor)) {
+   calls++;listeners.get(ancestor)({target:{closest:selector=>selector==='[data-toggle-card]'?button:null}});
+  }
+  assert.equal(calls,1,'click must reach one shared handler');
+ };
+ const update=node('update-toggle');update.dataset.toggleCard='update-body';update.attributes['aria-expanded']='true';
+ click('update-toggle',['#update-card','.dashboard-header','.shell']);
+ assert.equal(node('#update-body').hidden,true);
+ assert.equal(update.attributes['aria-expanded'],'false');
+ assert.equal(update.attributes['aria-label'],'expand.update');
+ const renderStart=source.indexOf('function renderUpdate('),renderEnd=source.indexOf('\n}',renderStart)+2;
+ runInNewContext(source.slice(renderStart,renderEnd),context);
+ context.renderUpdate({update:{state:'available',available_version:'0.2.0'}});
+ assert.equal(node('#update-card').hidden,false);
+ assert.equal(node('#update-body').hidden,true,'projection refresh must not reopen the body');
+ click('update-toggle',['#update-card','.dashboard-header','.shell']);
+ assert.equal(node('#update-body').hidden,false);
+ assert.equal(update.attributes['aria-label'],'collapse.update');
+ const activity=node('activity-toggle');activity.dataset.toggleCard='activity-body';activity.attributes['aria-expanded']='true';
+ click('activity-toggle',['.side-column','.shell']);
+ assert.equal(node('#activity-body').hidden,true);
+ assert.equal(activity.attributes['aria-label'],'expand.activity');
+});
 test('dashboard owns stationary header, notification dock and toast row',()=>{
  const html=read('index.html');
  const dock=html.indexOf('id="notification-dock"'),cards=html.indexOf('id="dashboard-content"');

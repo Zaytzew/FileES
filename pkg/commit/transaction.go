@@ -223,6 +223,7 @@ type commitIntent struct {
 	RecoveryWriterPlans []string                     `json:"recovery_writer_plans,omitempty"` // write-ahead audit of attempted native owner retirement
 	ConflictCopies      []string                     `json:"conflict_copies,omitempty"`       // durable audit; never removed during retry
 	ConflictArtifacts   []string                     `json:"conflict_artifacts,omitempty"`    // backed-up SVN artifacts accidentally scheduled as adds
+	loadedModifiedAt    time.Time                    // presentation-only fence; never serialized or treated as commit time
 }
 
 type intentItem struct {
@@ -327,6 +328,7 @@ func (s *Service) readIntentFile(wc, p string) (*commitIntent, error) {
 			seen[e.Path] = true
 		}
 	}
+	in.loadedModifiedAt = st.ModTime().UTC()
 	return &in, nil
 }
 
@@ -406,10 +408,9 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, res
 			return true, err
 		}
 		if in != nil {
-			// Completed transactions are the durable source of truth for their
-			// presentation too. Replaying this idempotent upsert repairs journals
-			// written by older clients that skipped directory entries. A journal
-			// failure must not turn a proven completed commit back into HOLD.
+			// Repair only existing unfinished presentation. A pruned row must
+			// not be resurrected, and newer activity must not be replaced by an
+			// old receipt. Failure still cannot turn a completed commit into HOLD.
 			if err := s.recordIntentPublishedActivity(in); err != nil {
 				s.Logger.Warnf("repair completed commit activity: %v", err)
 			}
@@ -678,10 +679,35 @@ func (s *Service) recordIntentPublishedActivity(in *commitIntent) error {
 	if s.Activity == nil || in == nil || in.Revision < 1 {
 		return nil
 	}
+	repair, canRepair := s.Activity.(interface {
+		RepairCompletedPublication(activity.Entry, time.Time) (bool, error)
+	})
+	if in.Phase == "done" && (!canRepair || in.RepoID != s.repoID || in.RepoURL != s.RepoURL) {
+		return nil // No destructive Record fallback for an older/custom journal.
+	}
+	repaired := false
 	for _, it := range in.Items {
-		if err := s.Activity.Record(activity.Entry{RepoID: in.RepoID, Path: it.Rel, Kind: activity.Kind(opName(it.Op)), Stage: activity.Published, Revision: in.Revision}); err != nil {
+		entry := activity.Entry{RepoID: in.RepoID, Path: it.Rel, Kind: activity.Kind(opName(it.Op)), Stage: activity.Published, Revision: in.Revision}
+		if in.Phase == "done" {
+			s.mu.Lock()
+			staged := s.staging[it.Rel] != nil
+			s.mu.Unlock()
+			if staged {
+				continue // A confirmed old operation cannot complete new local work.
+			}
+			changed, err := repair.RepairCompletedPublication(entry, in.loadedModifiedAt)
+			if err != nil {
+				return err
+			}
+			repaired = repaired || changed
+			continue
+		}
+		if err := s.Activity.Record(entry); err != nil {
 			return err
 		}
+	}
+	if repaired {
+		s.emit(contract.EvActivityChanged, nil)
 	}
 	return nil
 }

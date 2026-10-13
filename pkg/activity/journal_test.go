@@ -49,6 +49,128 @@ func TestPublishedReceiptReplayPreservesTimeAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestCompletedRepairDoesNotResurrectRetainedHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.json")
+	j, err := Open(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	j.now = func() time.Time { return now }
+	old := Entry{RepoID: "old", Path: "file", Kind: Modified, Stage: Published, Revision: 8}
+	if err := j.Record(old); err != nil {
+		t.Fatal(err)
+	}
+	completed := now.Add(time.Minute)
+	now = now.Add(24 * time.Hour)
+	if err := j.Record(Entry{RepoID: "new", Path: "file", Kind: Added, Stage: Published, Revision: 60}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		j, err = Open(path, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if changed, err := j.RepairCompletedPublication(old, completed); changed || err != nil {
+			t.Fatal(changed, err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil || string(before) != string(after) {
+			t.Fatal("retained history was replayed", err)
+		}
+	}
+}
+
+func TestCompletedRepairKeepsTimesAndProtectsLaterActivity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.json")
+	j, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	j.now = func() time.Time { return now }
+	size := int64(10)
+	if err := j.Record(Entry{RepoID: "repo", Path: "file", Kind: Deleted, Stage: Pending, Size: &size}); err != nil {
+		t.Fatal(err)
+	}
+	original := j.List()[0]
+	receipt := Entry{RepoID: "repo", Path: "file", Kind: Deleted, Stage: Published, Revision: 8}
+	fence := now.Add(time.Minute)
+	now = now.Add(24 * time.Hour)
+	if changed, err := j.RepairCompletedPublication(receipt, fence); !changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	got := j.List()[0]
+	if got.Stage != Published || got.Revision != 8 || !got.UpdatedAt.Equal(original.UpdatedAt) || !got.DetectedAt.Equal(original.DetectedAt) || got.Size == nil || *got.Size != size {
+		t.Fatal("old receipt became new activity", got)
+	}
+	for _, stage := range []Stage{Published, Received, Reconciled, Detected, Pending, Publishing, Failed} {
+		entry := Entry{RepoID: "repo", Path: "file", Kind: Deleted, Stage: stage}
+		if stage == Published || stage == Received {
+			entry.Revision = 9
+		}
+		if stage == Failed {
+			entry.ErrorID = "new-error"
+		}
+		if err := j.Record(entry); err != nil {
+			t.Fatal(err)
+		}
+		before := j.List()[0]
+		if changed, err := j.RepairCompletedPublication(receipt, fence); changed || err != nil {
+			t.Fatal(stage, changed, err)
+		}
+		after := j.List()[0]
+		if after.Stage != before.Stage || after.Revision != before.Revision || after.ErrorID != before.ErrorID || !after.UpdatedAt.Equal(before.UpdatedAt) {
+			t.Fatal("new activity overwritten", stage, after)
+		}
+	}
+}
+
+func TestCompletedRepairRequiresKnownFenceAndMatchingKindAndRollsBackWriteFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "journal.json")
+	j, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(Entry{RepoID: "repo", Path: "file", Kind: Modified, Stage: Pending}); err != nil {
+		t.Fatal(err)
+	}
+	original := j.List()[0]
+	receipt := Entry{RepoID: "repo", Path: "file", Kind: Modified, Stage: Published, Revision: 8}
+	if changed, err := j.RepairCompletedPublication(receipt, time.Time{}); changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	wrong := receipt
+	wrong.Kind = Deleted
+	fence := original.UpdatedAt.Add(time.Minute)
+	if changed, err := j.RepairCompletedPublication(wrong, fence); changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	j.path = dir // A directory cannot be replaced by the journal file.
+	if changed, err := j.RepairCompletedPublication(receipt, fence); changed || err == nil {
+		t.Fatal("write failure hidden", changed, err)
+	}
+	if got := j.List()[0]; got.Stage != Pending || !got.UpdatedAt.Equal(original.UpdatedAt) {
+		t.Fatal("failed write lost retryable presentation", got)
+	}
+	j.path = path
+	if changed, err := j.RepairCompletedPublication(receipt, fence); !changed || err != nil {
+		t.Fatal("retry failed", changed, err)
+	}
+	j, err = Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := j.List()[0]; got.Stage != Published || got.Revision != 8 || !got.UpdatedAt.Equal(original.UpdatedAt) {
+		t.Fatal("repaired time did not survive restart", got)
+	}
+}
+
 func TestJournalSurvivesRestartAndCollapsesPipelineStages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "activity.json")
 	j, err := Open(path, 20)

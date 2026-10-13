@@ -6,7 +6,7 @@ const read=name=>readFileSync(new URL('../frontend/'+name,import.meta.url),'utf8
 test('dashboard owns stationary header, notification dock and toast row',()=>{
  const html=read('index.html');
  const dock=html.indexOf('id="notification-dock"'),cards=html.indexOf('id="dashboard-content"');
- for(const id of ['sync-pause-status','memory-safety','announcement-banner','intent-alerts','lock-release-banner','action-status']) {
+ for(const id of ['update-card','sync-pause-status','memory-safety','announcement-banner','intent-alerts','lock-release-banner','action-status']) {
   const position=html.indexOf(`id="${id}"`);
   assert.ok(position>dock&&position<cards,id);
   assert.equal(html.split(`id="${id}"`).length,2,'unique '+id);
@@ -15,6 +15,16 @@ test('dashboard owns stationary header, notification dock and toast row',()=>{
  assert.match(read('app.css'),/grid-template-rows:auto minmax\(0,1fr\) auto/);
  assert.match(read('app.css'),/\.dashboard-content \{[^}]*min-height:0[^}]*overflow-y:auto/);
  assert.match(read('app.css'),/\.dashboard-toasts:empty \{ display:none/);
+});
+
+test('journal precedes public shares in actual DOM order and update is outside the scrolling cards',()=>{
+ const html=read('index.html');
+ const side=html.indexOf('class="side-column"');
+ assert.ok(html.indexOf('id="activity-card"')>side);
+ assert.ok(html.indexOf('id="activity-card"')<html.indexOf('id="public-shares-card"'));
+ assert.equal(html.split('id="activity-card"').length,2);
+ assert.ok(html.indexOf('id="update-card"')<html.indexOf('id="dashboard-content"'));
+ assert.equal(html.includes('id="update-store-actions"'),false);
 });
 test('background progress is placed in the same stationary notification dock',()=>{
  const js=read('progress-overlay.js');

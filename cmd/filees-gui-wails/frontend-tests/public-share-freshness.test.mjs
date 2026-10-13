@@ -59,7 +59,7 @@ test("stale public shares do not claim a connected daemon is offline", () => {
   const snapshot = {connected:true, repos:[], public_shares_known:true,
     reservation_status:{state:"current"}, public_shares:[{state:"active",stale:true}]};
   context.renderMetrics(snapshot);
-  assert.equal(get("#metric-public-shares").textContent, "?");
+  assert.equal(get("#metric-public-shares").textContent, 1);
   assert.equal(get("#metric-public-shares-note").textContent, "summary.lastKnownUnverified");
   snapshot.connected=false;
   context.renderMetrics(snapshot);
@@ -71,6 +71,30 @@ test("stale public shares do not claim a connected daemon is offline", () => {
   context.renderMetrics(snapshot);
   assert.equal(get("#metric-public-shares").textContent, 1);
   assert.equal(get("#metric-public-shares-note").textContent, "count.links");
+});
+
+test("public share spinner follows its own aggregate read after projection is current", () => {
+ const source=readFileSync(new URL("../frontend/app.js",import.meta.url),"utf8");
+ const nodes=new Map(); const get=key=>{if(!nodes.has(key))nodes.set(key,{dataset:{},setAttribute(name,value){this[name]=value}});return nodes.get(key)};
+ const ctx={$:get,t:key=>key,tn:key=>key,bytes:()=>""};
+ runInNewContext(source.slice(source.indexOf("function renderMetrics("),source.indexOf("function plural(")),ctx);
+ const snapshot={connected:true,projection:{state:"current"},public_shares_known:false,public_shares_loading:true,reservation_status:{state:"complete"}};
+ ctx.renderMetrics(snapshot);
+ assert.equal(get("#metric-public-shares")["aria-busy"],"true");
+ assert.match(get("#metric-public-shares").innerHTML,/metric-spinner/);
+ assert.equal(get("#metric-public-shares-note").textContent,"fresh.refreshing");
+ snapshot.public_shares_known=true; snapshot.public_shares_stale=true; snapshot.public_shares=[{state:"active",stale:true}];
+ ctx.renderMetrics(snapshot);
+ assert.match(get("#metric-public-shares").innerHTML,/^1 .*metric-spinner/);
+ snapshot.public_shares_loading=false; ctx.renderMetrics(snapshot);
+ assert.equal(get("#metric-public-shares").textContent,1);
+ assert.equal(get("#metric-public-shares")["aria-busy"],"false");
+ assert.equal(get("#metric-public-shares-note").textContent,"summary.lastKnownUnverified");
+ snapshot.connected=false; snapshot.public_shares_loading=true; ctx.renderMetrics(snapshot);
+ assert.equal(get("#metric-public-shares")["aria-busy"],"false");
+ snapshot.connected=true; snapshot.public_shares_loading=false; snapshot.public_shares=[]; ctx.renderMetrics(snapshot);
+ assert.equal(get("#metric-public-shares").textContent,0);
+ assert.equal(get("#metric-public-shares-note").textContent,"summary.lastKnownUnverified");
 });
 
 test("unknown metrics spin only while the projection waits, then settle to data or unavailable", () => {

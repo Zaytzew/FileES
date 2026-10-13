@@ -1,10 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/privatefile"
 )
 
 func TestPublicShareCacheListFlattensAndSortsAcrossServers(t *testing.T) {
@@ -21,6 +24,153 @@ func TestPublicShareCacheListFlattensAndSortsAcrossServers(t *testing.T) {
 		if key := got[i].ServerID + "/" + got[i].ChannelID; key != w {
 			t.Fatalf("List()[%d] = %q, want %q (full: %+v)", i, key, w, got[i])
 		}
+	}
+}
+
+func privateShareCachePath(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := privatefile.EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(dir, "view.json.public-shares.json")
+}
+
+func TestPublicShareCacheRestoresImmediatelyButUnverified(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		t.Run(map[bool]string{false: "links", true: "verified-empty"}[empty], func(t *testing.T) {
+			path := privateShareCachePath(t)
+			c := newPublicShareCache()
+			c.Bind("server", "client", "host", 2224, path)
+			rows := []contract.PublicShareSummary{{ServerID: "server", RepoID: "repo", ChannelID: "link"}}
+			if empty {
+				rows = nil
+			}
+			c.Set("server", rows)
+			first := c.Snapshot()
+			if err := privatefile.Verify(path); err != nil {
+				t.Fatal(err)
+			}
+			restarted := newPublicShareCache()
+			restarted.Bind("server", "client", "host", 2224, path)
+			got := restarted.Snapshot()
+			if len(got.Shares) != len(rows) || !got.Stale || got.Loading || got.AsOf != first.AsOf {
+				t.Fatalf("restart: %+v", got)
+			}
+			for _, row := range got.Shares {
+				if !row.Stale {
+					t.Fatal("restored row claims freshness")
+				}
+			}
+			epoch := restarted.BeginRefresh("server")
+			if !restarted.Snapshot().Loading {
+				t.Fatal("loading lost")
+			}
+			restarted.CompleteRefresh("server", epoch, nil, []string{"repo"})
+			restarted.EndRefresh("server", epoch)
+			if got := restarted.Snapshot(); got.Loading || len(got.Shares) != len(rows) {
+				t.Fatalf("failed read erased cache: %+v", got)
+			}
+			restarted.Set("server", nil)
+			if got := restarted.Snapshot(); got.Stale || len(got.Shares) != 0 {
+				t.Fatalf("confirmed empty: %+v", got)
+			}
+		})
+	}
+}
+
+func TestPublicShareCacheRejectsOtherActivationAndLateReply(t *testing.T) {
+	path := privateShareCachePath(t)
+	c := newPublicShareCache()
+	c.Bind("server", "old-client", "host", 2224, path)
+	c.Set("server", []contract.PublicShareSummary{{ServerID: "server", RepoID: "repo", ChannelID: "old"}})
+	epoch := c.BeginRefresh("server")
+	c.Bind("server", "new-client", "host", 2224, path)
+	c.CompleteRefresh("server", epoch, []contract.PublicShareSummary{{ServerID: "server", ChannelID: "late"}}, nil)
+	c.EndRefresh("server", epoch)
+	if got := c.Snapshot(); len(got.Shares) != 0 || got.Loading {
+		t.Fatalf("old activation leaked: %+v", got)
+	}
+	c.Set("server", []contract.PublicShareSummary{{ServerID: "server", RepoID: "repo", ChannelID: "new"}})
+	epoch = c.BeginRefresh("server")
+	c.SetDetached("server", true)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("detached cache remains: %v", err)
+	}
+	c.SetDetached("server", false)
+	c.Bind("server", "third-client", "host", 2224, path)
+	c.CompleteRefresh("server", epoch, []contract.PublicShareSummary{{ServerID: "server", ChannelID: "late"}}, nil)
+	if got := c.Snapshot(); len(got.Shares) != 0 {
+		t.Fatalf("late detached reply leaked: %+v", got)
+	}
+}
+
+func TestPublicShareCacheBindingRejectsAnotherHostPortAndServer(t *testing.T) {
+	path := privateShareCachePath(t)
+	c := newPublicShareCache()
+	c.Bind("server", "client", "host", 2224, path)
+	c.Set("server", []contract.PublicShareSummary{{ServerID: "server", RepoID: "repo", ChannelID: "saved"}})
+	for _, b := range []publicShareCacheBinding{{ServerID: "server", ClientID: "client", Address: "other", Port: 2224}, {ServerID: "server", ClientID: "client", Address: "host", Port: 22}, {ServerID: "other", ClientID: "client", Address: "host", Port: 2224}} {
+		other := newPublicShareCache()
+		other.Bind(b.ServerID, b.ClientID, b.Address, b.Port, path)
+		if len(other.Snapshot().Shares) != 0 {
+			t.Fatal("mismatched binding restored")
+		}
+	}
+}
+
+func TestPublicShareCacheSizeAndSchemaFailuresAreDisposable(t *testing.T) {
+	path := privateShareCachePath(t)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Truncate(publicShareCacheLimit + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = privatefile.Harden(path); err != nil {
+		t.Fatal(err)
+	}
+	c := newPublicShareCache()
+	c.Bind("server", "client", "host", 2224, path)
+	if len(c.Snapshot().Shares) != 0 {
+		t.Fatal("oversized cache accepted")
+	}
+	saved := publicShareCacheFile{Schema: 99, Binding: publicShareCacheBinding{ServerID: "server", ClientID: "client", Address: "host", Port: 2224}, Shares: []contract.PublicShareSummary{{ServerID: "server", ChannelID: "future"}}}
+	if err := writePublicShareCache(path, saved); err != nil {
+		t.Fatal(err)
+	}
+	c = newPublicShareCache()
+	c.Bind("server", "client", "host", 2224, path)
+	if len(c.Snapshot().Shares) != 0 {
+		t.Fatal("unknown schema accepted")
+	}
+}
+
+func TestPublicShareCacheCorruptOrUnwritableDoesNotBreakLiveRead(t *testing.T) {
+	path := privateShareCachePath(t)
+	if err := os.WriteFile(path, []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := privatefile.Harden(path); err != nil {
+		t.Fatal(err)
+	}
+	c := newPublicShareCache()
+	c.Bind("server", "client", "host", 2224, path)
+	if len(c.Snapshot().Shares) != 0 {
+		t.Fatal("corrupt cache accepted")
+	}
+	c.Set("server", []contract.PublicShareSummary{{ServerID: "server", ChannelID: "live"}})
+	if len(c.Snapshot().Shares) != 1 {
+		t.Fatal("live read blocked by corrupt cache")
+	}
+	c.Bind("server", "client", "host", 2224, filepath.Join(path, "no-directory"))
+	c.Set("server", []contract.PublicShareSummary{{ServerID: "server", ChannelID: "still-live"}})
+	if len(c.Snapshot().Shares) != 1 {
+		t.Fatal("cache save failure broke live read")
 	}
 }
 

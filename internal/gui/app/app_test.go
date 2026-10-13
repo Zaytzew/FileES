@@ -908,6 +908,33 @@ func TestAppFullRefreshIncludesAggregatePublicShares(t *testing.T) {
 	}
 }
 
+func TestAppAggregateReadHasIndependentLoadingAndRestoredEmptyObservation(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		t.Run(map[bool]string{false: "links", true: "empty"}[empty], func(t *testing.T) {
+			d := &fakeDaemon{
+				hello: func(context.Context) (*contract.HelloResult, error) {
+					return &contract.HelloResult{Capabilities: []string{contract.CapRepoPublicShareList}}, nil
+				},
+				publicShares: func(context.Context) (*contract.PublicShareListResult, error) {
+					rows := []contract.PublicShareSummary{{ChannelID: "saved", ServerID: "spot", Stale: true}}
+					if empty {
+						rows = nil
+					}
+					return &contract.PublicShareListResult{Loading: true, Stale: true, AsOf: "2026-10-12T20:00:00Z", Shares: rows}, nil
+				},
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			vc := newVMCollector()
+			startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+			vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale && vm.PublicSharesLoading })
+			if !vm.PublicSharesKnown || !vm.PublicSharesStale || len(vm.PublicShares) != map[bool]int{false: 1, true: 0}[empty] {
+				t.Fatalf("cache projection: %+v", vm)
+			}
+		})
+	}
+}
+
 func TestAppKeepsHealthySessionWhenOlderDaemonRejectsAggregatePublicShares(t *testing.T) {
 	d := &fakeDaemon{
 		hello: func(context.Context) (*contract.HelloResult, error) {

@@ -71,6 +71,22 @@
       <article><small data-i18n="summary.attention">Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
     </section>
     <div id="notification-dock" class="notification-dock">
+        <section id="update-card" class="side-card update-notification" role="status" hidden>
+          <div class="section-heading compact">
+            <div><p class="eyebrow">Wydanie</p><h2 id="update-title">Dostępna aktualizacja</h2></div>
+            <div class="side-card-controls"><span id="update-version" class="count-badge">—</span><button class="side-card-toggle" type="button" data-toggle-card="update-body" aria-expanded="true" aria-controls="update-body" title="Zwiń aktualizację" aria-label="Zwiń aktualizację"><span aria-hidden="true">⌄</span></button></div>
+          </div>
+          <div id="update-body" class="side-card-body">
+            <p id="update-summary" class="update-summary"></p>
+            <div id="update-restart-actions" class="update-actions" hidden>
+              <button class="primary" type="button" data-action="restart_filees" data-i18n="action.restart">Uruchom ponownie</button>
+            </div>
+            <div id="update-actions" class="update-actions" data-global-action="update">
+              <button type="button" data-action="update_plan" data-i18n="action.updatePlan">Pokaż plan</button>
+              <button class="primary" type="button" data-action="update_apply" data-i18n="action.update">Zaktualizuj</button>
+            </div>
+          </div>
+        </section>
     <aside id="sync-pause-status" class="announcement-banner" role="status" hidden></aside>
     <aside id="memory-safety" class="announcement-banner" role="alert" hidden></aside>
         <div id="announcement-banner" class="announcement-banner" hidden>
@@ -134,29 +150,19 @@
       </div>
 
       <aside class="side-column">
+        <section id="activity-card" class="side-card">
+          <div class="section-heading compact">
+            <div><p class="eyebrow" data-i18n="section.signals">Sygnały</p><h2 data-i18n="section.activity">Ostatnia aktywność</h2></div>
+            <div class="side-card-controls"><button id="open-journal" class="text-button" type="button" data-i18n="journal.title">Dziennik</button><button class="side-card-toggle" type="button" data-toggle-card="activity-body" aria-expanded="true" aria-controls="activity-body" title="Zwiń aktywność" aria-label="Zwiń aktywność" data-i18n-title="collapse.activity" data-i18n-aria-label="collapse.activity"><span aria-hidden="true">⌄</span></button></div>
+          </div>
+          <div id="activity-body" class="side-card-body"><div id="activity" class="activity-list"><p class="muted" data-i18n="activity.empty">Brak aktywności.</p></div></div>
+        </section>
         <section id="public-shares-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow" data-i18n="section.external">Dostęp z zewnątrz</p><h2 data-i18n="section.shares">Udostępnienia publiczne</h2></div>
             <div class="side-card-controls"><span id="public-shares-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="public-shares-body" aria-expanded="true" aria-controls="public-shares-body" title="Zwiń udostępnienia" aria-label="Zwiń udostępnienia" data-i18n-title="collapse.shares" data-i18n-aria-label="collapse.shares"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="public-shares-body" class="side-card-body"><div id="public-shares" class="dashboard-share-list"></div></div>
-        </section>
-        <section id="update-card" class="side-card" hidden>
-          <div class="section-heading compact">
-            <div><p class="eyebrow">Wydanie</p><h2 id="update-title">Dostępna aktualizacja</h2></div>
-            <div class="side-card-controls"><span id="update-version" class="count-badge">—</span><button class="side-card-toggle" type="button" data-toggle-card="update-body" aria-expanded="true" aria-controls="update-body" title="Zwiń aktualizację" aria-label="Zwiń aktualizację"><span aria-hidden="true">⌄</span></button></div>
-          </div>
-          <div id="update-body" class="side-card-body">
-            <p id="update-summary" class="update-summary"></p>
-            <div id="update-restart-actions" class="update-actions" hidden>
-              <button class="primary" type="button" data-action="restart_filees" data-i18n="action.restart">Uruchom ponownie</button>
-            </div>
-            <div id="update-store-actions" class="update-actions" hidden><button class="primary" type="button" data-external-url="https://apps.microsoft.com/detail/9P0J1BRL5K77" data-i18n="version.openStore">Otwórz Microsoft Store</button></div>
-            <div id="update-actions" class="update-actions" data-global-action="update">
-              <button type="button" data-action="update_plan" data-i18n="action.updatePlan">Pokaż plan</button>
-              <button class="primary" type="button" data-action="update_apply" data-i18n="action.update">Zaktualizuj</button>
-            </div>
-          </div>
         </section>
         <section id="reservations-card" class="side-card" hidden>
           <div class="section-heading compact">
@@ -183,13 +189,6 @@
             <div class="side-card-controls"><span id="detached-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="detached-body" aria-expanded="false" aria-controls="detached-body" title="Rozwiń odłączone" aria-label="Rozwiń odłączone" data-i18n-title="expand.detached" data-i18n-aria-label="expand.detached"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="detached-body" class="side-card-body" hidden><div id="detached" class="detached-list"></div></div>
-        </section>
-        <section id="activity-card" class="side-card">
-          <div class="section-heading compact">
-            <div><p class="eyebrow" data-i18n="section.signals">Sygnały</p><h2 data-i18n="section.activity">Ostatnia aktywność</h2></div>
-            <div class="side-card-controls"><button id="open-journal" class="text-button" type="button" data-i18n="journal.title">Dziennik</button><button class="side-card-toggle" type="button" data-toggle-card="activity-body" aria-expanded="true" aria-controls="activity-body" title="Zwiń aktywność" aria-label="Zwiń aktywność" data-i18n-title="collapse.activity" data-i18n-aria-label="collapse.activity"><span aria-hidden="true">⌄</span></button></div>
-          </div>
-          <div id="activity-body" class="side-card-body"><div id="activity" class="activity-list"><p class="muted" data-i18n="activity.empty">Brak aktywności.</p></div></div>
         </section>
       </aside>
     </section>

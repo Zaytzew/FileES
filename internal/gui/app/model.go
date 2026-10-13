@@ -346,6 +346,8 @@ type ViewModel struct {
 	Detachments         []DetachmentViewModel
 	PublicShares        []PublicShareViewModel
 	PublicSharesKnown   bool
+	PublicSharesLoading bool
+	PublicSharesStale   bool
 	PendingActions      []PendingAction
 	Update              *UpdateViewModel
 	Icon                IconState

@@ -17,8 +17,12 @@ func TestPublicShareFreshnessCrossesRealIPC(t *testing.T) {
 	server, _, sock := startEventServer(t)
 	wanted := contract.PublicShareListResult{AsOf: "2026-09-20T12:00:00Z", Generation: 7, Stale: true, Shares: []contract.PublicShareSummary{{ChannelID: "retained", RepoID: "repo", ServerID: "server", ObservedAt: "2026-09-20T12:00:00Z", Stale: true}}}
 	wanted.Shares[0].PublicURL = "https://download.example/realm/share"
+	wanted.Loading = true
 	server.SetPublicShareSource(shareSnapshotSource{wanted})
 	got, err := ipcclient.New(sock, "gui").PublicShareListAll(t.Context())
+	if err == nil && !got.Loading {
+		t.Fatal("aggregate loading lost across IPC")
+	}
 	if err == nil && (len(got.Shares) != 1 || got.Shares[0].PublicURL != wanted.Shares[0].PublicURL) {
 		t.Fatalf("recipient URL lost: %+v", got)
 	}

@@ -30,6 +30,8 @@ type appState struct {
 	notices                 []NoticeViewModel
 	publicShares            []PublicShareViewModel
 	publicSharesKnown       bool
+	publicSharesLoading     bool
+	publicSharesStale       bool
 	pendingActions          map[string]PendingAction
 	pendingActionOrder      []string
 	refreshed               time.Time
@@ -62,6 +64,8 @@ func (s appState) applyConnected(caps []string) appState {
 	if !capMap[contract.CapRepoPublicShareList] {
 		s.publicShares = nil
 		s.publicSharesKnown = false
+		s.publicSharesLoading = false
+		s.publicSharesStale = false
 	}
 	if !capMap[contract.CapLockReleaseRequest] {
 		s.lockReleaseRequests = nil
@@ -403,6 +407,8 @@ func (s appState) viewModel() ViewModel {
 		Notices:             append([]NoticeViewModel(nil), s.notices...),
 		PublicShares:        append([]PublicShareViewModel(nil), s.publicShares...),
 		PublicSharesKnown:   s.publicSharesKnown,
+		PublicSharesLoading: s.connected && s.publicSharesLoading,
+		PublicSharesStale:   s.publicSharesStale || !s.connected,
 		PendingActions:      s.projectPendingActions(),
 	}
 	// Current passport uncertainty uses the existing journal/detail surface.

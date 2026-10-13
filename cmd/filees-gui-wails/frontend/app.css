@@ -147,6 +147,14 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .dashboard-header .metrics small { font-size:10px; }
 .dashboard-header .metrics strong { margin:2px 0 0; font-size:24px; }
 .dashboard-header .metrics span { font-size:11px; }
+.notification-dock .update-notification { padding:12px 16px; border-color:var(--filees-orange); }
+.update-notification .section-heading { margin-bottom:6px; }
+.update-notification .section-heading h2 { font-size:16px; }
+.update-notification .eyebrow { display:none; }
+.update-notification .side-card-body { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+.update-notification .side-card-body[hidden] { display:none; }
+.update-notification .update-summary { flex:1 1 260px; margin:0; }
+.update-notification .update-actions { margin:0; }
 /* Pinned statistics must still leave usable card space in a short window. */
 @media (max-height:600px) {
   .notification-dock { max-height:16vh; }

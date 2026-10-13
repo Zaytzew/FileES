@@ -150,6 +150,24 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 	}
 	listingCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
+	scoped, hasScoped := cache.(interface {
+		BeginRefresh(string) uint64
+		EndRefresh(string, uint64)
+		CompleteRefresh(string, uint64, []contract.PublicShareSummary, []string)
+	})
+	var epoch uint64
+	if hasScoped {
+		epoch = scoped.BeginRefresh(serverID)
+		if ipc != nil {
+			ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
+		}
+		defer func() {
+			scoped.EndRefresh(serverID, epoch)
+			if ipc != nil && ctx.Err() == nil {
+				ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
+			}
+		}()
+	}
 	shares := make([]contract.PublicShareSummary, 0, len(view.Repositories))
 	var failed []string
 	for _, repo := range view.Repositories {
@@ -181,14 +199,16 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 	if ctx.Err() != nil {
 		return
 	}
-	if partial, ok := cache.(interface {
+	if hasScoped {
+		scoped.CompleteRefresh(serverID, epoch, shares, failed)
+	} else if partial, ok := cache.(interface {
 		SetPartial(string, []contract.PublicShareSummary, []string)
 	}); ok {
 		partial.SetPartial(serverID, shares, failed)
 	} else if len(failed) == 0 {
 		cache.Set(serverID, shares)
 	}
-	if ipc != nil {
+	if ipc != nil && !hasScoped {
 		ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
 	}
 }
@@ -407,6 +427,11 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			return nil
 		}
 		if tracked, ok := shareCache.(interface{ Track(string) }); ok {
+			if bound, ok := shareCache.(interface {
+				Bind(string, string, string, int, string)
+			}); ok {
+				bound.Bind(serverID, clientID, address, sshPort, syncConfig.CachePath+".public-shares.json")
+			}
 			tracked.Track(serverID)
 		}
 		monitorCtx, cancelMonitor := context.WithCancel(ctx)

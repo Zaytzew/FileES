@@ -170,7 +170,7 @@ func TestCanceledShareRefreshRetainsCompleteProjection(t *testing.T) {
 	defer cancel()
 	view := clientview.View{RealmID: "owner", Repositories: []clientview.Repository{{RepoID: "repo", OwnerRealmID: "owner", State: "active"}}}
 	refreshPublicShares(ctx, cancelingShareLister{cancel}, cache, nil, "server", view)
-	if after := cache.Snapshot(); !reflect.DeepEqual(before, after) {
+	if after := cache.Snapshot(); after.Loading || !reflect.DeepEqual(before.Shares, after.Shares) || before.AsOf != after.AsOf || before.Stale != after.Stale {
 		t.Fatalf("shutdown degraded complete projection: before=%+v after=%+v", before, after)
 	}
 	// A timeout not caused by the parent shutdown must still mark data stale.
@@ -207,6 +207,9 @@ func TestPublicShareRefreshCoordinatorRerunsMutationArrivingDuringRefresh(t *tes
 		}
 	case <-time.After(time.Second):
 		t.Fatal("initial cached-view refresh did not start")
+	}
+	if !cache.Snapshot().Loading {
+		t.Fatal("aggregate read did not expose loading")
 	}
 
 	coordinator.Schedule("srv-1", view("after-mutation"))

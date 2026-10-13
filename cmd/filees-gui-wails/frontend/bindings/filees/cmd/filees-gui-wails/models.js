@@ -2505,6 +2505,14 @@ export class Snapshot {
              */
             this["public_shares_known"] = false;
         }
+        if (!("public_shares_loading" in $$source)) {
+            /** @member @type {boolean} */
+            this["public_shares_loading"] = false;
+        }
+        if (!("public_shares_stale" in $$source)) {
+            /** @member @type {boolean} */
+            this["public_shares_stale"] = false;
+        }
         if (/** @type {any} */(false)) {
             /**
              * @member

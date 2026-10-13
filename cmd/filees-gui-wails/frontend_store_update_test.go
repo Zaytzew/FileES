@@ -31,16 +31,11 @@ assert.equal($('#version-status').textContent,'version.storeSummary');
 assert.equal($('#version-update-actions').hidden,true);
 assert.equal($('#version-restart-actions').hidden,true);
 assert.equal($('#version-store-actions').hidden,false);
-assert.equal($('#update-card').hidden,false);
-assert.equal($('#update-title').textContent,'version.storeTitle');
-assert.equal($('#update-version').textContent,'0.1.18.1882');
-assert.equal($('#update-actions').hidden,true);
-assert.equal($('#update-store-actions').hidden,false);
+assert.equal($('#update-card').hidden,true);
 const msi={update:{state:'available',channel:'alpha',current_version:'1',available_version:'2'}};
 renderVersionDialog(msi);renderUpdate(msi);
 assert.equal($('#version-channel').textContent,'alpha');
 assert.equal($('#version-store-actions').hidden,true);
-assert.equal($('#update-store-actions').hidden,true);
 assert.equal($('#version-update-actions').hidden,false);
 assert.equal($('#update-actions').hidden,false);
 renderVersionDialog({});renderUpdate({});assert.equal($('#version-channel').textContent,'version.unknownChannel');assert.equal($('#update-card').hidden,true);
@@ -72,12 +67,13 @@ func TestStoreLinkUsesOnlyThePublishedProductAddress(t *testing.T) {
 	if !strings.Contains(source, "const FILEES_STORE = "+string(quoted)+";") {
 		t.Fatal("Store link differs from the package product identity")
 	}
-	start := strings.Index(source, "  const external = event.target.closest(\"[data-external-url]\");")
-	end := strings.Index(source[start:], "  const button = ") + start
+	start := strings.Index(source, "function openFixedExternalLink(")
+	end := strings.Index(source[start:], "\n}") + start + 2
 	program := `const assert=require('node:assert/strict');const calls=[];
 const FILEES_SITE='https://filees.space/';const FILEES_STORE='https://apps.microsoft.com/detail/9P0J1BRL5K77';
 const Browser={OpenURL(url){calls.push(url);return Promise.resolve();}};
-function click(event){` + source[start:end] + `}
+` + source[start:end] + `
+const click=openFixedExternalLink;
 const event=url=>({target:{closest(){return {dataset:{externalUrl:url}}}}});
 click(event(FILEES_STORE));click(event(FILEES_SITE));
 click(event(FILEES_STORE+'?redirect=elsewhere'));click(event('https://example.com'));click(event('file:///C:/private'));
@@ -88,10 +84,13 @@ assert.deepEqual(calls,[FILEES_STORE,FILEES_SITE]);`
 		t.Fatalf("%v: %s", err, out)
 	}
 	markup := embeddedFrontendFile(t, "frontend/index.html")
-	if strings.Count(markup, `data-external-url="https://apps.microsoft.com/detail/9P0J1BRL5K77"`) != 2 {
-		t.Fatal("both Store cards need the fixed product link")
+	if strings.Count(markup, `data-external-url="https://apps.microsoft.com/detail/9P0J1BRL5K77"`) != 1 {
+		t.Fatal("only the version dialog should contain the fixed Store link")
 	}
-	for _, id := range []string{"version-store-actions", "update-store-actions"} {
+	if !strings.Contains(source, `$("#version-store-actions").addEventListener("click", openFixedExternalLink)`) {
+		t.Fatal("Store button has no handler on its actual container")
+	}
+	for _, id := range []string{"version-store-actions"} {
 		if !strings.Contains(markup, `id="`+id+`"`) {
 			t.Fatal(id)
 		}

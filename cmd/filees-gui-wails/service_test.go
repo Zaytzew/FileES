@@ -115,6 +115,23 @@ func TestProjectViewModelMarksInitialCommitAsLocalProvisioning(t *testing.T) {
 	}
 }
 
+func TestRestoredPublicSharesAreVisibleButDoNotEnableMutations(t *testing.T) {
+	vm := guiapp.ViewModel{Connected: true, PublicSharesKnown: true, PublicSharesLoading: true, PublicSharesStale: true,
+		Capabilities: map[string]bool{contract.CapRepoPublicShareList: true, contract.CapRepoPublicShareUpdate: true, contract.CapRepoPublicShareRevoke: true},
+		Repos:        []guiapp.RepoViewModel{{ID: "docs", ServerID: "spot"}},
+		PublicShares: []guiapp.PublicShareViewModel{{ChannelID: "saved", ServerID: "spot", RepoID: "docs", State: "active", Stale: true}},
+	}
+	got := projectViewModel(vm, journal.Texts{})
+	if !got.PublicSharesKnown || !got.PublicSharesLoading || !got.PublicSharesStale || len(got.PublicShares) != 1 || got.PublicShares[0].CanOpen || got.PublicShares[0].CanRevoke {
+		t.Fatalf("restored: %+v", got)
+	}
+	for _, kind := range []tray.IntentKind{tray.IntentManagePublicShares, tray.IntentRevokePublicShare, tray.IntentRevokePublicShares} {
+		if _, ok := translateAction(vm, ActionRequest{Kind: string(kind), ServerID: "spot", RepoID: "docs", ChannelID: "saved", ChannelIDs: []string{"saved"}}); ok {
+			t.Fatalf("cached row authorized %s", kind)
+		}
+	}
+}
+
 func TestProjectViewModelBuildsAggregatePublicShareCardAndClosedSetIntents(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected: true,

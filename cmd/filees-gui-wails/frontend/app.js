@@ -371,7 +371,7 @@ function renderMetrics(snapshot) {
   const reservationsOffline = reservationState.state === "daemon_offline";
   const reservationsPartial = reservationState.state === "partial";
   const publicShares = snapshot.public_shares || [];
-  const publicSharesStale = publicShares.some((share) => share.stale);
+  const publicSharesStale = snapshot.public_shares_stale || publicShares.some((share) => share.stale);
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
   const attention = conflicts + unreadAnnouncements + (snapshot.errors || []).filter(error => error.severity !== "INFO").length
@@ -393,9 +393,13 @@ function renderMetrics(snapshot) {
     : reservationsPartial
     ? t("summary.partialLocks", { count: reservations.length, locks: tn("count.locks", reservations.length), missing: reservationState.unavailable.length })
     : tn("count.locks", reservations.length);
-  renderWaitingCount("#metric-public-shares", snapshot.public_shares_known && !publicSharesStale ? activePublicShares : "?",
-    waiting && (!snapshot.public_shares_known || publicSharesStale));
-  $("#metric-public-shares-note").textContent = (reservationsOffline || publicSharesStale) && snapshot.public_shares_known
+  const sharesLoading = snapshot.connected && (snapshot.public_shares_loading
+    || (snapshot.public_shares_loading === undefined && waiting && (!snapshot.public_shares_known || publicSharesStale)));
+  renderWaitingCount("#metric-public-shares", snapshot.public_shares_known ? activePublicShares : "?",
+    sharesLoading, snapshot.public_shares_known ? `${activePublicShares} ` : "");
+  $("#metric-public-shares-note").textContent = sharesLoading
+    ? t(snapshot.public_shares_known ? "summary.lastKnownUnverified" : "fresh.refreshing")
+    : (reservationsOffline || publicSharesStale) && snapshot.public_shares_known
     ? t(snapshot.connected ? "summary.lastKnownUnverified" : "summary.lastKnown")
     : snapshot.public_shares_known
       ? tn("count.links", activePublicShares)
@@ -1412,8 +1416,9 @@ function renderUpdate(snapshot) {
 	const store = update?.state === "store";
 	const restart = update?.state === "restart_required" && update.restart_required;
 	const available = Boolean(update?.available_version) && update.state !== "current";
-	card.hidden = !available && !restart && !store;
-	$("#update-store-actions").hidden = !store;
+	// Store distribution has no actionable updater card. Its fixed link belongs
+	// only in About Version, not ahead of the user's files and journal.
+	card.hidden = store || (!available && !restart);
 	if (card.hidden) return;
 	$("#update-title").textContent = t(store ? "version.storeTitle" : restart ? "version.restartTitle" : "version.availableTitle");
 	$("#update-actions").hidden = restart || store;
@@ -1688,12 +1693,6 @@ $("#repositories").addEventListener("click", (event) => {
     if (renderRepositories(currentSnapshot)) scheduleWindowFit();
     return;
   }
-  const external = event.target.closest("[data-external-url]");
-  if (external) {
-    if (external.dataset.externalUrl === FILEES_SITE) Browser.OpenURL(FILEES_SITE).catch(() => {});
-    else if (external.dataset.externalUrl === FILEES_STORE) Browser.OpenURL(FILEES_STORE).catch(() => {});
-    return;
-  }
   const button = event.target.closest("[data-action]");
   if (button?.dataset.action === "browse_head") {
     // The browser window checks the repository and the daemon checks every
@@ -1815,6 +1814,16 @@ $("#announcement-overlay").addEventListener("click", (event) => {
 });
 $("#sync-pause").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#client-version").addEventListener("click", openVersionDialog);
+function openFixedExternalLink(event) {
+  const external = event.target.closest("[data-external-url]");
+  if (!external) return;
+  if (external.dataset.externalUrl === FILEES_SITE) Browser.OpenURL(FILEES_SITE).catch(() => {});
+  else if (external.dataset.externalUrl === FILEES_STORE) Browser.OpenURL(FILEES_STORE).catch(() => {});
+}
+// Both actual containers own their clicks; the version dialog is not inside
+// repositories and never reached the previous delegated handler.
+$("#repositories").addEventListener("click", openFixedExternalLink);
+$("#version-store-actions").addEventListener("click", openFixedExternalLink);
 $("#close-version").addEventListener("click", closeVersionDialog);
 $("#dismiss-version").addEventListener("click", closeVersionDialog);
 $("#version-overlay").addEventListener("click", (event) => {

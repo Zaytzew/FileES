@@ -87,6 +87,8 @@ type Snapshot struct {
 	Detachments         []DetachmentProjection            `json:"detachments"`
 	PublicShares        []DashboardPublicShareProjection  `json:"public_shares"`
 	PublicSharesKnown   bool                              `json:"public_shares_known"`
+	PublicSharesLoading bool                              `json:"public_shares_loading"`
+	PublicSharesStale   bool                              `json:"public_shares_stale"`
 	Update              *UpdateProjection                 `json:"update,omitempty"`
 	ClientVersion       string                            `json:"client_version"`
 	Projection          FreshnessProjection               `json:"projection"`
@@ -817,7 +819,7 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		return tray.Intent{Kind: tray.IntentAckNotice, NoticeID: request.NoticeID}, allowed
 	case string(tray.IntentManagePublicShares), string(tray.IntentRevokePublicShare):
 		share, ok := projectedPublicShare(vm, request.ServerID, request.RepoID, request.ChannelID)
-		if !ok || !vm.CanManagePublicShares() {
+		if !ok || share.Stale || !vm.CanManagePublicShares() {
 			return tray.Intent{}, false
 		}
 		kind := tray.IntentManagePublicShares
@@ -834,7 +836,7 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		}
 		for _, channelID := range channelIDs {
 			share, ok := projectedPublicShareByChannel(vm, channelID)
-			if !ok || share.ServerID != request.ServerID || !strings.EqualFold(strings.TrimSpace(share.State), "active") {
+			if !ok || share.Stale || share.ServerID != request.ServerID || !strings.EqualFold(strings.TrimSpace(share.State), "active") {
 				return tray.Intent{}, false
 			}
 		}
@@ -1270,9 +1272,11 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		})
 	}
 	result.PublicSharesKnown = vm.PublicSharesKnown
+	result.PublicSharesLoading = vm.PublicSharesLoading
+	result.PublicSharesStale = vm.PublicSharesStale
 	for _, item := range vm.PublicShares {
 		address := strings.Trim(strings.TrimSpace(item.Alias)+"/"+strings.Trim(strings.TrimSpace(item.Slug), "/"), "/")
-		canOpen := vm.CanManagePublicShares() && projectedRepoBelongsToServer(vm, item.RepoID, item.ServerID)
+		canOpen := !item.Stale && vm.CanManagePublicShares() && projectedRepoBelongsToServer(vm, item.RepoID, item.ServerID)
 		result.PublicShares = append(result.PublicShares, DashboardPublicShareProjection{
 			ObservedAt: item.ObservedAt, Stale: item.Stale,
 			ChannelID: item.ChannelID, ServerID: item.ServerID, RepoID: item.RepoID,

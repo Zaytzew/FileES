@@ -826,6 +826,7 @@ type PublicShareSummary struct {
 }
 
 type PublicShareListResult struct {
+	Loading    bool                 `json:"loading,omitempty"` // aggregate read in progress, independent of projection freshness
 	AsOf       string               `json:"as_of,omitempty"`
 	Generation uint64               `json:"generation,omitempty"`
 	Stale      bool                 `json:"stale,omitempty"`

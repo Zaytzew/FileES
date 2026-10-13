@@ -238,6 +238,8 @@ type msgFullSnapshot struct {
 	notices                 []contract.Notice
 	publicShares            []contract.PublicShareSummary
 	publicSharesKnown       bool
+	publicSharesLoading     bool
+	publicSharesStale       bool
 	refreshed               time.Time
 	actionFences            []string
 }
@@ -427,6 +429,8 @@ func (a *App) loop(ctx context.Context) {
 			}
 			var publicShares []contract.PublicShareSummary
 			publicSharesKnown := false
+			publicSharesLoading := false
+			publicSharesStale := true
 			if includePublicShares {
 				// The aggregate command was added after the per-repository
 				// capability. Older daemons legitimately advertise the latter
@@ -434,7 +438,9 @@ func (a *App) loop(ctx context.Context) {
 				// tear down an otherwise healthy GUI session.
 				if result, err := a.cfg.Client.PublicShareListAll(sesCtx); err == nil {
 					publicShares = result.Shares
-					publicSharesKnown = len(result.Shares) > 0 || !result.Stale
+					publicSharesKnown = len(result.Shares) > 0 || result.AsOf != "" || !result.Stale
+					publicSharesLoading = result.Loading
+					publicSharesStale = result.Stale
 				}
 			}
 			if sesCtx.Err() == nil {
@@ -443,7 +449,7 @@ func (a *App) loop(ctx context.Context) {
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
 					reservations: reservations, serverReservationsKnown: serverReservationsKnown,
 					reservationSources: reservationSources,
-					notices:            notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown,
+					notices:            notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown, publicSharesLoading: publicSharesLoading, publicSharesStale: publicSharesStale,
 					refreshed: a.cfg.Clock.Now(), actionFences: fences})
 			}
 		}()
@@ -615,6 +621,8 @@ func (a *App) loop(ctx context.Context) {
 					break
 				}
 				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.serverReservationsKnown, msg.reservationSources, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
+				state.publicSharesLoading = msg.publicSharesLoading
+				state.publicSharesStale = msg.publicSharesStale
 				var waiting []string
 				state, waiting = state.confirmPendingActions(msg.actionFences)
 				for _, id := range waiting {

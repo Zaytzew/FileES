@@ -66,6 +66,7 @@ func openRepoErrorSink(path, scope string) (*errmap.Sink, error) {
 
 func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager, activityJournal *activity.Journal) *commit.Service {
 	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, RealmID: repo.RealmID, OwnerRealmID: repo.OwnerRealmID, UUID: clientUUID, ErrSink: sink, Activity: activityJournal, RequireSVNMetadata: true}
+	service.Anchor = repo.Anchor
 	if ipc != nil {
 		service.Admission = ipc.OperationAdmission()
 		service.Pause = ipc.SyncPause()
@@ -307,14 +308,15 @@ type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 
 type readWriteDependencies struct {
-	canonicalRebuild func(context.Context, config.Repo, client.Client) error
-	passportBackend  func(config.Repo, client.Client) (passport.Backend, error)
-	pathOwnership    func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
-	gate             runtime.Gate
-	mutex            runtime.RepoMutex
-	ipc              *ipcserver.Server
-	activity         *activity.Journal
-	reservations     *reservationProjectionCoordinator
+	anchorMergeRevision func(config.Repo) (int64, error)
+	canonicalRebuild    func(context.Context, config.Repo, client.Client) error
+	passportBackend     func(config.Repo, client.Client) (passport.Backend, error)
+	pathOwnership       func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
+	gate                runtime.Gate
+	mutex               runtime.RepoMutex
+	ipc                 *ipcserver.Server
+	activity            *activity.Journal
+	reservations        *reservationProjectionCoordinator
 }
 
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
@@ -421,6 +423,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
+	if repo.Anchor && deps.anchorMergeRevision != nil {
+		service.AnchorMergeRevision = func() (int64, error) { return deps.anchorMergeRevision(repo) }
+	}
 	if deps.reservations != nil {
 		service.CheckPublication = func(ctx context.Context) error { return deps.reservations.CheckStorage(ctx, desired.Key) }
 	}

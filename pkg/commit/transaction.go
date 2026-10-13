@@ -13,6 +13,7 @@ import (
 	"filees/pkg/activity"
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errmap"
 	"filees/pkg/shout"
 	"filees/pkg/watcher"
 	"github.com/google/uuid"
@@ -526,6 +527,12 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 		return errors.Join(commitErr, releaseIntentBusy(wc, in))
 	}
 	if commitErr != nil {
+		if ctx.Err() == nil && !client.IsShutdownInterruption(commitErr) {
+			// Keep the original refusal once for this attempt. A later receipt
+			// lookup may fail too; that recovery diagnostic must not hide why
+			// publication failed in the first place, even with silent logging.
+			s.ErrSink.Emit(errmap.Classify(commitErr))
+		}
 		s.Logger.Warnf("commit reply failed: transaction=%s first_revision=%d; resolving receipt before any retry: %v", in.ID, in.FirstRevision, commitErr)
 		// Same-context lookup may fail on cancellation. The next poll/startup
 		// still has the identifier; never turn uncertainty into a new attempt.

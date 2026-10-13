@@ -184,6 +184,8 @@ type Service struct {
 	cacheSaveMu          sync.Mutex               // serialize cache snapshots and their durable replacement
 	staging              map[string]*stageItem    // rel path -> info
 	cachePath            string                   // .filees/commit_cache/cache.json
+	Anchor               bool                     // Explicit daemon lifecycle identity; never infer from a name/provider.
+	AnchorMergeRevision  func() (int64, error)    // Bound remote tree, not a guessed current HEAD.
 	intentPlan           *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
 	commitRecoveryPlan   *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
 	intentReceipts       []intentReceipt          // guarded by mu; atomically stored with staging
@@ -1308,6 +1310,9 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		all = append(all, it.OldRel, it.Rel)
 	}
 	all = dedup(all)
+	if err := s.prepareAnchorMerge(ctx, wc, append(append([]string{}, addPaths...), modifiedPaths...)); err != nil {
+		return err // No staging or remote publication on failed classification.
+	}
 	st, err := s.statusMap(ctx, wc, all)
 	if err != nil {
 		// Status is the proof used to classify every pending operation. An empty

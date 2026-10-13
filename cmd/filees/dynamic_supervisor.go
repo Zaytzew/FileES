@@ -387,6 +387,14 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal, reservations: reservationRefreshes}
+	deps.anchorMergeRevision = func(repo config.Repo) (int64, error) {
+		for _, record := range lifecycle.List() {
+			if record.Anchor && record.State == localrepo.StateAttached && record.ServerID == repo.ServerID && record.RepoID == repo.ID && record.RepoURL == repo.RepoURL && record.LocalPath == repo.LocalPath {
+				return anchorMergeBoundRevision(record)
+			}
+		}
+		return 0, errors.New("virtual folder merge lifecycle unavailable")
+	}
 	deps.canonicalRebuild = canonicalRecoveryLifecycle(ctx, attachmentEvents, recoverCanonicalWorkingCopy)
 	deps.pathOwnership = reservationRefreshes.Ownership
 	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {

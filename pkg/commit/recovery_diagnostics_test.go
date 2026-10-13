@@ -133,7 +133,8 @@ func TestRecoveryFailureIsJournaledWithoutPublicationCaller(t *testing.T) {
 	for range 3 {
 		_, _ = s.recoverCommit(t.Context(), wc)
 	}
-	if bytes.Count(log.Bytes(), []byte("\n")) != 1 || c.mutations != 1 {
+	// One original refusal and one HOLD, neither repeated by later inspections.
+	if bytes.Count(log.Bytes(), []byte("\n")) != 2 || bytes.Count(log.Bytes(), []byte(`"details":"reply lost"`)) != 1 || bytes.Count(log.Bytes(), []byte(`"key":"commit.recovery_held"`)) != 1 || c.mutations != 1 {
 		t.Fatal("duplicate journal or mutation", log.String(), c.mutations)
 	}
 }

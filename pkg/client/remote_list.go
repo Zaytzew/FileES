@@ -118,6 +118,16 @@ func (c *execClient) UpdateSetDepth(ctx context.Context, wc, rel, depth string) 
 // written a second time underneath the application holding it. Bytes that
 // differ become a local modification, never an overwrite.
 func (c *execClient) UpdateAdoptPath(ctx context.Context, wc, rel string, revision int64) (string, error) {
+	return c.UpdateAdoptPathDepth(ctx, wc, rel, revision, "infinity")
+}
+
+// UpdateAdoptPathDepth admits a selected existing directory without bringing
+// its children onto disk. Files use infinity; merge directory skeletons use
+// empty. Existing local bytes are adopted, never replaced by incoming bytes.
+func (c *execClient) UpdateAdoptPathDepth(ctx context.Context, wc, rel string, revision int64, depth string) (string, error) {
+	if depth != "empty" && depth != "infinity" {
+		return "", fmt.Errorf("invalid adoption depth")
+	}
 	rel = strings.Trim(filepath.ToSlash(strings.TrimSpace(rel)), "/")
 	if rel == "" || rel == "." || revision < 0 {
 		return "", fmt.Errorf("adopting needs one path and a revision")
@@ -126,7 +136,7 @@ func (c *execClient) UpdateAdoptPath(ctx context.Context, wc, rel string, revisi
 		if e := c.nativeRequireFeature(ctx, "sparse_adopt_v1"); e != nil {
 			return "", e
 		}
-		r, e := c.nativeRemote(ctx, wc, "update", "--wc", wc, "--set-depth", "infinity", "--parents", "--adopt",
+		r, e := c.nativeRemote(ctx, wc, "update", "--wc", wc, "--set-depth", depth, "--parents", "--adopt",
 			"--revision", strconv.FormatInt(revision, 10), "--", rel)
 		if e != nil {
 			return "", e
@@ -135,7 +145,7 @@ func (c *execClient) UpdateAdoptPath(ctx context.Context, wc, rel string, revisi
 	}
 	// The CLI spells adopting as --force: unversioned obstructions are taken
 	// over rather than turned into tree conflicts.
-	return c.run(ctx, wc, []string{"update", "--set-depth", "infinity", "--parents", "--force",
+	return c.run(ctx, wc, []string{"update", "--set-depth", depth, "--parents", "--force",
 		"-r", strconv.FormatInt(revision, 10), rel})
 }
 
@@ -163,4 +173,22 @@ func parseListXML(output string) ([]RemoteEntry, error) {
 		out = append(out, RemoteEntry{Name: name, Kind: kind, Size: entry.Size, Revision: entry.Commit.Revision})
 	}
 	return out, nil
+}
+
+// UnschedulePlainAdds retires ONLY native-proven plain additions with no BASE,
+// copy/move ancestry or conflict. It preserves bytes through metadata-only SVN
+// revert. It is not generic Revert and has no CLI or recursive fallback.
+func (c *execClient) UnschedulePlainAdds(ctx context.Context, wc string, paths []string) error {
+	if !nativeWCOps(c) {
+		return fmt.Errorf("plain-add metadata repair requires native SVN")
+	}
+	if err := c.nativeRequireFeature(ctx, "unschedule_plain_add_v1"); err != nil {
+		return err
+	}
+	rels, err := nativeRelatives(wc, paths)
+	if err != nil || len(rels) == 0 || len(rels) != len(paths) || len(rels) > 512 {
+		return fmt.Errorf("invalid plain-add repair selection")
+	}
+	_, err = c.nativeRun(ctx, wc, append([]string{"unschedule-add", "--wc", wc, "--"}, rels...)...)
+	return err
 }

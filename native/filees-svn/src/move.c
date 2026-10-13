@@ -37,6 +37,38 @@ static svn_error_t *read_status(svn_client_status_t **status, const char *path,
     return SVN_NO_ERROR;
 }
 
+svn_error_t *filees_unschedule_plain_adds(const char *wc_arg, svn_boolean_t live,
+    const char **rels, int n, apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *targets;
+    int i;
+    if (n < 1) return filees_refuse("unschedule-add requires selected plain adds");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
+    SVN_ERR(filees_abs_paths(&targets, wc, rels, n, pool));
+    for (i = 0; i < targets->nelts; ++i) {
+        const char *p = APR_ARRAY_IDX(targets, i, const char *);
+        const char *root;
+        svn_client_status_t *s;
+        SVN_ERR(svn_client_get_wc_root(&root, p, ctx, pool, pool));
+        if (strcmp(root, wc)) return filees_refuse("add belongs to another WC");
+        SVN_ERR(read_status(&s, p, ctx, pool));
+        if (!s->versioned || s->node_status != svn_wc_status_added ||
+            SVN_IS_VALID_REVNUM(s->revision) || s->copied || s->conflicted ||
+            s->moved_from_abspath || s->moved_to_abspath ||
+            (s->kind != svn_node_file && s->kind != svn_node_dir))
+            return filees_refuse("not a plain addition without BASE or ancestry");
+        SVN_ERR(filees_plain_node(p, s->kind == svn_node_dir ? APR_DIR : APR_REG, FALSE, pool));
+    }
+    /* Children must precede selected parents. Nonselected scheduled children
+     * make SVN refuse; never recurse or remove their content as a fallback. */
+    SVN_ERR(svn_client_revert4(targets, svn_depth_empty, NULL, FALSE,
+                              TRUE /* metadata_only */, TRUE /* added_keep_local */, ctx, pool));
+    return SVN_NO_ERROR;
+}
+
 svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
                                 const char *new_rel, svn_boolean_t live,
                                 const char **state, apr_pool_t *pool)

@@ -19,7 +19,7 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "unschedule-move", "checkout", "update", "commit", "lock", "unlock", "cat",
+    "record-move", "unschedule-move", "unschedule-add", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
     "propdel", "cleanup", "revert", "resolve", "recover-commit", "writer-release", "writer-inspect", "list",
     "fetch-file", "list-tree", "fetch-tree", "exclude-retained", "exclude-bound", "resume-bound", "inspect-excluded", "remote-tree-move", "remote-file-delete", "local-tree", "local-file-delete", NULL
@@ -41,6 +41,7 @@ static void print_ok_version(void)
     printf(",\"remote_file_delete_bound_v1\"");
     printf(",\"local_tree_metadata_bound_v1\"");
     printf(",\"local_file_delete_metadata_bound_v1\"");
+    printf(",\"unschedule_plain_add_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -793,6 +794,10 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     } else if (!strcmp(verb, "cleanup")) {
         if (n) return filees_refuse("cleanup takes no paths");
         SVN_ERR(filees_wc_cleanup(wc, live, pool));
+    } else if (!strcmp(verb, "unschedule-add")) {
+        if (depth_set || recursive || remote || inspect || accept || propname)
+            return filees_refuse("unschedule-add takes only selected plain paths");
+        SVN_ERR(filees_unschedule_plain_adds(wc, live, paths, n, pool));
     } else if (!strcmp(verb, "revert")) {
         SVN_ERR(filees_wc_revert(wc, live, paths, n, pool));
     } else if (!strcmp(verb, "resolve")) {

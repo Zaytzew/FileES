@@ -52,6 +52,11 @@ svn_error_t *filees_unschedule_move(const char *wc_arg, const char *old_rel,
                                     const char *new_rel, svn_boolean_t live,
                                     const char **state, apr_pool_t *pool);
 
+/* Plain uncommitted adds only, complete preflight, metadata-only revert.
+ * No bytes, BASE files, copied/moved ancestry or remote transactions touched. */
+svn_error_t *filees_unschedule_plain_adds(const char *wc_arg, svn_boolean_t live,
+    const char **rels, int n, apr_pool_t *pool);
+
 /* Offline tree metadata phases; exact remote receipt and physical object pins
  * are coordinator preconditions, NOT implied by a helper success. */
 svn_error_t *filees_local_tree(const char *phase, const char *wc, svn_boolean_t live,

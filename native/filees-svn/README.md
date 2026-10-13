@@ -510,6 +510,29 @@ The opt-in `TestIdleBoundExclusionRefusesExistingQueue` uses
 `FILEES_TEST_SQLITE` to create foreign work only in a disposable test WC and
 verifies both queue/BASE and original/retained bytes remain unchanged.
 
+### Copied-tree merge into CFAPI (2026-10-13, base r2130 + WC)
+
+`unschedule-add` / `unschedule_plain_add_v1` is a narrowly scoped local
+metadata repair, not generic revert or commit recovery. Under the existing
+writer guard it preflights every selected node: same WC, plain addition,
+no valid BASE revision, copy/move ancestry or conflict, ordinary local node
+and parents. Selected children precede parents. `svn_client_revert4` uses
+depth-empty, metadata-only and added-keep-local; no recursive or CLI fallback.
+Unselected scheduled children may cause SVN to refuse, and local metadata
+may already be partially changed; callers must re-read status on retry.
+This operation never removes local bytes or retires a durable commit intent.
+
+The daemon requires this feature before repairing earlier mistaken adds,
+with at most 512 exact paths per repair selection. Ship the rebuilt helper
+and daemon together, including the usual native runtime trust manifest.
+An older helper refuses before repair. Existing `sparse_adopt_v1` then adopts
+directories depth-empty and files at the lifecycle-bound manifest revision,
+preserving copied bytes and leaving unselected remote files off disk.
+Different local bytes become modifications; genuine new paths remain adds.
+Concurrent remote changes still face ordinary SVN conflict checks, never
+an automatic switch to HEAD. An existing uncertain HOLD must first pass
+the separate, explicit no-effect recovery contract below.
+
 ### Recovery owner consistency (2026-09-28)
 
 `writer-inspect` / `writer_inspect_v1` returns `commit_id` under the existing

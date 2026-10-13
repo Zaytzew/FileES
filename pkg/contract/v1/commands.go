@@ -152,6 +152,7 @@ const (
 	CapRecoveryDownload        = "recovery.download"
 	CapMobilePairingBegin      = "mobile_pairing.begin"
 	CapRepoCreateRequest       = "repo.create_request"
+	CapRepoCreateArchive       = "repo.create_archive"
 	CapRepoAttachIntent        = "repo.attach_intent"
 	CapRepoAttachApprove       = "repo.attach_approve"
 	CapRepoRelocate            = "repo.relocate"
@@ -670,6 +671,8 @@ type RepoCreateRequestPayload struct {
 	ServerID    string `json:"server_id"`
 	DisplayName string `json:"display_name"`
 	LocalPath   string `json:"local_path"`
+	// Optional, capability-gated external archive. Never a server ticket path.
+	ArchivePath string `json:"archive_path,omitempty"`
 }
 
 type RepoAttachIntentPayload struct {

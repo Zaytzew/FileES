@@ -900,7 +900,15 @@ type repositoryCreateClient interface {
 type repositoryCreateAdapter struct{ client repositoryCreateClient }
 
 func (adapter repositoryCreateAdapter) CreateRepository(ctx context.Context, serverID, displayName, localPath string) (string, error) {
-	result, err := adapter.client.RepoCreateRequest(ctx, contract.RepoCreateRequestPayload{ServerID: serverID, DisplayName: displayName, LocalPath: localPath})
+	return adapter.createRepository(ctx, contract.RepoCreateRequestPayload{ServerID: serverID, DisplayName: displayName, LocalPath: localPath})
+}
+
+func (adapter repositoryCreateAdapter) CreateRepositoryFromArchive(ctx context.Context, serverID, displayName, localPath, archivePath string) (string, error) {
+	return adapter.createRepository(ctx, contract.RepoCreateRequestPayload{ServerID: serverID, DisplayName: displayName, LocalPath: localPath, ArchivePath: archivePath})
+}
+
+func (adapter repositoryCreateAdapter) createRepository(ctx context.Context, payload contract.RepoCreateRequestPayload) (string, error) {
+	result, err := adapter.client.RepoCreateRequest(ctx, payload)
 	if err != nil {
 		return "", err
 	}

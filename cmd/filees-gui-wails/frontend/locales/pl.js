@@ -1,5 +1,18 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.createArchive.title": "Zawartość nowego repozytorium",
+  "select.createArchive.eyebrow": "Import archiwum",
+  "select.createArchive.text": "Folder jest pusty. Utworzyć puste repozytorium czy odtworzyć projekt i historię z archiwum SVN?",
+  "select.createArchive.label": "Źródło zawartości",
+  "select.createArchive.confirm": "Dalej",
+  "select.createArchive.cancel": "Anuluj",
+  "select.createArchive.empty": "Puste repozytorium",
+  "select.createArchive.archive": "Odtwórz z archiwum SVN",
+  "dialog.createArchive.title": "Utwórz repozytorium z archiwum",
+  "dialog.createArchive.text": "Serwer: {server}\nNazwa: {name}\nFolder: {path}\nArchiwum: {archive}\n\nUtworzyć nowe repozytorium z treścią i historią archiwum? Plik źródłowy pozostanie bez zmian. Synchronizacja ruszy po zakończeniu importu.",
+  "dialog.createArchive.confirm": "Utwórz",
+  "picker.archive": "Wybierz archiwum SVN spoza nowego folderu",
+  "dialog.createArchive.cancel": "Anuluj",
   "settingsAction.explorer_shortcut.label": "Skrót w panelu Eksploratora…",
   "repoAction.explorer_shortcut.label": "Skrót w panelu Eksploratora…",
   "repoAction.explorer_shortcut.description": "Pokaż lub ukryj skrót do tego folderu na tym komputerze, bez wyłączania folderu wirtualnego.",

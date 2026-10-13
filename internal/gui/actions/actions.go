@@ -108,6 +108,10 @@ type RepositoryCreator interface {
 	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+type RepositoryArchiveCreator interface {
+	CreateRepositoryFromArchive(context.Context, string, string, string, string) (string, error)
+}
+
 // CreationProgressReader is the optional RepositoryCreator side of the
 // initial publication's measured progress, read with the same poll.
 type CreationProgressReader interface {
@@ -3408,7 +3412,48 @@ func (c *Controller) startCreateRepositoryAt(ctx context.Context, serverID, sele
 		if displayName == "" {
 			displayName = name
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.createRepository", PresentationArgs: map[string]string{"server": server.ID, "name": displayName, "path": picked.Path}, Title: "Utwórz repozytorium FileES", Text: fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?", server.ID, displayName, picked.Path), ConfirmText: "Utwórz", CancelText: "Anuluj"})
+		archivePath := ""
+		archiveCreator, supportsArchive := c.cfg.RepositoryCreator.(RepositoryArchiveCreator)
+		chooser, hasChoice := c.cfg.Prompter.(platform.ChoicePrompter)
+		entries, folderErr := os.ReadDir(picked.Path)
+		empty := (folderErr == nil && len(entries) == 0) || errors.Is(folderErr, os.ErrNotExist)
+		if empty && supportsArchive && hasChoice && c.cfg.Picker != nil && vm.HasCap("repo.create_archive") {
+			choice, chosen, err := chooser.ChooseOne(ctx, platform.ChoiceRequest{
+				PresentationKey: "select.createArchive", Title: "Zawartość nowego repozytorium", Text: "Folder jest pusty. Utworzyć puste repozytorium czy odtworzyć projekt i historię z archiwum SVN?",
+				Options: []platform.ChoiceOption{{Value: "empty", Label: "Puste repozytorium"}, {Value: "archive", Label: "Odtwórz z archiwum SVN"}}, Default: "empty", ConfirmText: "Dalej", CancelText: "Anuluj",
+			})
+			if err != nil {
+				c.repositoryCreationFailure(ctx, err)
+				return
+			}
+			if !chosen {
+				return
+			}
+			if choice == "archive" {
+				file, err := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: c.uiText("picker.archive", "Wybierz archiwum SVN spoza nowego folderu"), InitialDir: filepath.Dir(picked.Path), AllowOutsideRoot: true})
+				if err != nil {
+					c.repositoryCreationFailure(ctx, err)
+					return
+				}
+				if file.Cancelled || len(file.Paths) == 0 {
+					return
+				}
+				if len(file.Paths) != 1 {
+					c.repositoryCreationFailure(ctx, errors.New("wybierz jedno archiwum SVN"))
+					return
+				}
+				archivePath = file.Paths[0]
+			} else if choice != "empty" {
+				return
+			}
+		}
+		confirmKey := "dialog.createRepository"
+		confirmText := fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?", server.ID, displayName, picked.Path)
+		if archivePath != "" {
+			confirmKey = "dialog.createArchive"
+			confirmText = fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nArchiwum: %s\n\nUtworzyć nowe repozytorium z treścią i historią archiwum? Plik źródłowy pozostanie bez zmian. Synchronizacja ruszy po zakończeniu importu.", server.ID, displayName, picked.Path, archivePath)
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: confirmKey, PresentationArgs: map[string]string{"server": server.ID, "name": displayName, "path": picked.Path, "archive": archivePath}, Title: "Utwórz repozytorium FileES", Text: confirmText, ConfirmText: "Utwórz", CancelText: "Anuluj"})
 		if err != nil {
 			c.repositoryCreationFailure(ctx, err)
 			return
@@ -3429,12 +3474,20 @@ func (c *Controller) startCreateRepositoryAt(ctx context.Context, serverID, sele
 		if !allowed || !found || (selectedPath != "" && !explorerAddAllowed(latest, selectedPath)) {
 			return
 		}
+		if archivePath != "" && !latest.HasCap("repo.create_archive") {
+			return
+		}
 		// Shown before the request, not after: creating the repository on the
 		// server takes tens of seconds, and nothing on screen during them read
 		// as a hang (Fedora acceptance, 2026-09-24).
 		progressArgs := map[string]string{"name": displayName, "path": picked.Path}
 		closeServerStage := c.showProgressKey(ctx, "progress.createRepository.server", progressArgs, "Tworzenie repozytorium", displayName+" — tworzenie repozytorium na serwerze…")
-		operationID, err := c.cfg.RepositoryCreator.CreateRepository(ctx, serverID, displayName, picked.Path)
+		var operationID string
+		if archivePath != "" {
+			operationID, err = archiveCreator.CreateRepositoryFromArchive(ctx, serverID, displayName, picked.Path, archivePath)
+		} else {
+			operationID, err = c.cfg.RepositoryCreator.CreateRepository(ctx, serverID, displayName, picked.Path)
+		}
 		if err != nil {
 			closeServerStage()
 			c.repositoryCreationFailure(ctx, err)

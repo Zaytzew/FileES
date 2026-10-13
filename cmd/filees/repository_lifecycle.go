@@ -263,6 +263,43 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 	return lifecycleResult(record), nil
 }
 
+func (service repositoryLifecycleService) BeginCreateArchive(serverID, displayName, localPath, archivePath string) (contract.RepoLifecycleResult, error) {
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.provisioning == nil {
+		return contract.RepoLifecycleResult{}, errors.New("archive provisioning is unavailable")
+	}
+	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	clientID := ""
+	if service.clientID != nil {
+		clientID = service.clientID(serverID)
+	}
+	if clientID == "" {
+		return contract.RepoLifecycleResult{}, errors.New("activated client profile is unavailable")
+	}
+	id := uuid.NewString()
+	// Bind the local root first; a staging failure remains an explicit local
+	// error, not an enqueued operation with incomplete archive parameters.
+	record, err := service.store.BeginCreateOperation(id, serverID, displayName, check.CanonicalPath)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if _, err := service.provisioning.CreateValidatedArchive(id, clientID, check.CanonicalPath, displayName, archivePath); err != nil {
+		_, _ = service.store.MarkError(id, err)
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onCreate != nil {
+		service.onCreate(id)
+	}
+	return lifecycleResult(record), nil
+}
+
 func (service repositoryLifecycleService) recoverableCreate(serverID, localPath string) (localrepo.Record, bool, error) {
 	if service.store == nil {
 		return localrepo.Record{}, false, nil

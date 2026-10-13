@@ -23,10 +23,11 @@ function promptText(next, part, original) {
 // server", which the version-replacement question showed above its title
 // (sandbox, 2026-09-25); a select about something else names it itself.
 // Prompts whose option labels are GUI copy, not data, and are translated.
-const localizedOptionPrompts = ["select.visibility", "select.updateChannel", "select.replacePredecessor", "select.detachFolder"];
+const localizedOptionPrompts = ["select.visibility", "select.updateChannel", "select.replacePredecessor", "select.detachFolder", "select.createArchive"];
 
 function modeLabelKey(next) {
   const named = {
+    "select.createArchive": "select.createArchive.eyebrow",
     "select.updateChannel": "select.updateChannel.label",
     "select.replacePredecessor": "select.replacePredecessor.eyebrow",
     "select.detachFolder": "select.detachFolder.eyebrow",

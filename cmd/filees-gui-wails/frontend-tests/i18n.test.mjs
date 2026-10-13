@@ -652,8 +652,13 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const prefixes = [...controller.matchAll(/PresentationKey:\s*"(dialog\.[^"]+)"/g)].map(match => match[1]);
-  assert.equal(prefixes.length, 15); // Revoke has two entry points; + explicit shelf resend.
-  assert.equal(new Set(prefixes).size, 14);
+  // Creation selects one of these explicit keys before the confirmation.
+  for (const key of ["dialog.createRepository", "dialog.createArchive"]) {
+    assert.ok(controller.includes(`"${key}"`));
+    prefixes.push(key);
+  }
+  assert.equal(prefixes.length, 16);
+  assert.equal(new Set(prefixes).size, 15);
   for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
       for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");

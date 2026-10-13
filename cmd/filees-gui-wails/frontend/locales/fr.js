@@ -1,5 +1,18 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.createArchive.title": "Contenu du nouveau dépôt",
+  "select.createArchive.eyebrow": "Import d’archive",
+  "select.createArchive.text": "Le dossier est vide. Créer un dépôt vide ou restaurer un projet et son historique depuis une archive SVN ?",
+  "select.createArchive.label": "Source du contenu",
+  "select.createArchive.confirm": "Continuer",
+  "select.createArchive.cancel": "Annuler",
+  "select.createArchive.empty": "Dépôt vide",
+  "select.createArchive.archive": "Restaurer depuis une archive SVN",
+  "dialog.createArchive.title": "Créer un dépôt depuis une archive",
+  "dialog.createArchive.text": "Serveur : {server}\nNom : {name}\nDossier : {path}\nArchive : {archive}\n\nCréer un nouveau dépôt avec le contenu et l’historique de l’archive ? Le fichier source restera inchangé. La synchronisation commencera après l’import.",
+  "dialog.createArchive.confirm": "Créer",
+  "picker.archive": "Choisir une archive SVN hors du nouveau dossier",
+  "dialog.createArchive.cancel": "Annuler",
   "settingsAction.explorer_shortcut.label": "Raccourci dans l’Explorateur…",
   "repoAction.explorer_shortcut.label": "Raccourci dans l’Explorateur…",
   "repoAction.explorer_shortcut.description": "Afficher ou masquer le raccourci de ce dossier sur cet ordinateur sans désactiver le dossier virtuel.",

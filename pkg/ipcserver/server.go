@@ -176,6 +176,12 @@ type RepositoryLifecycleService interface {
 	Repair(context.Context, string, string, string, string) (contract.RepoLifecycleResult, error)
 }
 
+// ArchiveCreator is optional: old lifecycle implementations must refuse the
+// extension, never silently create an empty repository instead of importing.
+type ArchiveCreator interface {
+	BeginCreateArchive(serverID, displayName, localPath, archivePath string) (contract.RepoLifecycleResult, error)
+}
+
 // dismissDeletedProjection applies the immediate local consequence of a
 // successful archive dismissal or completed orphan detach. A pending cleanup remains
 // visible; a completed deletion disappears without waiting for another
@@ -362,6 +368,9 @@ func (s *Server) updateService() UpdateService {
 
 func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
+	if _, ok := s.repositoryLifecycleService().(ArchiveCreator); ok {
+		caps = append(caps, contract.CapRepoCreateArchive)
+	}
 	if s.guiBlobService() != nil {
 		caps = append(caps, contract.CapGUIBlob)
 	}

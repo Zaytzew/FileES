@@ -885,9 +885,8 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 }
 
 // appliedEditingPolicyPath records which policy this working copy was last
-// migrated to. It exists for the rollback direction only: svn:needs-lock is
-// versioned, so leaving the repository is a content change that must happen
-// exactly on the transition and never speculatively.
+// migrated to. It is diagnostic state, not authority: an imported repository
+// can carry needs-lock without ever having this local marker.
 func appliedEditingPolicyPath(stateDir string) string {
 	return filepath.Join(stateDir, "editing-policy")
 }
@@ -912,7 +911,6 @@ func readAppliedEditingPolicy(stateDir string) string {
 // next confirmed publication.
 func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn client.Client, wc, stateDir, clientUUID string, passportsOn bool, sink *errmap.Sink, logger talk.Logger) (deferred bool) {
 	batch := intOrDefault(repo.MaxBatchFiles, 100)
-	applied := readAppliedEditingPolicy(stateDir)
 
 	if passportsOn {
 		// Always run forward: it is idempotent and doubles as repair for
@@ -930,14 +928,9 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 		return false
 	}
 
-	// Rolling back only on a real transition matters for more than cost. The
-	// mobile append channel sets svn:needs-lock on uploaded files on its own
-	// (internal/mobileworker/svnappend.go), so a repository that never ran
-	// this policy may carry the property legitimately, and clearing it
-	// speculatively would destroy that.
-	if applied != clientview.EditingLockRequired {
-		return false
-	}
+	// The projected policy is authoritative, including a first start after an
+	// archive import or an old client. Append-only has its own explicit marker;
+	// ClearNeedsLock preserves it and held paths, and refuses local changes.
 	skipped, err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch)
 	if err != nil {
 		reportEditingPolicyBlocked(err, "wyłączenie", sink, logger)

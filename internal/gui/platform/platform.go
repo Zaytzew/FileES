@@ -644,9 +644,9 @@ type PickFilesRequest struct {
 	Root          string
 	InitialDir    string
 	AllowMultiple bool
-	// AllowOutsideRoot is reserved for local presentation assets such as a
-	// realm logo. Repository operations must leave it false: their selected
-	// paths are deliberately confined to Root.
+	// AllowOutsideRoot permits local presentation assets and an external SVN
+	// archive selected for a new repository. Ordinary repository file actions
+	// leave it false: their paths remain deliberately confined to Root.
 	AllowOutsideRoot bool
 }
 

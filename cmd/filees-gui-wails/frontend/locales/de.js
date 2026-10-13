@@ -1,5 +1,18 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.createArchive.title": "Inhalt des neuen Repositorys",
+  "select.createArchive.eyebrow": "Archivimport",
+  "select.createArchive.text": "Der Ordner ist leer. Ein leeres Repository erstellen oder ein Projekt und seinen Verlauf aus einem SVN-Archiv wiederherstellen?",
+  "select.createArchive.label": "Inhaltsquelle",
+  "select.createArchive.confirm": "Weiter",
+  "select.createArchive.cancel": "Abbrechen",
+  "select.createArchive.empty": "Leeres Repository",
+  "select.createArchive.archive": "Aus SVN-Archiv wiederherstellen",
+  "dialog.createArchive.title": "Repository aus Archiv erstellen",
+  "dialog.createArchive.text": "Server: {server}\nName: {name}\nOrdner: {path}\nArchiv: {archive}\n\nEin neues Repository mit Inhalt und Verlauf des Archivs erstellen? Die Quelldatei bleibt unverändert. Die Synchronisierung beginnt nach dem Import.",
+  "dialog.createArchive.confirm": "Erstellen",
+  "picker.archive": "SVN-Archiv außerhalb des neuen Ordners auswählen",
+  "dialog.createArchive.cancel": "Abbrechen",
   "settingsAction.explorer_shortcut.label": "Verknüpfung im Explorer…",
   "repoAction.explorer_shortcut.label": "Verknüpfung im Explorer…",
   "repoAction.explorer_shortcut.description": "Verknüpfung dieses Ordners auf diesem Computer anzeigen oder ausblenden, ohne den virtuellen Ordner zu deaktivieren.",

@@ -1562,7 +1562,17 @@ func (s *Server) handleRepoCreateRequest(req contract.Request) contract.Response
 	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
 		return contract.ErrResponse(req.RequestID, "REPO-2001", "ERROR", "NONE", "repo.create_forbidden", nil)
 	}
-	result, err := service.BeginCreate(payload.ServerID, payload.DisplayName, payload.LocalPath)
+	var result contract.RepoLifecycleResult
+	var err error
+	if payload.ArchivePath != "" {
+		creator, ok := service.(ArchiveCreator)
+		if !ok {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		result, err = creator.BeginCreateArchive(payload.ServerID, payload.DisplayName, payload.LocalPath, payload.ArchivePath)
+	} else {
+		result, err = service.BeginCreate(payload.ServerID, payload.DisplayName, payload.LocalPath)
+	}
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", map[string]string{"detail": err.Error()})
 	}

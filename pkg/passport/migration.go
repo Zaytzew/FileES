@@ -171,11 +171,14 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	status, err := cli.Status(ctx, wc, nil)
+	carrying, err := cli.PropList(ctx, wc, "svn:needs-lock")
 	if err != nil {
 		return 0, err
 	}
-	carrying, err := cli.PropList(ctx, wc, "svn:needs-lock")
+	if len(carrying) == 0 {
+		return 0, nil
+	}
+	status, err := cli.Status(ctx, wc, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -183,11 +186,31 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 	if err != nil {
 		return 0, err
 	}
-	locked := lockedElsewhere(ctx, cli, wc)
+	// Unlike an explicit old-policy rollback, startup sanitation also reaches
+	// imported barriers. A failed remote lock inspection must not remove one.
+	var locked map[string]bool
+	if lister, ok := cli.(client.LockLister); ok && len(carrying) > 0 {
+		entries, err := lister.ListLocks(ctx, wc)
+		if err != nil {
+			return 0, fmt.Errorf("inspect locks before needs-lock sanitation: %w", err)
+		}
+		locked = make(map[string]bool, len(entries))
+		for _, entry := range entries {
+			if strings.TrimSpace(entry.Token) != "" {
+				locked[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+			}
+		}
+	}
 	var paths []string
 	for _, entry := range status {
 		rel := filepath.ToSlash(filepath.Clean(entry.Path))
-		if rel == "." || rel == ".filees" || strings.HasPrefix(rel, ".filees/") {
+		if rel == ".filees" || strings.HasPrefix(rel, ".filees/") {
+			continue
+		}
+		if entry.Props != "" && entry.Props != "none" && entry.Props != "normal" {
+			return 0, fmt.Errorf("%w: %s (properties %s)", ErrWorkingCopyDirty, rel, entry.Props)
+		}
+		if rel == "." {
 			continue
 		}
 		switch entry.Item {

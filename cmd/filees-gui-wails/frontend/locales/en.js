@@ -1,5 +1,18 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.createArchive.title": "New repository contents",
+  "select.createArchive.eyebrow": "Archive import",
+  "select.createArchive.text": "The folder is empty. Create an empty repository or restore a project and its history from an SVN archive?",
+  "select.createArchive.label": "Content source",
+  "select.createArchive.confirm": "Continue",
+  "select.createArchive.cancel": "Cancel",
+  "select.createArchive.empty": "Empty repository",
+  "select.createArchive.archive": "Restore from SVN archive",
+  "dialog.createArchive.title": "Create repository from archive",
+  "dialog.createArchive.text": "Server: {server}\nName: {name}\nFolder: {path}\nArchive: {archive}\n\nCreate a new repository with the archive's contents and history? The source file will remain unchanged. Synchronization will start after import finishes.",
+  "dialog.createArchive.confirm": "Create",
+  "picker.archive": "Choose an SVN archive outside the new folder",
+  "dialog.createArchive.cancel": "Cancel",
   "settingsAction.explorer_shortcut.label": "Explorer navigation shortcut…",
   "repoAction.explorer_shortcut.label": "Explorer navigation shortcut…",
   "repoAction.explorer_shortcut.description": "Show or hide this folder's shortcut on this computer without disabling the virtual folder.",

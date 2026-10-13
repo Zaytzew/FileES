@@ -377,6 +377,9 @@ func (f *recoveryClient) Update(context.Context, string) (string, error) {
 	return "", f.updateErr
 }
 func (f *recoveryClient) Revision(context.Context, string) (int64, error) { return 0, nil }
+func (f *recoveryClient) PropList(context.Context, string, string) (map[string]bool, error) {
+	return nil, nil
+}
 
 func TestReadWriteStarterKeepsWorkingCopySizeProjectionUntilStop(t *testing.T) {
 	wc := t.TempDir()
@@ -613,18 +616,37 @@ func policyStateDir(t *testing.T) string {
 	return dir
 }
 
-// A repository that never ran this policy must not be touched at all. The
-// mobile append channel sets svn:needs-lock on uploaded files on its own, so
-// a speculative rollback here would quietly destroy properties that another
-// feature deliberately set.
-func TestEditingPolicyMigrationLeavesRepositoriesThatNeverOptedInAlone(t *testing.T) {
+// Mobile append-only barriers survive sanitation even without a local marker.
+func TestEditingPolicyMigrationPreservesAppendOnlyWithoutLocalMarker(t *testing.T) {
 	stateDir := policyStateDir(t)
-	svn := &policyMigrationClient{props: map[string]bool{"photo.jpg": true}, status: []client.StatusEntry{{Path: "photo.jpg", Item: "normal"}}}
+	svn := &policyMigrationClient{props: map[string]bool{"photo.jpg": true}, appendOnly: map[string]bool{"photo.jpg": true}, status: []client.StatusEntry{{Path: "photo.jpg", Item: "normal"}}}
 
 	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, filepath.Dir(stateDir), stateDir, "instance", false, nil, talk.With("test"))
 
-	if svn.listed != 0 || len(svn.dels) != 0 || svn.commits != 0 {
+	if len(svn.dels) != 0 || svn.commits != 0 {
 		t.Fatalf("untouched repository was migrated: listed=%d dels=%#v commits=%d", svn.listed, svn.dels, svn.commits)
+	}
+}
+
+func TestEditingPolicyMigrationSanitizesOrphanedNeedsLockWithoutMarker(t *testing.T) {
+	stateDir := policyStateDir(t)
+	svn := &policyMigrationClient{props: map[string]bool{"drawing.dwg": true}, status: []client.StatusEntry{{Path: "drawing.dwg", Item: "normal"}}}
+	if applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, filepath.Dir(stateDir), stateDir, "instance", false, nil, talk.With("test")) {
+		t.Fatal("clean migration deferred")
+	}
+	if len(svn.dels) != 1 || svn.commits != 1 {
+		t.Fatalf("orphan not sanitized: %+v", svn)
+	}
+}
+
+func TestEditingPolicySanitationDefersForUserProperties(t *testing.T) {
+	stateDir := policyStateDir(t)
+	svn := &policyMigrationClient{props: map[string]bool{"drawing.dwg": true}, status: []client.StatusEntry{{Path: "drawing.dwg", Item: "normal", Props: "modified"}}}
+	if !applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, filepath.Dir(stateDir), stateDir, "instance", false, nil, talk.With("test")) {
+		t.Fatal("user property change not deferred")
+	}
+	if len(svn.dels) != 0 || svn.commits != 0 {
+		t.Fatal("user property change published")
 	}
 }
 

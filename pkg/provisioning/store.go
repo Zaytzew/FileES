@@ -71,6 +71,7 @@ type Operation struct {
 	Requests      map[string]RequestRecord `json:"requests,omitempty"`
 	CreatedAt     string                   `json:"created_at"`
 	UpdatedAt     string                   `json:"updated_at"`
+	Archive       *ArchiveImport           `json:"archive,omitempty"`
 }
 
 type Store struct {
@@ -95,6 +96,10 @@ func (s *Store) CreateValidated(operationID, clientID, localPath, name string) (
 }
 
 func (s *Store) CreateValidatedSnapshot(operationID, clientID, localPath, name string, snapshotBytes int64, snapshotPaths int) (Operation, error) {
+	return s.createValidated(operationID, clientID, localPath, name, snapshotBytes, snapshotPaths, nil)
+}
+
+func (s *Store) createValidated(operationID, clientID, localPath, name string, snapshotBytes int64, snapshotPaths int, archive *ArchiveImport) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := uuid.Parse(operationID); err != nil {
@@ -112,7 +117,7 @@ func (s *Store) CreateValidatedSnapshot(operationID, clientID, localPath, name s
 		return Operation{}, errors.New("snapshot size cannot be negative")
 	}
 	if existing, err := s.loadLocked(operationID); err == nil {
-		if existing.ClientID == clientID && existing.LocalPath == localPath && existing.Name == name && existing.SnapshotBytes == snapshotBytes && existing.SnapshotPaths == snapshotPaths {
+		if existing.ClientID == clientID && existing.LocalPath == localPath && existing.Name == name && existing.SnapshotBytes == snapshotBytes && existing.SnapshotPaths == snapshotPaths && sameArchiveInput(existing.Archive, archive) {
 			return clone(existing), nil
 		}
 		return Operation{}, errors.New("operation_id already exists with different parameters")
@@ -121,6 +126,7 @@ func (s *Store) CreateValidatedSnapshot(operationID, clientID, localPath, name s
 	}
 	now := s.timestamp()
 	op := Operation{Schema: StateSchema, OperationID: operationID, ClientID: clientID, LocalPath: localPath, Name: name, SnapshotBytes: snapshotBytes, SnapshotPaths: snapshotPaths, State: StateLocalValidated, Requests: make(map[string]RequestRecord), CreatedAt: now, UpdatedAt: now}
+	op.Archive = archive
 	if err := s.saveLocked(op); err != nil {
 		return Operation{}, err
 	}
@@ -161,6 +167,12 @@ func (s *Store) AbandonInitialImport(operationID, repoID string) (Operation, err
 			return errors.New("only an identified server repository can abandon initial import")
 		}
 		switch op.State {
+		case StateActive:
+			if op.Archive == nil || op.Archive.Completed {
+				return errors.New("active import cannot be abandoned")
+			}
+			op.State = StateAbandoned
+			return nil
 		case StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed, StateInitialSnapshotPublished:
 			op.State = StateAbandoned
 			return nil
@@ -550,6 +562,16 @@ func validateOperation(op Operation) error {
 	}
 	if op.ClientID == "" || op.Name == "" || !filepath.IsAbs(op.LocalPath) {
 		return errors.New("invalid provisioning identity or path")
+	}
+	if op.Archive != nil {
+		if !filepath.IsAbs(op.Archive.Source) || !filepath.IsAbs(op.Archive.Target) || op.Archive.Size <= 0 || op.Archive.Modified == "" || (op.Archive.Completed && op.Archive.LoadedUUID == "") {
+			return errors.New("invalid archive import state")
+		}
+		if op.Archive.LoadedUUID != "" {
+			if _, err := uuid.Parse(op.Archive.LoadedUUID); err != nil {
+				return errors.New("invalid loaded archive UUID")
+			}
+		}
 	}
 	switch op.State {
 	case StateLocalValidated, StateStoragePreflightRequested, StateStoragePreflightFailed, StateStorageApproved, StateProvisioningRequested, StateRepositoryRequestFailed,

@@ -277,7 +277,7 @@ func (p *daemonProvisioner) restoreOperations(ctx context.Context) bool {
 				talk.With("provisioning:"+operation.OperationID).Errorf("reconcile local lifecycle: %v", err)
 				continue
 			}
-			if operation.State == provisioning.StateActive {
+			if operation.State == provisioning.StateActive && !operation.ArchivePending() {
 				if record, ok := p.local.Get(operation.OperationID); ok {
 					switch record.State {
 					case localrepo.StateRelocating, localrepo.StateReconciling, localrepo.StateDetaching, localrepo.StateDeleting, localrepo.StateDetached, localrepo.StateDeleted:
@@ -290,6 +290,7 @@ func (p *daemonProvisioner) restoreOperations(ctx context.Context) bool {
 				}
 				provisionedActive[operation.OperationID] = struct{}{}
 				p.publishAttachment(ctx, operation)
+				p.discardCompletedArchive(operation)
 			} else {
 				p.Enqueue(operation.OperationID)
 			}
@@ -435,6 +436,26 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.runAttach(ctx, record, profile)
 		return
 	}
+	if operation, err := p.provisioning.Get(operationID); err == nil && operation.ArchivePending() {
+		if operation.ClientID != profile.ClientID {
+			p.recordCreateFailure(operationID, errors.New("archive creation belongs to another activation"))
+			return
+		}
+		if operation.Archive.Target != record.LocalPath {
+			p.recordCreateFailure(operationID, errors.New("archive target does not match durable local intent"))
+			return
+		}
+		if operation.Archive.LoadedUUID == "" {
+			if _, err := provisioning.PreflightLocalPath(record.LocalPath, provisioning.LocalPathAttach, p.otherRoots(operationID)); err != nil {
+				p.recordCreateFailure(operationID, err)
+				return
+			}
+		}
+		if _, err := p.provisioning.PrepareArchive(ctx, operationID); err != nil {
+			p.recordCreateFailureContext(ctx, operationID, err)
+			return
+		}
+	}
 	// A replayed import must not reach SSH/SVN or read its credentials while
 	// waiting for bytes that another provider does not hold locally. Already
 	// published imports may still finish their server acknowledgement.
@@ -480,14 +501,30 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	defer p.clearImportProgress(operationID)
 	operation, err := orchestrator.RunCreate(ctx, operationID)
 	if err != nil {
-		p.recordCreateFailure(operationID, err)
+		p.recordCreateFailureContext(ctx, operationID, err)
 		return
+	}
+	if operation.ArchivePending() {
+		p.clearImportProgress(operationID)
+		if err := p.finishArchiveCreation(ctx, operation, profile); err != nil {
+			p.recordCreateFailureContext(ctx, operationID, err)
+			return
+		}
 	}
 	if _, err := p.local.MarkAttached(operationID, operation.RepoID); err != nil {
 		talk.With("provisioning:"+operationID).Errorf("publish local attachment: %v", err)
 		return
 	}
 	p.publishAttachment(ctx, operation)
+	p.discardCompletedArchive(operation)
+}
+
+func (p *daemonProvisioner) discardCompletedArchive(operation provisioning.Operation) {
+	if operation.Archive != nil {
+		if err := p.provisioning.DiscardCompletedArchive(operation.OperationID); err != nil {
+			talk.With("provisioning:"+operation.OperationID).Warnf("completed archive staging cleanup deferred: %v", err)
+		}
+	}
 }
 
 func (p *daemonProvisioner) recordCreateFailure(operationID string, cause error) {
@@ -501,6 +538,15 @@ func (p *daemonProvisioner) recordCreateFailure(operationID string, cause error)
 	}
 	_, _ = p.local.MarkError(operationID, cause)
 	talk.With("provisioning:"+operationID).Warnf("create failed: %v", cause)
+}
+
+func (p *daemonProvisioner) recordCreateFailureContext(ctx context.Context, operationID string, cause error) {
+	if ctx.Err() != nil && errors.Is(cause, ctx.Err()) {
+		// Shutdown is not a failed user intent. Leave the durable pending
+		// boundary replayable at the next start rather than requiring retry.
+		return
+	}
+	p.recordCreateFailure(operationID, cause)
 }
 
 // RepairLifecycle is the daemon-owned exit from a stuck local workflow. Retry
@@ -567,7 +613,8 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 	// bytes. Ending this attempt must leave it remote-only, not immediately
 	// re-adopt the folder and re-enter the same failed initialization. Neither
 	// the folder, .svn nor provider markers are modified here.
-	if record.RepoURL != "" && !contentUnavailable {
+	archivePending := creationOperation != nil && creationOperation.ArchivePending()
+	if record.RepoURL != "" && !contentUnavailable && !archivePending {
 		if info, err := os.Stat(filepath.Join(record.LocalPath, ".svn")); err == nil && info.IsDir() {
 			p.mu.RLock()
 			profile, profileOK := p.profiles[record.ServerID]
@@ -623,7 +670,7 @@ func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operat
 			return err
 		}
 	}
-	if operation.State == provisioning.StateActive {
+	if operation.State == provisioning.StateActive && !operation.ArchivePending() {
 		if _, err := p.local.MarkAttached(operation.OperationID, operation.RepoID); err != nil {
 			return err
 		}

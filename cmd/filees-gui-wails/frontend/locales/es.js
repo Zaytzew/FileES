@@ -1,5 +1,18 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "select.createArchive.title": "Contenido del nuevo repositorio",
+  "select.createArchive.eyebrow": "Importación de archivo",
+  "select.createArchive.text": "La carpeta está vacía. ¿Crear un repositorio vacío o restaurar un proyecto y su historial desde un archivo SVN?",
+  "select.createArchive.label": "Origen del contenido",
+  "select.createArchive.confirm": "Continuar",
+  "select.createArchive.cancel": "Cancelar",
+  "select.createArchive.empty": "Repositorio vacío",
+  "select.createArchive.archive": "Restaurar desde archivo SVN",
+  "dialog.createArchive.title": "Crear repositorio desde archivo",
+  "dialog.createArchive.text": "Servidor: {server}\nNombre: {name}\nCarpeta: {path}\nArchivo: {archive}\n\n¿Crear un nuevo repositorio con el contenido y el historial del archivo? El archivo original no cambiará. La sincronización comenzará al terminar la importación.",
+  "dialog.createArchive.confirm": "Crear",
+  "picker.archive": "Elegir un archivo SVN fuera de la nueva carpeta",
+  "dialog.createArchive.cancel": "Cancelar",
   "settingsAction.explorer_shortcut.label": "Acceso directo en el Explorador…",
   "repoAction.explorer_shortcut.label": "Acceso directo en el Explorador…",
   "repoAction.explorer_shortcut.description": "Mostrar u ocultar el acceso directo de esta carpeta en este equipo sin desactivar la carpeta virtual.",

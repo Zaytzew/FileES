@@ -163,11 +163,34 @@ func TestClearNeedsLockLeavesAppendOnlyUploadsLocked(t *testing.T) {
 // A lock-aware client used to exercise the foreign-hold path.
 type lockAwareMigrationClient struct {
 	migrationClient
-	locks []client.LockEntry
+	locks   []client.LockEntry
+	lockErr error
 }
 
 func (c *lockAwareMigrationClient) ListLocks(context.Context, string) ([]client.LockEntry, error) {
-	return c.locks, nil
+	return c.locks, c.lockErr
+}
+
+func TestNeedsLockSanitationRefusesFailedLockInspection(t *testing.T) {
+	c := &lockAwareMigrationClient{migrationClient: migrationClient{props: map[string]bool{"a.dwg": true}, status: []client.StatusEntry{{Path: "a.dwg", Item: "normal"}}}, lockErr: errors.New("offline")}
+	if _, err := ClearNeedsLock(t.Context(), c, t.TempDir(), "instance", 100); err == nil {
+		t.Fatal("unknown locks treated as absent")
+	}
+	if len(c.dels) != 0 || len(c.commits) != 0 {
+		t.Fatal("barrier removed without lock inspection")
+	}
+}
+
+func TestNeedsLockSanitationPreservesLocalRootAndFileProperties(t *testing.T) {
+	for _, rel := range []string{".", "drawing.dwg"} {
+		c := &migrationClient{props: map[string]bool{"drawing.dwg": true}, status: []client.StatusEntry{{Path: rel, Item: "normal", Props: "modified"}}}
+		if _, err := ClearNeedsLock(t.Context(), c, t.TempDir(), "instance", 100); !errors.Is(err, ErrWorkingCopyDirty) {
+			t.Fatalf("err=%v", err)
+		}
+		if len(c.dels) != 0 || len(c.commits) != 0 {
+			t.Fatal("user property published")
+		}
+	}
 }
 
 // SVN refuses an entire commit if any single path in it is locked by somebody

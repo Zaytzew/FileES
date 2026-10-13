@@ -124,13 +124,21 @@ func (c *Client) FetchAutolockStorage(ctx context.Context, repoID string) (reser
 
 // FetchServerState reads metadata using the same pinned, one-shot broker.
 func (c *Client) FetchServerState(ctx context.Context) (reservationv1.Result, error) {
-	return c.fetch(ctx, "", reservationv1.StateSchema)
+	r, err := c.fetch(ctx, "", reservationv1.StateSchema, false, true)
+	var exit *ssh.ExitError
+	if errors.As(err, &exit) && strings.Contains(err.Error(), `json: unknown field "include_storage_capacity"`) {
+		return c.fetch(ctx, "", reservationv1.StateSchema)
+	}
+	return r, err
 }
 
 func (c *Client) fetch(ctx context.Context, repoID, schema string, storage ...bool) (reservationv1.Result, error) {
 	req := reservationv1.Request{Schema: schema, RepoID: repoID}
 	if len(storage) > 0 {
 		req.IncludeStorageWrite = storage[0]
+	}
+	if len(storage) > 1 {
+		req.IncludeStorageCapacity = storage[1]
 	}
 	if err := req.Validate(); err != nil {
 		return reservationv1.Result{}, err

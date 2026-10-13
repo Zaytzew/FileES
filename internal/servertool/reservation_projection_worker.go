@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"filees/internal/obsandbox"
+	"filees/internal/storagewatch"
 	"filees/internal/svnurl"
 	"filees/pkg/clientview"
 	"filees/pkg/repoworker"
@@ -147,6 +148,7 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		// This broker emits facts; it does not rewrite views or run recovery.
 		result.ServerID = config.ServerID
 		result.ServerDisplayName = config.ServerDisplayName
+		attachStorageCapacity(config, req, &result, time.Now(), storagewatch.Native{}.Sample)
 	} else if deleted {
 		// Never query FSFS or replay a lock artifact for a withdrawn repository.
 		result.RepositoryState = "deleted"

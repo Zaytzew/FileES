@@ -305,13 +305,20 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	if broker, ok := fetcher.(interface {
 		FetchServerState(context.Context) (reservationv1.Result, error)
 	}); ok {
+		requestStarted := time.Now()
 		result, stateErr := broker.FetchServerState(ctx)
 		if isDetachedClient(stateErr) {
 			coordinator.pauseDetached(serverID, view, stateErr)
 			return
 		}
 		if stateErr == nil {
-			stateErr = reservationclient.StoreServerState(reservationclient.ServerStatePath(profile.CachePath), serverID, result)
+			coordinator.mu.RLock()
+			if coordinator.profileEpochs[serverID] != profileEpoch {
+				coordinator.mu.RUnlock()
+				return
+			}
+			stateErr = reservationclient.StoreServerState(reservationclient.ServerStatePath(profile.CachePath), serverID, result, time.Since(requestStarted))
+			coordinator.mu.RUnlock()
 			if stateErr == nil && coordinator.onServerDisplayName != nil {
 				coordinator.onServerDisplayName(serverID, result.ServerDisplayName)
 			}

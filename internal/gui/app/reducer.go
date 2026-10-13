@@ -322,6 +322,9 @@ func (s appState) viewModel() ViewModel {
 	for _, activation := range s.system.Activations {
 		projection, asOf := aggregateReservationProjection(s.reservationSources[activation.ServerID], s.serverReservationsKnown[activation.ServerID])
 		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, DemoExpiresAt: activation.DemoExpiresAt, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.serverReservationsKnown[activation.ServerID], ReservationProjection: projection, ReservationAsOf: asOf, ViewGeneration: activation.ViewGeneration, ViewGeneratedAt: activation.ViewGeneratedAt, ViewSyncedAt: activation.ViewSyncedAt, ViewSyncError: activation.ViewSyncError, ViewSyncFailures: activation.ViewSyncFailures, ServerViewProducedAt: activation.ServerViewProducedAt, Detached: activation.Detached}
+		server := serverByID[activation.ServerID]
+		server.StorageCapacity = activation.StorageCapacity
+		serverByID[activation.ServerID] = server
 	}
 	for _, repo := range repos {
 		server, ok := serverByID[repo.ServerID]

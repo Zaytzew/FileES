@@ -297,6 +297,40 @@ func TestStorageNegotiationOnlyRetriesExplicitOldParser(t *testing.T) {
 	}
 }
 
+func TestServerCapacityNegotiationOnlyRetriesExplicitOldParser(t *testing.T) {
+	for _, tc := range []struct {
+		stderr string
+		exit   uint32
+		calls  int32
+	}{{`json: unknown field "include_storage_capacity"`, 1, 2}, {"worker failed", 1, 1}, {`json: unknown field "include_storage_capacity"`, 0, 1}} {
+		host, _ := generateKey(t)
+		client, private := generateKey(t)
+		var calls atomic.Int32
+		address := startReservationSSHResponse(t, host, client.PublicKey(), func(in *bufio.Reader, out, stderr *bytes.Buffer) uint32 {
+			line, _ := in.ReadString('\n')
+			var req reservationv1.Request
+			_ = json.Unmarshal([]byte(line), &req)
+			n := calls.Add(1)
+			if req.Schema != reservationv1.StateSchema || req.RepoID != "" || req.IncludeStorageCapacity != (n == 1) || req.IncludeStorageWrite {
+				stderr.WriteString("incorrect request")
+				return 1
+			}
+			if n == 1 {
+				stderr.WriteString(tc.stderr)
+				return tc.exit
+			}
+			now := time.Now()
+			_ = json.NewEncoder(out).Encode(reservationv1.Result{Schema: req.Schema, ServerID: "spot", ServerDisplayName: "Spot", ViewGeneration: 1, ViewGeneratedAt: &now})
+			return 0
+		})
+		c := configuredClient(t, address, host.PublicKey(), private)
+		_, err := c.FetchServerState(t.Context())
+		if calls.Load() != tc.calls || (err == nil) != (tc.calls == 2) {
+			t.Fatalf("calls=%d err=%v", calls.Load(), err)
+		}
+	}
+}
+
 func generateKey(t *testing.T) (ssh.Signer, ed25519.PrivateKey) {
 	t.Helper()
 	_, private, err := ed25519.GenerateKey(crand.Reader)

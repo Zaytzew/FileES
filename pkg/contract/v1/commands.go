@@ -407,17 +407,18 @@ type UpdateApplyResult struct {
 }
 
 type ActivationStatus struct {
-	ServerID              string `json:"server_id"`
-	DisplayName           string `json:"display_name"`
-	ClientRole            string `json:"client_role"`
-	RealmID               string `json:"realm_id,omitempty"`
-	RealmAlias            string `json:"realm_alias,omitempty"`
-	Address               string `json:"address,omitempty"`
-	ClientID              string `json:"client_id,omitempty"`
-	SSHPort               int    `json:"ssh_port,omitempty"`
-	CanCreateRepositories bool   `json:"can_create_repositories"`
-	RepositoriesReady     bool   `json:"repositories_ready"`
-	PendingRequiredRepos  int    `json:"pending_required_repositories"`
+	StorageCapacity       *StorageCapacityStatus `json:"storage_capacity,omitempty"`
+	ServerID              string                 `json:"server_id"`
+	DisplayName           string                 `json:"display_name"`
+	ClientRole            string                 `json:"client_role"`
+	RealmID               string                 `json:"realm_id,omitempty"`
+	RealmAlias            string                 `json:"realm_alias,omitempty"`
+	Address               string                 `json:"address,omitempty"`
+	ClientID              string                 `json:"client_id,omitempty"`
+	SSHPort               int                    `json:"ssh_port,omitempty"`
+	CanCreateRepositories bool                   `json:"can_create_repositories"`
+	RepositoriesReady     bool                   `json:"repositories_ready"`
+	PendingRequiredRepos  int                    `json:"pending_required_repositories"`
 	// SessionTimeoutMin is how long one send or fetch may run on this
 	// server, in minutes. Zero means the default (30).
 	SessionTimeoutMin int `json:"session_timeout_min,omitempty"`

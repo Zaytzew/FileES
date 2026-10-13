@@ -24,6 +24,7 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
+	serverCapacitySource func(string) *contract.StorageCapacityStatus
 	serverNotices        ServerNoticeSource
 	daemonVersion        string
 	guiBlobs             GUIBlobService
@@ -827,12 +828,28 @@ func (s *Server) SetActivationRepositoryReadiness(serverID string, ready bool, p
 
 func (s *Server) allActivations() []contract.ActivationStatus {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	capacity := s.serverCapacitySource
 	out := make([]contract.ActivationStatus, 0, len(s.activations))
 	for _, status := range s.activations {
 		out = append(out, status)
 	}
+	s.mu.RUnlock()
+	if capacity != nil {
+		for i := range out {
+			if !out[i].Detached {
+				out[i].StorageCapacity = capacity(out[i].ServerID)
+			}
+		}
+	}
 	return out
+}
+
+// SetServerCapacitySource installs a local read-only cache projection. Called
+// outside the activation lock, never a network request or authorization gate.
+func (s *Server) SetServerCapacitySource(source func(string) *contract.StorageCapacityStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.serverCapacitySource = source
 }
 
 // DefaultSocketPath returns the canonical per-user socket path.

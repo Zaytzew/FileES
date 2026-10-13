@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "storageCapacity.details": "Stockage des dépôts : {percent}% utilisé ou réservé · {free} libres sur {total}",
+  "storageCapacity.stale": "dernière mesure — données périmées",
+  "storageCapacity.unknown": "Stockage des dépôts : aucune mesure",
   "copy.kind.working_copy": "Copie de travail sur cet ordinateur",
   "copy.kind.sparse": "Copie partielle sur cet ordinateur",
   "copy.kind.virtual": "Dossier virtuel sur cet ordinateur",

@@ -1,5 +1,8 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "storageCapacity.details": "Almacén de repositorios: {percent}% ocupado o reservado · {free} libres de {total}",
+  "storageCapacity.stale": "última medición — datos desactualizados",
+  "storageCapacity.unknown": "Almacén de repositorios: sin medición",
   "copy.kind.working_copy": "Copia de trabajo en este equipo",
   "copy.kind.sparse": "Copia parcial en este equipo",
   "copy.kind.virtual": "Carpeta virtual en este equipo",

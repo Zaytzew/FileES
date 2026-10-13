@@ -278,6 +278,13 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	detachedEvents := make(chan string, 2*(len(profiles)+1))
 	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
+	ipc.SetServerCapacitySource(func(serverID string) *contract.StorageCapacityStatus {
+		profile, ok := reservationRefreshes.Profile(serverID)
+		if !ok {
+			return &contract.StorageCapacityStatus{State: "unknown"}
+		}
+		return reservationclient.LoadServerCapacity(reservationclient.ServerStatePath(profile.CachePath), serverID, time.Now())
+	})
 	reservationRefreshes.onServerDisplayName = ipc.SetBrokerServerDisplayName
 	repositoryDeletions := make(chan repositoryDeletionUpdate, 16)
 	reservationRefreshes.lifecycle = lifecycle

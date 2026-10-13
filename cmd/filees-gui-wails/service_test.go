@@ -695,6 +695,15 @@ func TestReservationProjectionNeverExposesFencingToken(t *testing.T) {
 	}
 }
 
+func TestServerCapacityReachesMainWindowWithoutChangingRights(t *testing.T) {
+	capacity := &contract.StorageCapacityStatus{State: "stale", TotalBytes: 1000, AvailableBytes: 200}
+	vm := guiapp.ViewModel{Connected: true, Servers: []guiapp.ServerViewModel{{ID: "spot", ClientRole: contract.ClientRoleReadOnly, StorageCapacity: capacity}}}
+	snapshot := projectViewModel(vm, journal.Texts{})
+	if len(snapshot.Servers) != 1 || snapshot.Servers[0].StorageCapacity != capacity || snapshot.Servers[0].ClientRole != contract.ClientRoleReadOnly {
+		t.Fatal(snapshot.Servers)
+	}
+}
+
 func TestLockReleaseProjectionLinksForeignReservationWithoutExposingToken(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected: true,

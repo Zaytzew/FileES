@@ -28,7 +28,8 @@ func storageWriteReadPaths(configPath string) []obsandbox.Path {
 }
 
 // Called only after the existing broker has authorized an active repository.
-// No global counters, paths, device IDs, incident text or contacts cross the wire.
+// This gate emits no counters. The separate opt-in server selector exposes
+// repository-store capacity only, never paths, device IDs or incident text.
 func attachStorageWrite(configPath string, c serverconfig.Config, req reservationv1.Request, result *reservationv1.Result) {
 	if !req.IncludeStorageWrite || result.RepositoryState != "active" {
 		return

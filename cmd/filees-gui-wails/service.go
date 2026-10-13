@@ -123,21 +123,22 @@ type ReservationAvailabilityProjection struct {
 }
 
 type ServerProjection struct {
-	VirtualFolders        *contract.VirtualFoldersStatus `json:"virtual_folders,omitempty"`
-	RealmID               string                         `json:"-"`
-	GUIScope              string                         `json:"gui_scope,omitempty"`
-	ID                    string                         `json:"id"`
-	DisplayName           string                         `json:"display_name"`
-	Address               string                         `json:"address"`
-	ClientRole            string                         `json:"client_role"`
-	RealmAlias            string                         `json:"realm_alias,omitempty"`
-	AccentColor           string                         `json:"accent_color,omitempty"`
-	Health                string                         `json:"health"`
-	RepositoryCount       int                            `json:"repository_count"`
-	RepositoriesReady     bool                           `json:"repositories_ready"`
-	PendingRequiredRepos  int                            `json:"pending_required_repos"`
-	ReservationCount      int                            `json:"reservation_count"`
-	SessionTimeoutMinutes int                            `json:"session_timeout_minutes"`
+	StorageCapacity       *contract.StorageCapacityStatus `json:"storage_capacity,omitempty"`
+	VirtualFolders        *contract.VirtualFoldersStatus  `json:"virtual_folders,omitempty"`
+	RealmID               string                          `json:"-"`
+	GUIScope              string                          `json:"gui_scope,omitempty"`
+	ID                    string                          `json:"id"`
+	DisplayName           string                          `json:"display_name"`
+	Address               string                          `json:"address"`
+	ClientRole            string                          `json:"client_role"`
+	RealmAlias            string                          `json:"realm_alias,omitempty"`
+	AccentColor           string                          `json:"accent_color,omitempty"`
+	Health                string                          `json:"health"`
+	RepositoryCount       int                             `json:"repository_count"`
+	RepositoriesReady     bool                            `json:"repositories_ready"`
+	PendingRequiredRepos  int                             `json:"pending_required_repos"`
+	ReservationCount      int                             `json:"reservation_count"`
+	SessionTimeoutMinutes int                             `json:"session_timeout_minutes"`
 	// DemoExpiresAt drives the DEMO badge and its countdown; after it passes
 	// the card says the demo ended instead of showing an unreachable server.
 	DemoExpiresAt string `json:"demo_expires_at,omitempty"`
@@ -1105,6 +1106,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			ReservationCount:      server.ReservationCount,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 			DemoExpiresAt:         server.DemoExpiresAt,
+			StorageCapacity:       server.StorageCapacity,
 		})
 	}
 	serversByID := make(map[string]guiapp.ServerViewModel, len(vm.Servers))

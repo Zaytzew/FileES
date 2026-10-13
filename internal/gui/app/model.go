@@ -121,6 +121,7 @@ const (
 )
 
 type ServerViewModel struct {
+	StorageCapacity       *contract.StorageCapacityStatus
 	ID                    string
 	DisplayName           string
 	ClientRole            string

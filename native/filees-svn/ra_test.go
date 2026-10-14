@@ -3,11 +3,85 @@
 package nativesvnprobe
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestRAAdoptBatchSkeletonPreservesLocalBytes(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	for i := 0; i < 16; i++ {
+		rel := fmt.Sprintf("d%02d", i)
+		if err := os.Mkdir(filepath.Join(f.wc, rel), 0700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(f.wc, rel, "remote.txt"), "remote content")
+		f.svnRun(t, "add", rel)
+	}
+	f.svnRun(t, "commit", "-m", "tree")
+	if err := os.MkdirAll(filepath.Join(f.wc, "folder", "nested", "leaf"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.svnRun(t, "add", "folder/nested")
+	f.svnRun(t, "commit", "-m", "nested")
+	wc := f.second(t, "batch", "--depth", "empty")
+	if err := os.Mkdir(filepath.Join(wc, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{}
+	for i := 0; i < 16; i++ {
+		rel := fmt.Sprintf("d%02d", i)
+		paths = append(paths, rel)
+		if err := os.Mkdir(filepath.Join(wc, rel), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, filepath.Join(wc, "d00", "remote.txt"), "local edit")
+	args := []string{"update", "--wc", wc, "--adopt-batch", "--set-depth", "empty", "--parents", "--revision", "2", "--"}
+	started := time.Now()
+	r := f.jsonCall(t, true, append(args, paths...)...)
+	bulkElapsed := time.Since(started)
+	if r["revision"] != float64(2) || len(r["conflicts"].([]any)) != 0 {
+		t.Fatal(r)
+	}
+	for _, rel := range paths[1:] {
+		if _, err := os.Lstat(filepath.Join(wc, rel, "remote.txt")); !os.IsNotExist(err) {
+			t.Fatal("unselected hydration", rel, err)
+		}
+	}
+	r = f.jsonCall(t, true, "update", "--wc", wc, "--adopt-batch", "--set-depth", "infinity", "--parents", "--revision", "2", "--", "d00/remote.txt")
+	if len(r["conflicts"].([]any)) != 0 {
+		t.Fatal(r)
+	}
+	if data, err := os.ReadFile(filepath.Join(wc, "d00/remote.txt")); err != nil || string(data) != "local edit" {
+		t.Fatal("local bytes lost", err)
+	}
+	f.jsonCall(t, false, "update", "--wc", wc, "--adopt-batch", "--set-depth", "empty", "--", "d00")
+	f.jsonCall(t, false, "update", "--wc", wc, "--adopt-batch", "--set-depth", "immediates", "--revision", "2", "--", "d00")
+	f.jsonCall(t, false, append(args, append(paths, "folder")...)...)
+	if err := os.MkdirAll(filepath.Join(wc, "folder", "nested", "leaf"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.jsonCall(t, true, "update", "--wc", wc, "--adopt-batch", "--set-depth", "empty", "--parents", "--revision", "3", "--", "folder", "folder/nested", "folder/nested/leaf")
+	f.jsonCall(t, true, "info", "--inspect-wc", wc, "--", "folder/nested/leaf")
+	single := f.second(t, "single", "--depth", "empty")
+	if err := os.Mkdir(filepath.Join(single, ".filees"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range paths {
+		if err := os.Mkdir(filepath.Join(single, rel), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started = time.Now()
+	for _, rel := range paths {
+		f.jsonCall(t, true, "update", "--wc", single, "--adopt", "--set-depth", "empty", "--parents", "--revision", "2", "--", rel)
+	}
+	t.Logf("16 directory metadata adoptions: single=%s bulk=%s (local file transport, not a WAN benchmark)", time.Since(started), bulkElapsed)
+}
 
 // cat is the first verb with no working copy. Everything it touches is either a
 // URL or the single absolute path it was told to write.

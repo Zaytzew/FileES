@@ -63,6 +63,7 @@ type RepoState struct {
 	currentOp          *string
 	cycle              contract.CycleStatus
 	publishProgress    *contract.PublishProgress
+	reconcileProgress  *contract.ReconcileProgress
 	passportIssues     []contract.PassportIssue
 	anchorBlocksFn     func() []contract.AnchorDownloadBlock
 	anchorDamageFn     func() *contract.AnchorDamage
@@ -417,7 +418,21 @@ func (rs *RepoState) SetPublishProgress(progress *contract.PublishProgress) {
 	}
 }
 
-// SetPublishFunc wires the shouting-commit publisher for this working copy.
+// SetReconcileProgress publishes a copied, transient metadata preparation counter.
+func (rs *RepoState) SetReconcileProgress(progress *contract.ReconcileProgress) {
+	rs.mu.Lock()
+	if progress != nil {
+		copy := *progress
+		progress = &copy
+	}
+	rs.reconcileProgress = progress
+	srv, id := rs.server, rs.id
+	rs.mu.Unlock()
+	if srv != nil {
+		srv.Emit(srv.NewRepoEvent(id, contract.EvSyncProgress, progress))
+	}
+}
+
 func (rs *RepoState) SetPublishFunc(fn func(ctx context.Context, comment string) (int64, error)) {
 	rs.mu.Lock()
 	rs.publishFn = fn
@@ -703,6 +718,11 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	lastSync := rs.lastSyncAt
 	cycle := rs.cycle
 	var publishProgress *contract.PublishProgress
+	var reconcileProgress *contract.ReconcileProgress
+	if rs.reconcileProgress != nil {
+		copy := *rs.reconcileProgress
+		reconcileProgress = &copy
+	}
 	if rs.publishProgress != nil {
 		copied := *rs.publishProgress
 		publishProgress = &copied
@@ -778,6 +798,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		CurrentOperation:       currentOp,
 		Cycle:                  cycle,
 		PublishProgress:        publishProgress,
+		ReconcileProgress:      reconcileProgress,
 		Recovery:               recovery,
 		CommitRecoveryRequired: commitRecoveryRequired,
 		Purpose:                purpose,

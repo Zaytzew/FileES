@@ -134,6 +134,8 @@ export default {
   "details.conflictRecovery.cancel": "Annuler",
   "details.conflictRecovery.warning": "La tentative n’a pas créé r{firstRevision} ; le serveur est à r{headRevision}. La version serveur remplacera la version locale de :\n{conflicts}\n\nLes fichiers locaux et variantes du conflit seront d’abord conservés et vérifiés dans :\n{copy}\n\nFileES reprendra ensuite la file conservée. Fermez les éditeurs avant de confirmer. Toute modification du fichier ou du serveur invalide le plan. Annuler ne change rien.",
   "progress.published": "{done} fichiers envoyés sur {total} · {sent} sur {size}",
+  "progress.reconcile.planning": "Rapprochement du dossier · vérification des métadonnées…",
+  "progress.reconcile.adopting": "Rapprochement du dossier · {done} éléments préparés sur {total}",
   "progress.createRepository.server.title": "Création du dépôt",
   "progress.anchorFolder.release.title": "Libération de l’espace…",
   "progress.anchorFolder.release.text": "« {path} » — libération de l’espace occupé par {files} fichiers. Les données du serveur restent. Veuillez attendre la fin de l’opération.",

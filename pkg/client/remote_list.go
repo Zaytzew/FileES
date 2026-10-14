@@ -149,6 +149,49 @@ func (c *execClient) UpdateAdoptPathDepth(ctx context.Context, wc, rel string, r
 		"-r", strconv.FormatInt(revision, 10), rel})
 }
 
+// CheckAdoptBatch rejects older helpers before any metadata repair.
+func (c *execClient) CheckAdoptBatch(ctx context.Context) error {
+	if !nativeWCOps(c) {
+		return fmt.Errorf("batch adoption requires native SVN")
+	}
+	return c.nativeRequireFeature(ctx, "sparse_adopt_batch_v1")
+}
+
+// UpdateAdoptPathsDepth uses one native invocation for a bounded, ordered
+// selection. No CLI fallback: old helpers must refuse before mutation.
+func (c *execClient) UpdateAdoptPathsDepth(ctx context.Context, wc string, paths []string, revision int64, depth string) (string, error) {
+	if !nativeWCOps(c) {
+		return "", fmt.Errorf("batch adoption requires native SVN")
+	}
+	if revision < 1 || (depth != "empty" && depth != "infinity") || len(paths) == 0 || len(paths) > 16 {
+		return "", fmt.Errorf("invalid batch adoption")
+	}
+	rels, err := nativeRelatives(wc, paths)
+	if err != nil || len(rels) != len(paths) {
+		return "", fmt.Errorf("invalid batch adoption paths")
+	}
+	if err := c.CheckAdoptBatch(ctx); err != nil {
+		return "", err
+	}
+	args := []string{"update", "--wc", wc, "--set-depth", depth, "--parents", "--adopt-batch", "--revision", strconv.FormatInt(revision, 10), "--"}
+	r, err := c.nativeRemote(ctx, wc, append(args, rels...)...)
+	if err != nil {
+		return "", err
+	}
+	if got, err := nativeRevisionValue(r, "revision", false); err != nil || got != revision {
+		return "", fmt.Errorf("batch adoption returned another revision")
+	}
+	out, err := nativeUpdateReceipt(r)
+	if err != nil {
+		return "", err
+	}
+	conflicts, valid := UpdateConflicts(out)
+	if !valid || len(conflicts) != 0 {
+		return "", fmt.Errorf("batch adoption returned conflicts or an invalid receipt")
+	}
+	return out, nil
+}
+
 func parseListXML(output string) ([]RemoteEntry, error) {
 	var doc struct {
 		Entries []struct {

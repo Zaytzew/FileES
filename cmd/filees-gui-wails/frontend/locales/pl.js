@@ -134,6 +134,8 @@ export default {
   "details.conflictRecovery.cancel": "Anuluj",
   "details.conflictRecovery.warning": "Próba publikacji nie utworzyła rewizji r{firstRevision}; serwer ma r{headRevision}. Wersja serwerowa zastąpi lokalną dla:\n{conflicts}\n\nBieżące lokalne pliki i warianty konfliktu zostaną najpierw zachowane i sprawdzone w:\n{copy}\n\nPotem FileES wznowi zachowaną kolejkę. Zamknij edytory tych plików przed potwierdzeniem. Zmiana pliku lub serwera unieważni plan. Anulowanie niczego nie zmienia.",
   "progress.published": "Wysłano {done} z {total} plików · {sent} z {size}",
+  "progress.reconcile.planning": "Uzgadnianie folderu · sprawdzanie metadanych…",
+  "progress.reconcile.adopting": "Uzgadnianie folderu · przygotowano {done} z {total} elementów",
   "progress.anchorFolder.release.title": "Zwalnianie miejsca…",
   "progress.anchorFolder.release.text": "„{path}” — zwalniam miejsce zajęte przez {files} plików. Dane na serwerze pozostają. Poczekaj na zakończenie działania.",
   "progress.anchorFolder.download.title": "Pobieranie plików…",

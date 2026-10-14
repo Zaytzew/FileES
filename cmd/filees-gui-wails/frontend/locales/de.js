@@ -134,6 +134,8 @@ export default {
   "details.conflictRecovery.cancel": "Abbrechen",
   "details.conflictRecovery.warning": "Der Versuch hat r{firstRevision} nicht erstellt; der Server steht bei r{headRevision}. Die Serverversion ersetzt die lokale Version von:\n{conflicts}\n\nLokale Dateien und Konfliktvarianten werden zuerst hier gesichert und geprüft:\n{copy}\n\nDanach setzt FileES die erhaltene Warteschlange fort. Schließen Sie vorher die Editoren dieser Dateien. Änderungen an Datei oder Server machen den Plan ungültig. Abbrechen ändert nichts.",
   "progress.published": "{done} von {total} Dateien gesendet · {sent} von {size}",
+  "progress.reconcile.planning": "Ordner wird abgeglichen · Metadaten werden geprüft…",
+  "progress.reconcile.adopting": "Ordner wird abgeglichen · {done} von {total} Elementen vorbereitet",
   "progress.createRepository.server.title": "Repository wird erstellt",
   "progress.anchorFolder.release.title": "Speicherplatz wird freigegeben…",
   "progress.anchorFolder.release.text": "„{path}“ — Speicherplatz von {files} Dateien wird freigegeben. Die Serverdaten bleiben erhalten. Bitte warten Sie bis zum Abschluss.",

@@ -533,6 +533,23 @@ Concurrent remote changes still face ordinary SVN conflict checks, never
 an automatic switch to HEAD. An existing uncertain HOLD must first pass
 the separate, explicit no-effect recovery contract below.
 
+### Bounded copied-tree adoption (2026-10-15, base r2153 + WC)
+
+`sparse_adopt_batch_v1` adds `update --adopt-batch` for 1–16 explicit
+targets at one positive pinned revision and one sticky depth (empty or
+infinity). The existing native writer/context surrounds the whole call;
+every target must return that exact revision. Ordinary conflict and local
+byte preservation checks still apply. It is not an atomic multi-target
+transaction: a failed/cancelled batch may leave completed metadata, so the
+daemon re-reads status before resuming rather than replaying blindly.
+
+The daemon lists the pinned metadata tree once, prepares parents first,
+and batches only equal depths. Directories remain depth-empty, leaving
+remote children unhydrated. Feature preflight precedes unscheduling plain
+adds. Ship the helper and daemon together. Progress counts only successful
+batch receipts; planning is separate, and counters clear on every exit.
+This does not promise one SSH session for all native update targets.
+
 ### Recovery owner consistency (2026-09-28)
 
 `writer-inspect` / `writer_inspect_v1` returns `commit_id` under the existing

@@ -25,4 +25,10 @@ func TestPlainAddRepairRequiresFeatureAndNeverFallsBack(t *testing.T) {
 	if _, err := c.UpdateAdoptPathDepth(t.Context(), wc, "folder", 7, "files"); err == nil {
 		t.Fatal("unsupported adoption depth admitted")
 	}
+	if err := c.CheckAdoptBatch(t.Context()); err == nil || !strings.Contains(err.Error(), "sparse_adopt_batch_v1") {
+		t.Fatal("old batch helper admitted", err)
+	}
+	if _, err := c.UpdateAdoptPathsDepth(t.Context(), wc, []string{"../escape"}, 7, "empty"); err == nil {
+		t.Fatal("escape admitted")
+	}
 }

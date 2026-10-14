@@ -42,6 +42,7 @@ static void print_ok_version(void)
     printf(",\"local_tree_metadata_bound_v1\"");
     printf(",\"local_file_delete_metadata_bound_v1\"");
     printf(",\"unschedule_plain_add_v1\"");
+    printf(",\"sparse_adopt_batch_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -351,6 +352,7 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
     svn_boolean_t live = TRUE;
     svn_boolean_t make_parents = FALSE;
     svn_boolean_t adopt = FALSE;
+    svn_boolean_t adopt_batch = FALSE;
     int n = 0, i;
 
     for (i = 2; i < argc; ++i) {
@@ -359,6 +361,7 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
             continue;
         }
         if (!strcmp(argv[i], "--adopt")) { adopt = TRUE; continue; }
+        if (!strcmp(argv[i], "--adopt-batch")) { adopt = TRUE; adopt_batch = TRUE; continue; }
         if (!strcmp(argv[i], "--revision")) {
             SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
             continue;
@@ -388,14 +391,17 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
         return filees_refuse("usage: filees-svn update --wc WC [--depth empty | --set-depth DEPTH] [--parents] [--adopt] [--revision N] [-- REL...]");
     }
     if (!wc) return filees_refuse("update requires --wc|--disposable-wc");
-    if (sticky && (!live || n > 1))
+    if (adopt_batch && (!live || !sticky || n < 1 || n > 16 ||
+        (depth != svn_depth_empty && depth != svn_depth_infinity) || revision < 1))
+        return filees_refuse("batch adoption requires 1..16 pinned live targets at empty or infinity depth");
+    if (sticky && (!live || (n > 1 && !adopt_batch)))
         return filees_refuse("--set-depth changes one live working copy path at a time");
-    if (make_parents && (n != 1 || !live || (depth != svn_depth_empty && !sticky)))
+    if (make_parents && ((n != 1 && !adopt_batch) || !live || (depth != svn_depth_empty && !sticky)))
         return filees_refuse("--parents requires one targeted live depth-empty or --set-depth update");
-    /* Adopting is narrow on purpose: one live path, a chosen depth and a
-     * pinned revision - the revision the bytes on disk came from. Anything
-     * wider would let an ordinary update swallow files nobody vouched for. */
-    if (adopt && (!sticky || n != 1 || !live || !SVN_IS_VALID_REVNUM(revision)))
+    /* Adopting requires explicit live paths, one chosen depth and a pinned
+     * revision. The separate batch flag bounds the selected target count;
+     * ordinary updates must never swallow files nobody vouched for. */
+    if (adopt && (!sticky || (n != 1 && !adopt_batch) || !live || !SVN_IS_VALID_REVNUM(revision)))
         return filees_refuse("--adopt requires one live --set-depth path and --revision");
     return filees_ra_update(wc, live, paths, n, depth, sticky, revision, make_parents, adopt, pool);
 }

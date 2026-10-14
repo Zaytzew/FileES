@@ -9,3 +9,11 @@ export function importProgressLine(repo, t, bytes) {
     size: bytes(Number(repo.publish_bytes_total) || 0),
   });
 }
+
+export function reconcileProgressLine(repo, t) {
+  const p = repo.reconcile_progress;
+  if (!p) return "";
+  if (p.phase === "planning") return t("progress.reconcile.planning");
+  if (p.phase !== "adopting" || !Number.isInteger(p.done) || !Number.isInteger(p.total) || p.total < 0 || p.done < 0 || p.done > p.total) return "";
+  return t("progress.reconcile.adopting", {done: p.done, total: p.total});
+}

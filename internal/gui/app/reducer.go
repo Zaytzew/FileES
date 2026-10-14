@@ -301,6 +301,7 @@ func (s appState) viewModel() ViewModel {
 			WorkingCopySizeKnown:   snap.WorkingCopySizeKnown,
 			Pending:                snap.Pending,
 			PublishProgress:        snap.PublishProgress,
+			ReconcileProgress:      snap.ReconcileProgress,
 			CommitRecoveryRequired: snap.CommitRecoveryRequired,
 			Conflicts:              snap.Conflicts,
 			UnportableNames:        snap.UnportableNames,

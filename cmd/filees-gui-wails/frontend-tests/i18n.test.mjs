@@ -6,7 +6,7 @@ import { promptDetailText } from "../frontend/prompt-details.js";
 import { publicShareURL } from "../frontend/public-share-link.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 import {updateDownloadLine} from "../frontend/update-download.js";
-import {importProgressLine} from "../frontend/import-progress.js";
+import {importProgressLine, reconcileProgressLine} from "../frontend/import-progress.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
@@ -348,7 +348,7 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
   const render = runInNewContext(`${extract("repoAction")}\n${extract("repoProblemLine")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
     t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
     repoSection: () => "active", readRepoView: () => ({}), drawerPicker: () => "",
-    repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "", importProgressLine,
+    repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "", importProgressLine, reconcileProgressLine,
   });
   const repo = { id: 'id"<raw>', display_name: "Projekt <DWG>", local_path: "E:/Żółć", display_state: "active", can_lock: true };
   for (locale of ["pl", "en"]) {

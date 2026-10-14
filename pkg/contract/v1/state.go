@@ -87,9 +87,10 @@ type RepoStatus struct {
 	// PublishProgress is the publication running right now, reported by the
 	// native commit while it sends (filees-svn commit --progress); nil when
 	// nothing is being published or the helper cannot report.
-	PublishProgress        *PublishProgress `json:"publish_progress,omitempty"`
-	Recovery               RecoveryStats    `json:"recovery"`
-	CommitRecoveryRequired bool             `json:"commit_recovery_required,omitempty"`
+	PublishProgress        *PublishProgress   `json:"publish_progress,omitempty"`
+	ReconcileProgress      *ReconcileProgress `json:"reconcile_progress,omitempty"`
+	Recovery               RecoveryStats      `json:"recovery"`
+	CommitRecoveryRequired bool               `json:"commit_recovery_required,omitempty"`
 	// Purpose is empty for a normal share. upload_shelf is the Upload Channel
 	// delivery repository; upload_trash is the realm-wide reject quarantine.
 	Purpose      string `json:"purpose,omitempty"`
@@ -109,6 +110,14 @@ type PublishProgress struct {
 	BytesSent  int64  `json:"bytes_sent"`
 	BytesTotal int64  `json:"bytes_total"`
 	StartedAt  string `json:"started_at"`
+}
+
+// ReconcileProgress counts confirmed metadata adoptions, not uploaded files.
+// Planning has no known total. A full count is not a publication receipt.
+type ReconcileProgress struct {
+	Phase string `json:"phase"` // planning or adopting
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
 }
 
 // UnportableName is one refused object. Kind is a stable token

@@ -543,8 +543,12 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
                                TRUE /* adds_as_modification */,
                                make_parents,
                                ctx, pool));
+    if (adopt && (!result_revs || result_revs->nelts != n))
+        return filees_refuse("adoption returned an incomplete receipt");
     for (i = 0; result_revs && i < result_revs->nelts; ++i) {
         svn_revnum_t one = APR_ARRAY_IDX(result_revs, i, svn_revnum_t);
+        if (adopt && one != revision)
+            return filees_refuse("adoption returned a different revision");
         if (SVN_IS_VALID_REVNUM(one) && (!SVN_IS_VALID_REVNUM(result) || one > result))
             result = one;
     }

@@ -22,3 +22,22 @@ func TestPublishProgressIsPartOfTheRepositoryStatus(t *testing.T) {
 		t.Fatal("the finished publication is still reported")
 	}
 }
+
+func TestReconcileProgressCopiesAndClears(t *testing.T) {
+	rs := New(t.TempDir()+"/daemon.sock").RegisterRepoAccess("docs", "svn+ssh://host/docs", t.TempDir(), "office", contract.AccessReadWrite)
+	p := &contract.ReconcileProgress{Phase: "adopting", Done: 16, Total: 40}
+	rs.SetReconcileProgress(p)
+	p.Done = 99
+	got := rs.Snapshot().ReconcileProgress
+	if got == nil || got.Done != 16 {
+		t.Fatal(got)
+	}
+	got.Done = 100
+	if rs.Snapshot().ReconcileProgress.Done != 16 {
+		t.Fatal("snapshot aliases state")
+	}
+	rs.SetReconcileProgress(nil)
+	if rs.Snapshot().ReconcileProgress != nil {
+		t.Fatal("stale progress")
+	}
+}

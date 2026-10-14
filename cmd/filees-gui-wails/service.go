@@ -174,19 +174,20 @@ type RepoProjection struct {
 	PendingBytes               int64  `json:"pending_bytes"`
 	// Publish* is the publication running now (progress-overlay.js draws the
 	// bar from it); all zero when nothing is being sent.
-	PublishFilesDone         int                        `json:"publish_files_done,omitempty"`
-	PublishFilesTotal        int                        `json:"publish_files_total,omitempty"`
-	PublishBytesSent         int64                      `json:"publish_bytes_sent,omitempty"`
-	PublishBytesTotal        int64                      `json:"publish_bytes_total,omitempty"`
-	IntentResolutionRequired bool                       `json:"intent_resolution_required"`
-	CommitRecoveryRequired   bool                       `json:"commit_recovery_required"`
-	LastCommitAt             string                     `json:"last_commit_at,omitempty"`
-	CanFoldInactive          bool                       `json:"can_fold_inactive"`
-	Conflicts                int                        `json:"conflicts"`
-	UnportableNames          []UnportableNameProjection `json:"unportable_names,omitempty"`
-	CurrentOperation         string                     `json:"current_operation,omitempty"`
-	ReservationCount         int                        `json:"reservation_count"`
-	CanAttach                bool                       `json:"can_attach"`
+	PublishFilesDone         int                         `json:"publish_files_done,omitempty"`
+	ReconcileProgress        *contract.ReconcileProgress `json:"reconcile_progress,omitempty"`
+	PublishFilesTotal        int                         `json:"publish_files_total,omitempty"`
+	PublishBytesSent         int64                       `json:"publish_bytes_sent,omitempty"`
+	PublishBytesTotal        int64                       `json:"publish_bytes_total,omitempty"`
+	IntentResolutionRequired bool                        `json:"intent_resolution_required"`
+	CommitRecoveryRequired   bool                        `json:"commit_recovery_required"`
+	LastCommitAt             string                      `json:"last_commit_at,omitempty"`
+	CanFoldInactive          bool                        `json:"can_fold_inactive"`
+	Conflicts                int                         `json:"conflicts"`
+	UnportableNames          []UnportableNameProjection  `json:"unportable_names,omitempty"`
+	CurrentOperation         string                      `json:"current_operation,omitempty"`
+	ReservationCount         int                         `json:"reservation_count"`
+	CanAttach                bool                        `json:"can_attach"`
 	// CanCreateAnchor: the daemon can make this repository's folder an
 	// Explorer anchor here (helper present, repository without a copy).
 	CanCreateAnchor bool `json:"can_create_anchor,omitempty"`
@@ -1183,7 +1184,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			PublishFilesDone: publishField(repo.PublishProgress, "files_done"), PublishFilesTotal: publishField(repo.PublishProgress, "files_total"),
-			PublishBytesSent: publishBytes(repo.PublishProgress, false), PublishBytesTotal: publishBytes(repo.PublishProgress, true),
+			ReconcileProgress: currentReconcileProgress(repo.ReconcileProgress, vm.Connected && !vm.Stale),
+			PublishBytesSent:  publishBytes(repo.PublishProgress, false), PublishBytesTotal: publishBytes(repo.PublishProgress, true),
 			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
 			CommitRecoveryRequired:   repo.Attached && !repo.ServerDeleted && repo.CommitRecoveryRequired,
 			LastCommitAt:             repo.LastCommitAt,
@@ -1459,6 +1461,14 @@ func unportableNames(names []contract.UnportableName) []UnportableNameProjection
 		out = append(out, UnportableNameProjection{Path: name.Path, Kind: name.Kind, Detail: name.Detail})
 	}
 	return out
+}
+
+func currentReconcileProgress(progress *contract.ReconcileProgress, fresh bool) *contract.ReconcileProgress {
+	if !fresh || progress == nil || progress.Done < 0 || progress.Total < progress.Done || (progress.Phase != "planning" && progress.Phase != "adopting") {
+		return nil
+	}
+	copy := *progress
+	return &copy
 }
 
 func publishField(progress *contract.PublishProgress, field string) int {

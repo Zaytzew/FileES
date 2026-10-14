@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import {languages} from "../frontend/i18n.js";
+import {reconcileProgressLine} from "../frontend/import-progress.js";
 
 test("known copies never look remote during startup or server outage",()=>{
  const source=readFileSync(new URL("../frontend/app.js",import.meta.url),"utf8");
  const start=source.indexOf("function renderRepo("),end=source.indexOf("\nconst expandedIdleGroups",start);
- const ctx={t:key=>key,escapeHTML:String,bytes:String,localizedStates:new Set(["initializing","offline","active"]),repoAction:()=>"",repoIcons:{},repoProblemLine:()=>"",repoSection:()=>"active",readRepoView:()=>({}),drawerPicker:()=>"",renderUnportable:()=>"",dateTime:String};
+ const ctx={reconcileProgressLine,t:key=>key,escapeHTML:String,bytes:String,localizedStates:new Set(["initializing","offline","active"]),repoAction:()=>"",repoIcons:{},repoProblemLine:()=>"",repoSection:()=>"active",readRepoView:()=>({}),drawerPicker:()=>"",renderUnportable:()=>"",dateTime:String};
  runInNewContext(source.slice(start,end),ctx);
  const row={id:"repo",display_name:"Project",local_path:"/local/project",local_copy_presence:"present",local_copy_kind:"virtual",can_open:true};
  for(const state of ["initializing","unattached","offline"]){

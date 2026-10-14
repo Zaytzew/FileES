@@ -12,7 +12,7 @@ import { reconcileRepositoryHTML, repoToolsWidth } from "./repository-dom.js";
 import { initializeProgressOverlay } from "./progress-overlay.js";
 import { updateDownloadLine } from "./update-download.js";
 import { storageCapacityMarkup } from "./storage-capacity.js";
-import { importProgressLine } from "./import-progress.js";
+import { importProgressLine, reconcileProgressLine } from "./import-progress.js";
 
 initializeTheme();
 initializeLanguage();
@@ -632,11 +632,11 @@ function renderRepo(repo) {
     ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
     : localProvisioning
       ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : importProgressLine(repo, t, bytes) || t("queue.importRunning"))
-    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}`
+    : (reconcileProgressLine(repo, t) || (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}`
       : localUnavailable ? t("copy.localUnavailable")
       : localCheck ? t("copy.checking")
       : localPresent && (state === "offline" || repo.local_copy_waiting_connection) ? t("copy.waitingConnection")
-      : checkingCopy ? t("copy.refreshing") : t("queue.empty"));
+      : checkingCopy ? t("copy.refreshing") : t("queue.empty")));
   const source = ["working_copy", "sparse", "virtual"].includes(repo.local_copy_kind) && repo.local_path
     ? `${repo.local_path} · ${t(`copy.kind.${repo.local_copy_kind}`)}`
     : repo.sparse

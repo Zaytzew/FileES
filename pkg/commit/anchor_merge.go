@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	contract "filees/pkg/contract/v1"
 )
 
 type anchorMergeClient interface {
@@ -78,6 +79,17 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 	if !needed {
 		return nil
 	}
+	report := func(phase string, done, total int) {
+		if s.OnReconcileProgress != nil {
+			s.OnReconcileProgress(&contract.ReconcileProgress{Phase: phase, Done: done, Total: total})
+		}
+	}
+	report("planning", 0, 0)
+	defer func() {
+		if s.OnReconcileProgress != nil {
+			s.OnReconcileProgress(nil)
+		}
+	}()
 	if s.AnchorMergeRevision == nil {
 		return errors.New("virtual folder merge has no bound remote revision")
 	}
@@ -93,6 +105,39 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 		return errors.New("invalid virtual folder merge repository URL")
 	}
 	kinds, listed := map[string]string{".": "dir"}, map[string]bool{}
+	// One pinned metadata-only tree replaces one remote session per parent.
+	// Older test adapters retain the narrow listing path; production clients
+	// must surface a failed tree read rather than treating it as an empty tree.
+	wholeTree := false
+	if reader, ok := s.Cli.(client.HistoryTreeReader); ok {
+		dir, err := os.MkdirTemp("", "filees-merge-plan-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		file := filepath.Join(dir, "tree.jsonl")
+		if _, err := reader.HistoryListTree(ctx, s.RepoURL, revision, file); err != nil {
+			return err
+		}
+		if err := client.EachHistoryTreeNode(file, func(node client.HistoryTreeNode) error {
+			if !safeIntentPath(node.Path) {
+				return errors.New("invalid virtual folder merge remote path")
+			}
+			if _, exists := kinds[node.Path]; exists {
+				return errors.New("duplicate virtual folder merge remote path")
+			}
+			kinds[node.Path] = node.Kind
+			return nil
+		}); err != nil {
+			return err
+		}
+		for p := range kinds {
+			if p != "." && kinds[path.Dir(p)] != "dir" {
+				return errors.New("incomplete virtual folder merge remote tree")
+			}
+		}
+		wholeTree = true
+	}
 	type adoption struct{ rel, depth string }
 	var plan []adoption
 	for _, p := range paths {
@@ -100,7 +145,7 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 		if kinds[parent] != "dir" {
 			continue
 		}
-		if !listed[parent] {
+		if !wholeTree && !listed[parent] {
 			target := *u
 			if parent != "." {
 				target.Path = strings.TrimRight(u.Path, "/") + "/" + parent
@@ -150,6 +195,11 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 		plan = append(plan, adoption{p, depth})
 	}
 	if len(plan) > 0 {
+		if check, ok := s.Cli.(interface{ CheckAdoptBatch(context.Context) error }); ok {
+			if err := check.CheckAdoptBatch(ctx); err != nil {
+				return err
+			}
+		}
 		var scheduled []string
 		for i := len(paths) - 1; i >= 0; i-- {
 			if status[paths[i]] == "added" {
@@ -162,10 +212,37 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 			}
 		}
 	}
-	for _, step := range plan {
-		if _, err := c.UpdateAdoptPathDepth(ctx, wc, step.rel, revision, step.depth); err != nil {
+	report("adopting", 0, len(plan))
+	for i := 0; i < len(plan); {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
+		end := i + 1
+		chars := len(plan[i].rel)
+		// Bounded command size, same depth, parent-first order. Confirm only
+		// complete receipts; a failed partial batch is re-inspected on retry.
+		for end < len(plan) && end-i < 16 && plan[end].depth == plan[i].depth && chars+len(plan[end].rel) < 12000 {
+			chars += len(plan[end].rel)
+			end++
+		}
+		if batch, ok := s.Cli.(interface {
+			UpdateAdoptPathsDepth(context.Context, string, []string, int64, string) (string, error)
+		}); ok {
+			rels := make([]string, 0, end-i)
+			for _, step := range plan[i:end] {
+				rels = append(rels, step.rel)
+			}
+			if _, err := batch.UpdateAdoptPathsDepth(ctx, wc, rels, revision, plan[i].depth); err != nil {
+				return err
+			}
+		} else {
+			end = i + 1
+			if _, err := c.UpdateAdoptPathDepth(ctx, wc, plan[i].rel, revision, plan[i].depth); err != nil {
+				return err
+			}
+		}
+		i = end
+		report("adopting", i, len(plan))
 	}
 	return nil // Caller re-reads status and content proof before publication.
 }

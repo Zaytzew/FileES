@@ -12,6 +12,7 @@ import { reconcileRepositoryHTML, repoToolsWidth } from "./repository-dom.js";
 import { initializeProgressOverlay } from "./progress-overlay.js";
 import { updateDownloadLine } from "./update-download.js";
 import { storageCapacityMarkup } from "./storage-capacity.js";
+import { importProgressLine } from "./import-progress.js";
 
 initializeTheme();
 initializeLanguage();
@@ -630,7 +631,7 @@ function renderRepo(repo) {
   const pending = deleted
     ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
     : localProvisioning
-      ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : t("queue.importRunning"))
+      ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : importProgressLine(repo, t, bytes) || t("queue.importRunning"))
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}`
       : localUnavailable ? t("copy.localUnavailable")
       : localCheck ? t("copy.checking")

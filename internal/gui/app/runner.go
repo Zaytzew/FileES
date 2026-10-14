@@ -219,6 +219,7 @@ type msgDisconnected struct{ gen int }
 type msgReconnect struct{ gen int }
 type msgManualReconnect struct{}
 type msgPeriodic struct{}
+type msgImportProgress struct{}
 type msgRefreshNow struct{}
 type msgActionStart struct{ action PendingAction }
 type msgActionAwait struct{ id string }
@@ -258,6 +259,7 @@ func (msgDisconnected) sealed()     {}
 func (msgReconnect) sealed()        {}
 func (msgManualReconnect) sealed()  {}
 func (msgPeriodic) sealed()         {}
+func (msgImportProgress) sealed()   {}
 func (msgRefreshNow) sealed()       {}
 func (msgActionStart) sealed()      {}
 func (msgActionAwait) sealed()      {}
@@ -279,6 +281,7 @@ func (a *App) loop(ctx context.Context) {
 		currentSesCtx  context.Context
 		reconnectTimer clockTimer
 		periodicTimer  clockTimer
+		importTimer    clockTimer
 		debounceTimer  clockTimer
 
 		refreshInFlight      bool
@@ -312,6 +315,10 @@ func (a *App) loop(ctx context.Context) {
 	}
 
 	var schedulePeriodic func()
+	var scheduleImportProgress func()
+	scheduleImportProgress = func() {
+		importTimer = a.cfg.Clock.AfterFunc(2*time.Second, func() { send(msgImportProgress{}) })
+	}
 	schedulePeriodic = func() {
 		if a.cfg.Periodic < 0 || ctx.Err() != nil {
 			return
@@ -345,6 +352,7 @@ func (a *App) loop(ctx context.Context) {
 		includeReservations := state.caps[contract.CapRepoReservationList]
 		includeNotices := state.caps[contract.CapNoticeList]
 		includePublicShares := state.caps[contract.CapRepoPublicShareList]
+		includeImportProgress := state.caps[contract.CapRepoLifecycleStatus]
 		fences := make([]string, 0, len(actionFencesPending))
 		for id := range actionFencesPending {
 			fences = append(fences, id)
@@ -371,7 +379,7 @@ func (a *App) loop(ctx context.Context) {
 					a.sendSessionFailure(sesCtx, gen, send)
 					return
 				}
-				statuses = append(statuses, *status)
+				statuses = append(statuses, a.withImportProgress(sesCtx, repo, *status, includeImportProgress))
 			}
 			var errors []contract.ErrorRecord
 			if includeErrors {
@@ -461,9 +469,12 @@ func (a *App) loop(ctx context.Context) {
 		}
 		refreshInFlight = true
 		ids := make([]string, 0, len(dirtyRepos))
+		summaries := make(map[string]contract.RepoSummary, len(dirtyRepos))
 		for id := range dirtyRepos {
 			ids = append(ids, id)
+			summaries[id] = state.summaries[id]
 		}
+		includeImportProgress := state.caps[contract.CapRepoLifecycleStatus]
 		dirtyRepos = make(map[string]bool)
 		sesCtx := currentSesCtx
 		gen := connectGen
@@ -476,7 +487,7 @@ func (a *App) loop(ctx context.Context) {
 					a.sendSessionFailure(sesCtx, gen, send)
 					return
 				}
-				statuses = append(statuses, *status)
+				statuses = append(statuses, a.withImportProgress(sesCtx, summaries[id], *status, includeImportProgress))
 			}
 			if sesCtx.Err() == nil {
 				send(msgPartialSnapshots{gen: gen, statuses: statuses})
@@ -542,6 +553,7 @@ func (a *App) loop(ctx context.Context) {
 	}
 
 	schedulePeriodic()
+	scheduleImportProgress()
 	connect()
 
 	defer func() {
@@ -550,6 +562,7 @@ func (a *App) loop(ctx context.Context) {
 		}
 		stopTimer(&reconnectTimer)
 		stopTimer(&periodicTimer)
+		stopTimer(&importTimer)
 		stopTimer(&debounceTimer)
 	}()
 
@@ -683,6 +696,18 @@ func (a *App) loop(ctx context.Context) {
 				}
 				schedulePeriodic()
 
+			case msgImportProgress:
+				importTimer = nil
+				if currentSesCtx != nil && state.caps[contract.CapRepoLifecycleStatus] {
+					for id, repo := range state.summaries {
+						if importProgressCandidate(repo) {
+							dirtyRepos[id] = true
+						}
+					}
+					launchDirtyRefresh()
+				}
+				scheduleImportProgress()
+
 			case msgRefreshNow:
 				launchFullRefresh()
 
@@ -739,4 +764,28 @@ func hasCap(caps []string, capability string) bool {
 		}
 	}
 	return false
+}
+
+func importProgressCandidate(repo contract.RepoSummary) bool {
+	return !repo.Attached && !repo.ServerDeleted && repo.LocalPath != "" && repo.LifecycleOperationID != "" &&
+		(repo.LocalCopy == nil || repo.LocalCopy.Lifecycle == "repository_created")
+}
+
+// The create dialog is not the owner of an import: retry, GUI restart and
+// closing the dialog must leave the dashboard able to observe the same work.
+// Read only local daemon state; never restart or retry the operation here.
+func (a *App) withImportProgress(ctx context.Context, repo contract.RepoSummary, status contract.RepoStatus, enabled bool) contract.RepoStatus {
+	client, ok := a.cfg.Client.(interface {
+		RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+	})
+	if !enabled || !ok || !importProgressCandidate(repo) {
+		return status
+	}
+	result, err := client.RepoLifecycleStatus(ctx, repo.LifecycleOperationID)
+	if err != nil || result == nil || result.OperationID != repo.LifecycleOperationID || result.RepoID != repo.ID || result.ServerID != repo.ServerID || result.LastError != "" || result.State != "repository_created" || result.ImportProgress == nil {
+		return status // unavailable is not completion, and must not break the GUI session
+	}
+	progress := *result.ImportProgress
+	status.PublishProgress = &progress
+	return status
 }

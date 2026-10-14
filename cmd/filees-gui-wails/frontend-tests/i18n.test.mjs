@@ -6,6 +6,7 @@ import { promptDetailText } from "../frontend/prompt-details.js";
 import { publicShareURL } from "../frontend/public-share-link.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 import {updateDownloadLine} from "../frontend/update-download.js";
+import {importProgressLine} from "../frontend/import-progress.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
@@ -347,7 +348,7 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
   const render = runInNewContext(`${extract("repoAction")}\n${extract("repoProblemLine")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
     t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
     repoSection: () => "active", readRepoView: () => ({}), drawerPicker: () => "",
-    repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "",
+    repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "", importProgressLine,
   });
   const repo = { id: 'id"<raw>', display_name: "Projekt <DWG>", local_path: "E:/Żółć", display_state: "active", can_lock: true };
   for (locale of ["pl", "en"]) {
@@ -385,6 +386,8 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
     ];
     for (const [fields, key] of cases) assert.ok(render.renderRepo({...repo, ...fields}).includes(catalogues[locale][`queue.${key}`]), `${locale}:${key}`);
     assert.ok(render.renderRepo({...repo, pending_files: 2, pending_bytes: 123}).includes("2 · 123"));
+    const importRow = render.renderRepo({...repo, local_provisioning:true, publish_files_done:7, publish_files_total:10, publish_bytes_sent:42, publish_bytes_total:100});
+    assert.ok(importRow.includes(translate(catalogues, locale, "progress.published", {done:7,total:10,sent:"42",size:"100"})));
     // A folder the folder window explains points there from its row.
     const waiting = render.renderRepo({...repo, problem: "borrow_pending"});
     assert.ok(waiting.includes(catalogues[locale]["repo.problem.borrowPending"]));

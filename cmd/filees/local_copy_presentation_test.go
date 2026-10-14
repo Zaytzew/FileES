@@ -13,6 +13,15 @@ import (
 	"filees/pkg/localrepo"
 )
 
+func TestQueuedMovePresentationDoesNotClaimCompletion(t *testing.T) {
+	f := newQueuedMoveFixture(t)
+	view := &localCopyPresentation{store: f.p.local}
+	rows := view.LocalRepositories()
+	if len(rows) != 1 || rows[0].LocalCopy.Lifecycle != contract.LifecycleRelocationQueued || rows[0].LocalPath != f.record.LocalPath {
+		t.Fatalf("rows=%+v", rows)
+	}
+}
+
 func TestLocalCopyPresentationSurvivesColdStartWithoutServerOrRuntime(t *testing.T) {
 	root := t.TempDir()
 	storePath := filepath.Join(t.TempDir(), "local.json")

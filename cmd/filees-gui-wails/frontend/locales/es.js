@@ -1250,6 +1250,8 @@ export default {
   "feedback.moveSelectParent": "Elija la carpeta principal, por ejemplo «%s», no la carpeta «%s» ya preparada. FileES moverá allí la carpeta completa.",
   "feedback.moveClosePrograms": "Cierre los programas y las ventanas del Explorador de archivos que puedan estar usando esta copia de trabajo y vuelva a intentarlo.",
   "feedback.moveComplete": "Carpeta movida",
+  "feedback.moveQueued": "Traslado de la carpeta en cola",
+  "feedback.moveQueuedBody": "FileES moverá la carpeta automáticamente cuando se libere el bloqueo. No es necesario volver a enviar la solicitud.",
   "feedback.movePending": "El movimiento de la carpeta aún no se ha confirmado",
   "confirm.deleteFinal.title": "Confirmación definitiva",
   "confirm.deleteFinal.text": "Esta operación es destructiva. El servidor aplicará el periodo de conservación configurado; en modo pánico (conservación de 0 días), no quedará ninguna copia recuperable.\n\n¿Eliminar permanentemente el repositorio «{name}»?",

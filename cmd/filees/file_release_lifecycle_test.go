@@ -23,7 +23,7 @@ func TestFileReleaseIntentExcludesConcurrentLifecycle(t *testing.T) {
 	if _, err := service.BeginDelete(t.Context(), "server", "repo", "repo"); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)
 	}
-	if _, err := service.BeginRelocate("server", "repo", "new", true); !errors.Is(err, commit.ErrLocalStatusBusy) {
+	if _, err := service.BeginRelocate("server", "repo", "new", false); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)
 	}
 	guard.Unlock()
@@ -64,7 +64,7 @@ func TestPendingFileReleasePreservesLifecycleAndMetadata(t *testing.T) {
 	if _, err := service.BeginDelete(t.Context(), "server", "repo", "repo"); !errors.Is(err, commit.ErrFileReleasePending) {
 		t.Fatal(err)
 	}
-	if _, err := service.BeginRelocate("server", "repo", filepath.Join(t.TempDir(), "new"), true); !errors.Is(err, commit.ErrFileReleasePending) {
+	if _, err := service.BeginRelocate("server", "repo", filepath.Join(t.TempDir(), "new"), false); !errors.Is(err, commit.ErrFileReleasePending) {
 		t.Fatal(err)
 	}
 	if err := stripWorkingCopyMetadata(wc, "fixture"); !errors.Is(err, commit.ErrFileReleasePending) {

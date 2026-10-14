@@ -40,6 +40,7 @@ func (s *Store) ObserveRemoteDeletion(serverID, repoID string) error {
 		record.RemoteDeletionObserved = true
 		record.PreservedAlternatePath = record.PendingLocalPath
 		record.PendingLocalPath = ""
+		record.RelocationQueued = false
 		record.RelocationAdoptExisting = false
 		record.RelocationMoveExisting = false
 		record.ReconcileOperationID = ""

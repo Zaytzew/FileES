@@ -1250,6 +1250,8 @@ export default {
   "feedback.moveSelectParent": "Choisissez le dossier parent, par exemple « %s », et non le dossier « %s » déjà préparé. FileES y déplacera le dossier entier.",
   "feedback.moveClosePrograms": "Fermez les programmes et les fenêtres de l’Explorateur de fichiers susceptibles d’utiliser cette copie de travail, puis réessayez.",
   "feedback.moveComplete": "Dossier déplacé",
+  "feedback.moveQueued": "Déplacement du dossier en attente",
+  "feedback.moveQueuedBody": "FileES déplacera le dossier automatiquement dès que le verrou sera libéré. Vous n’avez pas besoin de renouveler la demande.",
   "feedback.movePending": "Le déplacement du dossier n’a pas encore été confirmé",
   "confirm.deleteFinal.title": "Confirmation définitive",
   "confirm.deleteFinal.text": "Cette opération est destructive. Le serveur appliquera la durée de conservation configurée ; en mode panique (conservation de 0 jour), aucune copie récupérable ne subsistera.\n\nSupprimer définitivement le dépôt « {name} » ?",

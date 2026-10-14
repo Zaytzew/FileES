@@ -42,7 +42,7 @@ func TestRemoteTreeFencePreservesLifecycleIncludingNocfapi(t *testing.T) {
 			if _, err := s.BeginDelete(t.Context(), "server", "repo", "repo"); !errors.Is(err, fence.err) {
 				t.Fatal(err)
 			}
-			if _, err := s.BeginRelocate("server", "repo", filepath.Join(t.TempDir(), "new"), true); !errors.Is(err, fence.err) {
+			if _, err := s.BeginRelocate("server", "repo", filepath.Join(t.TempDir(), "new"), false); !errors.Is(err, fence.err) {
 				t.Fatal(err)
 			}
 			if err := stripWorkingCopyMetadata(wc, "fixture"); !errors.Is(err, fence.err) {

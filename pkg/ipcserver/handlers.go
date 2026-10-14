@@ -1315,6 +1315,17 @@ func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
 	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result})
 }
 
+// ValidateRelocationAdmission rechecks current projection/activation after a
+// queued wait. Local source/target proof remains the provisioner's job. A
+// quiesced/post-rename copy may no longer have an attached runtime.
+func (s *Server) ValidateRelocationAdmission(serverID, repoID, repoURL string) error {
+	repo, summary, _, ok := s.headRepo("", serverID, repoID)
+	if !ok || repo.ProjectedState() != contract.StateActive || summary.URL != repoURL {
+		return errors.New("repository relocation authority is no longer available")
+	}
+	return nil
+}
+
 func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 	service := s.repositoryLifecycleService()
 	if service == nil {

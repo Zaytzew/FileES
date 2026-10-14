@@ -1238,6 +1238,8 @@ export default {
   "feedback.moveSelectParent": "Choose the parent folder, for example “%s”, not the prepared “%s” folder. FileES will move the entire folder there.",
   "feedback.moveClosePrograms": "Close programs and File Explorer windows that may be using this working copy, then try again.",
   "feedback.moveComplete": "Folder moved",
+  "feedback.moveQueued": "Folder move queued",
+  "feedback.moveQueuedBody": "FileES will move it automatically when the lock is released. You do not need to submit the request again.",
   "feedback.movePending": "The folder move has not been confirmed yet",
   "confirm.deleteFinal.title": "Final confirmation",
   "confirm.deleteFinal.text": "This is a destructive operation. The server will apply its configured retention; in panic mode (0-day retention), no recoverable copy will remain.\n\nPermanently delete repository “{name}”?",

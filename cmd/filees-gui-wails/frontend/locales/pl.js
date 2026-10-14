@@ -1264,6 +1264,8 @@ export default {
   "feedback.moveSelectParent": "Wskaż folder nadrzędny, np. „%s”, a nie przygotowany folder „%s”. FileES sam przeniesie do niego cały folder.",
   "feedback.moveClosePrograms": "Zamknij programy i okna Eksploratora, które mogą pracować z zawartością tej kopii roboczej, a następnie spróbuj ponownie.",
   "feedback.moveComplete": "Folder przeniesiony",
+  "feedback.moveQueued": "Przeniesienie czeka w kolejce",
+  "feedback.moveQueuedBody": "FileES wykona je automatycznie po zwolnieniu blokady. Nie musisz ponawiać żądania.",
   "feedback.movePending": "Przenoszenie folderu nie zostało jeszcze potwierdzone",
   "confirm.deleteFinal.title": "Ostateczne potwierdzenie",
   "confirm.deleteFinal.text": "To jest operacja destrukcyjna. Serwer zastosuje skonfigurowaną retencję; w trybie panic (retencja 0 dni) nie pozostanie żadna kopia do odzyskania.\n\nCzy na pewno trwale usunąć repozytorium „{name}”?",

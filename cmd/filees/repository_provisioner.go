@@ -41,7 +41,8 @@ type daemonProvisioner struct {
 	localIntentMu    sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
 	creationWaiters  atomic.Int32 // metadata observers yield to queued creation preparation
 	detachAnchor     func(context.Context, localrepo.Record) error
-	anchorEnabled    func(string) bool // immutable wiring; reads per-server durable preference
+	anchorEnabled    func(string) bool            // immutable wiring; reads per-server durable preference
+	relocationCheck  func(localrepo.Record) error // fresh projected authority before queued execution
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
 	queued           map[string]bool // deduplicate wakeups; durable journals remain authoritative
@@ -235,6 +236,8 @@ func (p *daemonProvisioner) Enqueue(operationID string) {
 }
 
 func (p *daemonProvisioner) Run(ctx context.Context) {
+	relocationRetry := time.NewTicker(2 * time.Second)
+	defer relocationRetry.Stop()
 	cleanupRetry := time.NewTicker(30 * time.Second)
 	defer cleanupRetry.Stop()
 	if !p.restoreOperations(ctx) {
@@ -247,6 +250,8 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		case <-cleanupRetry.C:
 			p.retryPendingCleanup(ctx)
 			p.requeuePendingCreations()
+		case <-relocationRetry.C:
+			p.requeuePendingRelocations()
 		case operationID := <-p.queue:
 			p.mu.Lock()
 			delete(p.queued, operationID)
@@ -313,6 +318,9 @@ func (p *daemonProvisioner) restoreOperations(ctx context.Context) bool {
 		}
 	}
 	for _, record := range p.local.List() {
+		if record.RelocationQueued {
+			p.Enqueue(record.OperationID)
+		}
 		if record.Purpose == clientview.PurposeUploadShelf && (record.ShelfFetch.State == "queued" || record.ShelfFetch.State == "running") {
 			p.Enqueue(record.OperationID)
 			continue
@@ -371,6 +379,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	if record.State == localrepo.StateAbandoned || record.RemoteDeletionObserved {
 		return
 	}
+	if record.State == localrepo.StateDetached || record.State == localrepo.StateDeleted ||
+		(record.State == localrepo.StateAttached && !record.RelocationQueued && record.ShelfFetch.State != "queued" && record.ShelfFetch.State != "running") {
+		return // stale/duplicate wakeup is not a request to attach again
+	}
 	p.mu.Lock()
 	if p.local.RemoteDeleted(record.ServerID, record.RepoID) {
 		p.mu.Unlock()
@@ -391,6 +403,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.mu.Unlock()
 	}()
 	ctx = workCtx
+	if record.RelocationQueued {
+		p.runQueuedRelocation(ctx, operationID)
+		return
+	}
 	p.mu.RLock()
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
@@ -702,11 +718,17 @@ func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operat
 }
 
 func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	if ctx.Err() != nil {
+		return
+	}
 	mode := provisioning.LocalPathAttach
 	if record.RelocationAdoptExisting || (record.RelocationMoveExisting && movedRootPresent(record.PendingLocalPath)) {
 		mode = provisioning.LocalPathAttachResume
 	}
 	check, err := provisioning.PreflightLocalPath(record.PendingLocalPath, mode, p.otherRoots(record.OperationID))
+	if err == nil && check.CanonicalPath != record.PendingLocalPath {
+		err = errors.New("relocation target location changed while queued")
+	}
 	if err != nil {
 		if record.RelocationMoveExisting && !workingCopyRootPresent(record.LocalPath) {
 			talk.With("relocation:"+record.OperationID).Errorf("moved working-copy target cannot be verified; pending intent preserved: %v", err)
@@ -720,11 +742,22 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		return
 	}
 	if err := p.quiesceAttachment(ctx, record); err != nil {
+		if p.deferQueuedRelocation(ctx, record, err) {
+			return
+		}
 		if record.RelocationMoveExisting && !workingCopyRootPresent(record.LocalPath) {
 			talk.With("relocation:"+record.OperationID).Errorf("cannot quiesce post-move attachment; pending intent preserved: %v", err)
 			return
 		}
 		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	if commit.HasPendingLocalMutation(record.LocalPath) {
+		cause := commit.LocalMutationPendingError(record.LocalPath)
+		if p.deferQueuedRelocation(ctx, record, cause) {
+			return
+		}
+		p.rollbackRelocation(ctx, record, profile, cause)
 		return
 	}
 	svn := p.newAttachmentSVN(profile, record.OperationID)
@@ -848,6 +881,9 @@ func moveWorkingCopyWithRetry(ctx context.Context, source, target string, rename
 	defer ticker.Stop()
 	var last error
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if last = rename(source, target); last == nil {
 			return nil
 		}
@@ -1426,6 +1462,9 @@ func (p *daemonProvisioner) rollbackReconcile(ctx context.Context, record localr
 }
 
 func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {
+	if record.RelocationQueued && ctx.Err() != nil {
+		return
+	}
 	if _, err := p.local.FailRelocation(record.OperationID, cause); err != nil {
 		talk.With("relocation:"+record.OperationID).Errorf("persist rollback: %v", err)
 	}

@@ -40,6 +40,38 @@ type repositoryLifecycleService struct {
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string, moveExisting bool) (contract.RepoLifecycleResult, error) {
+	if moveExisting {
+		// Queue admission never waits on the execution fence. The attached
+		// record lets the current writer/recovery finish before the move.
+		operationID := ""
+		for _, record := range service.store.List() {
+			if record.ServerID == serverID && record.RepoID == repoID {
+				operationID = record.OperationID
+				if (record.RelocationQueued || record.State == localrepo.StateRelocating) && record.RelocationMoveExisting && record.PendingLocalPath == filepath.Clean(newLocalPath) {
+					if service.onRelocate != nil {
+						service.onRelocate(record.OperationID)
+					}
+					return lifecycleResult(record), nil
+				}
+				break
+			}
+		}
+		check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRootsExcept(operationID))
+		if err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
+		if check.Exists {
+			return contract.RepoLifecycleResult{}, errors.New("move destination must not exist")
+		}
+		record, err := service.store.QueueRelocation(serverID, repoID, check.CanonicalPath)
+		if err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
+		if service.onRelocate != nil {
+			service.onRelocate(record.OperationID)
+		}
+		return lifecycleResult(record), nil
+	}
 	leave, err := service.enterLocalIntent()
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
@@ -500,11 +532,21 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 }
 
 func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
+	// Wire state is pending even though the current attachment must remain
+	// usable for the writer/recovery which the relocation is waiting on.
+	state := lifecycleState(record)
 	destination := ""
 	if record.ShelfFetch.Placement.ParentRepoID != "" {
 		destination = filepath.Join(record.ShelfFetch.Placement.ParentRoot, filepath.FromSlash(record.ShelfFetch.Placement.RelativePath))
 	}
-	return contract.RepoLifecycleResult{FetchDestination: destination, FetchID: record.ShelfFetch.ID, FetchUploadID: record.ShelfFetch.UploadID, FetchState: record.ShelfFetch.State, FetchError: record.ShelfFetch.Error, OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError, LastErrorKey: record.LastErrorKey, ServerDeleteCompleted: record.ServerDeleteCompleted, RetainUntil: record.RetainUntil, RecoveryPrepared: record.RecoveryPrepared, RecoveryKitPath: record.RecoveryKitPath, LocalCleanupCompleted: record.LocalCleanupCompleted}
+	return contract.RepoLifecycleResult{FetchDestination: destination, FetchID: record.ShelfFetch.ID, FetchUploadID: record.ShelfFetch.UploadID, FetchState: record.ShelfFetch.State, FetchError: record.ShelfFetch.Error, OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: state, LastError: record.LastError, LastErrorKey: record.LastErrorKey, ServerDeleteCompleted: record.ServerDeleteCompleted, RetainUntil: record.RetainUntil, RecoveryPrepared: record.RecoveryPrepared, RecoveryKitPath: record.RecoveryKitPath, LocalCleanupCompleted: record.LocalCleanupCompleted}
+}
+
+func lifecycleState(record localrepo.Record) string {
+	if record.RelocationQueued && record.State == localrepo.StateAttached {
+		return contract.LifecycleRelocationQueued
+	}
+	return string(record.State)
 }
 
 func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories []config.Repo) ([]config.Repo, error) {

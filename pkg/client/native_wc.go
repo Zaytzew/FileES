@@ -62,7 +62,7 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 		return nil, pinErr
 	}
 	defer releaseRuntime()
-	cmd.Dir = dir
+	cmd.Dir = nativeProcessDirectory(dir)
 	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
 	stdout := nativeOutput{max: nativeListingLimit}
 	stderr := nativeOutput{max: nativeReceiptLimit}
@@ -141,6 +141,20 @@ func nativeBatches(paths []string) [][]string {
 // Conservative upper bound after Windows quoting (including separators).
 // Counting paths alone lets 512 long Unicode names overflow CreateProcess.
 func nativeArgumentUnits(value string) int { return 2*len(utf16.Encode([]rune(value))) + 3 }
+
+// Windows limits a child process's current directory to MAX_PATH even when
+// file APIs accept long paths. The native protocol already carries absolute
+// WC/output paths; keep those exact arguments and only shorten the process
+// directory to the same volume root. Short directories/other platforms keep
+// their existing behavior; no global Chdir, alias or path truncation.
+func nativeProcessDirectory(dir string) string {
+	if runtime.GOOS == "windows" && len(utf16.Encode([]rune(dir))) >= 260 {
+		if volume := filepath.VolumeName(dir); volume != "" {
+			return volume + string(filepath.Separator)
+		}
+	}
+	return dir
+}
 
 func (c *execClient) nativeAdd(ctx context.Context, wc string, paths []string) (string, error) {
 	rels, err := nativeRelatives(wc, paths)

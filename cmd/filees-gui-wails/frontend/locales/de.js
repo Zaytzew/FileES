@@ -1237,6 +1237,8 @@ export default {
   "feedback.moveSelectParent": "Wählen Sie den übergeordneten Ordner, z. B. „%s“, nicht den vorbereiteten Ordner „%s“. FileES verschiebt den gesamten Ordner dorthin.",
   "feedback.moveClosePrograms": "Schließen Sie Programme und Datei-Explorer-Fenster, die möglicherweise auf diese Arbeitskopie zugreifen, und versuchen Sie es erneut.",
   "feedback.moveComplete": "Ordner verschoben",
+  "feedback.moveQueued": "Verschieben des Ordners vorgemerkt",
+  "feedback.moveQueuedBody": "FileES verschiebt den Ordner automatisch, sobald die Sperre aufgehoben ist. Die Anfrage muss nicht erneut gestellt werden.",
   "feedback.movePending": "Das Verschieben des Ordners wurde noch nicht bestätigt",
   "confirm.deleteFinal.title": "Endgültige Bestätigung",
   "confirm.deleteFinal.text": "Dies ist ein destruktiver Vorgang. Der Server wendet die konfigurierte Aufbewahrungsfrist an; im Panikmodus (0 Tage Aufbewahrung) bleibt keine wiederherstellbare Kopie.\n\nRepository „{name}“ endgültig löschen?",

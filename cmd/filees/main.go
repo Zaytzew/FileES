@@ -270,6 +270,9 @@ func runDaemon() {
 	ipc.SetLockReleaseService(realmAliases)
 	lifecycleService := repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue, onRepair: provisioner.RepairLifecycle, importProgress: provisioner.ImportProgress}
 	lifecycleService.localIntentMu = &provisioner.localIntentMu
+	provisioner.relocationCheck = func(record localrepo.Record) error {
+		return ipc.ValidateRelocationAdmission(record.ServerID, record.RepoID, record.RepoURL)
+	}
 	lifecycleService.anchorAdmissionCtx = ctx
 	lifecycleService.anchorAdmissionWaiters = &provisioner.creationWaiters
 	lifecycleService.anchorAdmissionCheck = ipc.ValidateAnchorAdmission

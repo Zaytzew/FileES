@@ -1025,6 +1025,10 @@ type RepoRecoveryDismissResult struct {
 	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
 }
 
+// LifecycleRelocationQueued means the move is durable but has not stopped
+// its current attachment. It is never a completed/failed move receipt.
+const LifecycleRelocationQueued = "relocation_queued"
+
 type RepoLifecycleResult struct {
 	FetchID               string `json:"fetch_id,omitempty"`
 	FetchUploadID         string `json:"fetch_upload_id,omitempty"`

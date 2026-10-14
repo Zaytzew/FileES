@@ -85,7 +85,7 @@ func (p *localCopyPresentation) LocalRepositories() []contract.RepoSummary {
 			DisplayName: deletedRepositoryName(record), LocalPath: record.LocalPath,
 			Purpose: record.Purpose, Sparse: record.Sparse,
 			LocalCopy: &contract.LocalCopySummary{Path: record.LocalPath, Kind: kind,
-				Presence: observation.presence, Lifecycle: string(record.State)}})
+				Presence: observation.presence, Lifecycle: lifecycleState(record)}})
 	}
 	for key := range p.observations {
 		if !seen[key] {

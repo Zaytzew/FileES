@@ -81,6 +81,10 @@ type Record struct {
 	DisplayName      string `json:"display_name,omitempty"`
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
+	// Queued relocation reserves a target while the attached writer finishes.
+	// It enters StateRelocating only under the execution fence; kept through
+	// execution so shutdown can resume the same intent.
+	RelocationQueued bool `json:"relocation_queued,omitempty"`
 	// RelocationAdoptExisting distinguishes a user-selected moved WC from a
 	// normal relocation. The provisioner must validate and adopt this path;
 	// it must never checkout into or otherwise replace it.
@@ -511,6 +515,7 @@ func (s *Store) Abandon(operationID string) (Record, error) {
 		record.State, record.LastError = StateAbandoned, ""
 		record.LastErrorKey = ""
 		record.PendingLocalPath = ""
+		record.RelocationQueued = false
 		record.RelocationAdoptExisting = false
 		record.RelocationMoveExisting = false
 		record.ReconcileOperationID = ""
@@ -617,14 +622,18 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 }
 
 func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string, moveExisting bool) (Record, error) {
-	return s.beginRelocation(serverID, repoID, newLocalPath, false, moveExisting)
+	return s.beginRelocation(serverID, repoID, newLocalPath, false, moveExisting, false)
+}
+
+func (s *Store) QueueRelocation(serverID, repoID, newLocalPath string) (Record, error) {
+	return s.beginRelocation(serverID, repoID, newLocalPath, false, true, true)
 }
 
 func (s *Store) BeginLocate(serverID, repoID, existingLocalPath string) (Record, error) {
-	return s.beginRelocation(serverID, repoID, existingLocalPath, true, false)
+	return s.beginRelocation(serverID, repoID, existingLocalPath, true, false, false)
 }
 
-func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting, moveExisting bool) (Record, error) {
+func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting, moveExisting, queued bool) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if adoptExisting && moveExisting {
@@ -642,8 +651,11 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, os.ErrNotExist
 	}
 	record := s.records[operationID]
-	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting && record.RelocationMoveExisting == moveExisting {
+	if (record.State == StateRelocating || record.RelocationQueued) && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting && record.RelocationMoveExisting == moveExisting {
 		return record, nil
+	}
+	if record.RelocationQueued {
+		return Record{}, errors.New("repository already has a queued relocation")
 	}
 	for _, existing := range s.records {
 		if remoteCleanupOverlaps(existing, newLocalPath) {
@@ -662,12 +674,16 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target must be an absolute disjoint non-root path"))
 	}
 	for id, existing := range s.records {
-		if id != operationID && pathsOverlap(existing.LocalPath, newLocalPath) {
+		if id != operationID && (pathsOverlap(existing.LocalPath, newLocalPath) || (existing.PendingLocalPath != "" && pathsOverlap(existing.PendingLocalPath, newLocalPath))) {
 			return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target overlaps another FileES repository root"))
 		}
 	}
 	before := record
 	record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, adoptExisting, moveExisting, "", s.now().UTC()
+	record.RelocationQueued = queued
+	if queued {
+		record.State = StateAttached
+	}
 	record.LastErrorKey = ""
 	if err := validate(record); err != nil {
 		return Record{}, err
@@ -686,6 +702,7 @@ func (s *Store) CompleteRelocation(operationID string) (Record, error) {
 			return errors.New("repository relocation is not in progress")
 		}
 		record.LocalPath, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.State, record.LastError = record.PendingLocalPath, "", false, false, StateAttached, ""
+		record.RelocationQueued = false
 		record.LastErrorKey = ""
 		return nil
 	})
@@ -693,10 +710,11 @@ func (s *Store) CompleteRelocation(operationID string) (Record, error) {
 
 func (s *Store) FailRelocation(operationID string, cause error) (Record, error) {
 	return s.update(operationID, func(record *Record) error {
-		if record.State != StateRelocating || cause == nil || strings.TrimSpace(cause.Error()) == "" {
+		if (record.State != StateRelocating && !(record.State == StateAttached && record.RelocationQueued)) || cause == nil || strings.TrimSpace(cause.Error()) == "" {
 			return errors.New("active relocation and failure are required")
 		}
 		record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.RelocationMoveExisting, record.LastError = StateAttached, "", false, false, cause.Error()
+		record.RelocationQueued = false
 		record.LastErrorKey = "repo.locate_failed"
 		var fault errcat.Fault
 		if errors.As(cause, &fault) && fault.Code == "REPO-2010" {
@@ -729,6 +747,9 @@ func (s *Store) BeginReconcile(serverID, repoID string, applyIgnorePolicy bool, 
 	}
 	if record.State != StateAttached {
 		return Record{}, errors.New("only an attached repository can be reconciled")
+	}
+	if record.RelocationQueued {
+		return Record{}, errors.New("repository has a queued relocation")
 	}
 	before := record
 	record.State = StateReconciling
@@ -870,6 +891,11 @@ func (s *Store) beginDetachLocked(serverID, repoID string, deleteRepository bool
 	}
 	before := record
 	record.State = targetState
+	// A later explicit detach/delete supersedes a not-yet-started move.
+	record.PendingLocalPath = ""
+	record.RelocationQueued = false
+	record.RelocationMoveExisting = false
+	record.RelocationAdoptExisting = false
 	record.DetachOperationID = uuid.NewString()
 	record.DeleteRepository = deleteRepository
 	record.ServerDeleteCompleted = false
@@ -1196,7 +1222,10 @@ func validate(r Record) error {
 			return errors.New("created repository lifecycle is incomplete")
 		}
 	}
-	if r.State == StateRelocating {
+	if r.RelocationQueued && ((r.State != StateAttached && r.State != StateRelocating) || !r.RelocationMoveExisting || r.RelocationAdoptExisting) {
+		return errors.New("invalid queued relocation")
+	}
+	if r.State == StateRelocating || r.RelocationQueued {
 		if r.RelocationAdoptExisting && r.RelocationMoveExisting {
 			return errors.New("repository relocation mode is invalid")
 		}

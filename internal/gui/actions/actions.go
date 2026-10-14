@@ -1298,8 +1298,13 @@ func (c *Controller) awaitRelocationOutcome(ctx context.Context, key, name, targ
 		timeout = creationStatusPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
+	queued := false
 	for time.Now().Before(deadline) {
 		state, lastError, err := c.cfg.RepositoryRelocator.RelocationStatus(ctx, operationID)
+		if err == nil && state == "relocation_queued" && !queued {
+			queued = true
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.moveQueued", "Przeniesienie czeka w kolejce"), Body: name + "\n" + target + "\n" + c.uiText("feedback.moveQueuedBody", "FileES wykona je automatycznie po zwolnieniu blokady. Nie musisz ponawiać żądania."), Urgency: platform.UrgencyNormal})
+		}
 		if err == nil && state == "attached" && lastError == "" {
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.moveComplete", "Folder przeniesiony"), Body: name + "\n" + target, Urgency: platform.UrgencyNormal})
 			if c.cfg.Refresh != nil {
@@ -1321,7 +1326,7 @@ func (c *Controller) awaitRelocationOutcome(ctx context.Context, key, name, targ
 		case <-time.After(interval):
 		}
 	}
-	c.reportActionError(ctx, key, c.uiText("feedback.movePending", "Przenoszenie folderu nie zostało jeszcze potwierdzone"), name)
+	c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.movePending", "Przenoszenie folderu nie zostało jeszcze potwierdzone"), Body: name + "\n" + target, Urgency: platform.UrgencyNormal})
 }
 
 func moveBlockedByOpenHandle(message string) bool {

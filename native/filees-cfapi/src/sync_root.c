@@ -73,7 +73,7 @@ static HRESULT verified_provider(const WCHAR *path, CF_SYNC_ROOT_PROVIDER_INFO *
     ULONGLONG file_id;
     HRESULT hr;
 
-    file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     ZeroMemory(&basic, sizeof basic);
@@ -187,7 +187,7 @@ HRESULT filees_revert_placeholder(const WCHAR *path)
     HANDLE protected_handle = INVALID_HANDLE_VALUE, handle;
     HRESULT hr;
 
-    hr = CfOpenFileWithOplock(path, CF_OPEN_FILE_FLAG_WRITE_ACCESS, &protected_handle);
+    hr = filees_cfapi_open_oplock(path, CF_OPEN_FILE_FLAG_WRITE_ACCESS, &protected_handle);
     if (FAILED(hr)) return hr;
     handle = CfGetWin32HandleFromProtectedHandle(protected_handle);
     hr = CfRevertPlaceholder(handle, CF_REVERT_FLAG_NONE, NULL);

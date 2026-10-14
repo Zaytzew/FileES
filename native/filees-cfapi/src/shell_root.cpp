@@ -151,7 +151,7 @@ void require_missing_online_root(const std::wstring &path) {
     auto drive = path.substr(0,3);
     if (GetDriveTypeW(drive.c_str()) != DRIVE_FIXED) throw hresult_access_denied();
     check_bool(GetVolumeInformationW(drive.c_str(), nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0));
-    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) throw hresult_access_denied();
+    if (filees_cfapi_path_attributes(path.c_str()) != INVALID_FILE_ATTRIBUTES) throw hresult_access_denied();
     DWORD error = GetLastError();
     if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
         check_hresult(HRESULT_FROM_WIN32(error));
@@ -283,7 +283,7 @@ HRESULT filees_own_sync_root(const WCHAR *root) {
         if (wcscmp(native.ProviderName, FILEES_CFAPI_PROVIDER)) throw hresult_access_denied();
         CF_SYNC_ROOT_BASIC_INFO basic{};
         check_hresult(CfGetSyncRootInfoByPath(root, CF_SYNC_ROOT_INFO_BASIC, &basic, sizeof basic, &returned));
-        handle root_handle{CreateFileW(root, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        handle root_handle{filees_cfapi_open_path(root, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
         if (!root_handle) throw_last_error();
         BY_HANDLE_FILE_INFORMATION file_info{};

@@ -922,6 +922,9 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 		// paths another client added without the property.
 		skipped, err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, batch)
 		if err != nil {
+			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+				return false // stopped instance: no error and no completion marker
+			}
 			reportEditingPolicyBlocked(err, "włączenie", sink, logger)
 			return errors.Is(err, passport.ErrWorkingCopyDirty)
 		}
@@ -938,6 +941,9 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 	// ClearNeedsLock preserves it and held paths, and refuses local changes.
 	skipped, err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return false // independent failures still reach the diagnostic sink
+		}
 		reportEditingPolicyBlocked(err, "wyłączenie", sink, logger)
 		return errors.Is(err, passport.ErrWorkingCopyDirty)
 	}

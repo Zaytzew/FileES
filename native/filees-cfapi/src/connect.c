@@ -133,7 +133,7 @@ static int transfer_file(const CF_CALLBACK_INFO *info, const WCHAR *path,
     LARGE_INTEGER done;
     int ok = 1;
 
-    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    file = filees_cfapi_open_path(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) return 0;
     buffer = VirtualAlloc(NULL, FILEES_CHUNK, MEM_COMMIT, PAGE_READWRITE);

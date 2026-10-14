@@ -83,7 +83,7 @@ static HRESULT entry_readable(const WCHAR *directory, const WCHAR *name)
     WCHAR path[MAX_PATH * 3];
     HANDLE handle;
     if (_snwprintf_s(path, MAX_PATH * 3, _TRUNCATE, L"%s\\%s", directory, name) < 0) return E_INVALIDARG;
-    handle = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+    handle = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                          OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (handle == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     CloseHandle(handle);

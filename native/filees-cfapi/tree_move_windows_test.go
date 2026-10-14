@@ -105,7 +105,12 @@ func TestProviderMovesTreeAndRetargetsWithoutFetching(t *testing.T) {
 					response = "ok\t" + fields[1] + "\t" + content
 				}
 				_, _ = io.WriteString(stdin, response+"\n")
-			} else if len(fields) == 3 {
+			} else if len(fields) == 11 && fields[0] == "rename-request" {
+				// This isolated peer refuses the external gesture explicitly.
+				// The real provider now emits typed admission/ACK frames; they
+				// must not masquerade as the next tree command's reply.
+				_, _ = io.WriteString(stdin, "rename-deny\t"+fields[1]+"\t1\n")
+			} else if len(fields) == 3 && (fields[0] == "tree-moved" || fields[0] == "tree-identity") {
 				replies <- strings.TrimSpace(line)
 			}
 		}
@@ -117,6 +122,11 @@ func TestProviderMovesTreeAndRetargetsWithoutFetching(t *testing.T) {
 		}
 		select {
 		case got := <-replies:
+			want := strings.SplitN(line, "\t", 3)
+			actual := strings.Split(got, "\t")
+			if len(actual) != 3 || actual[1] != want[1] {
+				t.Fatalf("command %s received another request's reply: %s", line, got)
+			}
 			if strings.HasSuffix(got, "\t0x00000000") != ok {
 				t.Fatalf("command %s: %s", line, got)
 			}

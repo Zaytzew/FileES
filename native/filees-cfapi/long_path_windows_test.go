@@ -5,11 +5,63 @@ package nativecfapiprobe
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestLongPathHydrationPreservesLocalEdits(t *testing.T) {
+	root := anchor(t)
+	rel := ""
+	for len(filepath.Join(root, rel, "drawing.dwg")) < 280 {
+		rel = filepath.Join(rel, strings.Repeat("folder", 5))
+	}
+	if err := os.MkdirAll(filepath.Join(root, rel), 0700); err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.ToSlash(filepath.Join(rel, "drawing.dwg"))
+	content := "test drawing bytes"
+	cache := filepath.Join(t.TempDir(), strings.Repeat("cache", 20), strings.Repeat("cache", 20), "bytes")
+	if err := os.MkdirAll(filepath.Dir(cache), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cache, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, "f\t"+strconv.Itoa(len(content))+"\t"+identity+"\tdrawing.dwg\n", "placeholders", "--root", root, "--rel", rel); !got.OK {
+		t.Fatalf("seed: %+v", got)
+	}
+	provider := connectAnchor(t, root, func(request []string) string {
+		if request[4] != identity {
+			return "err\t" + request[1] + "\twrong identity"
+		}
+		return "ok\t" + request[1] + "\t" + cache
+	})
+	if got := run(t, "", "hydrate", "--root", root, "--rel", identity); !got.OK {
+		t.Fatalf("hydrate: %+v", got)
+	}
+	file := filepath.Join(root, filepath.FromSlash(identity))
+	if raw, err := os.ReadFile(file); err != nil || string(raw) != content {
+		t.Fatalf("bytes=%q err=%v", raw, err)
+	}
+	drain(provider.requests)
+	if err := os.WriteFile(file, []byte("local edit"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, "", "hydrate", "--root", root, "--rel", identity); !got.OK {
+		t.Fatalf("local hydrate: %+v", got)
+	}
+	if raw, err := os.ReadFile(file); err != nil || string(raw) != "local edit" {
+		t.Fatalf("local bytes=%q err=%v", raw, err)
+	}
+	select {
+	case req := <-provider.requests:
+		t.Fatalf("refetched local bytes: %v", req)
+	default:
+	}
+}
 
 func TestLongPathPlaceholderCanBeInspectedAndSeededAgain(t *testing.T) {
 	root := anchor(t)

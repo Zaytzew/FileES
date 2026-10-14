@@ -49,6 +49,14 @@ void filees_cfapi_json_string(const char *value);
 /* UTF-8 argv into wide strings; the shell is wide everywhere. */
 int filees_cfapi_widen(const char *utf8, WCHAR *out, size_t out_chars);
 
+/* Filesystem-only spelling, independent of the machine's LongPathsEnabled.
+ * Never changes identities, bridge paths, access/share flags or root proof. */
+HANDLE filees_cfapi_open_path(const WCHAR *path, DWORD access, DWORD share,
+    LPSECURITY_ATTRIBUTES security, DWORD disposition, DWORD flags, HANDLE template_file);
+HANDLE filees_cfapi_find_first(const WCHAR *path, WIN32_FIND_DATAW *data);
+DWORD filees_cfapi_path_attributes(const WCHAR *path);
+HRESULT filees_cfapi_open_oplock(const WCHAR *path, CF_OPEN_FILE_FLAGS flags, HANDLE *handle);
+
 /* The call to the daemon (bridge.c). waiting() is invoked about once a second
  * while an answer has not arrived; returning 0 abandons the request. */
 typedef int (*filees_bridge_waiting)(void *context);

@@ -69,7 +69,7 @@ static HRESULT belongs_to_point(HANDLE file, const WCHAR *root)
     HRESULT hr = CfGetSyncRootInfoByHandle(file, CF_SYNC_ROOT_INFO_BASIC, &basic, sizeof basic, &returned);
     if (FAILED(hr)) return hr;
     if (!GetFileInformationByHandle(file, &actual)) return HRESULT_FROM_WIN32(GetLastError());
-    point = CreateFileW(root, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    point = filees_cfapi_open_path(root, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (point == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     if (!GetFileInformationByHandle(point, &info)) {
@@ -165,7 +165,7 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, previous, -1, old_utf8, sizeof old_utf8, NULL, NULL) ||
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, new_utf8, sizeof new_utf8, NULL, NULL))
         return FAILED(hr) ? hr : E_INVALIDARG;
-    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC | (remove ? DELETE : 0), 0,
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC | (remove ? DELETE : 0), 0,
                        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (file == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
@@ -177,7 +177,7 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
         name = wcsrchr(path, L'\\');
         if (!name) return E_INVALIDARG;
         *name++ = 0;
-        file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
         hr = belongs_to_point(file, root);
@@ -260,7 +260,7 @@ HRESULT filees_move_tree(const WCHAR *root, const WCHAR *source, const WCHAR *de
      * Descendant data-read guards have drained before this rename (Windows
      * refuses moving the cloud tree while they are held). This handle never
      * requests bytes; each subsequent identity change has its own proof. */
-    file = CreateFileW(src, FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE,
+    file = filees_cfapi_open_path(src, FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE,
         NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = move_object(file, root, expected_id, &object);
@@ -299,7 +299,7 @@ HRESULT filees_move_identity(const WCHAR *root, const WCHAR *relative, const cha
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, previous, -1, old_utf8, sizeof old_utf8, NULL, NULL) ||
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, new_utf8, sizeof new_utf8, NULL, NULL))
         return FAILED(hr) ? hr : E_INVALIDARG;
-    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC, 0,
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC, 0,
         NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = move_object(file, root, expected_id, &object);
@@ -330,7 +330,7 @@ static HRESULT read_state_mode(const WCHAR *root, const WCHAR *relative, struct 
         if (SUCCEEDED(hr)) wcscpy_s(path, FILEES_CFAPI_MAX_PATH, root);
     } else hr = local_path(root, relative, path);
     if (SUCCEEDED(hr)) {
-        file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
         hr = file == INVALID_HANDLE_VALUE ? HRESULT_FROM_WIN32(GetLastError()) :
             (tree ? inspect_tree(file, root, state) : inspect(file, root, state));
@@ -417,7 +417,7 @@ static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLON
         (expected_digest ? before.usn < expected_usn : before.usn != expected_usn) ||
         (expected_digest && before.size != expected_size) || (before.attributes.FileAttributes & FILE_ATTRIBUTE_OFFLINE))
         return HRESULT_FROM_WIN32(ERROR_RETRY);
-    file = CreateFileW(path, GENERIC_READ | WRITE_DAC, 0, NULL, OPEN_EXISTING,
+    file = filees_cfapi_open_path(path, GENERIC_READ | WRITE_DAC, 0, NULL, OPEN_EXISTING,
                        FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = inspect(file, root, &before);
@@ -505,7 +505,7 @@ HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLON
     *name++ = 0;
     /* Keep the parent handle open; this is not a durable path reservation
      * across commands. Arbitrary ancestor replacement belongs to coordinator. */
-    parent = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+    parent = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
                          NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (parent == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = belongs_to_point(parent, root);
@@ -541,7 +541,7 @@ int filees_cfapi_hydrate(const WCHAR *root, const WCHAR *relative)
     HRESULT hr = local_path(root, relative, path);
     LARGE_INTEGER offset, length;
     if (FAILED(hr)) { filees_cfapi_fail("hydrate_path", hr); return 1; }
-    file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC,
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC,
                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                       NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (file == INVALID_HANDLE_VALUE) {
@@ -656,7 +656,7 @@ HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
         if (SUCCEEDED(hr)) wcscpy_s(path, FILEES_CFAPI_MAX_PATH, root);
     } else hr = local_path(root, relative, path);
     if (FAILED(hr)) goto done;
-    directory = CreateFileW(path, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | WRITE_DAC,
+    directory = filees_cfapi_open_path(path, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | WRITE_DAC,
         FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (directory == INVALID_HANDLE_VALUE) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
     hr = inspect_tree(directory, root, &before);
@@ -693,7 +693,7 @@ HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
           if (FAILED(hr)) goto done;
           wcscpy_s(full,FILEES_CFAPI_MAX_PATH,canonical);
         }
-        children[count].file = CreateFileW(full, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, NULL,
+        children[count].file = filees_cfapi_open_path(full, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, NULL,
             OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (children[count].file == INVALID_HANDLE_VALUE) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
         ++count;
@@ -713,7 +713,7 @@ HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
         const WCHAR *prefix = parent ? children[parent-1].name : L"";
         if (parent && !children[parent-1].directory) continue;
         if (swprintf_s(full, FILEES_CFAPI_MAX_PATH, *prefix ? L"%s\\%s\\*" : L"%s\\*", path, prefix) < 0) { hr = E_INVALIDARG; goto done; }
-        search = FindFirstFileW(full, &found);
+        search = filees_cfapi_find_first(full, &found);
         if (search == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_NOT_FOUND) { hr = HRESULT_FROM_WIN32(GetLastError()); goto done; }
         if (search != INVALID_HANDLE_VALUE) do {
             if (!wcscmp(found.cFileName, L".") || !wcscmp(found.cFileName, L"..")) continue;
@@ -786,20 +786,20 @@ HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLON
     if (FAILED(hr) || expected_usn <= 0) return FAILED(hr) ? hr : E_INVALIDARG;
     /* CfOpenFileWithOplock requests data access. Refuse an off-disk file
      * through an attribute-only handle first, so the refusal never fetches. */
-    file = CreateFileW(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
     hr = inspect(file, root, &before);
     CloseHandle(file);
     if (FAILED(hr)) return hr;
     if (before.partial || before.usn != expected_usn) return HRESULT_FROM_WIN32(ERROR_RETRY);
-    hr = CfOpenFileWithOplock(path, CF_OPEN_FILE_FLAG_WRITE_ACCESS | CF_OPEN_FILE_FLAG_EXCLUSIVE, &protected_handle);
+    hr = filees_cfapi_open_oplock(path, CF_OPEN_FILE_FLAG_WRITE_ACCESS | CF_OPEN_FILE_FLAG_EXCLUSIVE, &protected_handle);
     if (hr == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) &&
         (before.attributes.FileAttributes & FILE_ATTRIBUTE_READONLY)) {
         /* svn:needs-lock must stay read-only. CFAPI accepts WRITE_DAC for
          * metadata; a short share-none, attribute-only handle supplies it
          * without clearing READONLY or requesting the file's bytes. */
-        file = CreateFileW(path, FILE_READ_ATTRIBUTES | WRITE_DAC, 0, NULL, OPEN_EXISTING,
+        file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC, 0, NULL, OPEN_EXISTING,
                            FILE_FLAG_OPEN_REPARSE_POINT, NULL);
         if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
         raw = 1;

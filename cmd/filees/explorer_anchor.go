@@ -148,6 +148,10 @@ func startAnchorHelper(ctx context.Context, helper, root string) (*anchorHelperS
 		_ = output.Close()
 		return nil, err
 	}
+	// A lifecycle stop lets the native provider disconnect cleanly. If its
+	// callbacks cannot drain, exec still kills/reaps it after this bounded wait.
+	command.Cancel = stdin.Close
+	command.WaitDelay = 10 * time.Second
 	if err := command.Start(); err != nil {
 		_ = stdout.Close()
 		_ = output.Close()

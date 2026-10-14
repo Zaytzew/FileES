@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/clientprofile"
 	"filees/pkg/cloudfiles"
 	"filees/pkg/commit"
 	"filees/pkg/ipcserver"
@@ -22,13 +23,24 @@ import (
 // Exercise the actual Cloud Filter provider with two synthetic SVN files.
 // The point returns to attached before reconcile can reap its old connection.
 func TestAnchorRelocationReconnectsAndReadsRemainingPlaceholder(t *testing.T) {
+	for _, rollback := range []bool{false, true} {
+		t.Run(map[bool]string{false: "move", true: "rollback"}[rollback], func(t *testing.T) {
+			testAnchorRelocationProviderSequence(t, rollback)
+		})
+	}
+}
+
+func testAnchorRelocationProviderSequence(t *testing.T, rollback bool) {
 	helper, native := probeTool(t, "FILEES_CFAPI"), probeTool(t, "FILEES_SVN_PROBE")
 	cli, admin := probeTool(t, "FILEES_PROBE_SVN"), probeTool(t, "FILEES_PROBE_SVNADMIN")
 	root := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "app-data"))
 	repo, source := filepath.Join(root, "repo"), filepath.Join(root, "source")
 	oldPoint, point := filepath.Join(root, "Punkt-przed"), filepath.Join(root, "Punkt-przed")
-	newPoint := filepath.Join(root, "Przeniesiony-Zażółć-東京")
+	newPoint := filepath.Join(root, "destination", "Przeniesiony-Zażółć-東京")
+	if err := os.Mkdir(filepath.Dir(newPoint), 0700); err != nil {
+		t.Fatal(err)
+	}
 	probeRun(t, root, admin, "create", repo)
 	if err := os.Mkdir(source, 0700); err != nil {
 		t.Fatal(err)
@@ -54,6 +66,9 @@ func TestAnchorRelocationReconnectsAndReadsRemainingPlaceholder(t *testing.T) {
 		t.Fatal(err)
 	}
 	const authority = "svn+ssh://_filees-client@example/11111111-1111-4111-8111-111111111111"
+	if err := ensureWorkingCopyIdentity(point, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, authority)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.ApproveAttach(record.OperationID, "server", "repo", authority, "rw"); err != nil {
 		t.Fatal(err)
 	}
@@ -135,24 +150,63 @@ func TestAnchorRelocationReconnectsAndReadsRemainingPlaceholder(t *testing.T) {
 	m.mu.Lock()
 	old := m.running[anchorKey(record)]
 	m.mu.Unlock()
-	if _, err := store.BeginRelocation("server", "repo", newPoint, true); err != nil {
+	record, err = store.BeginRelocation("server", "repo", newPoint, true)
+	if err != nil {
 		t.Fatal(err)
 	}
-	m.reconcile(ctx)
-	select {
-	case <-old.done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("old provider did not stop")
+	p := newDaemonProvisioner(store, nil, nil)
+	requests := make(chan provisionedAttachment, 2)
+	p.attachments = requests
+	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return &attachmentSVNStub{url: authority} }
+	p.anchorChanged = m.notifyLifecycle
+	p.quiesceAnchor = func(stopCtx context.Context, current localrepo.Record) error {
+		if err := m.quiesceRelocation(stopCtx, current); err != nil {
+			return err
+		}
+		select {
+		case <-old.done:
+		default:
+			t.Fatal("provider not drained before rename")
+		}
+		if rollback {
+			// The empty destination parent disappears after preflight. This
+			// causes a real filesystem refusal without touching source bytes.
+			return os.Remove(filepath.Dir(newPoint))
+		}
+		return nil
 	}
-	if err := os.Rename(point, newPoint); err != nil {
-		t.Fatal(err)
+	answered := make(chan struct{})
+	go func() {
+		defer close(answered)
+		request := <-requests
+		if !request.Quiesce {
+			t.Error("missing SVN quiesce")
+		}
+		request.Result <- nil
+	}()
+	// Exercise the actual provisioner. No manual reconcile or provider wait
+	// before relocation: the production barrier must perform it itself.
+	p.runRelocate(ctx, record, clientprofile.Profile{ServerID: "server"})
+	<-answered
+	current, _ := store.Get(record.OperationID)
+	if current.State != localrepo.StateAttached {
+		t.Fatal("relocation did not settle", current)
 	}
-	if _, err := store.CompleteRelocation(record.OperationID); err != nil {
-		t.Fatal(err)
+	if rollback {
+		if current.LocalPath != oldPoint || current.LastError == "" {
+			t.Fatal("rollback lost source", current)
+		}
+		if _, err := os.Lstat(newPoint); !os.IsNotExist(err) {
+			t.Fatal("rollback created destination", err)
+		}
+	} else {
+		if current.LocalPath != newPoint || current.LastError != "" {
+			t.Fatal("move failed", current)
+		}
+		point = newPoint
 	}
-	// No reconcile while relocating after the old worker finished. This is
-	// the previously failing ordering, not a restart of the daemon.
-	point = newPoint
+	// Production wakes the normal provider loop from the persisted attached
+	// result; this pass models that notification, not pre-rename admission.
 	state = bind()
 	m.reconcile(ctx)
 	waitFor(t, 30*time.Second, "provider after rename", connected)
@@ -177,5 +231,5 @@ func TestAnchorRelocationReconnectsAndReadsRemainingPlaceholder(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(point, "local.txt")); err != nil || !bytes.Equal(got, retained) {
 		t.Fatal("move lost local bytes")
 	}
-	t.Log("real CFAPI reconnect, Unicode rename, retained bytes, unchanged seed and lazy download PASS; synthetic local SVN only")
+	t.Log("provisioner drain, real CFAPI reconnect, retained bytes, unchanged seed and lazy download PASS; synthetic local SVN authority adapter")
 }

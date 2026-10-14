@@ -46,6 +46,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 		nativeSVN: nativeSVNPath(), profiles: clientprofile.DefaultRoot(),
 		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
 		activity: journal,
+		wake:     make(chan struct{}, 1),
 		activityChanged: func(repoID string) {
 			ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvActivityChanged, nil))
 		},
@@ -82,6 +83,8 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
+	provisioner.quiesceAnchor = anchors.quiesceRelocation
+	provisioner.anchorChanged = anchors.notifyLifecycle
 	return anchors.run
 }
 
@@ -104,6 +107,7 @@ type anchorManager struct {
 	log            talk.Logger
 	reconcileEvery time.Duration
 	stateEvery     time.Duration
+	wake           chan struct{} // bounded lifecycle notification; durable records remain authoritative
 	// newSVN builds the client for a server; nil means the activated
 	// profile's identity (profileSVN). Tests hand over a local client.
 	newSVN                func(serverID string) (client.Client, error)
@@ -270,6 +274,7 @@ func (m *anchorManager) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-m.wake:
 		}
 	}
 }
@@ -417,7 +422,6 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 			if err != nil {
 				log.Warnf("connect %s: %v", record.LocalPath, err)
 			} else {
-				log.Infof("anchor connected at %s", record.LocalPath)
 				bridge := &anchorBridge{
 					root: record.LocalPath,
 					materialize: func(ctx context.Context, identity string) (string, int64, error) {
@@ -449,6 +453,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 				closeDelete := m.bindFileDelete(record, bridge, streams)
 				m.bindExplorerRename(record, bridge, streams)
 				bridge.onConnected = func(providerCtx context.Context) {
+					log.Infof("anchor connected at %s", record.LocalPath)
 					m.publishDamage(record)
 					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })
 					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, m.providerSuspected, func(checkCtx context.Context) (cfapiAnswer, error) {

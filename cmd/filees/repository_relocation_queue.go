@@ -84,5 +84,8 @@ func (p *daemonProvisioner) deferQueuedRelocation(ctx context.Context, record lo
 	if profile, ok := p.Profile(updated.ServerID); ok {
 		p.publishLocalRecord(ctx, updated, profile)
 	}
+	if p.anchorChanged != nil {
+		p.anchorChanged()
+	}
 	return true
 }

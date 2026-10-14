@@ -41,6 +41,8 @@ type daemonProvisioner struct {
 	localIntentMu    sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
 	creationWaiters  atomic.Int32 // metadata observers yield to queued creation preparation
 	detachAnchor     func(context.Context, localrepo.Record) error
+	quiesceAnchor    func(context.Context, localrepo.Record) error
+	anchorChanged    func()                       // wake provider reconciliation after move or rollback
 	anchorEnabled    func(string) bool            // immutable wiring; reads per-server durable preference
 	relocationCheck  func(localrepo.Record) error // fresh projected authority before queued execution
 	profiles         map[string]clientprofile.Profile
@@ -752,6 +754,21 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
 	}
+	if record.Anchor {
+		var err error
+		if p.quiesceAnchor == nil {
+			err = errors.New("Cloud Files provider drain is unavailable")
+		} else {
+			err = p.quiesceAnchor(ctx, record)
+		}
+		if err != nil {
+			if p.deferQueuedRelocation(ctx, record, err) {
+				return
+			}
+			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("stop Cloud Files provider before relocation: %w", err))
+			return
+		}
+	}
 	if commit.HasPendingLocalMutation(record.LocalPath) {
 		cause := commit.LocalMutationPendingError(record.LocalPath)
 		if p.deferQueuedRelocation(ctx, record, cause) {
@@ -802,6 +819,9 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		return
 	}
 	p.publishLocalRecord(ctx, updated, profile)
+	if p.anchorChanged != nil {
+		p.anchorChanged()
+	}
 }
 
 func movedRootPresent(root string) bool {
@@ -863,6 +883,9 @@ func (p *daemonProvisioner) runMoveExisting(ctx context.Context, record localrep
 		return
 	}
 	p.publishLocalRecord(ctx, updated, profile)
+	if p.anchorChanged != nil {
+		p.anchorChanged()
+	}
 }
 
 // moveWorkingCopyWithRetry bridges the short gap between a confirmed daemon
@@ -1469,6 +1492,9 @@ func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record local
 		talk.With("relocation:"+record.OperationID).Errorf("persist rollback: %v", err)
 	}
 	p.publishLocalRecord(ctx, record, profile)
+	if p.anchorChanged != nil {
+		p.anchorChanged()
+	}
 	talk.With("relocation:"+record.OperationID).Warnf("relocation failed; old runtime restored: %v", cause)
 }
 

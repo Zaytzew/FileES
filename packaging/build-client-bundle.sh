@@ -139,6 +139,10 @@ windows-amd64)
 		fi
 		if [ -n "${FILEES_CFAPI_HELPER:-}" ]; then
 			[ -f "$FILEES_CFAPI_HELPER" ] || die "Explorer anchor helper not found: $FILEES_CFAPI_HELPER"
+			# Do not recycle a source-compatible helper missing process-level
+			# long-path support: it cannot even inspect an existing 263-char TIFF.
+			powershell.exe -NoProfile -File "$(cygpath -w "$root/packaging/windows/check-cfapi-manifest.ps1")" \
+				-Helper "$(cygpath -w "$FILEES_CFAPI_HELPER")" >/dev/null || die "CFAPI helper process manifest is incompatible"
 			cp "$FILEES_CFAPI_HELPER" "$out/bin/filees-cfapi.exe"
 		fi
 		;;

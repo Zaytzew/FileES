@@ -7,7 +7,8 @@ if(NOT WIN32)
   message(FATAL_ERROR "filees-cfapi builds on Windows only")
 endif()
 
-set(FILEES_CFAPI_SOURCES src/main.c src/common.c src/sync_root.c src/placeholders.c src/connect.c src/bridge.c src/file_state.c src/shell_root.cpp)
+enable_language(RC)
+set(FILEES_CFAPI_SOURCES src/main.c src/common.c src/sync_root.c src/placeholders.c src/connect.c src/bridge.c src/file_state.c src/shell_root.cpp filees-cfapi.rc)
 add_executable(filees-cfapi ${FILEES_CFAPI_SOURCES})
 # Disposable callback characterization, NEVER the shipped provider. Even an
 # opted-in build keeps filees-cfapi.exe unchanged; only this extra executable
@@ -29,11 +30,14 @@ if(NOT FILEES_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
   message(FATAL_ERROR "VERSION must be MAJOR.MINOR.PATCH, got '${FILEES_VERSION}'")
 endif()
 foreach(FILEES_CFAPI_TARGET IN LISTS FILEES_CFAPI_TARGETS)
+target_include_directories(${FILEES_CFAPI_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(${FILEES_CFAPI_TARGET} PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
 target_compile_definitions(${FILEES_CFAPI_TARGET} PRIVATE _WIN32_WINNT=0x0A00 NTDDI_VERSION=0x0A000004 UNICODE _UNICODE FILEES_CFAPI_VERSION="${FILEES_VERSION}")
 target_link_libraries(${FILEES_CFAPI_TARGET} PRIVATE CldApi RuntimeObject Advapi32 Shell32 Ole32 OleAut32 User32 Bcrypt)
 if(MSVC)
-  target_compile_options(${FILEES_CFAPI_TARGET} PRIVATE /W4 /utf-8)
+  # The RC contains the complete asInvoker/longPathAware process manifest.
+  target_link_options(${FILEES_CFAPI_TARGET} PRIVATE /MANIFEST:NO)
+  target_compile_options(${FILEES_CFAPI_TARGET} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W4> $<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>)
   target_compile_options(${FILEES_CFAPI_TARGET} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
   # Static C runtime: the helper ships next to filees.exe, where the native
   # runtime's DLLs are not (they are unpacked into a cache), so it may depend

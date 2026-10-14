@@ -23,6 +23,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'filees-cfapi build failed' }
     $exe = Join-Path $build 'Release\filees-cfapi.exe'
     if (-not (Test-Path -LiteralPath $exe)) { throw "filees-cfapi.exe was not produced: $exe" }
+    & (Join-Path $PSScriptRoot 'check-cfapi-manifest.ps1') -Helper $exe
 
     $allowed = @('KERNEL32.dll', 'cldapi.dll', 'ADVAPI32.dll', 'ole32.dll', 'OLEAUT32.dll', 'SHELL32.dll', 'SHLWAPI.dll', 'USER32.dll', 'bcrypt.dll', 'RPCRT4.dll', 'api-ms-win-core-winrt-l1-1-0.dll', 'api-ms-win-core-winrt-error-l1-1-1.dll')
     $dependents = @(& $dumpbinPath /dependents $exe 2>&1 | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.dll$' })

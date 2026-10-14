@@ -26,6 +26,7 @@ import (
 )
 
 type answer struct {
+	Partial  bool   `json:"partial"`
 	Schema   string `json:"schema"`
 	OK       bool   `json:"ok"`
 	Detail   string `json:"detail"`

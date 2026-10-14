@@ -138,7 +138,14 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 	}
 	service := &commit.Service{Cli: svn, FenceFileRelease: scanner.WithCleanFileMutation}
 	service.BindWorkingCopy("repo", point)
+	var bootstrapBusy atomic.Bool
+	var bootstrapRefusals atomic.Int32
+	bootstrapBusy.Store(true)
 	state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
+		if bootstrapBusy.Load() {
+			bootstrapRefusals.Add(1)
+			return commit.ErrLocalStatusBusy
+		}
 		return service.WithLocalStatus(ctx, point, paths, confirm)
 	})
 	state.SetLocalSubtreeStatusFunc(func(ctx context.Context, rel string, confirm func([]client.StatusEntry) error) error {
@@ -175,6 +182,18 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		_, err := os.Stat(anchorTreePath(point))
 		return err == nil
 	})
+	// Publication needs the seed baseline even when the first physical tree
+	// refresh cannot acquire the WC writer. Do not hydrate or fabricate a
+	// completed HEAD refresh just to make that revision available.
+	waitFor(t, 10*time.Second, "refused initial metadata update", func() bool { return bootstrapRefusals.Load() > 0 })
+	if rev, err := anchorMergeBoundRevision(record); err != nil || rev != 1 {
+		t.Fatal("seed baseline blocked by writer", rev, err)
+	}
+	a, err := m.call(t.Context(), "", "file-state", "--root", point, "--rel", "folder/file-00.txt")
+	if err != nil || !a.Partial || a.Local || a.Identity != "folder/file-00.txt" {
+		t.Fatal("bootstrap changed legacy placeholder", a, err)
+	}
+	bootstrapBusy.Store(false)
 	// Admit real Cloud Files subdirectories only when the opened handle is
 	// bound to this exact point. Neither another registered root nor a
 	// junction inside the point acquires that permission.

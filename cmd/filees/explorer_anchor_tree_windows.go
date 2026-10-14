@@ -274,6 +274,13 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 			}
 			old = anchorRemoteTree{Schema: "filees.anchor-tree/v1", Operation: record.OperationID, URL: record.RepoURL, Root: root, Revision: seed.Revision}
 			old.Nodes, loadErr = m.readRemoteTree(turn, record, seed.Revision, true)
+			if loadErr == nil {
+				// Persist the known seed baseline before attempting any HEAD
+				// refresh. Merge publication needs this bound revision even if
+				// the WC writer delays physical placeholder updates. This is
+				// not a receipt of those updates or proof of clean local bytes.
+				loadErr = saveAnchorRemoteTree(record, old)
+			}
 		}
 		if loadErr != nil {
 			m.log.Warnf("remote tree metadata unavailable: %v", loadErr)

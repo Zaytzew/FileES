@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"filees/pkg/clientprofile"
 	"filees/pkg/commit"
@@ -16,12 +18,22 @@ import (
 func TestFileReleaseIntentExcludesConcurrentLifecycle(t *testing.T) {
 	var guard sync.Mutex
 	guard.Lock()
-	service := repositoryLifecycleService{localIntentMu: &guard}
+	store, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := repositoryLifecycleService{localIntentMu: &guard, store: store}
 	if _, err := service.BeginDetach(t.Context(), "server", "repo", false, false); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)
 	}
-	if _, err := service.BeginDelete(t.Context(), "server", "repo", "repo"); !errors.Is(err, commit.ErrLocalStatusBusy) {
+	// Delete now waits for admission, but must never cross a held fence.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Millisecond)
+	defer cancel()
+	if _, err := service.BeginDelete(ctx, "server", "repo", "repo"); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)
+	}
+	if len(store.List()) != 0 {
+		t.Fatal("delete crossed held fence")
 	}
 	if _, err := service.BeginRelocate("server", "repo", "new", false); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)

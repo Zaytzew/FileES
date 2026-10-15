@@ -1248,12 +1248,15 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 	summary := rs.Summary()
 	orphan := summary.ServerDeleted && summary.LocalCopyPreserved
 	if orphan && (deleteRepository || summary.LocalCleanupPending) {
+		if deleteRepository {
+			return contract.ErrResponseFrom(req.RequestID, errcat.New("repo.delete_forbidden", nil, nil))
+		}
 		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
 	}
 	if !deleteRepository && !summary.Attached && !orphan {
 		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
 	}
-	if summary.AttachmentPolicy == "required" {
+	if summary.AttachmentPolicy == "required" && !deleteRepository {
 		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "NONE", "repo.detach_required_forbidden", nil)
 	}
 	if payload.DeleteLocal {
@@ -1269,12 +1272,8 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 		}
 	}
 	if deleteRepository {
-		s.mu.RLock()
-		activation, ok := s.activations[payload.ServerID]
-		s.mu.RUnlock()
-		if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories ||
-			activation.RealmID == "" || summary.OwnerRealmID != activation.RealmID {
-			return contract.ErrResponse(req.RequestID, "REPO-2011", "ERROR", "NONE", "repo.delete_forbidden", nil)
+		if err := s.ValidateRepositoryDeletion(payload.ServerID, payload.RepoID); err != nil {
+			return repositoryDeleteError(req.RequestID, err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
@@ -1294,7 +1293,10 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 			// action into a false failure for the caller.
 			return contract.OKResponse(req.RequestID, result)
 		}
-		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
+		if deleteRepository {
+			return repositoryDeleteError(req.RequestID, err)
+		}
+		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", map[string]string{"detail": err.Error()})
 	}
 	if orphan {
 		s.dismissDeletedProjection(payload.ServerID, payload.RepoID, true)

@@ -24,6 +24,7 @@ type repositoryLifecycleService struct {
 	anchorAdmissionCtx     context.Context
 	anchorAdmissionWaiters *atomic.Int32
 	anchorAdmissionCheck   func(string, string) error
+	deleteAdmissionCheck   func(string, string) error
 	anchorEnabled          func(string) bool
 	store                  *localrepo.Store
 	provisioning           *provisioning.Store
@@ -171,7 +172,7 @@ func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serve
 }
 
 func (service repositoryLifecycleService) BeginDelete(ctx context.Context, serverID, repoID, displayName string) (contract.RepoLifecycleResult, error) {
-	leave, err := service.enterLocalIntent()
+	leave, err := service.waitForDeleteTurn(ctx, serverID, repoID)
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}

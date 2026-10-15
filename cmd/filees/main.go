@@ -276,6 +276,7 @@ func runDaemon() {
 	lifecycleService.anchorAdmissionCtx = ctx
 	lifecycleService.anchorAdmissionWaiters = &provisioner.creationWaiters
 	lifecycleService.anchorAdmissionCheck = ipc.ValidateAnchorAdmission
+	lifecycleService.deleteAdmissionCheck = ipc.ValidateRepositoryDeletion
 	lifecycleService.anchorEnabled = func(serverID string) bool {
 		return provisioner.anchorEnabled != nil && provisioner.anchorEnabled(serverID)
 	}

@@ -41,3 +41,11 @@ func TestActionErrorBodyUnchangedWithoutDetail(t *testing.T) {
 		t.Fatalf("body = %q; nothing should be appended when there is no detail", body)
 	}
 }
+
+func TestDeleteErrorBodyNamesDeletionAndKeepsCause(t *testing.T) {
+	c := polishController(t, Config{})
+	body := c.actionErrorBody(structuredErr{key: "repo.delete_failed", details: map[string]string{"detail": "server refused operation"}})
+	if !strings.Contains(body, "usunąć repozytorium") || !strings.Contains(body, "server refused operation") || strings.Contains(body, "Odłączenie") {
+		t.Fatalf("misleading deletion error: %q", body)
+	}
+}

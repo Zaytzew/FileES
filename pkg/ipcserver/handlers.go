@@ -1322,7 +1322,15 @@ func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
 	for i, entry := range entries {
 		result[i] = contract.ActivityRecord{RepoID: entry.RepoID, Path: entry.Path, Kind: string(entry.Kind), Stage: string(entry.Stage), DetectedAt: entry.DetectedAt.Format(time.RFC3339Nano), UpdatedAt: entry.UpdatedAt.Format(time.RFC3339Nano), Revision: entry.Revision, ErrorID: entry.ErrorID, Size: entry.Size}
 	}
-	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result})
+	var sessions []contract.SessionRecord
+	if source, ok := source.(interface {
+		Sessions() []activity.SessionEvent
+	}); ok {
+		for _, event := range source.Sessions() {
+			sessions = append(sessions, contract.SessionRecord{ID: event.ID, Phase: event.Phase, Version: event.Version, At: event.At.Format(time.RFC3339Nano)})
+		}
+	}
+	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result, Sessions: sessions})
 }
 
 // ValidateRelocationAdmission rechecks current projection/activation after a

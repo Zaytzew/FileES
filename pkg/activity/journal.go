@@ -51,16 +51,18 @@ type Entry struct {
 }
 
 type document struct {
-	Schema  string  `json:"schema"`
-	Entries []Entry `json:"entries"`
+	Schema   string         `json:"schema"`
+	Entries  []Entry        `json:"entries"`
+	Sessions []SessionEvent `json:"sessions,omitempty"`
 }
 
 type Journal struct {
-	mu      sync.Mutex
-	path    string
-	limit   int
-	now     func() time.Time
-	entries map[string]Entry
+	mu       sync.Mutex
+	path     string
+	limit    int
+	now      func() time.Time
+	entries  map[string]Entry
+	sessions []SessionEvent
 }
 
 func Open(path string, limit int) (*Journal, error) {
@@ -89,6 +91,16 @@ func Open(path string, limit int) (*Journal, error) {
 		j.entries[key(entry.RepoID, entry.Path)] = entry
 	}
 	j.trim()
+	// Session markers are supplemental; older readers ignore them. Keep their
+	// retention independent from publications and never reinterpret them as paths.
+	for _, event := range doc.Sessions {
+		if validSessionEvent(event) {
+			j.sessions = append(j.sessions, event)
+		}
+	}
+	if len(j.sessions) > sessionLimit {
+		j.sessions = j.sessions[len(j.sessions)-sessionLimit:]
+	}
 	return j, nil
 }
 
@@ -306,7 +318,7 @@ func (j *Journal) persist() error {
 	if err := os.MkdirAll(filepath.Dir(j.path), 0700); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(document{Schema: Schema, Entries: j.sorted()}, "", "  ")
+	raw, err := json.MarshalIndent(document{Schema: Schema, Entries: j.sorted(), Sessions: j.sessions}, "", "  ")
 	if err != nil {
 		return err
 	}

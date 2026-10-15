@@ -345,6 +345,7 @@ type ViewModel struct {
 	Errors              []ErrorViewModel
 	AnchorReleaseQueue  []contract.RepoAnchorQueueResult
 	Activity            []ActivityViewModel
+	Sessions            []contract.SessionRecord
 	Notices             []NoticeViewModel
 	Detachments         []DetachmentViewModel
 	PublicShares        []PublicShareViewModel

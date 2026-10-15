@@ -1081,6 +1081,15 @@ type ActivityRecord struct {
 
 type RepoActivityResult struct {
 	Entries []ActivityRecord `json:"entries"`
+	// Optional, global informational markers; independent of repository groups.
+	Sessions []SessionRecord `json:"sessions,omitempty"`
+}
+
+type SessionRecord struct {
+	ID      string `json:"id"`
+	Phase   string `json:"phase"` // started/stopping/restarting; requests are not completion receipts
+	Version string `json:"version"`
+	At      string `json:"at"`
 }
 
 // RepoListResult is the result for CmdRepoList.

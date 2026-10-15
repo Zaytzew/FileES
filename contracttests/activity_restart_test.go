@@ -25,6 +25,9 @@ func TestActivityIPCGroupLimitDoesNotCutCommit(t *testing.T) {
 			}
 		}
 	}
+	if err := j.RecordSession(activity.SessionEvent{ID: "session-test", Phase: "started", Version: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	sock := testSocketPath(t)
 	s := ipcserver.New(sock)
 	s.SetActivitySource(j)
@@ -49,6 +52,9 @@ func TestActivityIPCGroupLimitDoesNotCutCommit(t *testing.T) {
 	result, err = ipcclient.New(sock, "test").RepoActivity(ctx, 1)
 	if err != nil || len(result.Entries) != 22 {
 		t.Fatalf("single group: %+v, %v", result, err)
+	}
+	if len(result.Sessions) != 1 || result.Sessions[0].ID != "session-test" || result.Sessions[0].Phase != "started" || result.Sessions[0].At == "" {
+		t.Fatalf("session lost in IPC: %+v", result.Sessions)
 	}
 }
 

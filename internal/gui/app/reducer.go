@@ -21,6 +21,7 @@ type appState struct {
 	system                  contract.SystemStatusResult
 	errors                  []ErrorViewModel
 	activity                []ActivityViewModel
+	sessions                []contract.SessionRecord
 	reservations            map[string]int
 	repoReservations        map[string]int
 	reservationItems        []Reservation
@@ -409,6 +410,7 @@ func (s appState) viewModel() ViewModel {
 		Errors:              append([]ErrorViewModel(nil), s.errors...),
 		AnchorReleaseQueue:  append([]contract.RepoAnchorQueueResult(nil), s.system.AnchorReleaseQueue...),
 		Activity:            append([]ActivityViewModel(nil), s.activity...),
+		Sessions:            append([]contract.SessionRecord(nil), s.sessions...),
 		Notices:             append([]NoticeViewModel(nil), s.notices...),
 		PublicShares:        append([]PublicShareViewModel(nil), s.publicShares...),
 		PublicSharesKnown:   s.publicSharesKnown,

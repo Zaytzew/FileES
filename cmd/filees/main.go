@@ -48,16 +48,23 @@ const (
 type daemonLifecycle struct {
 	cancel context.CancelFunc
 	action atomic.Int32
+	record func(string)
 }
 
 func (lifecycle *daemonLifecycle) Shutdown() {
 	if lifecycle.action.CompareAndSwap(daemonActionNone, daemonActionShutdown) {
+		if lifecycle.record != nil {
+			lifecycle.record("stopping")
+		}
 		lifecycle.cancel()
 	}
 }
 
 func (lifecycle *daemonLifecycle) Restart() {
 	if lifecycle.action.CompareAndSwap(daemonActionNone, daemonActionRestart) {
+		if lifecycle.record != nil {
+			lifecycle.record("restarting")
+		}
 		lifecycle.cancel()
 	}
 }
@@ -234,6 +241,21 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	ipc.SetActivitySource(activityJournal)
+	sessionID := uuid.NewString()
+	var stopMarker sync.Once
+	lifecycle.record = func(phase string) {
+		write := func() {
+			if err := activityJournal.RecordSession(activity.SessionEvent{ID: sessionID, Phase: phase, Version: version}); err != nil {
+				lg.Warnf("session journal: %v", err)
+			}
+		}
+		if phase == "started" {
+			write()
+		} else {
+			stopMarker.Do(write)
+		}
+	}
+	lifecycle.record("started")
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
 	ipc.SetLocalRepositorySource(&localCopyPresentation{store: lifecycleStore, active: func(serverID string) bool {
@@ -358,6 +380,11 @@ func runDaemon() {
 	}
 	if runtime.MemoryStopping(ctx) {
 		<-memoryDone
+	}
+	if lifecycle.action.Load() == daemonActionRestart {
+		lifecycle.record("restarting")
+	} else if ctx.Err() == context.Canceled {
+		lifecycle.record("stopping") // Graceful OS stop, not a panic or independent supervisor failure.
 	}
 	if lifecycle.action.Load() == daemonActionRestart {
 		if err := restartCurrentProcess(); err != nil {

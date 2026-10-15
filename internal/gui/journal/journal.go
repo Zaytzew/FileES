@@ -175,6 +175,22 @@ func BuildAt(vm app.ViewModel, now time.Time, texts Texts) []Entry {
 	}
 
 	entries := make([]Entry, 0, len(groups)+len(vm.Errors))
+	for _, session := range vm.Sessions {
+		var summary string
+		switch session.Phase {
+		case "started":
+			summary = texts.chrome("journal.session.started", "Uruchomiono FileES")
+		case "stopping":
+			summary = texts.chrome("journal.session.stopping", "Planowe zatrzymanie FileES")
+		case "restarting":
+			summary = texts.chrome("journal.session.restarting", "Zlecono ponowne uruchomienie FileES")
+		default:
+			continue
+		}
+		entries = append(entries, Entry{ID: "session:" + session.ID + ":" + session.Phase, Timestamp: session.At,
+			Repo: "FileES", Summary: summary,
+			Details: session.Version, Severity: "info", time: parseTime(session.At)})
+	}
 	for _, intent := range vm.AnchorReleaseQueue {
 		if intent.Superseded || intent.State == "failed" {
 			continue

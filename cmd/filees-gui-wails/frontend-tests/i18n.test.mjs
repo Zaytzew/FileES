@@ -10,6 +10,14 @@ import {importProgressLine, reconcileProgressLine} from "../frontend/import-prog
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
+test("daemon session markers resolve in every language", () => {
+  for (const language of languages) {
+    for (const phase of ["started", "stopping", "restarting"]) {
+      assert.ok(language.messages[`journal.session.${phase}`], `${language.code}: ${phase}`);
+    }
+  }
+});
+
 test("virtual folder wait and download spinner copy resolves in every language", () => {
   for (const language of languages) {
     for (const stage of ["wait", "download"]) {

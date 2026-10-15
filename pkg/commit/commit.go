@@ -595,7 +595,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				// cross the watermark while they are still being written or just
 				// before an application atomically renames its temporary path.
 				if err := s.tryCommitMode(ctx, wc, false); err != nil {
-					s.recordCommitFailure("high-water commit failed", err)
+					s.recordCommitFailureContext(ctx, "high-water commit failed", err)
 				} else {
 					s.publicationSucceeded()
 				}
@@ -616,7 +616,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				continue
 			}
 			if err := s.tryCommit(ctx, wc); err != nil {
-				s.recordCommitFailure("commit attempt failed", err)
+				s.recordCommitFailureContext(ctx, "commit attempt failed", err)
 			} else {
 				s.publicationSucceeded()
 			}
@@ -983,6 +983,9 @@ func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
 		return
 	}
 	err := s.AutoUnlockOwned(ctx, wc, s.RealmID)
+	if ownCancellation(ctx, err) {
+		return // Preserve the previous ownership state; stopping is not failed authorization.
+	}
 	s.mu.Lock()
 	if err == nil {
 		s.ownershipUnknownAt = time.Time{}

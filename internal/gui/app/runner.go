@@ -231,6 +231,7 @@ type msgFullSnapshot struct {
 	statuses                []contract.RepoStatus
 	errors                  []contract.ErrorRecord
 	activity                []contract.ActivityRecord
+	sessions                []contract.SessionRecord
 	reservationCounts       map[string]int
 	repoReservationCounts   map[string]int
 	reservations            []Reservation
@@ -391,6 +392,7 @@ func (a *App) loop(ctx context.Context) {
 				errors = result.Errors
 			}
 			var activityRecords []contract.ActivityRecord
+			var sessionRecords []contract.SessionRecord
 			if includeActivity {
 				result, err := a.cfg.Client.RepoActivity(sesCtx, 20)
 				if err != nil {
@@ -398,6 +400,7 @@ func (a *App) loop(ctx context.Context) {
 					return
 				}
 				activityRecords = result.Entries
+				sessionRecords = result.Sessions
 			}
 			reservationCounts := make(map[string]int)
 			repoReservationCounts := make(map[string]int)
@@ -453,7 +456,7 @@ func (a *App) loop(ctx context.Context) {
 			}
 			if sesCtx.Err() == nil {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
-					statuses: statuses, errors: errors, activity: activityRecords,
+					statuses: statuses, errors: errors, activity: activityRecords, sessions: sessionRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
 					reservations: reservations, serverReservationsKnown: serverReservationsKnown,
 					reservationSources: reservationSources,
@@ -634,6 +637,7 @@ func (a *App) loop(ctx context.Context) {
 					break
 				}
 				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.serverReservationsKnown, msg.reservationSources, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
+				state.sessions = append([]contract.SessionRecord(nil), msg.sessions...)
 				state.publicSharesLoading = msg.publicSharesLoading
 				state.publicSharesStale = msg.publicSharesStale
 				var waiting []string

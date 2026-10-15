@@ -79,7 +79,9 @@ func (h headService) HeadList(ctx context.Context, serverID, repoURL, path strin
 	if err != nil {
 		return nil, err
 	}
-	entries, err := svn.ListImmediate(ctx, headJoin(repoURL, path))
+	// Only short user listings enter the interactive lane. Preview downloads,
+	// background refresh and writes retain ordinary admission.
+	entries, err := svn.ListImmediate(client.WithInteractiveRead(ctx), headJoin(repoURL, path))
 	if err != nil {
 		return nil, err
 	}

@@ -63,6 +63,7 @@ type Client interface {
 
 // execClient implements Client by calling the external 'svn' executable.
 type execClient struct {
+	featureCache  *nativeFeatureCache // nil selects the shared image-bound cache
 	svnPath       string
 	nativeSVNPath string
 	timeout       time.Duration

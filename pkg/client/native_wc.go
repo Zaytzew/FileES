@@ -44,6 +44,12 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	remote, _ := ctx.Value(nativeRemoteContextKey{}).(bool)
+	releaseSlot, admissionErr := nativeProcesses.acquire(ctx, remote)
+	if admissionErr != nil {
+		return nil, fmt.Errorf("native SVN %s waiting for process slot: %w", args[0], admissionErr)
+	}
+	defer releaseSlot()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, args...)

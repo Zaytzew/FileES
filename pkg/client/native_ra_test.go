@@ -16,6 +16,17 @@ import (
 
 func fakeNativeRA() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		if trace := os.Getenv("FILEES_TEST_VERSION_TRACE"); trace != "" {
+			f, err := os.OpenFile(trace, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				panic(err)
+			}
+			_, err = f.WriteString("probe\n")
+			f.Close()
+			if err != nil {
+				panic(err)
+			}
+		}
 		if os.Getenv("FILEES_TEST_RA_BOUND_RESUME") == "1" {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["sparse_exclude_bound_v1","sparse_resume_bound_v1"]}`)
 			return
@@ -141,6 +152,9 @@ func TestNativeSparseFetchRequiresParentsFeatureAndTargetsOnePath(t *testing.T) 
 		t.Fatal("mutation attempted before sparse capability check", err)
 	}
 	t.Setenv("FILEES_TEST_RA_OLD_HELPER", "0")
+	// The fixture changes its advertised image through the environment.
+	// Real upgrades invalidate the cache through executable file identity.
+	c.featureCache = &nativeFeatureCache{}
 	if _, err := c.nativeFetchSparsePath(t.Context(), wc, "incoming/deep.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +184,10 @@ func raFake(t *testing.T, reply string) *execClient {
 	t.Helper()
 	p := fakeSVN(t, "native-ra")
 	t.Setenv("FILEES_TEST_RA_REPLY", reply)
-	return New(Options{NativeSVNPath: p, SvnPath: filepath.Join(t.TempDir(), "no-cli"), Timeout: time.Second}).(*execClient)
+	// Allow host process-start latency; timeout-specific tests set their own bound.
+	c := New(Options{NativeSVNPath: p, SvnPath: filepath.Join(t.TempDir(), "no-cli"), Timeout: 10 * time.Second}).(*execClient)
+	c.featureCache = &nativeFeatureCache{} // different env-backed helper per fixture
+	return c
 }
 func TestNativeRAExactAndEmptyCommit(t *testing.T) {
 	for _, r := range []string{"17", "null"} {

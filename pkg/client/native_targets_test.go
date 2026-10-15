@@ -79,6 +79,8 @@ func TestNativeCommitLargeTargetsSingleInvocation(t *testing.T) {
 		t.Fatal("split or missing targets")
 	}
 	t.Setenv("FILEES_TEST_RA_OLD_HELPER", "1")
+	// This fixture changes capabilities through the environment, not its image.
+	c.featureCache = &nativeFeatureCache{}
 	if _, _, err := c.nativeCommit(t.Context(), t.TempDir(), paths, "refuse", "", false); err == nil {
 		t.Fatal("old helper accepted")
 	}

@@ -105,6 +105,11 @@ func (c *execClient) RecordMove(ctx context.Context, wc, old, dst string) (strin
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	releaseSlot, admissionErr := nativeProcesses.acquire(ctx, false)
+	if admissionErr != nil {
+		return "", fmt.Errorf("native SVN move waiting for process slot: %w", admissionErr)
+	}
+	defer releaseSlot()
 	deadline := min(c.timeout, 30*time.Second)
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
@@ -147,6 +152,11 @@ func (c *execClient) UnscheduleMove(ctx context.Context, wc, old, dst string) (s
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	releaseSlot, admissionErr := nativeProcesses.acquire(ctx, false)
+	if admissionErr != nil {
+		return "", fmt.Errorf("native SVN unschedule waiting for process slot: %w", admissionErr)
+	}
+	defer releaseSlot()
 	deadline := min(c.timeout, 30*time.Second)
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()

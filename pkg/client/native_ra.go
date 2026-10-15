@@ -60,7 +60,7 @@ func (c *execClient) nativeRemoteInput(ctx context.Context, wc string, input []b
 			return nil, errors.New("svn+ssh transport requires an installation identity and pinned known_hosts")
 		}
 	}
-	return c.nativeCommandInput(ctx, wc, c.timeout, input, args...)
+	return c.nativeCommandInput(context.WithValue(ctx, nativeRemoteContextKey{}, true), wc, c.timeout, input, args...)
 }
 
 type nativeInfoEntry struct {
@@ -225,15 +225,18 @@ func (c *execClient) nativeRequireUpdateChanges(ctx context.Context) error {
 }
 
 func (c *execClient) nativeRequireFeature(ctx context.Context, feature string) error {
-	r, e := c.nativeCommand(ctx, "", c.timeout, "--version")
+	cache := c.featureCache
+	if cache == nil {
+		cache = nativeFeatures
+	}
+	features, e := cache.get(ctx, c.nativeSVNPath, func(ctx context.Context) (map[string]any, error) {
+		return c.nativeCommand(ctx, "", c.timeout, "--version")
+	})
 	if e != nil {
 		return e
 	}
-	features, _ := r["features"].([]any)
-	for _, v := range features {
-		if v == feature {
-			return nil
-		}
+	if features[feature] {
+		return nil
 	}
 	return fmt.Errorf("native SVN helper lacks %s; upgrade helper before mutation", feature)
 }

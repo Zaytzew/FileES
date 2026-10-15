@@ -210,6 +210,7 @@ type Service struct {
 	backoff                  time.Duration
 	offlineJournalTimer      *time.Timer
 	offlineJournalGeneration uint64
+	offlineCause             string        // bounded latest cause, guarded by offMu
 	connectivityJournalDelay time.Duration // tests may shorten; <=0 uses the default
 
 	cacheResumed           atomic.Int64
@@ -254,9 +255,15 @@ type revisionCommitter interface {
 	CommitWithRevision(ctx context.Context, rootDirectory, repoURL string, paths []string, message string, keepLocks bool) (string, int64, error)
 }
 
-func (s *Service) goOffline() {
+func (s *Service) goOffline(cause error) {
 	s.offMu.Lock()
 	wasOnline := !s.offline
+	if cause != nil {
+		s.offlineCause = cause.Error()
+		if len(s.offlineCause) > 8192 {
+			s.offlineCause = s.offlineCause[:8192] + " [truncated]"
+		}
+	}
 	s.offline = true
 	s.backoff = nextBackoff(s.backoff)
 	s.nextRetry = time.Now().Add(s.backoff)
@@ -290,6 +297,7 @@ func (s *Service) goOnline() {
 	s.offMu.Lock()
 	wasOffline := s.offline
 	s.offline = false
+	s.offlineCause = ""
 	s.backoff = 0
 	s.offlineJournalGeneration++
 	if s.offlineJournalTimer != nil {
@@ -322,6 +330,7 @@ func (s *Service) recordSustainedOffline(generation uint64) {
 		Severity: errmap.SevWarn,
 		Hint:     errmap.HintRetryBackoff,
 		Msg:      "Network unreachable — queuing changes locally",
+		Details:  s.offlineCause,
 	})
 }
 
@@ -786,7 +795,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	headRev, err := s.Cli.Revision(ctx, s.RepoURL)
 	if err != nil {
 		if client.IsNetworkError(err) {
-			s.goOffline()
+			s.goOffline(fmt.Errorf("poll HEAD revision: %w", err))
 		} else {
 			s.Logger.Warnf("poll: HEAD revision: %v", err)
 		}
@@ -833,7 +842,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 			return // Our shutdown is deferred work, not a synchronization fault.
 		}
 		if client.IsNetworkError(err) {
-			s.goOffline()
+			s.goOffline(fmt.Errorf("poll update: %w", err))
 			return
 		}
 		// A lock left by an interrupted update is ours to clear, not a fault
@@ -1749,7 +1758,7 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	if s.Rules.LockFirst && len(commitPaths) > 0 {
 		if out, err := s.Cli.Lock(ctx, wc, commitPaths); err != nil {
 			if client.IsNetworkError(err) {
-				s.goOffline()
+				s.goOffline(fmt.Errorf("publication lock: %w", err))
 				return fmt.Errorf("svn lock: %w", err)
 			}
 			entry := errmap.Classify(err)
@@ -1802,7 +1811,7 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 			for _, item := range activityItems {
 				s.recordActivity(item.Rel, item.Op, activity.Pending, 0, "")
 			}
-			s.goOffline()
+			s.goOffline(fmt.Errorf("publication commit: %w", err))
 		} else {
 			s.ErrSink.EmitAt(ts, entry)
 			// Not a connectivity problem: retrying the identical batch will

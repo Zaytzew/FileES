@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "repoSearch.label": "Rechercher un dossier",
+  "repoSearch.placeholder": "Nom, chemin ou serveur",
+  "repoSearch.clear": "Effacer",
+  "repoSearch.count": "Résultats : {count} / {total}",
+  "repoSearch.empty": "Aucun dossier correspondant.",
   "progress.anchor.title": "Création d’un dossier virtuel",
   "progress.anchor.text": "« {name} » — attente de la fin des autres opérations locales et préparation du dossier virtuel.",
   "storageCapacity.details": "Stockage des dépôts : {percent}% utilisé ou réservé · {free} libres sur {total}",

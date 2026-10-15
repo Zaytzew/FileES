@@ -13,6 +13,7 @@ import { initializeProgressOverlay } from "./progress-overlay.js";
 import { updateDownloadLine } from "./update-download.js";
 import { storageCapacityMarkup } from "./storage-capacity.js";
 import { importProgressLine, reconcileProgressLine } from "./import-progress.js";
+import { filterRepositories, searchText } from "./repository-search.js";
 
 initializeTheme();
 initializeLanguage();
@@ -53,6 +54,7 @@ const actionErrors = {
 };
 
 let currentSnapshot = null;
+let repositoryQuery = "";
 let selectedDeletedCopy = null;
 let deletedCopyReturnFocus = null;
 let selectedAnnouncementID = "";
@@ -637,7 +639,9 @@ function renderRepo(repo) {
       : localCheck ? t("copy.checking")
       : localPresent && (state === "offline" || repo.local_copy_waiting_connection) ? t("copy.waitingConnection")
       : checkingCopy ? t("copy.refreshing") : t("queue.empty")));
-  const source = ["working_copy", "sparse", "virtual"].includes(repo.local_copy_kind) && repo.local_path
+  const virtualCopy = repo.local_copy_kind === "virtual";
+  const source = virtualCopy && repo.local_path ? repo.local_path
+    : ["working_copy", "sparse"].includes(repo.local_copy_kind) && repo.local_path
     ? `${repo.local_path} · ${t(`copy.kind.${repo.local_copy_kind}`)}`
     : repo.sparse
     ? `${repo.local_path || t("repo.folder")} · ${t("repo.sparse")}`
@@ -669,10 +673,13 @@ function renderRepo(repo) {
       : !repo.local_copy_waiting_connection && (state === "busy" || state === "initializing" || state === "baselining" || localProvisioning || localCheck || checkingCopy)
         ? '<span class="repo-state-overlay is-busy" aria-hidden="true"></span>'
         : "";
-  const iconContents = `<span class="repo-icon" aria-hidden="true">${stateOverlay}</span>`;
+  const cloud = virtualCopy ? '<span class="repo-cloud-overlay" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 18h12a4 4 0 0 0 .4-8 6.5 6.5 0 0 0-12.6-1A4.5 4.5 0 0 0 6 18Z"/></svg></span>' : "";
+  const iconContents = `<span class="repo-icon" aria-hidden="true">${cloud}${stateOverlay}</span>`;
+  const iconLabel = [virtualCopy ? t("copy.kind.virtual") : "", t("repo.open", { state: stateLabel })].filter(Boolean).join(" · ");
+  const disabledLabel = [virtualCopy ? t("copy.kind.virtual") : "", stateLabel].filter(Boolean).join(" · ");
   const open = repo.can_open
-    ? `<button class="repo-open hint-button ${localPresent ? "is-local" : ""} state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="${escapeHTML(t("repo.open", { state: stateLabel }))}" aria-label="${escapeHTML(t("repo.open", { state: stateLabel }))}">${iconContents}</button>`
-    : `<span class="repo-open is-disabled state-${escapeHTML(state)}" title="${escapeHTML(stateLabel)}" aria-label="${escapeHTML(stateLabel)}">${iconContents}</span>`;
+    ? `<button class="repo-open hint-button ${localPresent ? "is-local" : ""} ${virtualCopy ? "is-virtual" : ""} state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="${escapeHTML(iconLabel)}" aria-label="${escapeHTML(iconLabel)}">${iconContents}</button>`
+    : `<span class="repo-open is-disabled ${virtualCopy ? "is-virtual" : ""} state-${escapeHTML(state)}" role="img" title="${escapeHTML(disabledLabel)}" aria-label="${escapeHTML(disabledLabel)}">${iconContents}</span>`;
   const settings = deleted ? "" : repoAction("settings", t("repo.settings"), repoIcons.settings, "repo-settings");
   const size = repo.attached && repo.working_copy_size_known && Number.isFinite(Number(repo.working_copy_bytes ?? 0))
     ? bytes(repo.working_copy_bytes ?? 0)
@@ -783,8 +790,15 @@ const FILEES_STORE = "https://apps.microsoft.com/detail/9P0J1BRL5K77";
 
 function renderRepositories(snapshot) {
   const root = $("#repositories");
-  const repos = snapshot.repositories || [];
+  const allRepos = snapshot.repositories || [];
   const servers = [...(snapshot.servers || [])];
+  const searching = Boolean(searchText(repositoryQuery));
+  const repos = filterRepositories(allRepos, servers, repositoryQuery);
+  $("#repository-search-count").textContent = searching ? t("repoSearch.count", {count: repos.length, total: allRepos.length}) : "";
+  $("#repository-search-clear").disabled = repositoryQuery.length === 0;
+  if (searching && !repos.length) {
+    return replaceHTMLIfChanged(root, `<div class="empty-state"><p>${escapeHTML(t("repoSearch.empty"))}</p></div>`);
+  }
   if (!servers.length && !repos.length) {
     return replaceHTMLIfChanged(root, demoEnded(snapshot) ? demoEndedHTML() : `<div class="empty-state"><span>◌</span><p>${escapeHTML(t("repo.empty"))}</p></div>`);
   }
@@ -800,7 +814,7 @@ function renderRepositories(snapshot) {
     seenServers.add(server.id);
     expandedServers.add(server.id);
   });
-  const html = servers.map((server) => {
+  const html = servers.filter(server => !searching || repos.some(repo => repo.server_id === server.id)).map((server) => {
     refreshDrawers(server);
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
     const isShelf = (repo) => repo.purpose === "upload_shelf";
@@ -818,10 +832,14 @@ function renderRepositories(snapshot) {
     const owned = attached.filter((repo) => repo.ownership === "owned");
     const guest = attached.filter((repo) => repo.ownership === "guest");
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
-    const organized = renderDrawers(server,rest);
+    // Search reveals matches in closed drawers and inactive/archive groups.
+    // It never writes the user's expansion preferences or changes authority.
+    const organized = searching
+      ? `<section class="realm-group search-results"><div class="repo-list">${[...serverRepos].sort(repoOrder).map(renderRepo).join("")}</div></section>`
+      : renderDrawers(server,rest);
     const demo = demoPresentation(server);
     const context = demo?.ended ? demo.title : (server.realm_alias || server.address || server.id);
-    const expanded = expandedServers.has(server.id);
+    const expanded = searching || expandedServers.has(server.id);
     const health = demo?.ended ? { className: "health-unavailable", label: demo.text } : serverHealthPresentation(server.health);
     const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
@@ -846,13 +864,13 @@ function renderRepositories(snapshot) {
         <div class="server-summary"><span class="server-total">${escapeHTML(tn("count.folders", serverRepos.length))}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
       </header>
       <div id="server-folders-${escapeHTML(server.id)}" class="server-folders" ${expanded ? "" : "hidden"}>
-        ${drawerToolbar(server)}
+        ${searching ? "" : drawerToolbar(server)}
         ${serverRepos.length || organized ? `<div class="repo-columns" aria-hidden="true"><span>${escapeHTML(t("repo.columnFolder"))}</span><span class="column-queue">${escapeHTML(t("repo.queue"))}</span><span>${escapeHTML(t("repo.actions"))}</span><span>${escapeHTML(t("repo.size"))}</span></div>
           ${organized ?? (renderRepoGroup(t("repo.groupOwned"), owned, "owned") + renderRepoGroup(t("repo.groupGuest"), guest, "guest"))}
-          ${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf")}
-          ${renderRepoGroup(t("repo.groupQuarantine"), trash, "upload-trash")}
+          ${searching ? "" : renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf")}
+          ${searching ? "" : renderRepoGroup(t("repo.groupQuarantine"), trash, "upload-trash")}
           ${organized === null ? renderRepoGroup(t("repo.groupOther"), unclassified, "unclassified") : ""}
-          ${renderRepoGroup(t("repo.groupDeleted"), deleted, "deleted")}
+          ${searching ? "" : renderRepoGroup(t("repo.groupDeleted"), deleted, "deleted")}
           ${organized === null ? renderRepoGroup(t("repo.groupRemote"), remote, "remote") : ""}` : `<p class="server-empty">${escapeHTML(t("server.empty"))}</p>`}
       </div>
     </article>`;
@@ -1676,6 +1694,24 @@ document.addEventListener("keydown", (event) => {
   }
   if (!$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
 });
+function updateRepositorySearch() {
+  repositoryQuery = $("#repository-search").value;
+  if (currentSnapshot) renderRepositories(currentSnapshot);
+  if (searchText(repositoryQuery)) $("#repositories").scrollIntoView({block:"start", behavior:"instant"});
+}
+$("#repository-search").addEventListener("input", updateRepositorySearch);
+$("#repository-search-clear").addEventListener("click", () => {
+  $("#repository-search").value = "";
+  updateRepositorySearch();
+  $("#repository-search").focus();
+});
+$("#repository-search").addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !repositoryQuery) return;
+  event.preventDefault();
+  event.stopPropagation();
+  $("#repository-search").value = "";
+  updateRepositorySearch();
+});
 $("#repositories").addEventListener("input",event=>{
   if (event.target.name!=="drawer-name") return;
   const server=drawerServer(event.target.closest("[data-server-id]")?.dataset.serverId);
@@ -1702,6 +1738,7 @@ $("#repositories").addEventListener("click", (event) => {
   if (info) { openDeletedCopyInfo(info); return; }
   const toggle = event.target.closest("[data-toggle-server]");
   if (toggle && !event.target.closest("button")) {
+    if (searchText(repositoryQuery)) return;
     const serverID = toggle.dataset.toggleServer;
     if (expandedServers.has(serverID)) expandedServers.delete(serverID);
     else expandedServers.add(serverID);
@@ -1725,6 +1762,7 @@ $("#repositories").addEventListener("keydown", (event) => {
   const toggle = event.target.closest("[data-toggle-server]");
   if (!toggle || !["Enter", " "].includes(event.key)) return;
   event.preventDefault();
+  if (searchText(repositoryQuery)) return;
   const serverID = toggle.dataset.toggleServer;
   if (expandedServers.has(serverID)) expandedServers.delete(serverID);
   else expandedServers.add(serverID);
@@ -1736,6 +1774,7 @@ $("#intent-alerts").addEventListener("click", (event) => {
 });
 $("#repositories").addEventListener("toggle", event => {
   const key = event.target.dataset?.idleKey; if (!key || !event.target.isConnected) return;
+  if (searchText(repositoryQuery)) return;
   if(event.target.open) expandedIdleGroups.add(key); else expandedIdleGroups.delete(key);
   if(event.target.open) scheduleWindowFit();
 }, true);

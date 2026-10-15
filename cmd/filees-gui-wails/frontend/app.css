@@ -256,6 +256,21 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .repo-open .repo-icon::before { width:22px; height:21px; }
 .repo-open.state-offline,.repo-open.state-unattached,.repo-open.state-disabled,.repo-open.state-revoked,.repo-open.state-unknown { color:#758196; filter:saturate(.35); }
 .repo-open.is-local { color:var(--realm-accent); filter:none; }
+.repo-open.is-virtual { --virtual-blue:#147bb8; color:var(--virtual-blue); filter:none; background:rgba(74,164,224,.1); }
+:root[data-system-theme="dark"] .repo-open.is-virtual { --virtual-blue:#79caff; }
+@media (prefers-color-scheme:dark) {
+  :root:not([data-system-theme="light"]) .repo-open.is-virtual { --virtual-blue:#79caff; }
+}
+.repo-open.is-virtual .repo-icon { color:var(--virtual-blue); }
+.repo-cloud-overlay { position:absolute; right:-6px; top:-5px; width:19px; height:17px; display:grid; place-items:center; border-radius:6px; background:var(--panel-solid); color:var(--virtual-blue); }
+.repo-cloud-overlay svg { width:18px; height:18px; fill:var(--panel-solid); stroke:currentColor; stroke-width:2; stroke-linejoin:round; }
+.repository-search { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 0; color:var(--muted); font-size:12px; }
+.repository-search label { color:var(--soft-text); font-weight:650; }
+.repository-search input { flex:1 1 180px; max-width:480px; min-width:120px; border:1px solid var(--line); border-radius:8px; padding:7px 10px; background:var(--panel-solid); color:var(--text); font:inherit; }
+.repository-search input::placeholder { color:var(--muted); }
+.repository-search button { border:1px solid var(--line); border-radius:8px; padding:7px 10px; background:var(--panel-solid); color:var(--soft-text); font:inherit; cursor:pointer; }
+.repository-search button:disabled { opacity:.45; cursor:default; }
+.repository-search input:focus-visible,.repository-search button:focus-visible { outline:2px solid #79caff; outline-offset:2px; }
 .repo-state-overlay { position:absolute; right:-5px; bottom:-5px; width:16px; height:16px; display:grid; place-items:center; border:2px solid var(--panel-solid); border-radius:50%; color:#f5f7fa; background:#69768a; box-shadow:0 2px 7px rgba(0,0,0,.34); }
 .repo-state-overlay svg { width:10px; height:10px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
 .repo-state-overlay.is-attention { color:white; background:var(--red); font-size:10px; font-weight:900; }

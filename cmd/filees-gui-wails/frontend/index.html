@@ -70,6 +70,12 @@
       <article><small data-i18n="summary.shares">Udostępnienia</small><strong id="metric-public-shares">—</strong><span id="metric-public-shares-note">aktywne linki</span></article>
       <article><small data-i18n="summary.attention">Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
     </section>
+    <div class="repository-search" role="search">
+      <label for="repository-search" data-i18n="repoSearch.label">Znajdź folder</label>
+      <input id="repository-search" type="search" autocomplete="off" spellcheck="false" aria-controls="repositories" placeholder="Nazwa, ścieżka lub serwer" data-i18n-placeholder="repoSearch.placeholder">
+      <button id="repository-search-clear" type="button" disabled data-i18n="repoSearch.clear">Wyczyść</button>
+      <span id="repository-search-count" role="status" aria-live="polite"></span>
+    </div>
     <div id="notification-dock" class="notification-dock">
         <section id="update-card" class="side-card update-notification" role="status" hidden>
           <div class="section-heading compact">

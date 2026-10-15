@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "repoSearch.label": "Ordner suchen",
+  "repoSearch.placeholder": "Name, Pfad oder Server",
+  "repoSearch.clear": "Leeren",
+  "repoSearch.count": "Treffer: {count} / {total}",
+  "repoSearch.empty": "Keine passenden Ordner.",
   "progress.anchor.title": "Virtuellen Ordner erstellen",
   "progress.anchor.text": "„{name}“ — andere lokale Vorgänge werden abgeschlossen und der virtuelle Ordner wird vorbereitet.",
   "storageCapacity.details": "Repository-Speicher: {percent}% belegt oder reserviert · {free} frei von {total}",

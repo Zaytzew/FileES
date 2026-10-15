@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "repoSearch.label": "Find a folder",
+  "repoSearch.placeholder": "Name, path or server",
+  "repoSearch.clear": "Clear",
+  "repoSearch.count": "Results: {count} / {total}",
+  "repoSearch.empty": "No matching folders.",
   "progress.anchor.title": "Creating a virtual folder",
   "progress.anchor.text": "“{name}” — waiting for other local operations and preparing the virtual folder.",
   "storageCapacity.details": "Repository storage: {percent}% used or reserved · {free} free of {total}",

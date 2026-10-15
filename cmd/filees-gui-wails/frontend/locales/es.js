@@ -1,5 +1,10 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "repoSearch.label": "Buscar carpeta",
+  "repoSearch.placeholder": "Nombre, ruta o servidor",
+  "repoSearch.clear": "Borrar",
+  "repoSearch.count": "Resultados: {count} / {total}",
+  "repoSearch.empty": "No hay carpetas coincidentes.",
   "progress.anchor.title": "Creando una carpeta virtual",
   "progress.anchor.text": "«{name}» — esperando otras operaciones locales y preparando la carpeta virtual.",
   "storageCapacity.details": "Almacén de repositorios: {percent}% ocupado o reservado · {free} libres de {total}",

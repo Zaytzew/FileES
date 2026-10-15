@@ -14,11 +14,20 @@ test("known copies never look remote during startup or server outage",()=>{
  for(const state of ["initializing","unattached","offline"]){
   const html=ctx.renderRepo({...row,display_state:state,connectivity:"offline"});
   assert.match(html,/\/local\/project/);assert.match(html,/copy.kind.virtual/);assert.doesNotMatch(html,/repo.remote|repo-state-overlay"/);
+  assert.match(html,/is-virtual/);assert.match(html,/repo-cloud-overlay/);
+  assert.doesNotMatch(html,/<small[^>]*>[^<]*copy.kind.virtual/);
   assert.match(html,state==="offline"?/copy.waitingConnection/:/copy.refreshing/);
  }
  const unavailable=ctx.renderRepo({...row,display_state:"initializing",local_copy_presence:"unavailable",can_open:false});
  assert.match(unavailable,/copy.localUnavailable/);assert.doesNotMatch(unavailable,/repo.remote/);
  const remote=ctx.renderRepo({id:"remote",display_state:"unattached"});assert.match(remote,/repo.remote/);
+ assert.doesNotMatch(remote,/repo-cloud-overlay|is-virtual/);
+ const sparse=ctx.renderRepo({...row,local_copy_kind:'sparse',display_state:'active'});
+ assert.doesNotMatch(sparse,/repo-cloud-overlay|is-virtual/);
+ const busy=ctx.renderRepo({...row,display_state:'busy',connectivity:'online',attached:true});
+ assert.match(busy,/repo-cloud-overlay/);assert.match(busy,/repo-state-overlay is-busy/);
+ const error=ctx.renderRepo({...row,display_state:'attention',connectivity:'online'});
+ assert.match(error,/repo-cloud-overlay/);assert.match(error,/repo-state-overlay is-attention/);
  const waiting=ctx.renderRepo({...row,display_state:"initializing",local_copy_waiting_connection:true});
  assert.match(waiting,/copy.waitingConnection/);assert.doesNotMatch(waiting,/is-busy/);
  const css=readFileSync(new URL("../frontend/app.css",import.meta.url),"utf8");

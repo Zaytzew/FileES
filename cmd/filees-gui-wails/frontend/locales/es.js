@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "localAllocation.label": "Asignación local: {amount}",
+  "localAllocation.details": "Asignación aproximada de las copias de este servidor, incluidos .svn, .filees y archivos ignorados. Sin sobrecarga global del sistema de archivos.",
+  "localAllocation.ready": "Medición en caché",
+  "localAllocation.partial": "Medición incompleta",
+  "localAllocation.stale": "Último resultado — actualizando en segundo plano",
+  "localAllocation.waiting": "Esperando medición",
   "repoSearch.label": "Buscar carpeta",
   "repoSearch.placeholder": "Nombre, ruta o servidor",
   "repoSearch.clear": "Borrar",

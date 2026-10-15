@@ -12,6 +12,7 @@ import { reconcileRepositoryHTML, repoToolsWidth } from "./repository-dom.js";
 import { initializeProgressOverlay } from "./progress-overlay.js";
 import { updateDownloadLine } from "./update-download.js";
 import { storageCapacityMarkup } from "./storage-capacity.js";
+import { localAllocationMarkup } from "./local-allocation.js";
 import { importProgressLine, reconcileProgressLine } from "./import-progress.js";
 import { filterRepositories, searchText } from "./repository-search.js";
 
@@ -851,6 +852,7 @@ function renderRepositories(snapshot) {
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
             ${storageCapacityMarkup(server.storage_capacity, {t, bytes, escapeHTML})}
+            ${localAllocationMarkup(server.local_allocation, {t, bytes, escapeHTML})}
             ${demo ? `<span class="demo-badge ${demo.ended ? "is-ended" : ""}" title="${escapeHTML(demo.title)}">${escapeHTML(demo.text)}</span>` : ""}
             ${server.virtual_folders ? `<button class="server-settings virtual-folders-control ${server.virtual_folders.enabled ? "is-enabled" : ""}" type="button" data-virtual-folders ${virtualFoldersBusy ? "disabled" : ""} aria-pressed="${server.virtual_folders.enabled}" title="${escapeHTML(t("virtualFolders.help"))}" aria-label="${escapeHTML(t("virtualFolders.label"))}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12a4 4 0 0 0 .4-8 6.5 6.5 0 0 0-12.6-1A4.5 4.5 0 0 0 6 18Z"></path>${server.virtual_folders.enabled ? "" : '<path d="M3 3l18 18"></path>'}</svg>

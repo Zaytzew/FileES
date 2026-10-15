@@ -1981,6 +1981,8 @@ export class ServerProjection {
 		/** @type {object | undefined} */
 		this["storage_capacity"] = undefined;
 		/** @type {object | undefined} */
+		this["local_allocation"] = undefined;
+		/** @type {object | undefined} */
 		this["virtual_folders"] = undefined;
         if (!("id" in $$source)) {
             /**

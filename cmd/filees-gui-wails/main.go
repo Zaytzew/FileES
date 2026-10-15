@@ -185,6 +185,7 @@ func main() {
 		log.Printf("filees-gui-wails: repository names: %v", repoNamesErr)
 	}
 	gui.attachRepoNames(repoNames, repository.renameContext)
+	gui.attachLocalAllocation(filepath.Join(filepath.Dir(*activationRoot), "gui", "local-allocation.json"))
 	prompts := newPromptService()
 	promptBridge := newPromptBridge(prompts)
 	progress := newProgressService()

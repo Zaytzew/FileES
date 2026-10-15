@@ -12,6 +12,7 @@ import (
 	"filees/internal/explorermenu"
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
+	"filees/internal/gui/localallocation"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/projectionmirror"
 	"filees/internal/gui/reponames"
@@ -59,6 +60,7 @@ type GUIService struct {
 	brandingRequested   map[string]bool
 	brandingKeyByServer map[string]string
 	ctx                 context.Context
+	localAllocation     *localallocation.Manager
 }
 
 type Snapshot struct {
@@ -123,6 +125,7 @@ type ReservationAvailabilityProjection struct {
 }
 
 type ServerProjection struct {
+	LocalAllocation       *localallocation.Value          `json:"local_allocation,omitempty"`
 	StorageCapacity       *contract.StorageCapacityStatus `json:"storage_capacity,omitempty"`
 	VirtualFolders        *contract.VirtualFoldersStatus  `json:"virtual_folders,omitempty"`
 	RealmID               string                          `json:"-"`
@@ -503,6 +506,9 @@ func (service *GUIService) run(ctx context.Context) {
 	service.mu.Lock()
 	service.ctx = ctx
 	service.mu.Unlock()
+	if service.localAllocation != nil {
+		go service.localAllocation.Run(ctx, service.allocationChanged)
+	}
 	service.runner.Run(ctx)
 }
 
@@ -631,6 +637,11 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 
 	service.mu.Lock()
 	requests := service.applyRealmBrandingLocked(vm, &next)
+	if service.localAllocation != nil {
+		roots, busy := allocationRoots(vm)
+		service.localAllocation.Update(roots, busy)
+		applyLocalAllocation(&next, service.localAllocation)
+	}
 	reconnected := vm.Connected && !service.snapshot.Connected
 	next.Revision = service.snapshot.Revision + 1
 	service.snapshot = next

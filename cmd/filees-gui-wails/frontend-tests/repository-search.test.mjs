@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {filterRepositories,searchText} from '../frontend/repository-search.js';
+import {localAllocationMarkup} from '../frontend/local-allocation.js';
 
 const servers=[{id:'spot',display_name:'Pracownia',address:'example.invalid'}];
 const repos=[
@@ -27,7 +28,7 @@ test('results bypass closed groups, preserve expansion state and follow fresh sn
  const source=readFileSync(new URL('../frontend/app.js',import.meta.url),'utf8');
  const start=source.indexOf('function renderRepositories('),end=source.indexOf('\nfunction renderActions',start);
  const nodes=new Map();
- const ctx={repositoryQuery:'towarowa',searchText,filterRepositories,
+ const ctx={repositoryQuery:'towarowa',searchText,filterRepositories,localAllocationMarkup,
   $:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);},
   t:(key,args)=>key+JSON.stringify(args||{}),tn:(key,count)=>`${key} ${count}`,escapeHTML:String,bytes:String,
   replaceHTMLIfChanged:(_node,html)=>html,seenServers:new Set(['spot','cloud']),expandedServers:new Set(),

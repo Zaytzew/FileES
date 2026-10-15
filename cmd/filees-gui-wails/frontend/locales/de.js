@@ -1,5 +1,11 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "localAllocation.label": "Lokale Belegung: {amount}",
+  "localAllocation.details": "Ungefähre Belegung der Arbeitskopien dieses Servers, einschließlich .svn, .filees und ignorierter Dateien. Ohne globalen Dateisystem-Overhead.",
+  "localAllocation.ready": "Zwischengespeicherte Messung",
+  "localAllocation.partial": "Unvollständige Messung",
+  "localAllocation.stale": "Letzter Wert — Aktualisierung im Hintergrund",
+  "localAllocation.waiting": "Warten auf Messung",
   "repoSearch.label": "Ordner suchen",
   "repoSearch.placeholder": "Name, Pfad oder Server",
   "repoSearch.clear": "Leeren",

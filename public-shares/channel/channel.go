@@ -58,19 +58,21 @@ type RecipientCredential struct {
 }
 
 type Record struct {
-	Schema     string                `json:"schema"`
-	ChannelID  string                `json:"channel_id"`
-	OwnerRealm string                `json:"owner_realm"`
-	RepoID     string                `json:"repo_id"`
-	Alias      string                `json:"alias"`
-	Slug       string                `json:"slug"`
-	State      string                `json:"state"`
-	Manifest   *manifest.Share       `json:"manifest,omitempty"`
-	Recipients []RecipientCredential `json:"recipient_credentials,omitempty"`
-	CreatedAt  time.Time             `json:"created_at"`
-	UpdatedAt  time.Time             `json:"updated_at"`
-	RevokedAt  *time.Time            `json:"revoked_at,omitempty"`
-	DeletedAt  *time.Time            `json:"deleted_at,omitempty"`
+	// Transient delivery operation; never persisted or projected publicly.
+	MailOperationID string                `json:"-"`
+	Schema          string                `json:"schema"`
+	ChannelID       string                `json:"channel_id"`
+	OwnerRealm      string                `json:"owner_realm"`
+	RepoID          string                `json:"repo_id"`
+	Alias           string                `json:"alias"`
+	Slug            string                `json:"slug"`
+	State           string                `json:"state"`
+	Manifest        *manifest.Share       `json:"manifest,omitempty"`
+	Recipients      []RecipientCredential `json:"recipient_credentials,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	RevokedAt       *time.Time            `json:"revoked_at,omitempty"`
+	DeletedAt       *time.Time            `json:"deleted_at,omitempty"`
 }
 
 // PublicObject deliberately has no RepoPath field.
@@ -200,7 +202,7 @@ func (s *Store) Create(operationID, requesterRealm string, declaration manifest.
 // tombstone. Existing recipients retain their tokens, while newly added (or
 // re-added) addresses receive a fresh operation-bound epoch.
 func (s *Store) Update(operationID, requesterRealm, channelID string, declaration manifest.Share) (Record, []Delivery, error) {
-	return s.update(operationID, requesterRealm, channelID, declaration, false)
+	return s.update(operationID, requesterRealm, channelID, declaration, false, true)
 }
 
 // UpdatePreservingPassword keeps the current verifier when an authenticated
@@ -208,10 +210,16 @@ func (s *Store) Update(operationID, requesterRealm, channelID string, declaratio
 // plaintext password again. The verifier never needs to cross the control or
 // IPC boundary. It cannot be preserved while switching to recipient tokens.
 func (s *Store) UpdatePreservingPassword(operationID, requesterRealm, channelID string, declaration manifest.Share) (Record, []Delivery, error) {
-	return s.update(operationID, requesterRealm, channelID, declaration, true)
+	return s.update(operationID, requesterRealm, channelID, declaration, true, true)
 }
 
-func (s *Store) update(operationID, requesterRealm, channelID string, declaration manifest.Share, preservePassword bool) (Record, []Delivery, error) {
+// UpdateInvitationOptions preserves saved messages for older clients under the
+// same lock as policy updates; reading and restoring them outside it races edits.
+func (s *Store) UpdateInvitationOptions(operationID, requesterRealm, channelID string, declaration manifest.Share, preservePassword, manageInvitations bool) (Record, []Delivery, error) {
+	return s.update(operationID, requesterRealm, channelID, declaration, preservePassword, manageInvitations)
+}
+
+func (s *Store) update(operationID, requesterRealm, channelID string, declaration manifest.Share, preservePassword, manageInvitations bool) (Record, []Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.validate(); err != nil {
@@ -238,6 +246,9 @@ func (s *Store) update(operationID, requesterRealm, channelID string, declaratio
 			return Record{}, nil, ErrRecordConflict
 		}
 		declaration.Password = record.Manifest.Password
+	}
+	if !manageInvitations {
+		declaration.InvitationMessage = record.Manifest.InvitationMessage
 	}
 	if err := declaration.Validate(); err != nil {
 		return Record{}, nil, err

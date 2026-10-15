@@ -62,6 +62,7 @@ function shareCard(share) {
     : name;
   const controls = [
     share.can_edit ? `<button type="button" data-share-action="edit" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.edit")}</button>` : "",
+    share.can_resend ? `<button type="button" data-share-action="resend" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.resendShelf")}</button>` : "",
     share.can_revoke ? `<button type="button" data-share-action="revoke" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
     share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.delete")}</button>` : "",
   ].join("");

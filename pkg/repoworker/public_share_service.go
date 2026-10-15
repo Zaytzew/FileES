@@ -25,6 +25,8 @@ type ChannelPublicShareService struct {
 	Deliverer PublicShareTokenDeliverer
 }
 
+func (s ChannelPublicShareService) CanManageInvitations() bool { return s.Deliverer != nil }
+
 func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID string) ([]control.PublicShareSummary, error) {
 	if s.Channels == nil {
 		return nil, errors.New("public share channel store is unavailable")
@@ -43,8 +45,9 @@ func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID st
 			objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 		}
 		result = append(result, control.PublicShareSummary{
-			PublicURL: publicShareRecipientURL(s.BaseURL, record.Alias, record.Slug),
-			ChannelID: record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
+			InvitationMessage: record.Manifest.InvitationMessage,
+			PublicURL:         publicShareRecipientURL(s.BaseURL, record.Alias, record.Slug),
+			ChannelID:         record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
 			SourceRoot: record.Manifest.SourceRoot, Recipients: append([]string(nil), record.Manifest.Recipients...), PasswordProtected: record.Manifest.Password != "",
 			DoNotFollow: record.Manifest.DoNotFollow, Objects: objects, UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		})
@@ -63,6 +66,9 @@ func publicShareRecipientURL(base, alias, slug string) string {
 }
 
 func (s ChannelPublicShareService) Create(ctx context.Context, operationID, ownerRealm string, declaration control.PublicShareDeclaration) (control.PublicShareResult, error) {
+	if declaration.ResendInvitations || (!declaration.ManageInvitations && declaration.InvitationMessage != "") {
+		return control.PublicShareResult{}, ErrPublicShareRejected
+	}
 	if s.Channels == nil {
 		return control.PublicShareResult{}, errors.New("public share channel store is unavailable")
 	}
@@ -86,6 +92,9 @@ func (s ChannelPublicShareService) Create(ctx context.Context, operationID, owne
 }
 
 func (s ChannelPublicShareService) Update(ctx context.Context, operationID, ownerRealm, channelID string, declaration control.PublicShareDeclaration, keepPassword bool) (control.PublicShareResult, error) {
+	if !declaration.ManageInvitations && (declaration.InvitationMessage != "" || declaration.ResendInvitations) {
+		return control.PublicShareResult{}, ErrPublicShareRejected
+	}
 	if s.Channels == nil {
 		return control.PublicShareResult{}, errors.New("public share channel store is unavailable")
 	}
@@ -96,10 +105,13 @@ func (s ChannelPublicShareService) Update(ctx context.Context, operationID, owne
 	var record channel.Record
 	var deliveries []channel.Delivery
 	var err error
-	if keepPassword {
-		record, deliveries, err = s.Channels.UpdatePreservingPassword(operationID, ownerRealm, channelID, share)
+	if declaration.ResendInvitations {
+		if s.Deliverer == nil || keepPassword {
+			return control.PublicShareResult{}, ErrPublicShareRejected
+		}
+		record, deliveries, err = s.Channels.Resend(operationID, ownerRealm, channelID, share)
 	} else {
-		record, deliveries, err = s.Channels.Update(operationID, ownerRealm, channelID, share)
+		record, deliveries, err = s.Channels.UpdateInvitationOptions(operationID, ownerRealm, channelID, share, keepPassword, declaration.ManageInvitations)
 	}
 	if err != nil {
 		return control.PublicShareResult{}, classifyPublicShareError(err)
@@ -142,7 +154,7 @@ func toShare(ownerRealm string, declaration control.PublicShareDeclaration) mani
 	for _, object := range declaration.Objects {
 		objects = append(objects, manifest.Object{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
-	return manifest.Share{OwnerRealm: ownerRealm, RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: declaration.Recipients, Password: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
+	return manifest.Share{InvitationMessage: declaration.InvitationMessage, OwnerRealm: ownerRealm, RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: declaration.Recipients, Password: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }
 
 func publicShareResult(record channel.Record, deliveries int) control.PublicShareResult {

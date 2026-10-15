@@ -859,7 +859,15 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if action == "list" {
-		shares, err := service.ListPublicShares(ctx, serverID, repoID)
+		var listed contract.PublicShareListResult
+		var err error
+		if capable, ok := service.(interface {
+			ListPublicSharesWithInvitations(context.Context, string, string) (contract.PublicShareListResult, error)
+		}); ok {
+			listed, err = capable.ListPublicSharesWithInvitations(ctx, serverID, repoID)
+		} else {
+			listed.Shares, err = service.ListPublicShares(ctx, serverID, repoID)
+		}
 		if err != nil {
 			talk.With("public-shares:"+serverID).Warnf("channel listing failed: %v", err)
 			if errors.Is(err, control.ErrResultTooLarge) {
@@ -867,7 +875,7 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 			}
 			return contract.ErrResponse(req.RequestID, "SHARE-1001", "ERROR", "RETRY", "public_share.list_failed", nil)
 		}
-		return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: shares})
+		return contract.OKResponse(req.RequestID, listed)
 	}
 	var (
 		result contract.PublicShareResult

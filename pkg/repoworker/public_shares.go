@@ -21,7 +21,11 @@ func (w *Worker) publicShare(ctx context.Context, session Session, ticket contro
 		}
 		var shares []control.PublicShareSummary
 		shares, err = w.PublicShares.List(ctx, session.RealmID, payload.RepoID)
-		response = control.ListPublicSharesResult{Shares: shares}
+		canManage := false
+		if capable, ok := w.PublicShares.(interface{ CanManageInvitations() bool }); ok {
+			canManage = capable.CanManageInvitations()
+		}
+		response = publicShareListForClient(shares, canManage, payload.IncludeInvitations)
 	case control.TicketCreatePublicShare:
 		var payload control.CreatePublicSharePayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
@@ -60,4 +64,14 @@ func (w *Worker) publicShare(ctx context.Context, session Session, ticket contro
 		err = w.Store.Save(wire)
 	}
 	return wire, err
+}
+
+func publicShareListForClient(shares []control.PublicShareSummary, capable, include bool) control.ListPublicSharesResult {
+	copy := append([]control.PublicShareSummary(nil), shares...)
+	if !include {
+		for i := range copy {
+			copy[i].InvitationMessage = ""
+		}
+	}
+	return control.ListPublicSharesResult{Shares: copy, CanManageInvitations: capable && include}
 }

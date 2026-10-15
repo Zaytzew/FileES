@@ -133,6 +133,7 @@ type PublicShareDialogRequest struct {
 }
 
 type PublicShareSummary struct {
+	CanResend                                                             bool
 	PublicURL                                                             string
 	StateKey                                                              string
 	ChannelID, Address, State, SourceRoot, Recipients, Password, Revision string
@@ -144,6 +145,7 @@ const (
 	PublicShareDialogClose  PublicShareDialogAction = "close"
 	PublicShareDialogCreate PublicShareDialogAction = "create"
 	PublicShareDialogEdit   PublicShareDialogAction = "edit"
+	PublicShareDialogResend PublicShareDialogAction = "resend"
 	PublicShareDialogRevoke PublicShareDialogAction = "revoke"
 	PublicShareDialogDelete PublicShareDialogAction = "delete"
 )

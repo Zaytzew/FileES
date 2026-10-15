@@ -216,6 +216,7 @@ type PublicShareObject struct {
 }
 
 type PublicShareSummary struct {
+	InvitationMessage                                    string
 	PublicURL                                            string
 	ChannelID, Alias, Slug, State, SourceRoot, UpdatedAt string
 	Recipients                                           []string
@@ -225,6 +226,9 @@ type PublicShareSummary struct {
 }
 
 type PublicShareDeclaration struct {
+	ManageInvitations        bool
+	InvitationMessage        string
+	ResendInvitations        bool
 	RepoID, SourceRoot, Slug string
 	Recipients               []string
 	Password                 []byte
@@ -239,6 +243,15 @@ type PublicShareManager interface {
 	UpdatePublicShare(context.Context, string, string, PublicShareDeclaration) error
 	RevokePublicShare(context.Context, string, string, string) error
 	DeletePublicShare(context.Context, string, string, string) error
+}
+
+type PublicShareList struct {
+	CanManageInvitations bool
+	Shares               []PublicShareSummary
+}
+
+type PublicShareInvitationManager interface {
+	ListPublicSharesWithInvitations(context.Context, string, string) (PublicShareList, error)
 }
 
 type UploadChannelSummary struct {
@@ -2190,7 +2203,14 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n024", "Udostępnienie nie jest już dostępne"), Body: c.uiText("feedback.n025", "Lista udziałów zmieniła się przed otwarciem."), Urgency: platform.UrgencyNormal})
 				return
 			}
-			shares, err := c.cfg.PublicShares.ListPublicShares(ctx, serverID, repoID)
+			var listed PublicShareList
+			var err error
+			if capable, ok := c.cfg.PublicShares.(PublicShareInvitationManager); ok {
+				listed, err = capable.ListPublicSharesWithInvitations(ctx, serverID, repoID)
+			} else {
+				listed.Shares, err = c.cfg.PublicShares.ListPublicShares(ctx, serverID, repoID)
+			}
+			shares := listed.Shares
 			if err != nil {
 				c.reportActionError(ctx, key, c.uiText("feedback.n125", "Nie udało się pobrać udostępnień"), err.Error())
 				return
@@ -2211,7 +2231,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				if len(share.Recipients) > 0 {
 					recipients = strings.Join(share.Recipients, ", ")
 				}
-				request.Shares = append(request.Shares, platform.PublicShareSummary{PublicURL: share.PublicURL, ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), StateKey: publicShareStateKey(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
+				request.Shares = append(request.Shares, platform.PublicShareSummary{CanResend: listed.CanManageInvitations && share.State == "active" && len(share.Recipients) > 0, PublicURL: share.PublicURL, ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), StateKey: publicShareStateKey(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
 			}
 			if direct {
 				if _, ok := known[focusChannelID]; !ok {
@@ -2242,7 +2262,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.inactiveShare", Title: "Kanał nie jest aktywny", Text: "Cofniętego kanału nie można edytować. Utwórz nowe udostępnienie pod nowym adresem."})
 					continue
 				}
-				declaration, accepted := c.collectPublicShareDeclaration(ctx, repo, current)
+				declaration, accepted := c.collectPublicShareDeclaration(ctx, repo, current, listed.CanManageInvitations)
 				if !accepted {
 					return
 				}
@@ -2252,6 +2272,15 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 					err = c.cfg.PublicShares.UpdatePublicShare(ctx, serverID, current.ChannelID, declaration)
 				}
 				zeroBytes(declaration.Password)
+			case platform.PublicShareDialogResend:
+				if !listed.CanManageInvitations || current.State != "active" || len(current.Recipients) == 0 {
+					continue
+				}
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.resendShelf", Title: "Ponów zaproszenie", Text: "Wysłać ponownie zaproszenia wszystkim obecnym odbiorcom, z zapisaną wiadomością? Dotychczasowe linki pozostaną ważne.", ConfirmText: "Wyślij ponownie", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.PublicShares.UpdatePublicShare(ctx, serverID, current.ChannelID, PublicShareDeclaration{RepoID: repoID, SourceRoot: current.SourceRoot, Slug: current.Slug, Recipients: append([]string(nil), current.Recipients...), DoNotFollow: current.DoNotFollow, Objects: current.Objects, ManageInvitations: true, ResendInvitations: true, InvitationMessage: current.InvitationMessage})
 			case platform.PublicShareDialogRevoke:
 				if current.State != "active" {
 					continue
@@ -2274,7 +2303,13 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n030", "Nie udało się zmienić udostępnienia"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 				continue
 			}
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n031", "Udostępnienie zostało zaktualizowane"), Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
+			title := c.uiText("feedback.n031", "Udostępnienie zostało zaktualizowane")
+			body := repo.DisplayName
+			if choice.Action == platform.PublicShareDialogResend {
+				title = c.uiText("feedback.shelfInvitationsQueued", "Zaproszenia przekazano do wysyłki")
+				body = c.uiText("feedback.shelfInvitationsQueuedBody", "Serwer wysyła je przez swoją kolejkę poczty. Przyjęcie do kolejki nie potwierdza doręczenia.")
+			}
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
 		}
 	}()
 }
@@ -2923,7 +2958,7 @@ func publicShareStateLabel(state string) string {
 	}
 }
 
-func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app.RepoViewModel, current *PublicShareSummary) (PublicShareDeclaration, bool) {
+func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app.RepoViewModel, current *PublicShareSummary, canManageInvitations bool) (PublicShareDeclaration, bool) {
 	if !repo.Attached || !filepath.IsAbs(repo.LocalPath) {
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.localCopyRequired", Title: "Najpierw połącz repozytorium", Text: "Utworzenie lub edycja udostępnienia wymaga lokalnej kopii roboczej, z której można wybrać folder źródłowy."})
 		return PublicShareDeclaration{}, false
@@ -2970,6 +3005,20 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 		return PublicShareDeclaration{}, false
 	}
 	declaration.Recipients = splitRecipients(recipients.Value)
+	if canManageInvitations {
+		declaration.ManageInvitations = true
+		if len(declaration.Recipients) > 0 {
+			initial := ""
+			if current != nil {
+				initial = current.InvitationMessage
+			}
+			message, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.shelfMessage", Title: "Wiadomość do zaproszenia", Text: "Opcjonalny tekst dla odbiorców (do 2000 znaków). Edycja wiadomości nie ponawia zaproszeń — służy do tego osobny przycisk.", Default: initial, Multiline: true, MaxLength: 2000})
+			if err != nil || message.Cancelled {
+				return PublicShareDeclaration{}, false
+			}
+			declaration.InvitationMessage = message.Value
+		}
+	}
 	if len(declaration.Recipients) == 0 {
 		if current != nil && current.PasswordProtected {
 			keep, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.keepSharePassword", Title: "Hasło udostępnienia", Text: "Czy zachować obecne hasło? Wybierz Nie, aby je zmienić albo usunąć.", ConfirmText: "Zachowaj", CancelText: "Zmień lub usuń"})

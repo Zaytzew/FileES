@@ -530,7 +530,7 @@ test("public share renderer translates chrome but preserves names and permission
 test("marked text forms have reviewed fixed text and never translate defaults", () => {
   const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"(input\.[^"]+)"([\s\S]*?)\}/g)];
-  assert.equal(forms.length, 17);
+  assert.equal(forms.length, 18); // public-share message reuses the reviewed prompt
   for (const [, prefix, body] of forms) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"]]) {
       const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")`));
@@ -660,7 +660,7 @@ test("only explicitly marked GUI dialog templates are translated", () => {
     assert.ok(controller.includes(`"${key}"`));
     prefixes.push(key);
   }
-  assert.equal(prefixes.length, 16);
+  assert.equal(prefixes.length, 17); // shared confirmation also used for public links
   assert.equal(new Set(prefixes).size, 15);
   for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
@@ -694,7 +694,7 @@ test("marked fixed confirmations keep their Polish fallback and button semantics
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository", "dialog.forceDropServer"]);
   const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"(dialog\.[^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
-  assert.equal(marked.length, 12);
+  assert.equal(marked.length, 13); // public-share resend reuses the shelf confirmation
   for (const [, prefix, body] of marked) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"], ["ConfirmText", "confirm"], ["CancelText", "cancel"]]) {
       const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")\\s*(?:,|$)`));

@@ -56,10 +56,11 @@ type Object struct {
 
 // Share is the declaration of intent to hand data out.
 type Share struct {
-	OwnerRealm string `json:"owner_realm"`
-	RepoID     string `json:"repo_id"`
-	SourceRoot string `json:"source_root"`
-	Slug       string `json:"slug"`
+	InvitationMessage string `json:"invitation_message,omitempty"`
+	OwnerRealm        string `json:"owner_realm"`
+	RepoID            string `json:"repo_id"`
+	SourceRoot        string `json:"source_root"`
+	Slug              string `json:"slug"`
 
 	// Recipients, when non-empty, closes the channel: every recipient gets an
 	// opaque token of their own. When empty the channel is open and Password
@@ -134,6 +135,9 @@ func NormalizeKind(kind string) string {
 
 // Validate reports whether the share declaration is internally consistent.
 func (s Share) Validate() error {
+	if err := ValidateInvitationMessage(s.InvitationMessage); err != nil {
+		return err
+	}
 	if err := validUUID("owner_realm", s.OwnerRealm); err != nil {
 		return err
 	}

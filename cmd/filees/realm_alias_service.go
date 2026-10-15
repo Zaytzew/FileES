@@ -286,7 +286,7 @@ func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration
 	for _, object := range declaration.Objects {
 		objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
-	return control.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
+	return control.PublicShareDeclaration{ManageInvitations: declaration.ManageInvitations, InvitationMessage: declaration.InvitationMessage, ResendInvitations: declaration.ResendInvitations, RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }
 
 func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, repoID string) (contract.UploadChannelListResult, error) {
@@ -453,7 +453,7 @@ func publicShareSummaryFromControl(share control.PublicShareSummary) contract.Pu
 	for _, object := range share.Objects {
 		objects = append(objects, contract.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
-	return contract.PublicShareSummary{PublicURL: share.PublicURL, ChannelID: share.ChannelID, RepoID: share.RepoID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow, Objects: objects, UpdatedAt: share.UpdatedAt}
+	return contract.PublicShareSummary{InvitationMessage: share.InvitationMessage, PublicURL: share.PublicURL, ChannelID: share.ChannelID, RepoID: share.RepoID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow, Objects: objects, UpdatedAt: share.UpdatedAt}
 }
 
 // SetEditingPolicy forwards the owner's choice to the server, which is the

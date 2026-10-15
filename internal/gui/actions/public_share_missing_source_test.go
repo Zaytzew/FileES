@@ -22,7 +22,7 @@ func TestEditingPublicShareWithMissingSourceStartsPickerAtWorkingCopy(t *testing
 	}}
 	c := &Controller{cfg: Config{FolderPicker: fake, Prompter: fake}}
 	repo := app.RepoViewModel{ID: "docs", Attached: true, LocalPath: wc}
-	if _, accepted := c.collectPublicShareDeclaration(context.Background(), repo, &PublicShareSummary{SourceRoot: "removed/folder"}); accepted {
+	if _, accepted := c.collectPublicShareDeclaration(context.Background(), repo, &PublicShareSummary{SourceRoot: "removed/folder"}, false); accepted {
 		t.Fatal("cancelled picker accepted declaration")
 	}
 	if initial != wc {
@@ -36,7 +36,7 @@ func TestEditingPublicShareWithMissingSourceStartsPickerAtWorkingCopy(t *testing
 	if err := os.Mkdir(existing, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	c.collectPublicShareDeclaration(context.Background(), repo, &PublicShareSummary{SourceRoot: "existing"})
+	c.collectPublicShareDeclaration(context.Background(), repo, &PublicShareSummary{SourceRoot: "existing"}, false)
 	if initial != existing {
 		t.Fatalf("existing source was not retained: %q", initial)
 	}

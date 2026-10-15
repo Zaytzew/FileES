@@ -593,23 +593,29 @@ type publicShareClient interface {
 type publicShareAdapter struct{ client publicShareClient }
 
 func (adapter publicShareAdapter) ListPublicShares(ctx context.Context, serverID, repoID string) ([]actions.PublicShareSummary, error) {
+	listed, err := adapter.ListPublicSharesWithInvitations(ctx, serverID, repoID)
+	return listed.Shares, err
+}
+
+func (adapter publicShareAdapter) ListPublicSharesWithInvitations(ctx context.Context, serverID, repoID string) (actions.PublicShareList, error) {
 	result, err := adapter.client.PublicShareList(ctx, serverID, repoID)
 	if err != nil {
-		return nil, err
+		return actions.PublicShareList{}, err
 	}
 	if result == nil {
-		return nil, errors.New("daemon returned an empty public share list")
+		return actions.PublicShareList{}, errors.New("daemon returned an empty public share list")
 	}
 	shares := make([]actions.PublicShareSummary, 0, len(result.Shares))
 	for _, share := range result.Shares {
 		row := actions.PublicShareSummary{ChannelID: share.ChannelID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow}
 		row.PublicURL = share.PublicURL
+		row.InvitationMessage = share.InvitationMessage
 		for _, object := range share.Objects {
 			row.Objects = append(row.Objects, actions.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 		}
 		shares = append(shares, row)
 	}
-	return shares, nil
+	return actions.PublicShareList{Shares: shares, CanManageInvitations: result.CanManageInvitations}, nil
 }
 
 func (adapter publicShareAdapter) CreatePublicShare(ctx context.Context, serverID string, declaration actions.PublicShareDeclaration) error {
@@ -884,7 +890,7 @@ func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration
 		}
 		objects = append(objects, contract.PublicShareObject{PublicID: publicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
-	return contract.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: passwordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}, nil
+	return contract.PublicShareDeclaration{ManageInvitations: declaration.ManageInvitations, InvitationMessage: declaration.InvitationMessage, ResendInvitations: declaration.ResendInvitations, RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: passwordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}, nil
 }
 
 type repositoryDetachClient interface {

@@ -1,7 +1,6 @@
 package repoworker
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -16,6 +15,7 @@ import (
 
 	"filees/pkg/onboarding"
 	"filees/public-shares/channel"
+	"filees/public-shares/manifest"
 	"github.com/google/uuid"
 )
 
@@ -27,21 +27,23 @@ const (
 )
 
 type PublicShareMailJob struct {
-	Schema          string    `json:"schema"`
-	MessageID       string    `json:"message_id"`
-	ChannelID       string    `json:"channel_id"`
-	Alias           string    `json:"alias"`
-	Slug            string    `json:"slug"`
-	DeliveryAddress string    `json:"delivery_address"`
-	Kind            string    `json:"kind,omitempty"`
-	Invitation      string    `json:"invitation,omitempty"`
-	Code            string    `json:"code,omitempty"`
-	ExpiresAt       time.Time `json:"expires_at,omitempty"`
-	Token           string    `json:"token,omitempty"` // v1 compatibility
-	State           string    `json:"state"`
-	AttemptID       string    `json:"attempt_id,omitempty"`
-	LeaseUntil      time.Time `json:"lease_until,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	InvitationMessage string    `json:"invitation_message,omitempty"`
+	ResendOperationID string    `json:"resend_operation_id,omitempty"`
+	Schema            string    `json:"schema"`
+	MessageID         string    `json:"message_id"`
+	ChannelID         string    `json:"channel_id"`
+	Alias             string    `json:"alias"`
+	Slug              string    `json:"slug"`
+	DeliveryAddress   string    `json:"delivery_address"`
+	Kind              string    `json:"kind,omitempty"`
+	Invitation        string    `json:"invitation,omitempty"`
+	Code              string    `json:"code,omitempty"`
+	ExpiresAt         time.Time `json:"expires_at,omitempty"`
+	Token             string    `json:"token,omitempty"` // v1 compatibility
+	State             string    `json:"state"`
+	AttemptID         string    `json:"attempt_id,omitempty"`
+	LeaseUntil        time.Time `json:"lease_until,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type PublicShareOutbox struct {
@@ -59,8 +61,15 @@ func (o PublicShareOutbox) DeliverPublicShareTokens(_ context.Context, record ch
 			return errors.New("public share delivery is invalid")
 		}
 		digest := sha256.Sum256([]byte(record.ChannelID + "\x00" + email + "\x00" + delivery.Token))
+		if record.MailOperationID != "" {
+			digest = sha256.Sum256([]byte(record.ChannelID + "\x00resend\x00" + record.MailOperationID + "\x00" + email))
+		}
 		messageID := uuid.NewSHA1(uuid.NameSpaceOID, digest[:]).String()
 		job := PublicShareMailJob{Schema: publicShareMailSchema, MessageID: messageID, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, DeliveryAddress: email, Kind: PublicShareMailInvitation, Invitation: delivery.Token, State: "pending", CreatedAt: o.now()}
+		job.ResendOperationID = record.MailOperationID
+		if record.Manifest != nil {
+			job.InvitationMessage = record.Manifest.InvitationMessage
+		}
 		if err := o.queue(job); err != nil {
 			return err
 		}
@@ -113,6 +122,19 @@ func (o PublicShareOutbox) Claim(now time.Time, lease time.Duration) (PublicShar
 			if err != nil {
 				return err
 			}
+			if job.ResendOperationID != "" {
+				if digest, err := (UploadChannelOutbox{Root: o.Root}).sentDigest(job.MessageID); err == nil {
+					if digest != publicShareMailDigest(job) {
+						return errors.New("public share resend conflicts with completed mail")
+					}
+					if err := os.Remove(filepath.Join(o.Root, entry.Name())); err != nil {
+						return err
+					}
+					continue
+				} else if !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+			}
 			if job.State == "sending" && now.UTC().Before(job.LeaseUntil) {
 				continue
 			}
@@ -149,6 +171,14 @@ func (o PublicShareOutbox) finish(messageID, attemptID string, sent bool) error 
 			return errors.New("public share mail attempt is stale")
 		}
 		if sent {
+			if job.ResendOperationID != "" {
+				if err := os.MkdirAll(filepath.Join(o.Root, "sent"), 0700); err != nil {
+					return err
+				}
+				if err := atomicJSON(filepath.Join(o.Root, "sent", messageID+".json"), map[string]string{"digest": publicShareMailDigest(job)}); err != nil {
+					return err
+				}
+			}
 			return os.Remove(path)
 		}
 		job.State, job.AttemptID, job.LeaseUntil = "pending", "", time.Time{}
@@ -182,6 +212,10 @@ func RenderPublicShareMail(job PublicShareMailJob, from, domain, baseURL string)
 	base.RawQuery = query.Encode()
 	subject := "FileES - pliki do pobrania"
 	body := fmt.Sprintf("Pliki udostępnione w FileES są dostępne pod adresem:\r\n\r\n%s\r\n\r\nNa stronie poproś o jednorazowy kod dostępu.\r\n", base.String())
+	if job.InvitationMessage != "" {
+		message := strings.ReplaceAll(strings.ReplaceAll(job.InvitationMessage, "\r\n", "\n"), "\n", "\r\n")
+		body = "Wiadomość od nadawcy:\r\n" + message + "\r\n\r\n" + body
+	}
 	if kind == PublicShareMailOTP {
 		subject = "FileES - kod dostępu"
 		body = fmt.Sprintf("Jednorazowy kod FileES:\r\n\r\n%s\r\n\r\nKod wygasa o %s.\r\n", job.Code, job.ExpiresAt.Local().Format("15:04:05 MST"))
@@ -199,14 +233,22 @@ func (o PublicShareOutbox) queue(job PublicShareMailJob) error {
 	}
 	return WithFileLock(filepath.Join(o.Root, ".lock"), func() error {
 		path := filepath.Join(o.Root, job.MessageID+".json")
+		if job.ResendOperationID != "" {
+			if digest, err := (UploadChannelOutbox{Root: o.Root}).sentDigest(job.MessageID); err == nil {
+				if digest == publicShareMailDigest(job) {
+					return nil
+				}
+				return errors.New("public share resend conflicts with completed mail")
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
 		if raw, err := os.ReadFile(path); err == nil {
 			var old PublicShareMailJob
 			if json.Unmarshal(raw, &old) != nil {
 				return errors.New("stored public share mail job is invalid")
 			}
-			oldRaw, _ := json.Marshal(old)
-			newRaw, _ := json.Marshal(job)
-			if bytes.Equal(oldRaw, newRaw) {
+			if publicShareMailDigest(old) == publicShareMailDigest(job) {
 				return nil
 			}
 			return errors.New("public share mail job conflicts")
@@ -230,6 +272,17 @@ func (o PublicShareOutbox) load(path string) (PublicShareMailJob, error) {
 }
 
 func validatePublicShareMail(job PublicShareMailJob) error {
+	if err := manifest.ValidateInvitationMessage(job.InvitationMessage); err != nil {
+		return err
+	}
+	if job.ResendOperationID != "" {
+		if _, err := uuid.Parse(job.ResendOperationID); err != nil {
+			return err
+		}
+		if job.Kind != PublicShareMailInvitation {
+			return errors.New("only invitations can be resent")
+		}
+	}
 	if job.Schema != publicShareMailSchema && job.Schema != publicShareMailLegacySchema {
 		return errors.New("public share mail schema is invalid")
 	}
@@ -265,6 +318,13 @@ func validatePublicShareMail(job PublicShareMailJob) error {
 		return errors.New("pending public share mail has a lease")
 	}
 	return nil
+}
+
+func publicShareMailDigest(job PublicShareMailJob) string {
+	job.State, job.AttemptID, job.LeaseUntil, job.CreatedAt = "", "", time.Time{}, time.Time{}
+	raw, _ := json.Marshal(job)
+	digest := sha256.Sum256(raw)
+	return fmt.Sprintf("%x", digest)
 }
 
 func (o PublicShareOutbox) now() time.Time {

@@ -778,13 +778,16 @@ type PublicShareObject struct {
 }
 
 type PublicShareDeclaration struct {
-	RepoID       string              `json:"repo_id"`
-	SourceRoot   string              `json:"source_root"`
-	Slug         string              `json:"slug"`
-	Recipients   []string            `json:"recipients,omitempty"`
-	PasswordHash string              `json:"password_hash,omitempty"`
-	DoNotFollow  *int64              `json:"do-not-follow,omitempty"`
-	Objects      []PublicShareObject `json:"object_map"`
+	ManageInvitations bool                `json:"manage_invitations,omitempty"`
+	InvitationMessage string              `json:"invitation_message,omitempty"`
+	ResendInvitations bool                `json:"resend_invitations,omitempty"`
+	RepoID            string              `json:"repo_id"`
+	SourceRoot        string              `json:"source_root"`
+	Slug              string              `json:"slug"`
+	Recipients        []string            `json:"recipients,omitempty"`
+	PasswordHash      string              `json:"password_hash,omitempty"`
+	DoNotFollow       *int64              `json:"do-not-follow,omitempty"`
+	Objects           []PublicShareObject `json:"object_map"`
 }
 
 type PublicShareListPayload struct {
@@ -811,6 +814,7 @@ type PublicShareChannelPayload struct {
 }
 
 type PublicShareSummary struct {
+	InvitationMessage string              `json:"invitation_message,omitempty"`
 	PublicURL         string              `json:"public_url,omitempty"`
 	ObservedAt        string              `json:"observed_at,omitempty"`
 	Stale             bool                `json:"stale,omitempty"`
@@ -830,11 +834,12 @@ type PublicShareSummary struct {
 }
 
 type PublicShareListResult struct {
-	Loading    bool                 `json:"loading,omitempty"` // aggregate read in progress, independent of projection freshness
-	AsOf       string               `json:"as_of,omitempty"`
-	Generation uint64               `json:"generation,omitempty"`
-	Stale      bool                 `json:"stale,omitempty"`
-	Shares     []PublicShareSummary `json:"shares"`
+	CanManageInvitations bool                 `json:"can_manage_invitations,omitempty"`
+	Loading              bool                 `json:"loading,omitempty"` // aggregate read in progress, independent of projection freshness
+	AsOf                 string               `json:"as_of,omitempty"`
+	Generation           uint64               `json:"generation,omitempty"`
+	Stale                bool                 `json:"stale,omitempty"`
+	Shares               []PublicShareSummary `json:"shares"`
 }
 
 type PublicShareResult struct {

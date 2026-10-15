@@ -275,13 +275,16 @@ type PublicShareObject struct {
 // from the authenticated session. PasswordHash is a verifier prepared on the
 // client; plaintext passwords must never enter the SVN-backed ticket stream.
 type PublicShareDeclaration struct {
-	RepoID       string              `json:"repo_id"`
-	SourceRoot   string              `json:"source_root"`
-	Slug         string              `json:"slug"`
-	Recipients   []string            `json:"recipients,omitempty"`
-	PasswordHash string              `json:"password_hash,omitempty"`
-	DoNotFollow  *int64              `json:"do-not-follow,omitempty"`
-	Objects      []PublicShareObject `json:"object_map"`
+	ManageInvitations bool                `json:"manage_invitations,omitempty"`
+	InvitationMessage string              `json:"invitation_message,omitempty"`
+	ResendInvitations bool                `json:"resend_invitations,omitempty"`
+	RepoID            string              `json:"repo_id"`
+	SourceRoot        string              `json:"source_root"`
+	Slug              string              `json:"slug"`
+	Recipients        []string            `json:"recipients,omitempty"`
+	PasswordHash      string              `json:"password_hash,omitempty"`
+	DoNotFollow       *int64              `json:"do-not-follow,omitempty"`
+	Objects           []PublicShareObject `json:"object_map"`
 }
 
 type CreatePublicSharePayload struct{ PublicShareDeclaration }
@@ -291,9 +294,11 @@ type UpdatePublicSharePayload struct {
 	PublicShareDeclaration
 }
 type ListPublicSharesPayload struct {
-	RepoID string `json:"repo_id"`
+	IncludeInvitations bool   `json:"include_invitations,omitempty"`
+	RepoID             string `json:"repo_id"`
 }
 type PublicShareSummary struct {
+	InvitationMessage string              `json:"invitation_message,omitempty"`
 	PublicURL         string              `json:"public_url,omitempty"`
 	ChannelID         string              `json:"channel_id"`
 	RepoID            string              `json:"repo_id"`
@@ -308,7 +313,8 @@ type PublicShareSummary struct {
 	UpdatedAt         string              `json:"updated_at"`
 }
 type ListPublicSharesResult struct {
-	Shares []PublicShareSummary `json:"shares"`
+	CanManageInvitations bool                 `json:"can_manage_invitations,omitempty"`
+	Shares               []PublicShareSummary `json:"shares"`
 }
 type RevokePublicSharePayload struct {
 	ChannelID string `json:"channel_id"`
@@ -803,6 +809,9 @@ func (t Ticket) Validate() error {
 		if err := decodeStrict(t.Payload, &p); err != nil {
 			return fmt.Errorf("CREATE_PUBLIC_SHARE payload: %w", err)
 		}
+		if p.ResendInvitations {
+			return errors.New("create cannot resend invitations")
+		}
 		if err := validatePublicShareDeclaration(p.PublicShareDeclaration); err != nil {
 			return fmt.Errorf("CREATE_PUBLIC_SHARE payload: %w", err)
 		}
@@ -1227,6 +1236,9 @@ func validateSuccessPayload(r Result) error {
 				return errors.New("public share summary state is invalid")
 			}
 			declaration := PublicShareDeclaration{RepoID: share.RepoID, SourceRoot: share.SourceRoot, Slug: share.Slug, Recipients: share.Recipients, DoNotFollow: share.DoNotFollow, Objects: share.Objects}
+			if err := publicmanifest.ValidateInvitationMessage(share.InvitationMessage); err != nil {
+				return err
+			}
 			if err := validatePublicShareDeclaration(declaration); err != nil {
 				return fmt.Errorf("public share summary: %w", err)
 			}
@@ -1468,6 +1480,15 @@ func decodeStrict(raw json.RawMessage, dst any) error {
 }
 
 func validatePublicShareDeclaration(p PublicShareDeclaration) error {
+	if !p.ManageInvitations && (p.InvitationMessage != "" || p.ResendInvitations) {
+		return errors.New("invitation options require explicit management")
+	}
+	if p.ResendInvitations && len(p.Recipients) == 0 {
+		return errors.New("resend requires a closed share")
+	}
+	if err := publicmanifest.ValidateInvitationMessage(p.InvitationMessage); err != nil {
+		return err
+	}
 	if err := validateUUID("repo_id", p.RepoID); err != nil {
 		return err
 	}

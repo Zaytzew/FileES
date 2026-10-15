@@ -143,6 +143,7 @@ type RepositoryActionProjection struct {
 }
 
 type PublicShareProjection struct {
+	CanResend  bool   `json:"can_resend"`
 	PublicURL  string `json:"public_url,omitempty"`
 	StateKey   string `json:"state_key,omitempty"`
 	ChannelID  string `json:"channel_id"`
@@ -1027,6 +1028,7 @@ func projectPublicShares(request platform.PublicShareDialogRequest) (RepositoryS
 	for _, share := range request.Shares {
 		active := strings.EqualFold(strings.TrimSpace(share.State), "aktywne") || strings.EqualFold(strings.TrimSpace(share.State), "active")
 		snapshot.Shares = append(snapshot.Shares, PublicShareProjection{
+			CanResend: active && share.CanResend && strings.TrimSpace(share.Recipients) != "",
 			PublicURL: share.PublicURL,
 			ChannelID: share.ChannelID, Address: share.Address, State: share.State, StateKey: share.StateKey, SourceRoot: share.SourceRoot,
 			Recipients: share.Recipients, Password: share.Password, Revision: share.Revision,
@@ -1277,6 +1279,8 @@ func shareChoiceAllowed(shares []PublicShareProjection, action platform.PublicSh
 		switch action {
 		case platform.PublicShareDialogEdit:
 			return share.CanEdit
+		case platform.PublicShareDialogResend:
+			return share.CanResend
 		case platform.PublicShareDialogRevoke:
 			return share.CanRevoke
 		case platform.PublicShareDialogDelete:

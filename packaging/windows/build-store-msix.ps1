@@ -15,9 +15,12 @@ if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') {
 $source = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $runtime = (Resolve-Path -LiteralPath $NativeRuntime).Path
 $sdk = (Resolve-Path -LiteralPath $SdkBin).Path
-$base = (Get-Content -LiteralPath (Join-Path $source 'VERSION') -First 1).Trim()
+# Store has its own product version until CFAPI is admitted there. The source
+# revision still must match the clean checkout; no manual stamp override.
+$base = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'STORE_VERSION') -First 1).Trim()
+if ($base -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid STORE_VERSION' }
 if (-not $Version.StartsWith($base + '.', [StringComparison]::Ordinal)) {
-    throw "MSIX version must begin with the source version $base"
+    throw "MSIX version must begin with the Store product version $base"
 }
 $revision = ($Version -split '\.')[3]
 Push-Location $source

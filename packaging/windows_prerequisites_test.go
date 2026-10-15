@@ -50,6 +50,22 @@ func TestStorePackageVersionHasZeroRevision(t *testing.T) {
 	}
 }
 
+func TestStoreProductVersionIsIndependentOfAlpha(t *testing.T) {
+	raw, err := os.ReadFile("windows/build-store-msix.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"Join-Path $PSScriptRoot 'STORE_VERSION'", "$wcRevision -ne $revision", "$stamp = $base + '+r' + $revision"} {
+		if !strings.Contains(string(raw), required) {
+			t.Fatalf("Store version/revision guard missing: %s", required)
+		}
+	}
+	version, err := os.ReadFile("windows/STORE_VERSION")
+	if err != nil || strings.TrimSpace(string(version)) != "0.1.19" {
+		t.Fatalf("Store must remain 0.1.19 without CFAPI: %q, %v", version, err)
+	}
+}
+
 // Every executable the package declares carries a DPI-aware Win32 manifest,
 // the windowless daemon included: WACK warned about filees.exe (2026-09-24).
 func TestStorePackageEmbedsManifestInEveryDeclaredExecutable(t *testing.T) {

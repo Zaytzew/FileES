@@ -15,3 +15,12 @@ test('local allocation stays next to server storage outside collapsed content',(
  const app=readFileSync(new URL('../frontend/app.js',import.meta.url),'utf8');
  assert.match(app,/storageCapacityMarkup\(server.storage_capacity[^\n]+\n\s*\$\{localAllocationMarkup\(server.local_allocation/);
 });
+test('local allocation keeps a normal border and contrast while details preserve uncertainty',()=>{
+ const css=readFileSync(new URL('../frontend/app.css',import.meta.url),'utf8');
+ assert.match(css,/\.local-allocation,\.local-allocation\.is-stale\s*\{\s*border-style:solid;\s*opacity:1;/);
+ assert.doesNotMatch(css,/\.local-allocation[^{}]*\{[^}]*border-style:dashed/);
+ for(const state of ['partial','stale','waiting']) {
+  const markup=localAllocationMarkup({state,known:true,bytes:10},helpers);
+  assert.match(markup,new RegExp(`title="[^"]*localAllocation\\.${state}`));
+ }
+});

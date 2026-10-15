@@ -209,7 +209,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .server-capacity.is-warning { color:var(--amber); }
 .server-capacity.is-critical { color:var(--red); }
 .server-capacity.is-stale { opacity:.72; border-style:dashed; }
-.local-allocation.is-partial,.local-allocation.is-waiting { border-style:dashed; }
+.local-allocation,.local-allocation.is-stale { border-style:solid; opacity:1; }
 .server-capacity.is-unknown .capacity-track { display:none; }
 .server-capacity .capacity-stale-mark { font-size:13px; }
 @media (max-width:720px) { .server-title-line { flex-wrap:wrap; } .server-capacity .capacity-track { width:22px; } }

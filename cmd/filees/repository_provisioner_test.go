@@ -400,17 +400,18 @@ func TestDaemonProvisionerLeavesFailedRepositoryCreationForExplicitRetry(t *test
 
 func failedCreationRepairFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {
 	t.Helper()
-	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	root := t.TempDir()
+	local, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal, err := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	journal, err := provisioning.NewStore(filepath.Join(root, "provisioning"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	opID, createID, initialID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	clientID, repoID := uuid.NewString(), uuid.NewString()
-	wc := filepath.Join(t.TempDir(), "wc")
+	wc := filepath.Join(root, "wc")
 	record, err := local.BeginCreateOperation(opID, "office", "Docs", wc)
 	if err != nil {
 		t.Fatal(err)

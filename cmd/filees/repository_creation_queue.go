@@ -13,6 +13,42 @@ import (
 
 var errCreationIntentEnded = errors.New("queued creation intent no longer active")
 
+// Accept metadata-only retry without acquiring the shared execution fence.
+// Never turn a duplicate click during a running attempt into another retry.
+// Content checks happen in runOne after preparation admission, before SSH.
+func (p *daemonProvisioner) queueInitialImportRetry(ctx context.Context, record localrepo.Record) (localrepo.Record, error) {
+	p.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		p.mu.Unlock()
+		return record, err
+	}
+	current, ok := p.local.Get(record.OperationID)
+	if !ok || current.State != localrepo.StateRepositoryCreated || current.RemoteDeletionObserved || current.RepoID != record.RepoID || current.ServerID != record.ServerID {
+		p.mu.Unlock()
+		return current, errCreationIntentEnded
+	}
+	if _, running := p.running[record.OperationID]; running {
+		p.mu.Unlock()
+		return current, nil
+	}
+	if p.provisioning == nil {
+		p.mu.Unlock()
+		return current, errors.New("repository provisioning journal is unavailable")
+	}
+	op, err := p.provisioning.Get(record.OperationID)
+	if err == nil && (op.State == provisioning.StateAbandoned || op.RepoID != current.RepoID || op.RepoURL != current.RepoURL || filepath.Clean(op.LocalPath) != current.LocalPath) {
+		err = errors.New("initial import no longer matches durable provisioning authority")
+	}
+	if err == nil {
+		current, err = p.local.ResumeCreate(record.OperationID)
+	}
+	p.mu.Unlock()
+	if err == nil {
+		p.Enqueue(record.OperationID)
+	}
+	return current, err
+}
+
 // A full in-memory wakeup channel must not require a restart. Enqueue
 // deduplicates already waiting IDs; concrete failures still need explicit retry.
 func (p *daemonProvisioner) requeuePendingCreations() {
@@ -64,7 +100,7 @@ func (p *daemonProvisioner) prepareQueuedCreation(ctx context.Context, id string
 	}
 	defer leave()
 	record, ok := p.local.Get(id)
-	if !ok || record.RemoteDeletionObserved || (record.State != localrepo.StateRequestPending && record.State != localrepo.StateRepositoryCreated) {
+	if !ok || record.RemoteDeletionObserved || record.LastError != "" || (record.State != localrepo.StateRequestPending && record.State != localrepo.StateRepositoryCreated) {
 		return record, clientprofile.Profile{}, errCreationIntentEnded
 	}
 	profile, ok := p.Profile(record.ServerID)

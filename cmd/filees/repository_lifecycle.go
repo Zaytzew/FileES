@@ -36,6 +36,7 @@ type repositoryLifecycleService struct {
 	onDetach               func(context.Context, string) (localrepo.Record, error)
 	onLoadDump             func(string)
 	onRepair               func(context.Context, string, string) (localrepo.Record, error)
+	onRetryCreate          func(context.Context, localrepo.Record) (localrepo.Record, error)
 	// importProgress answers the running initial publication, if any.
 	importProgress func(string) *contract.PublishProgress
 }
@@ -368,13 +369,8 @@ func (service repositoryLifecycleService) Status(operationID string) (contract.R
 }
 
 func (service repositoryLifecycleService) Repair(ctx context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {
-	leave, err := service.enterLocalIntent()
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return contract.RepoLifecycleResult{}, err
-	}
-	defer leave()
-	if service.fileReleasePending(serverID, repoID) {
-		return contract.RepoLifecycleResult{}, service.localMutationPendingError(serverID, repoID)
 	}
 	record, ok := service.store.Get(operationID)
 	if !ok {
@@ -388,6 +384,25 @@ func (service repositoryLifecycleService) Repair(ctx context.Context, operationI
 	}
 	if service.onRepair == nil {
 		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle repair executor is unavailable")
+	}
+	// Initial-import retry only records a durable intent. Its executor already
+	// waits in prepareQueuedCreation; a busy unrelated CFAPI observer must not
+	// reject the user's request here. Abandon and other repairs still own the
+	// synchronous fence because they may change local metadata immediately.
+	if strategy == "retry" && record.State == localrepo.StateRepositoryCreated && service.onRetryCreate != nil {
+		if service.fileReleasePending(serverID, repoID) {
+			return contract.RepoLifecycleResult{}, service.localMutationPendingError(serverID, repoID)
+		}
+		record, err := service.onRetryCreate(ctx, record)
+		return lifecycleResult(record), err
+	}
+	leave, err := service.enterLocalIntent()
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	defer leave()
+	if service.fileReleasePending(serverID, repoID) {
+		return contract.RepoLifecycleResult{}, service.localMutationPendingError(serverID, repoID)
 	}
 	record, err = service.onRepair(ctx, operationID, strategy)
 	return lifecycleResult(record), err

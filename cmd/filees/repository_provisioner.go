@@ -462,11 +462,8 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		talk.With("provisioning:"+operationID).Warnf("creation requires explicit retry: %s", record.LastError)
 		return
 	}
-	if record.State == localrepo.StateRepositoryCreated {
-		if resumed, err := p.local.ResumeCreate(operationID); err == nil {
-			record = resumed
-		}
-	}
+	// Only an explicit retry clears a failed import. A stale wakeup must not
+	// erase a newer failure between the snapshot above and queued admission.
 	if record.RepoID != "" && record.State != localrepo.StateRepositoryCreated {
 		p.runAttach(ctx, record, profile)
 		return
@@ -602,19 +599,7 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 	}
 	if strategy == "retry" {
 		if record.State == localrepo.StateRepositoryCreated {
-			if p.provisioning == nil {
-				return localrepo.Record{}, errors.New("repository provisioning journal is unavailable")
-			}
-			operation, err := p.provisioning.Get(operationID)
-			if err != nil {
-				return localrepo.Record{}, fmt.Errorf("read repository provisioning journal: %w", err)
-			}
-			if operation.State == provisioning.StateAbandoned {
-				return localrepo.Record{}, errors.New("initial import was already abandoned; finish the local abandonment instead")
-			}
-			if err := provisioning.CheckInitialContent(record.LocalPath); err != nil {
-				return localrepo.Record{}, err
-			}
+			return p.queueInitialImportRetry(ctx, record)
 		}
 		updated, err := p.local.Retry(operationID)
 		if err != nil {

@@ -23,6 +23,10 @@ import (
 
 // Options configures the SVN exec wrapper.
 type Options struct {
+	// BeginMutation invalidates the caller's observation cache before a remote
+	// write. Its returned closure runs on every outcome, including lost replies.
+	// Neither callback may call back into this client or perform network IO.
+	BeginMutation   func() func()
 	SvnPath         string        // path to 'svn' binary; default "svn"
 	NativeSVNPath   string        // explicit opt-in absolute path to FileES native client
 	Timeout         time.Duration // per-command timeout; default 30m
@@ -63,6 +67,7 @@ type Client interface {
 
 // execClient implements Client by calling the external 'svn' executable.
 type execClient struct {
+	beginMutation func() func()
 	featureCache  *nativeFeatureCache // nil selects the shared image-bound cache
 	svnPath       string
 	nativeSVNPath string
@@ -86,7 +91,7 @@ func New(opts Options) Client {
 	if opts.SSHIdentityFile != "" || opts.SSHKnownHosts != "" {
 		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort, opts.SSHHostName)
 	}
-	return &execClient{svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
+	return &execClient{beginMutation: opts.BeginMutation, svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
 }
 
 // sshTunnelProgram is this process's own executable when it carries the
@@ -910,6 +915,7 @@ func parseLogXML(output string) ([]LogMessage, error) {
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {
+	defer c.mutationBarrier(args)()
 	// A missed routing branch must be visible, never launch a foreign client.
 	if nativeWCOps(c) {
 		return "", errors.New("native SVN routing gap: CLI execution is disabled for this client")

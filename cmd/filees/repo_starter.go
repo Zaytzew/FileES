@@ -391,7 +391,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 				return deps.heartbeatOwnership(ctx, repo, svn)
 			}
 		}
-		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{Ownership: ownership, HeartbeatOwnership: heartbeatOwnership, TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{OnReleased: func(path, token string) { deps.reservations.ObserveRelease(desired.Key, wc, path, token) }, BeginMutation: func() func() { return deps.reservations.BeginMutation(desired.Key) }, Ownership: ownership, HeartbeatOwnership: heartbeatOwnership, TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
 			logger.Warnf("passport heartbeat: %v", err)
 			passportErrors.Emit(errmap.Classify(err))
 		}})

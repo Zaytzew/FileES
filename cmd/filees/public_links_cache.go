@@ -72,11 +72,20 @@ func (c *publicShareCache) beginMutation(ctx context.Context, serverID string) (
 	c.mu.Lock()
 	c.stateSerial[serverID]++
 	c.mutating[serverID] = true
+	if c.mutationConfirmed == nil {
+		c.mutationConfirmed = make(map[string]bool)
+	}
+	c.mutationConfirmed[serverID] = false
 	epoch := c.epochs[serverID]
 	c.mu.Unlock()
 	return epoch, func() {
 		c.mu.Lock()
 		c.stateSerial[serverID]++
+		if !c.mutationConfirmed[serverID] {
+			c.failed[serverID] = true // uncertain write is not an unchanged-state ACK
+			c.generation++
+		}
+		delete(c.mutationConfirmed, serverID)
 		delete(c.mutating, serverID)
 		c.mu.Unlock()
 		<-gate
@@ -127,6 +136,7 @@ func (c *publicShareCache) applyReceipt(serverID, clientID string, epoch uint64,
 		rows = append(rows, row)
 	}
 	c.byServer[serverID], c.states[serverID] = rows, s
+	c.mutationConfirmed[serverID] = true
 	c.generation++
 	c.saveLocked(serverID)
 	return true

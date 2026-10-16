@@ -43,6 +43,7 @@ static void print_ok_version(void)
     printf(",\"local_file_delete_metadata_bound_v1\"");
     printf(",\"unschedule_plain_add_v1\"");
     printf(",\"sparse_adopt_batch_v1\"");
+    printf(",\"unlock_token_receipt_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -494,7 +495,7 @@ static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
     const char *wc = NULL, *comment = NULL;
     const char *paths[FILEES_SVN_MAX_PATHS];
     int n = 0, i;
-    svn_boolean_t live = TRUE;
+    svn_boolean_t live = TRUE, token_stdin = FALSE;
 
     for (i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
@@ -502,6 +503,7 @@ static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
             continue;
         }
         if (locking && !strcmp(argv[i], "-m") && i + 1 < argc) { comment = argv[++i]; continue; }
+        if (!locking && !strcmp(argv[i], "--token-stdin") && !token_stdin) { token_stdin = TRUE; continue; }
         if (!strcmp(argv[i], "--")) {
             SVN_ERR(collect_paths(i, argc, argv, paths, &n));
             break;
@@ -513,6 +515,18 @@ static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
     }
     if (!wc) return filees_refuse("requires --wc|--disposable-wc");
     if (locking) return filees_ra_lock(wc, live, paths, n, comment, pool);
+    if (token_stdin) {
+        char token[4097];
+        size_t size;
+#ifdef _WIN32
+        if (_setmode(_fileno(stdin), _O_BINARY) == -1) return filees_refuse("cannot read token");
+#endif
+        size = fread(token, 1, sizeof(token), stdin);
+        if (n != 1 || ferror(stdin) || size < 2 || size >= sizeof(token) || token[size-1] != '\0' ||
+            strlen(token) != size-1 || !target_utf8((const unsigned char *)token))
+            return filees_refuse("invalid conditional unlock request");
+        return filees_ra_unlock_token(wc, live, paths[0], token, pool);
+    }
     return filees_ra_unlock(wc, live, paths, n, pool);
 }
 

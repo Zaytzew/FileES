@@ -22,20 +22,22 @@ import (
 // ipcserver.PublicShareSource so a GUI can render one cross-repo panel from a
 // single cached answer instead of opening repository.html per repo.
 type publicShareCache struct {
-	mu            sync.RWMutex
-	byServer      map[string][]contract.PublicShareSummary
-	observed      map[string]time.Time
-	failed        map[string]bool
-	blocked       map[string]bool
-	loading       map[string]bool
-	bindings      map[string]publicShareCacheBinding
-	epochs        map[string]uint64
-	generation    uint64
-	now           func() time.Time
-	states        map[string]publicstate.Snapshot
-	stateSerial   map[string]uint64
-	mutating      map[string]bool
-	mutationGates map[string]chan struct{}
+	mu                sync.RWMutex
+	byServer          map[string][]contract.PublicShareSummary
+	observed          map[string]time.Time
+	failed            map[string]bool
+	blocked           map[string]bool
+	loading           map[string]bool
+	bindings          map[string]publicShareCacheBinding
+	epochs            map[string]uint64
+	generation        uint64
+	now               func() time.Time
+	states            map[string]publicstate.Snapshot
+	stateSerial       map[string]uint64
+	refreshSerial     map[string]uint64
+	mutating          map[string]bool
+	mutationConfirmed map[string]bool
+	mutationGates     map[string]chan struct{}
 }
 
 func newPublicShareCache() *publicShareCache {
@@ -124,6 +126,10 @@ func (c *publicShareCache) Bind(serverID, clientID, address string, port int, pa
 func (c *publicShareCache) BeginRefresh(serverID string) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.refreshSerial == nil {
+		c.refreshSerial = make(map[string]uint64)
+	}
+	c.refreshSerial[serverID] = c.stateSerial[serverID]
 	if !c.blocked[serverID] {
 		if _, exists := c.byServer[serverID]; !exists {
 			c.byServer[serverID] = nil
@@ -146,7 +152,7 @@ func (c *publicShareCache) EndRefresh(serverID string, epoch uint64) {
 func (c *publicShareCache) CompleteRefresh(serverID string, epoch uint64, shares []contract.PublicShareSummary, failed []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.epochs[serverID] == epoch {
+	if c.epochs[serverID] == epoch && c.refreshSerial[serverID] == c.stateSerial[serverID] && !c.mutating[serverID] {
 		c.setPartialLocked(serverID, shares, failed)
 	}
 }

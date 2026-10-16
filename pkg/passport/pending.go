@@ -29,7 +29,7 @@ func CheckSettledStore(path string) error {
 		return err
 	}
 	for _, p := range list {
-		if p.State == StatePending || p.Pending != nil {
+		if p.State == StatePending || p.State == StateReleasing || p.Pending != nil {
 			return errcat.New(errcat.KeyPassportUncertain, nil, nil)
 		}
 	}
@@ -45,6 +45,10 @@ func (m *Manager) publishPendingLocked() {
 	}
 	var pending []PendingStatus
 	for _, p := range m.passports {
+		if p.State == StateReleasing {
+			pending = append(pending, PendingStatus{ID: p.PassportID, Path: p.Path, Since: p.IssuedAt.UTC().Format(time.RFC3339Nano), Phase: "releasing"})
+			continue
+		}
 		if p.State != StatePending || p.Pending == nil {
 			continue
 		}
@@ -74,6 +78,11 @@ func (m *Manager) beginPending(ctx context.Context, path string, meta Metadata, 
 }
 
 func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, string, error) {
+	if m.cfg.BeginMutation != nil {
+		if done := m.cfg.BeginMutation(); done != nil {
+			defer done()
+		}
+	}
 	b, ok := m.backend.(intentBackend)
 	if !ok || p.Pending == nil {
 		return p, "", errors.New("passport pending backend unavailable")

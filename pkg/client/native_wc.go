@@ -30,6 +30,7 @@ func (c *execClient) nativeCommand(ctx context.Context, dir string, timeout time
 }
 
 func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout time.Duration, input []byte, args ...string) (map[string]any, error) {
+	defer c.mutationBarrier(args)()
 	if !filepath.IsAbs(c.nativeSVNPath) || (dir != "" && !filepath.IsAbs(dir)) || len(args) == 0 {
 		return nil, errors.New("native SVN: invalid executable, directory or command")
 	}

@@ -114,7 +114,19 @@ func (s SVNPathOwners) history(ctx context.Context, repoID, target string, head 
 		cachePath = filepath.Join(s.CacheRoot, repoID+".history.json")
 		var cached pathownership.Snapshot
 		if decodeJSONFile(cachePath, &cached) == nil && cached.RepositoryUUID == head.UUID && cached.Revision == head.Number {
-			return cached, nil // only immutable origins, never operational ownership
+			// Origins are immutable, svn:author is not. Revalidate revision
+			// properties locally even when HEAD did not move; never infer their
+			// freshness from the history cache or filesystem timestamps.
+			updated, changed, err := s.refreshHistoryAuthors(ctx, target, cached)
+			if err != nil {
+				return pathownership.Snapshot{}, err
+			}
+			if changed {
+				if err := atomicJSON(cachePath, updated); err != nil {
+					return pathownership.Snapshot{}, err
+				}
+			}
+			return updated, nil
 		}
 	}
 	var revisions []pathownership.Revision

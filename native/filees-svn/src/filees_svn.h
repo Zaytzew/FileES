@@ -124,6 +124,8 @@ svn_error_t *filees_recover_commit(const char *wc, svn_boolean_t live,
                                    int n, apr_pool_t *pool);
 svn_error_t *filees_ra_unlock(const char *wc, svn_boolean_t live,
                               const char **rels, int n, apr_pool_t *pool);
+svn_error_t *filees_ra_unlock_token(const char *wc, svn_boolean_t live,
+                                    const char *rel, const char *token, apr_pool_t *pool);
 svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,
                         const svn_opt_revision_t *peg,
                         const svn_opt_revision_t *start,

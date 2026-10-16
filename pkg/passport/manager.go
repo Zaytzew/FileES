@@ -109,6 +109,12 @@ type Backend interface {
 }
 
 type Config struct {
+	// BeginMutation fences observations around control-plane preparation as
+	// well as native lock operations. The callback must not reenter Manager.
+	BeginMutation func() func()
+	// OnReleased projects only the exact terminal token proof, without
+	// refreshing sibling observations. It must not reenter Manager.
+	OnReleased        func(path, token string)
 	TTL               time.Duration
 	HeartbeatInterval time.Duration
 	MaxSession        time.Duration
@@ -197,6 +203,9 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 	var acquired, newlyAcquired []Passport
 	var outputs []string
 	for _, path := range paths {
+		if p, ok := m.passports[path]; ok && p.State == StateReleasing {
+			return nil, strings.Join(outputs, "\n"), errcat.New(errcat.KeyPassportUncertain, nil, nil)
+		}
 		if p, ok := m.passports[path]; ok && p.State == StatePending {
 			if p.RealmID != realmID {
 				return nil, strings.Join(outputs, "\n"), errcat.New(errcat.KeyPassportRequestConflict, nil, nil)
@@ -313,8 +322,16 @@ func (m *Manager) Release(ctx context.Context, paths []string) (string, error) {
 		if ok && p.State == StatePending {
 			return fail(errcat.New(errcat.KeyPassportUncertain, nil, nil))
 		}
-		if !ok || p.State != StateActive {
+		if !ok || (p.State != StateActive && p.State != StateReleasing) {
 			return fail(fmt.Errorf("%w: %s", ErrNoPassport, path))
+		}
+		if b, supported := m.backend.(releaseReceiptBackend); supported {
+			out, err := m.releaseWithReceipt(ctx, p, b)
+			outputs = append(outputs, out)
+			if err != nil {
+				return fail(err)
+			}
+			continue
 		}
 		info, err := m.backend.Inspect(ctx, path)
 		if err != nil {
@@ -348,6 +365,14 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 	var first error
 	inspect := m.heartbeatInspector(ctx)
 	for path, p := range m.passports {
+		if p.State == StateReleasing {
+			if b, ok := m.backend.(releaseReceiptBackend); ok {
+				if _, err := m.releaseWithReceipt(ctx, p, b); err != nil && first == nil {
+					first = err
+				}
+			}
+			continue
+		}
 		if p.State == StatePending {
 			if _, _, err := m.resumePending(ctx, p); err != nil && first == nil {
 				first = err
@@ -355,6 +380,12 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 			continue
 		}
 		if p.State != StateActive {
+			continue
+		}
+		if b, ok := m.backend.(releaseReceiptBackend); ok && ((!p.CloseAfter.IsZero() && !now.Before(p.CloseAfter)) || !now.Before(p.HardExpiresAt)) {
+			if _, err := m.releaseWithReceipt(ctx, p, b); err != nil && first == nil {
+				first = err
+			}
 			continue
 		}
 		info, err := inspect(p)
@@ -466,7 +497,13 @@ func (m *Manager) ReleaseAll(ctx context.Context) error {
 			}
 			continue
 		}
-		if p.State != StateActive {
+		if p.State != StateActive && p.State != StateReleasing {
+			continue
+		}
+		if b, ok := m.backend.(releaseReceiptBackend); ok {
+			if _, err := m.releaseWithReceipt(ctx, p, b); err != nil && first == nil {
+				first = err
+			}
 			continue
 		}
 		info, err := m.backend.Inspect(ctx, path)
@@ -738,6 +775,10 @@ func cleanPaths(paths []string) []string {
 }
 func (m *Manager) rollback(ctx context.Context, acquired []Passport) {
 	for _, p := range acquired {
+		if b, ok := m.backend.(releaseReceiptBackend); ok {
+			_, _ = m.releaseWithReceipt(ctx, p, b)
+			continue // retain uncertain durable release rather than forget it
+		}
 		_, _ = m.backend.Unlock(ctx, p.Path)
 		delete(m.passports, p.Path)
 	}
@@ -757,6 +798,11 @@ func (m *Manager) load() error {
 		return fmt.Errorf("passport store corrupt: %w", err)
 	}
 	for _, p := range list {
+		if p.State == StateReleasing {
+			if _, ok := m.backend.(releaseReceiptBackend); !ok || p.InstanceUID != m.instanceUID || p.Pending != nil {
+				return errors.New("passport release binding or backend unavailable")
+			}
+		}
 		if p.Pending != nil || p.State == StatePending {
 			backend, ok := m.backend.(intentBackend)
 			if !ok || p.Pending == nil || p.State != StatePending || p.FencingToken != "" {

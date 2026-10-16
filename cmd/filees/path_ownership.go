@@ -123,6 +123,8 @@ func ownershipCacheReason(repo config.Repo, cache cachedReservationResult, view 
 		return "activation_mismatch"
 	case !cache.present:
 		return "observation_missing"
+	case cache.invalidated:
+		return "observation_invalidated"
 	case cache.offline:
 		return "state_lane_offline"
 	case cache.detached:

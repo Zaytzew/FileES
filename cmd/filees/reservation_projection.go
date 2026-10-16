@@ -52,6 +52,8 @@ type reservationProjectionCoordinator struct {
 	mu               sync.RWMutex
 	profiles         map[string]clientprofile.Profile
 	profileEpochs    map[string]uint64
+	mutationEpochs   map[reposupervisor.Key]uint64
+	mutating         map[reposupervisor.Key]int
 	views            map[string]clientview.View
 	viewEpochs       map[string]uint64
 	batchLegacyUntil map[string]time.Time
@@ -72,6 +74,7 @@ type reservationFetcher interface {
 }
 
 type cachedReservationResult struct {
+	invalidated  bool
 	storageErr   error
 	profileEpoch uint64
 	receivedAt   time.Time
@@ -229,6 +232,13 @@ func (coordinator *reservationProjectionCoordinator) UpdateView(serverID string,
 	changed := !known || coordinator.viewEpochs[serverID] != coordinator.profileEpochs[serverID] || !sameReservationView(previous, view)
 	coordinator.views[serverID] = view
 	coordinator.viewEpochs[serverID] = coordinator.profileEpochs[serverID]
+	if changed {
+		for key := range coordinator.results {
+			if key.ServerID == serverID {
+				coordinator.invalidateLocked(key)
+			}
+		}
+	}
 	projected := make(map[string]struct{}, len(view.Repositories))
 	for _, repo := range view.Repositories {
 		projected[repo.RepoID] = struct{}{}
@@ -304,9 +314,16 @@ func (coordinator *reservationProjectionCoordinator) requestRefresh(serverID str
 	if coordinator == nil {
 		return
 	}
-	coordinator.mu.RLock()
+	coordinator.mu.Lock()
 	paused := coordinator.paused[serverID]
-	coordinator.mu.RUnlock()
+	if invalidate {
+		for key := range coordinator.results {
+			if key.ServerID == serverID {
+				coordinator.invalidateLocked(key)
+			}
+		}
+	}
+	coordinator.mu.Unlock()
 	if !paused {
 		if invalidate {
 			coordinator.scheduler.Schedule(serverID)
@@ -325,6 +342,10 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	coordinator.mu.RLock()
 	profile, hasProfile := coordinator.profiles[serverID]
 	profileEpoch := coordinator.profileEpochs[serverID]
+	mutationEpochs := make(map[reposupervisor.Key]uint64)
+	for key, epoch := range coordinator.mutationEpochs {
+		mutationEpochs[key] = epoch
+	}
 	view, hasView := coordinator.views[serverID]
 	paused := coordinator.paused[serverID]
 	coordinator.mu.RUnlock()
@@ -465,9 +486,13 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		}
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repoID}
 		coordinator.mu.Lock()
-		if coordinator.profileEpochs[serverID] != profileEpoch {
+		if coordinator.profileEpochs[serverID] != profileEpoch || !sameReservationView(coordinator.views[serverID], view) {
 			coordinator.mu.Unlock()
 			return // response belongs to the previous activation/transport
+		}
+		if coordinator.mutating[key] > 0 || coordinator.mutationEpochs[key] != mutationEpochs[key] {
+			coordinator.mu.Unlock()
+			continue // write overlaps this read; only the queued next pass may confirm it
 		}
 		if fetchErr != nil {
 			cached := coordinator.results[key]
@@ -484,10 +509,7 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 				// A failed persistence must keep writes blocked in memory too.
 				storageErr = reservationclient.ObserveStorage(profile.CachePath, serverID, repoID, result, elapsed)
 			}
-			observedAt := time.Now()
-			if batch != nil {
-				observedAt = requestStarted
-			} // includes all server work, transit and time waiting for this page
+			observedAt := requestStarted // includes server work and transit, also on legacy
 			coordinator.results[key] = cachedReservationResult{storageErr: storageErr, result: result, profileEpoch: profileEpoch, receivedAt: observedAt, present: true, detached: coordinator.detached[serverID]}
 		}
 		coordinator.mu.Unlock()
@@ -692,7 +714,7 @@ func (coordinator *reservationProjectionCoordinator) snapshot(ctx context.Contex
 		return ipcserver.ReservationSnapshot{}, err
 	}
 	return ipcserver.ReservationSnapshot{
-		Reservations: rows, Stale: cached.result.Stale, Offline: cached.offline, Detached: cached.detached,
+		Reservations: rows, Stale: cached.result.Stale || cached.invalidated, Offline: cached.offline, Detached: cached.detached,
 		AsOf: cached.result.AsOf, Generation: cached.result.Generation,
 	}, nil
 }

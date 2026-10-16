@@ -124,7 +124,7 @@ func (m *Manager) reconcilePathAccess(ctx context.Context, wc, realmID string) e
 			foreign := observationErr == nil && held && hold.Token != pass.FencingToken && hold.RealmID != pass.RealmID && hold.RealmID != realmID
 			rw = !foreign
 		}
-		if observationErr == nil && (!hasPass || pass.State != StatePending) && realmID != "" && view.Owners[rel] == realmID && (!held || hold.RealmID == realmID) {
+		if observationErr == nil && (!hasPass || (pass.State != StatePending && pass.State != StateReleasing)) && realmID != "" && view.Owners[rel] == realmID && (!held || hold.RealmID == realmID) {
 			rw = true
 		}
 		mode := info.Mode().Perm() &^ 0222

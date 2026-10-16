@@ -91,31 +91,51 @@ type publicShareRefreshCoordinator struct {
 	cache  publicShareCacheSetter
 	ipc    *ipcserver.Server
 
-	mu      sync.Mutex
-	running map[string]bool
-	pending map[string]clientview.View
-	mirrors map[string]*publicLinksMirror
+	mu        sync.Mutex
+	running   map[string]bool
+	observing map[string]clientview.View
+	pending   map[string]clientview.View
+	mirrors   map[string]*publicLinksMirror
 }
 
 func newPublicShareRefreshCoordinator(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server) *publicShareRefreshCoordinator {
 	return &publicShareRefreshCoordinator{
 		ctx: ctx, lister: lister, cache: cache, ipc: ipc,
 		running: make(map[string]bool), pending: make(map[string]clientview.View),
-		mirrors: make(map[string]*publicLinksMirror),
+		observing: make(map[string]clientview.View),
+		mirrors:   make(map[string]*publicLinksMirror),
 	}
 }
 
 func (coordinator *publicShareRefreshCoordinator) Schedule(serverID string, view clientview.View) {
+	coordinator.requestRefresh(serverID, view, true)
+}
+
+// Poll joins an existing observation of this scope. It does not refresh the
+// cached timestamp and cannot erase an invalidation queued by a mutation.
+func (coordinator *publicShareRefreshCoordinator) Poll(serverID string, view clientview.View) {
+	coordinator.requestRefresh(serverID, view, false)
+}
+
+func (coordinator *publicShareRefreshCoordinator) requestRefresh(serverID string, view clientview.View, invalidate bool) {
 	if coordinator == nil || coordinator.lister == nil || coordinator.cache == nil || serverID == "" || view.RealmID == "" {
 		return
 	}
 	coordinator.mu.Lock()
 	if coordinator.running[serverID] {
+		if !invalidate {
+			_, pending := coordinator.pending[serverID]
+			if pending || sameReservationView(coordinator.observing[serverID], view) {
+				coordinator.mu.Unlock()
+				return
+			}
+		}
 		coordinator.pending[serverID] = view
 		coordinator.mu.Unlock()
 		return
 	}
 	coordinator.running[serverID] = true
+	coordinator.observing[serverID] = view
 	coordinator.mu.Unlock()
 	runtime.Go(coordinator.ctx, func() { coordinator.run(serverID, view) })
 }
@@ -134,11 +154,13 @@ func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clie
 		next, rerun := coordinator.pending[serverID]
 		if rerun {
 			delete(coordinator.pending, serverID)
+			coordinator.observing[serverID] = next
 			coordinator.mu.Unlock()
 			view = next
 			continue
 		}
 		delete(coordinator.running, serverID)
+		delete(coordinator.observing, serverID)
 		coordinator.mu.Unlock()
 		return
 	}
@@ -863,7 +885,7 @@ func syncProjectionOnSuccessfulPoll(ipc *ipcserver.Server, synced projectionUpda
 	// A successful unchanged poll is still a refresh opportunity. Public
 	// shares can change without a new repository projection generation, and
 	// their freshness must come from a real list, not merely a newer timestamp.
-	shares.Schedule(synced.serverID, synced.view)
+	shares.Poll(synced.serverID, synced.view)
 	return true
 }
 

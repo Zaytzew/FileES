@@ -66,6 +66,18 @@ func New(parent context.Context, refresh RefreshFunc) *Scheduler {
 // Schedule requests a state refresh for one canonical server ID. It returns
 // false when the request is invalid or the scheduler is already stopping.
 func (s *Scheduler) Schedule(serverID string) bool {
+	return s.schedule(serverID, true)
+}
+
+// Poll requests observation, not invalidation. An in-flight read already
+// satisfies this hint, so periodic ticks and cache misses must not keep a slow
+// lane perpetually pending. Mutations and changed authority still use Schedule.
+// Neither method marks cached data fresh; only a successful read can do that.
+func (s *Scheduler) Poll(serverID string) bool {
+	return s.schedule(serverID, false)
+}
+
+func (s *Scheduler) schedule(serverID string, invalidate bool) bool {
 	if s == nil || s.refresh == nil || serverID == "" || strings.TrimSpace(serverID) != serverID {
 		return false
 	}
@@ -76,7 +88,7 @@ func (s *Scheduler) Schedule(serverID string) bool {
 		return false
 	}
 	if state, running := s.servers[serverID]; running {
-		state.pending = true
+		state.pending = state.pending || invalidate
 		return true
 	}
 

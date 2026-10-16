@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	control "filees/pkg/control/v1"
+	"fmt"
+	"golang.org/x/crypto/ssh"
 	"testing"
 )
 
@@ -17,7 +19,7 @@ func TestPublicShareInvitationListingFallback(t *testing.T) {
 				t.Fatal("wrong repo")
 			}
 			if legacy && p.IncludeInvitations {
-				return control.Result{}, errors.New("unknown field include_invitations")
+				return control.Result{}, oldInvitationParserError()
 			}
 			raw, _ := json.Marshal(control.ListPublicSharesResult{CanManageInvitations: !legacy})
 			return control.Result{Result: raw}, nil
@@ -39,5 +41,38 @@ func TestPublicShareInvitationListingFallback(t *testing.T) {
 	})
 	if !errors.Is(err, context.Canceled) || calls != 1 {
 		t.Fatal("canceled read retried")
+	}
+}
+
+func oldInvitationParserError() error {
+	return fmt.Errorf("repository control failed: %w: ticket parse: json: unknown field \"include_invitations\"", &ssh.ExitError{})
+}
+
+func TestInvitationListingDoesNotRetryOperationalFailures(t *testing.T) {
+	for _, cause := range []error{
+		context.DeadlineExceeded,
+		context.Canceled,
+		errors.New("dial tcp: connection refused"),
+		errors.New("server rejected identity request: ACCESS_DENIED"),
+		errors.New(`json: unknown field "include_invitations"`),
+		fmt.Errorf("repository control failed: %w: identity refused", &ssh.ExitError{}),
+		fmt.Errorf("repository control failed: %w: json: unknown field \"other\"", &ssh.ExitError{}),
+		errors.Join(oldInvitationParserError(), context.DeadlineExceeded),
+	} {
+		for _, shelf := range []bool{false, true} {
+			calls := 0
+			var err error
+			if shelf {
+				_, err = listUploadChannelsWithOptions(t.Context(), "repo", func(control.ListUploadChannelsPayload) (control.Result, error) {
+					calls++
+					return control.Result{}, cause
+				})
+			} else {
+				_, err = listPublicSharesWithOptions(t.Context(), "repo", func(control.ListPublicSharesPayload) (control.Result, error) { calls++; return control.Result{}, cause })
+			}
+			if calls != 1 || !errors.Is(err, cause) {
+				t.Fatalf("shelf=%v calls=%d cause=%v err=%v", shelf, calls, cause, err)
+			}
+		}
 	}
 }

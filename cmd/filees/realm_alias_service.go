@@ -369,8 +369,8 @@ func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, re
 
 func listUploadChannelsWithOptions(ctx context.Context, repoID string, exchange func(control.ListUploadChannelsPayload) (control.Result, error)) (control.ListUploadChannelsResult, error) {
 	result, err := exchange(control.ListUploadChannelsPayload{AuthorityRepoID: repoID, IncludeInvitations: true})
-	if err != nil && ctx.Err() == nil {
-		// Only listing may fall back. Mutations are never replayed this way.
+	if ctx.Err() == nil && invitationListingUnsupported(err) {
+		// Only explicit old-parser refusal permits a read-only fallback.
 		result, err = exchange(control.ListUploadChannelsPayload{AuthorityRepoID: repoID})
 	}
 	if err != nil {

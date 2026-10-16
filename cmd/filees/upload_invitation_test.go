@@ -17,7 +17,7 @@ func TestShelfInvitationListingLegacyFallbackIsReadOnly(t *testing.T) {
 				t.Fatal("wrong repository")
 			}
 			if legacy && p.IncludeInvitations {
-				return control.Result{}, errors.New("unknown field include_invitations")
+				return control.Result{}, oldInvitationParserError()
 			}
 			raw, _ := json.Marshal(control.ListUploadChannelsResult{CanManageInvitations: !legacy})
 			return control.Result{Result: raw}, nil

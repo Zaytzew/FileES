@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type reservationProjectionCoordinator struct {
 	profiles      map[string]clientprofile.Profile
 	profileEpochs map[string]uint64
 	views         map[string]clientview.View
+	viewEpochs    map[string]uint64
 	results       map[reposupervisor.Key]cachedReservationResult
 	// detached remembers which servers have told us this client is no longer
 	// one of theirs, so the fact is stated once instead of every cycle.
@@ -93,6 +95,7 @@ func newReservationProjectionCoordinator(ctx context.Context, ipc *ipcserver.Ser
 		profiles:        make(map[string]clientprofile.Profile),
 		profileEpochs:   make(map[string]uint64),
 		views:           make(map[string]clientview.View),
+		viewEpochs:      make(map[string]uint64),
 		results:         make(map[reposupervisor.Key]cachedReservationResult),
 		detached:        make(map[string]bool),
 		paused:          make(map[string]bool),
@@ -180,7 +183,7 @@ func (coordinator *reservationProjectionCoordinator) periodic(serverID string) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			coordinator.scheduler.Schedule(serverID)
+			coordinator.Poll(serverID)
 		}
 	}
 }
@@ -218,7 +221,10 @@ func (coordinator *reservationProjectionCoordinator) UpdateView(serverID string,
 		return
 	}
 	coordinator.mu.Lock()
+	previous, known := coordinator.views[serverID]
+	changed := !known || coordinator.viewEpochs[serverID] != coordinator.profileEpochs[serverID] || !sameReservationView(previous, view)
 	coordinator.views[serverID] = view
+	coordinator.viewEpochs[serverID] = coordinator.profileEpochs[serverID]
 	projected := make(map[string]struct{}, len(view.Repositories))
 	for _, repo := range view.Repositories {
 		projected[repo.RepoID] = struct{}{}
@@ -233,7 +239,17 @@ func (coordinator *reservationProjectionCoordinator) UpdateView(serverID string,
 	}
 	coordinator.mu.Unlock()
 	coordinator.wireView(serverID, view)
-	coordinator.scheduler.Schedule(serverID)
+	if changed {
+		coordinator.Schedule(serverID)
+	}
+}
+
+// A heartbeat timestamp is not a changed scope. Keep all identity, generation,
+// policy and repository fields in the comparison; a new view must still fence
+// ownership and request a follow-up even if a previous read is in flight.
+func sameReservationView(a, b clientview.View) bool {
+	a.GeneratedAt, b.GeneratedAt = time.Time{}, time.Time{}
+	return reflect.DeepEqual(a, b)
 }
 
 func (coordinator *reservationProjectionCoordinator) wireView(serverID string, view clientview.View) {
@@ -271,6 +287,16 @@ func (coordinator *reservationProjectionCoordinator) DetachLocal(key reposupervi
 }
 
 func (coordinator *reservationProjectionCoordinator) Schedule(serverID string) {
+	coordinator.requestRefresh(serverID, true)
+}
+
+// Poll is an observation hint from a timer or missing cache, not evidence of a
+// server-side mutation. It joins the current pass without queuing another one.
+func (coordinator *reservationProjectionCoordinator) Poll(serverID string) {
+	coordinator.requestRefresh(serverID, false)
+}
+
+func (coordinator *reservationProjectionCoordinator) requestRefresh(serverID string, invalidate bool) {
 	if coordinator == nil {
 		return
 	}
@@ -278,7 +304,11 @@ func (coordinator *reservationProjectionCoordinator) Schedule(serverID string) {
 	paused := coordinator.paused[serverID]
 	coordinator.mu.RUnlock()
 	if !paused {
-		coordinator.scheduler.Schedule(serverID)
+		if invalidate {
+			coordinator.scheduler.Schedule(serverID)
+		} else {
+			coordinator.scheduler.Poll(serverID)
+		}
 	}
 }
 

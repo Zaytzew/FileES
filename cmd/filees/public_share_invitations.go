@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
+	"golang.org/x/crypto/ssh"
 )
 
 // Management-only listing: invitation messages do not enter the dashboard cache.
@@ -29,8 +32,9 @@ func (s *realmAliasService) ListPublicSharesWithInvitations(ctx context.Context,
 
 func listPublicSharesWithOptions(ctx context.Context, repoID string, exchange func(control.ListPublicSharesPayload) (control.Result, error)) (control.ListPublicSharesResult, error) {
 	result, err := exchange(control.ListPublicSharesPayload{RepoID: repoID, IncludeInvitations: true})
-	if err != nil && ctx.Err() == nil {
-		// Only the read-only listing may fall back, never a mutation.
+	if ctx.Err() == nil && invitationListingUnsupported(err) {
+		// Only explicit old-parser refusal permits another read. Retrying a
+		// timeout/ACL/transport failure doubles latency and hides its cause.
 		result, err = exchange(control.ListPublicSharesPayload{RepoID: repoID})
 	}
 	if err != nil {
@@ -41,6 +45,15 @@ func listPublicSharesWithOptions(ctx context.Context, repoID string, exchange fu
 		return listed, err
 	}
 	return listed, nil
+}
+
+// The pinned control transport wraps the remote parser's nonzero exit. Plain
+// strings from local validation, lost replies and independent cancellation are
+// not capability negotiation. This helper never applies to mutations.
+func invitationListingUnsupported(err error) bool {
+	var exit *ssh.ExitError
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) &&
+		errors.As(err, &exit) && strings.Contains(err.Error(), `json: unknown field "include_invitations"`)
 }
 
 func (s refreshingPublicShareService) ListPublicSharesWithInvitations(ctx context.Context, serverID, repoID string) (contract.PublicShareListResult, error) {

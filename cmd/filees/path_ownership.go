@@ -37,7 +37,7 @@ func (c *reservationProjectionCoordinator) Ownership(ctx context.Context, repo c
 	c.mu.RUnlock()
 	r := cache.result
 	if reason := ownershipCacheReason(repo, cache, view, hasView, paused, epoch, time.Now()); reason != "" {
-		c.Schedule(repo.ServerID)
+		c.Poll(repo.ServerID)
 		if r.OwnershipDetail != "" {
 			reason += "; server_detail=" + r.OwnershipDetail
 		}
@@ -46,7 +46,7 @@ func (c *reservationProjectionCoordinator) Ownership(ctx context.Context, repo c
 	// Matching pathnames are not proof across a new revision/replacement.
 	head, err := svn.Revision(ctx, repo.RepoURL)
 	if err != nil {
-		c.Schedule(repo.ServerID)
+		c.Poll(repo.ServerID)
 		return unknown("head_read_failed", err)
 	}
 	if head != r.PathOwnership.Revision {

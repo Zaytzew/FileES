@@ -46,7 +46,8 @@ func TestReservationBatchRealSVNLockWithoutCommitAndRevoke(t *testing.T) {
 	run := func(bin string, args ...string) {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), bin, args...)
-		cmd.Env = append(os.Environ(), "LC_ALL=C")
+		// Match the UTF-8 SVN service environment for the Unicode fixture.
+		cmd.Env = append(os.Environ(), "LC_ALL=", "LC_CTYPE=C.UTF-8")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("SVN fixture: %v %s", err, out)
 		}

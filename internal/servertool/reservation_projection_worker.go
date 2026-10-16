@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -196,7 +197,7 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		result.RepositoryState = "deleted"
 	} else {
 		store := reservationprojection.NewStore(stateRoot)
-		result = refreshReservationProjection(context.Background(), store, config.Activation.SVNBinary, r.Root, req.RepoID)
+		result = refreshReservationProjection(context.Background(), store, config.Activation.SVNBinary, r.SVNAdminBinary, r.Root, req.RepoID)
 		result.Schema = req.Schema
 		if req.Schema == reservationv1.StateSchema {
 			result.RepositoryState = "active"
@@ -291,14 +292,20 @@ func reservationWorkerProfile() obsandbox.Profile {
 // refreshReservationProjection is the pure decision logic (fresh vs stale vs
 // unknown), factored out from process/sandbox setup so it can be unit
 // tested with a fake queryLocks — see reservation_projection_worker_test.go.
-func refreshReservationProjection(ctx context.Context, store *reservationprojection.Store, svnBinary, reposRoot, repoID string) reservationv1.Result {
+func refreshReservationProjection(ctx context.Context, store *reservationprojection.Store, svnBinary, svnAdminBinary, reposRoot, repoID string) reservationv1.Result {
 	return refreshReservationProjectionWith(store, repoID, func() ([]reservationv1.Reservation, error) {
-		return queryLiveLocks(ctx, svnBinary, filepath.Join(reposRoot, repoID))
+		// Windows svnadmin emits the system codepage even with a UTF-8 locale.
+		// Keep XML there; deployed servers are Unix. Never guess a codepage for
+		// authority paths or silently accept a mangled lock name.
+		if runtime.GOOS == "windows" {
+			return queryLiveLocks(ctx, svnBinary, filepath.Join(reposRoot, repoID))
+		}
+		return queryLockIndex(ctx, svnAdminBinary, filepath.Join(reposRoot, repoID))
 	})
 }
 
 func refreshReservationProjectionWith(store *reservationprojection.Store, repoID string, queryLocks func() ([]reservationv1.Reservation, error)) reservationv1.Result {
-	art, refreshErr := store.Refresh(repoID, func(reservationprojection.Artifact, bool) ([]reservationv1.Reservation, error) {
+	art, refreshErr := store.RefreshIfChanged(repoID, func(reservationprojection.Artifact, bool) ([]reservationv1.Reservation, error) {
 		return queryLocks()
 	})
 	if refreshErr == nil {

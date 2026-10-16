@@ -173,6 +173,10 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"},
 			obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "r"},
 			obsandbox.Path{Label: "reservation-projection", Name: stateRoot, Perms: "rwc"},
+			obsandbox.Path{Label: "svn-lock-index", Name: r.SVNAdminBinary, Perms: "rx"},
+			// svnadmin's text output needs the UTF-8 locale table even when
+			// messages are English. Without it SVN transliterates file names.
+			obsandbox.Path{Label: "svn-utf8-locale", Name: "/usr/share/locale", Perms: "r"},
 			obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"},
 			obsandbox.Path{Label: "reservation-worker", Name: reservationWorkerPath, Perms: "rx"},
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},

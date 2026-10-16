@@ -17,6 +17,17 @@ import (
 // Ownership reads only the existing broker lane's latest observation. It never
 // opens another broker connection or revives an on-disk stale projection.
 func (c *reservationProjectionCoordinator) Ownership(ctx context.Context, repo config.Repo, svn client.Client) (passport.OwnershipView, error) {
+	return c.ownership(ctx, repo, svn, true)
+}
+
+// HeartbeatOwnership observes locks, not write authority. Locks can change
+// without a commit, so HEAD adds no evidence here. Keep every freshness,
+// activation, view and local incarnation gate; mutation checks remain live.
+func (c *reservationProjectionCoordinator) HeartbeatOwnership(ctx context.Context, repo config.Repo, svn client.Client) (passport.OwnershipView, error) {
+	return c.ownership(ctx, repo, svn, false)
+}
+
+func (c *reservationProjectionCoordinator) ownership(ctx context.Context, repo config.Repo, svn client.Client, checkHead bool) (passport.OwnershipView, error) {
 	unknown := func(reason string, cause error) (passport.OwnershipView, error) {
 		if cause != nil {
 			cause = fmt.Errorf("ownership %s: %w", reason, cause)
@@ -44,18 +55,26 @@ func (c *reservationProjectionCoordinator) Ownership(ctx context.Context, repo c
 		return unknown(reason, nil)
 	}
 	// Matching pathnames are not proof across a new revision/replacement.
-	head, err := svn.Revision(ctx, repo.RepoURL)
-	if err != nil {
-		c.Poll(repo.ServerID)
-		return unknown("head_read_failed", err)
+	if checkHead {
+		head, err := svn.Revision(ctx, repo.RepoURL)
+		if err != nil {
+			c.Poll(repo.ServerID)
+			return unknown("head_read_failed", err)
+		}
+		if head != r.PathOwnership.Revision {
+			c.Schedule(repo.ServerID)
+			return unknown(fmt.Sprintf("revision_mismatch observed=%d head=%d", r.PathOwnership.Revision, head), nil)
+		}
 	}
-	if head != r.PathOwnership.Revision {
-		c.Schedule(repo.ServerID)
-		return unknown(fmt.Sprintf("revision_mismatch observed=%d head=%d", r.PathOwnership.Revision, head), nil)
+	if err := ctx.Err(); err != nil {
+		return unknown("canceled", err)
 	}
 	info, err := svn.GetInfo(ctx, repo.LocalPath)
 	if err != nil {
 		return unknown("working_copy_info_failed", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return unknown("canceled", err)
 	}
 	if !infoHasUUID(info, r.PathOwnership.RepositoryUUID) {
 		return unknown("working_copy_incarnation_mismatch", nil)
@@ -77,14 +96,14 @@ func (c *reservationProjectionCoordinator) Ownership(ctx context.Context, repo c
 	if reason != "" {
 		return unknown("after_svn_check: "+reason, nil)
 	}
-	result := passport.OwnershipView{Owners: map[string]string{}, Holds: map[string]passport.OwnershipHold{}}
+	result := passport.OwnershipView{Owners: map[string]string{}, Holds: map[string]passport.OwnershipHold{}, ObservedAt: cache.receivedAt}
 	for _, e := range r.PathOwnership.Entries {
 		if e.Kind == "file" {
 			result.Owners[e.Path] = e.OwnerRealmID
 		}
 	}
 	for _, hold := range r.Reservations {
-		result.Holds[hold.Path] = passport.OwnershipHold{Token: hold.Token, RealmID: hold.OwnerRealmID}
+		result.Holds[hold.Path] = passport.OwnershipHold{Token: hold.Token, RealmID: hold.OwnerRealmID, Owner: hold.OwnerID, Comment: hold.Comment}
 	}
 	return result, nil
 }

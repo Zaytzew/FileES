@@ -25,7 +25,7 @@ func refreshAutolockProjection(ctx context.Context, config serverconfig.Config, 
 		if err := authority.AuthorizeOwnershipRead(session, req.RepoID); err != nil {
 			return r, err
 		}
-		r = refreshReservationProjection(ctx, reservationprojection.NewStore(stateRoot), config.Activation.SVNBinary, config.Repositories.Root, req.RepoID)
+		r = refreshReservationProjection(ctx, reservationprojection.NewStore(stateRoot), config.Activation.SVNBinary, config.Repositories.SVNAdminBinary, config.Repositories.Root, req.RepoID)
 		r.Schema, r.RepositoryState = reservationv1.AutolockSchema, "active"
 		if r.Stale || r.Unknown {
 			r.OwnershipDetail = "live reservations unavailable"

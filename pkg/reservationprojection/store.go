@@ -22,9 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -93,6 +95,12 @@ func (s *Store) load(path, repoID string) (Artifact, bool, error) {
 	if art.Schema != Schema || art.RepoID != repoID {
 		return Artifact{}, false, errors.New("reservation projection artifact schema or repo_id mismatch")
 	}
+	if art.Generation <= 0 || art.Generation == math.MaxInt64 || art.AsOf.IsZero() {
+		return Artifact{}, false, errors.New("reservation projection artifact has invalid generation or observation time")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return Artifact{}, false, errors.New("reservation projection artifact has trailing data")
+	}
 	return art, true, nil
 }
 
@@ -112,6 +120,18 @@ func (s *Store) load(path, repoID string) (Artifact, bool, error) {
 // ever refresh) and returns the reservations to publish; Refresh fills in
 // Schema/RepoID/Generation/AsOf.
 func (s *Store) Refresh(repoID string, compute func(prev Artifact, ok bool) ([]reservationv1.Reservation, error)) (Artifact, error) {
+	return s.refresh(repoID, compute, false)
+}
+
+// RefreshIfChanged always checks the live source but avoids durable writes for
+// an identical listing. Only the returned observation gets a new AsOf; the
+// stored artifact retains its older time, so a later failure/restart cannot
+// accidentally turn this optimization into a fresh authority cache.
+func (s *Store) RefreshIfChanged(repoID string, compute func(Artifact, bool) ([]reservationv1.Reservation, error)) (Artifact, error) {
+	return s.refresh(repoID, compute, true)
+}
+
+func (s *Store) refresh(repoID string, compute func(Artifact, bool) ([]reservationv1.Reservation, error), onlyChanged bool) (Artifact, error) {
 	if strings.TrimSpace(repoID) == "" {
 		return Artifact{}, errors.New("reservation projection refresh requires a repo id")
 	}
@@ -131,15 +151,28 @@ func (s *Store) Refresh(repoID string, compute func(prev Artifact, ok bool) ([]r
 			// corruption via a plain Load call before deciding to refresh.
 			prev, ok = Artifact{}, false
 		}
+		started := time.Now().UTC()
 		reservations, err := compute(prev, ok)
 		if err != nil {
 			return err
+		}
+		if onlyChanged {
+			reservations = slices.Clone(reservations)
+			slices.SortFunc(reservations, func(a, b reservationv1.Reservation) int { return strings.Compare(a.Path, b.Path) })
+			previous := slices.Clone(prev.Reservations)
+			slices.SortFunc(previous, func(a, b reservationv1.Reservation) int { return strings.Compare(a.Path, b.Path) })
+			if ok && slices.Equal(previous, reservations) {
+				result = prev
+				result.AsOf = started
+				result.Reservations = append([]reservationv1.Reservation(nil), reservations...)
+				return nil
+			}
 		}
 		next := Artifact{
 			Schema:       Schema,
 			RepoID:       repoID,
 			Generation:   prev.Generation + 1,
-			AsOf:         time.Now().UTC(),
+			AsOf:         started,
 			Reservations: append([]reservationv1.Reservation(nil), reservations...),
 		}
 		if err := s.save(path, next); err != nil {

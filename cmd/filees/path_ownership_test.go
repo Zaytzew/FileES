@@ -24,10 +24,38 @@ type ownershipSVN struct {
 	onInfo      func()
 	revisionErr error
 	infoErr     error
+	onRevision  func()
 }
 
 func (c ownershipSVN) Revision(context.Context, string) (int64, error) {
+	if c.onRevision != nil {
+		c.onRevision()
+	}
 	return c.revision, c.revisionErr
+}
+
+func TestHeartbeatObservationUsesCacheWithoutHEADAndKeepsAge(t *testing.T) {
+	c := newReservationProjectionCoordinator(t.Context(), nil)
+	defer c.Close()
+	repo := config.Repo{ID: uuid.NewString(), ServerID: "lab", RealmID: uuid.NewString(), LocalPath: t.TempDir()}
+	incarnation := uuid.NewString()
+	started := time.Now().Add(-20 * time.Second)
+	c.views[repo.ServerID] = clientview.View{RealmID: repo.RealmID, Generation: 1}
+	key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+	c.results[key] = cachedReservationResult{present: true, receivedAt: started, result: reservationv1.Result{
+		Schema: reservationv1.AutolockSchema, RepoID: repo.ID, RepositoryState: "active", ViewGeneration: 1,
+		PathOwnership: &pathownership.Snapshot{RepositoryUUID: incarnation, Revision: 3},
+		Reservations:  []reservationv1.Reservation{{Path: "a", Token: "t", OwnerID: "o", Comment: "c"}},
+	}}
+	s := ownershipSVN{uuid: incarnation, onRevision: func() { t.Fatal("heartbeat opened a HEAD request") }}
+	view, err := c.HeartbeatOwnership(t.Context(), repo, s)
+	if err != nil || !view.ObservedAt.Equal(started) || view.Holds["a"].Comment != "c" || view.Holds["a"].Owner != "o" {
+		t.Fatalf("heartbeat view = %+v, %v", view, err)
+	}
+	s.onInfo = func() { c.mu.Lock(); c.profileEpochs[repo.ServerID]++; c.mu.Unlock() }
+	if _, err := c.HeartbeatOwnership(t.Context(), repo, s); err == nil {
+		t.Fatal("reactivation during local check accepted")
+	}
 }
 func (c ownershipSVN) GetInfo(context.Context, string) (string, error) {
 	if c.onInfo != nil {
@@ -122,6 +150,14 @@ func TestOwnershipDiagnosticPreservesEveryGateAndCancellation(t *testing.T) {
 			}
 			if (s.revisionErr != nil || s.infoErr != nil) && !errors.Is(err, context.Canceled) {
 				t.Fatal("lost wrapped cancellation")
+			}
+			// The observational heartbeat must keep all binding gates, but
+			// deliberately does not spend a session checking unrelated HEAD.
+			if tc.reason != "head_read_failed" && tc.reason != "revision_mismatch" && tc.reason != "after_svn_check: activation_changed" {
+				_, err := c.HeartbeatOwnership(t.Context(), repo, s)
+				if err == nil || !strings.Contains(err.Error(), tc.reason) {
+					t.Fatalf("heartbeat wanted %q got %v", tc.reason, err)
+				}
 			}
 		})
 	}

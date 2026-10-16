@@ -431,6 +431,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	deps.canonicalRebuild = canonicalRecoveryLifecycle(ctx, attachmentEvents, recoverCanonicalWorkingCopy)
 	deps.pathOwnership = reservationRefreshes.Ownership
+	deps.heartbeatOwnership = reservationRefreshes.HeartbeatOwnership
 	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {
 		return newControlPassportBackend(repo, svn, reservationRefreshes.Profile)
 	}

@@ -35,6 +35,7 @@ func TestReservationBatchRealSVNLockWithoutCommitAndRevoke(t *testing.T) {
 	c.Activation.ServiceWorkingCopy = filepath.Join(root, "service")
 	c.Activation.SVNBinary = svn
 	c.Repositories.Root = filepath.Join(root, "repos")
+	c.Repositories.SVNAdminBinary = admin
 	artifacts := filepath.Join(root, "artifacts")
 	repo := filepath.Join(c.Repositories.Root, repoID)
 	wc := filepath.Join(root, "wc")

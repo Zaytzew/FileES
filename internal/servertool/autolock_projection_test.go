@@ -71,7 +71,7 @@ func TestAutolockBrokerRealHistoryAndCanonicalRevocation(t *testing.T) {
 	if _, err := clientview.StoreIfNewer(filepath.Join(service, "clients", clientID, "view.json"), view); err != nil {
 		t.Fatal(err)
 	}
-	config := serverconfig.Config{Activation: activation.Config{ServiceWorkingCopy: service, SVNBinary: svn}, Repositories: serverconfig.RepositoryFile{Root: repos}}
+	config := serverconfig.Config{Activation: activation.Config{ServiceWorkingCopy: service, SVNBinary: svn}, Repositories: serverconfig.RepositoryFile{Root: repos, SVNAdminBinary: svnadmin}}
 	req := reservationv1.Request{Schema: reservationv1.AutolockSchema, RepoID: repoID}
 	read := func() reservationv1.Result {
 		t.Helper()

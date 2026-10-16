@@ -5,14 +5,16 @@ package servertool
 import (
 	"context"
 	"filees/internal/svnurl"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestQueryLiveLocksAgainstARealRepository exercises the actual subprocess
-// (svn info -r HEAD --xml --depth infinity -- file://...@) against a real,
+// (svnadmin lslocks, compared with the old recursive XML query) against a real,
 // disposable svnadmin repository — not a fake. This is the one place in
 // this package's reservation-projection tests that is not a pure-function
 // test; it is the empirical proof behind
@@ -51,6 +53,11 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 		t.Fatalf("write sub/b.txt: %v", err)
 	}
 	addCmd := exec.Command(svn, "add", "a.txt", "sub", "-q")
+	for i := 0; i < 512; i++ {
+		if err := os.WriteFile(filepath.Join(wc, "sub", fmt.Sprintf("unlocked-%04d", i)), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	addCmd.Dir = wc
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		t.Fatalf("svn add: %v: %s", err, out)
@@ -66,7 +73,15 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 		t.Fatalf("svn lock: %v: %s", err, out)
 	}
 
-	reservations, err := queryLiveLocks(context.Background(), svn, repoPath)
+	started := time.Now()
+	legacy, err := queryLiveLocks(context.Background(), svn, repoPath)
+	legacyTime := time.Since(started)
+	if err != nil || len(legacy) != 1 {
+		t.Fatalf("baseline source: %v", err)
+	}
+	started = time.Now()
+	reservations, err := queryLockIndex(context.Background(), svnadmin, repoPath)
+	t.Logf("514 files, one lock: recursive=%s lock-index=%s", legacyTime, time.Since(started))
 	if err != nil {
 		t.Fatalf("queryLiveLocks: %v", err)
 	}
@@ -77,6 +92,9 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 		t.Fatalf("lock fields wrong: %+v", reservations[0])
 	}
 
+	if legacy[0].Token != reservations[0].Token || legacy[0].OwnerID != reservations[0].OwnerID {
+		t.Fatal("different authority in optimized source")
+	}
 	// Release the lock and confirm the next live query reports zero — a
 	// confirmed empty list, not an error.
 	unlockCmd := exec.Command(svn, "unlock", "a.txt", "-q")
@@ -84,7 +102,7 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 	if out, err := unlockCmd.CombinedOutput(); err != nil {
 		t.Fatalf("svn unlock: %v: %s", err, out)
 	}
-	reservations, err = queryLiveLocks(context.Background(), svn, repoPath)
+	reservations, err = queryLockIndex(context.Background(), svnadmin, repoPath)
 	if err != nil {
 		t.Fatalf("queryLiveLocks after unlock: %v", err)
 	}

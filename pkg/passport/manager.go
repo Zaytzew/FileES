@@ -126,6 +126,9 @@ type Config struct {
 	// Nil is retained only for the legacy standalone Manager/test API.
 	// Called under the operation mutex by Acquire; must not reenter Manager.
 	Ownership func(context.Context) (OwnershipView, error)
+	// HeartbeatOwnership reuses a bounded-age authenticated emission for
+	// observation only. Mutations and BeginPublish keep their live token checks.
+	HeartbeatOwnership func(context.Context) (OwnershipView, error)
 }
 
 func (c Config) withDefaults() Config {
@@ -343,6 +346,7 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 	defer m.mu.Unlock()
 	now := m.cfg.Now().UTC()
 	var first error
+	inspect := m.heartbeatInspector(ctx)
 	for path, p := range m.passports {
 		if p.State == StatePending {
 			if _, _, err := m.resumePending(ctx, p); err != nil && first == nil {
@@ -353,7 +357,7 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 		if p.State != StateActive {
 			continue
 		}
-		info, err := m.backend.Inspect(ctx, path)
+		info, err := inspect(p)
 		if err != nil {
 			if first == nil {
 				first = err

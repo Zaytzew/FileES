@@ -6,14 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"filees/pkg/errcat"
 )
 
-type OwnershipHold struct{ Token, RealmID string }
+type OwnershipHold struct{ Token, RealmID, Owner, Comment string }
 type OwnershipView struct {
 	Owners map[string]string
 	Holds  map[string]OwnershipHold
+	// ObservedAt is the local start of the authenticated state request, not
+	// server time or the time this cached value was returned to the caller.
+	ObservedAt time.Time
 }
 
 func (m *Manager) PerPathOwnership() bool { return m.cfg.Ownership != nil }

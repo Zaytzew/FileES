@@ -312,6 +312,7 @@ type readWriteDependencies struct {
 	canonicalRebuild    func(context.Context, config.Repo, client.Client) error
 	passportBackend     func(config.Repo, client.Client) (passport.Backend, error)
 	pathOwnership       func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
+	heartbeatOwnership  func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
 	gate                runtime.Gate
 	mutex               runtime.RepoMutex
 	ipc                 *ipcserver.Server
@@ -384,7 +385,13 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		if deps.pathOwnership != nil {
 			ownership = func(ctx context.Context) (passport.OwnershipView, error) { return deps.pathOwnership(ctx, repo, svn) }
 		}
-		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{Ownership: ownership, TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
+		var heartbeatOwnership func(context.Context) (passport.OwnershipView, error)
+		if deps.heartbeatOwnership != nil {
+			heartbeatOwnership = func(ctx context.Context) (passport.OwnershipView, error) {
+				return deps.heartbeatOwnership(ctx, repo, svn)
+			}
+		}
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{Ownership: ownership, HeartbeatOwnership: heartbeatOwnership, TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
 			logger.Warnf("passport heartbeat: %v", err)
 			passportErrors.Emit(errmap.Classify(err))
 		}})

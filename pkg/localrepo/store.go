@@ -633,6 +633,32 @@ func (s *Store) BeginLocate(serverID, repoID, existingLocalPath string) (Record,
 	return s.beginRelocation(serverID, repoID, existingLocalPath, true, false, false)
 }
 
+// CurrentLifecycle selects the unique unfinished operation for this server/repo.
+// Historical detach/delete/error records remain intact and cannot shadow it.
+// The caller must still check its state; an in-progress detach is not attached.
+func (s *Store) CurrentLifecycle(serverID, repoID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.currentLifecycleLocked(serverID, repoID)
+}
+
+func (s *Store) currentLifecycleLocked(serverID, repoID string) (Record, error) {
+	var current Record
+	for _, record := range s.records {
+		if record.ServerID != serverID || record.RepoID != repoID || terminal(record.State) {
+			continue
+		}
+		if current.OperationID != "" {
+			return Record{}, errors.New("repository has multiple active lifecycle records")
+		}
+		current = record
+	}
+	if current.OperationID == "" {
+		return Record{}, os.ErrNotExist
+	}
+	return current, nil
+}
+
 func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting, moveExisting, queued bool) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -640,17 +666,11 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, errors.New("relocation cannot adopt and move the same working copy")
 	}
 	newLocalPath = filepath.Clean(newLocalPath)
-	var operationID string
-	for id, record := range s.records {
-		if record.ServerID == serverID && record.RepoID == repoID {
-			operationID = id
-			break
-		}
+	record, err := s.currentLifecycleLocked(serverID, repoID)
+	if err != nil {
+		return Record{}, err
 	}
-	if operationID == "" {
-		return Record{}, os.ErrNotExist
-	}
-	record := s.records[operationID]
+	operationID := record.OperationID
 	if (record.State == StateRelocating || record.RelocationQueued) && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting && record.RelocationMoveExisting == moveExisting {
 		return record, nil
 	}
@@ -674,7 +694,7 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target must be an absolute disjoint non-root path"))
 	}
 	for id, existing := range s.records {
-		if id != operationID && (pathsOverlap(existing.LocalPath, newLocalPath) || (existing.PendingLocalPath != "" && pathsOverlap(existing.PendingLocalPath, newLocalPath))) {
+		if id != operationID && !terminal(existing.State) && (pathsOverlap(existing.LocalPath, newLocalPath) || (existing.PendingLocalPath != "" && pathsOverlap(existing.PendingLocalPath, newLocalPath))) {
 			return Record{}, errcat.New("repo.locate_overlaps", nil, errors.New("relocation target overlaps another FileES repository root"))
 		}
 	}

@@ -45,27 +45,24 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 	if moveExisting {
 		// Queue admission never waits on the execution fence. The attached
 		// record lets the current writer/recovery finish before the move.
-		operationID := ""
-		for _, record := range service.store.List() {
-			if record.ServerID == serverID && record.RepoID == repoID {
-				operationID = record.OperationID
-				if (record.RelocationQueued || record.State == localrepo.StateRelocating) && record.RelocationMoveExisting && record.PendingLocalPath == filepath.Clean(newLocalPath) {
-					if service.onRelocate != nil {
-						service.onRelocate(record.OperationID)
-					}
-					return lifecycleResult(record), nil
-				}
-				break
-			}
+		record, err := service.store.CurrentLifecycle(serverID, repoID)
+		if err != nil {
+			return contract.RepoLifecycleResult{}, err
 		}
-		check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRootsExcept(operationID))
+		if (record.RelocationQueued || record.State == localrepo.StateRelocating) && record.RelocationMoveExisting && record.PendingLocalPath == filepath.Clean(newLocalPath) {
+			if service.onRelocate != nil {
+				service.onRelocate(record.OperationID)
+			}
+			return lifecycleResult(record), nil
+		}
+		check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRootsExcept(record.OperationID))
 		if err != nil {
 			return contract.RepoLifecycleResult{}, err
 		}
 		if check.Exists {
 			return contract.RepoLifecycleResult{}, errors.New("move destination must not exist")
 		}
-		record, err := service.store.QueueRelocation(serverID, repoID, check.CanonicalPath)
+		record, err = service.store.QueueRelocation(serverID, repoID, check.CanonicalPath)
 		if err != nil {
 			return contract.RepoLifecycleResult{}, err
 		}
@@ -107,14 +104,11 @@ func (service repositoryLifecycleService) BeginLocate(serverID, repoID, existing
 	}
 	// The current root may simply have reappeared after reconnecting a drive.
 	// Exclude this record only; Store still rejects nested relocation targets.
-	operationID := ""
-	for _, record := range service.store.List() {
-		if record.ServerID == serverID && record.RepoID == repoID {
-			operationID = record.OperationID
-			break
-		}
+	current, err := service.store.CurrentLifecycle(serverID, repoID)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
 	}
-	check, err := provisioning.PreflightLocalPath(existingLocalPath, provisioning.LocalPathAttachResume, service.allRootsExcept(operationID))
+	check, err := provisioning.PreflightLocalPath(existingLocalPath, provisioning.LocalPathAttachResume, service.allRootsExcept(current.OperationID))
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}

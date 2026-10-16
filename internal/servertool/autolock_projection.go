@@ -12,6 +12,10 @@ import (
 // Caller holds the authority/service-WC lock. This function neither reconciles
 // nor rewrites authority: only the disposable history/lock artifacts may change.
 func refreshAutolockProjection(ctx context.Context, config serverconfig.Config, clientID string, req reservationv1.Request, stateRoot string) (reservationv1.Result, error) {
+	confirm, err := stateObservationFence(config.Activation.Root)
+	if err != nil {
+		return reservationv1.Result{}, err
+	}
 	lifecycle := req
 	lifecycle.Schema = reservationv1.StateSchema
 	view, deleted, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, lifecycle)
@@ -45,5 +49,8 @@ func refreshAutolockProjection(ctx context.Context, config serverconfig.Config, 
 	r.ViewGeneration = view.Generation
 	produced := view.GeneratedAt
 	r.ViewGeneratedAt = &produced
+	if err := confirm(); err != nil {
+		return reservationv1.Result{}, err
+	}
 	return r, nil
 }

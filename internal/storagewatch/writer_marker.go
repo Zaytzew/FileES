@@ -22,6 +22,9 @@ func (g Gate) beginWriter() (string, error) {
 	if err := EnsurePrivateDirectory(dir, g.Root); err != nil {
 		return "", err
 	}
+	if err := EnsurePrivateDirectory(g.observationDirectory(), g.Root); err != nil {
+		return "", err
+	}
 	f, err := os.CreateTemp(dir, "writer-*")
 	if err != nil {
 		return "", err
@@ -51,6 +54,11 @@ func (g Gate) beginWriter() (string, error) {
 func (g Gate) finishWriter(path string) error {
 	if filepath.Dir(path) != g.writerDirectory() {
 		return ErrUnfinishedWriter
+	}
+	// Persist invalidation even when the operation failed after partial
+	// effects. Never remove its recovery marker if this acknowledgement fails.
+	if err := g.advanceObservationEpoch(); err != nil {
+		return err
 	}
 	if err := os.Remove(path); err != nil {
 		return err

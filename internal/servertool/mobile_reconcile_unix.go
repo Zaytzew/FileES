@@ -62,6 +62,7 @@ func runAdminMobileRecover(path string, args []string, stdout, stderr io.Writer)
 	}
 	profile.Paths = paths
 	profile.Paths = append(profile.Paths, capacityWriterCompletionPath(capacityWriterRoot(c.Root, c.Activation.Root)))
+	profile.Paths = append(profile.Paths, observationCompletionPath(capacityWriterRoot(c.Root, c.Activation.Root)))
 	if err := obsandbox.Apply(profile); err != nil {
 		report(stderr, "mobile recovery sandbox", err)
 		return ExitSoftware

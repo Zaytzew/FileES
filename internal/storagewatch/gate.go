@@ -23,6 +23,9 @@ type Gate struct{ Root string }
 // before a resident service unveils the exact gate paths. It admits no effects.
 func (g Gate) Prepare(ctx context.Context) error {
 	return g.withLock(ctx, false, func() error {
+		if err := EnsurePrivateDirectory(g.observationDirectory(), g.Root); err != nil {
+			return err
+		}
 		return EnsurePrivateDirectory(g.writerDirectory(), g.Root)
 	})
 }

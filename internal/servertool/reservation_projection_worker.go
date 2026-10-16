@@ -179,6 +179,11 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		}
 		return ExitOK
 	}
+	confirm, err := stateObservationFence(config.Activation.Root)
+	if err != nil {
+		report(stderr, "serving-state observation", err)
+		return ExitSoftware
+	}
 	view, deleted, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, req)
 	if err != nil {
 		report(stderr, "serving-state authorization", err)
@@ -212,6 +217,10 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		result.ViewGeneratedAt = &produced
 	}
 	attachStorageWrite(configPath, config, req, &result)
+	if err := confirm(); err != nil {
+		report(stderr, "serving-state observation", err)
+		return ExitTempFail
+	}
 	payload, err := json.Marshal(result)
 	if err != nil {
 		report(stderr, "serving-state result encode", err)

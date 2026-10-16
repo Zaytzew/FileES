@@ -34,6 +34,10 @@ func reservationBatchWith(ctx context.Context, config serverconfig.Config, clien
 	}
 	var raw []byte
 	err := repoworker.WithFileLockContext(ctx, filepath.Join(config.Activation.Root, ".service-wc.lock"), func() error {
+		confirm, err := stateObservationFence(config.Activation.Root)
+		if err != nil {
+			return err
+		}
 		view, _, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, reservationv1.Request{Schema: reservationv1.StateSchema})
 		if err != nil {
 			return err
@@ -78,7 +82,10 @@ func reservationBatchWith(ctx context.Context, config serverconfig.Config, clien
 		if len(raw) > reservationv1.BatchMaxResponseBytes {
 			return errors.New("reservation batch response exceeds limit")
 		}
-		return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return confirm()
 	})
 	if err != nil {
 		return nil, err

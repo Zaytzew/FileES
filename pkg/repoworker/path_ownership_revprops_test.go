@@ -70,7 +70,7 @@ func TestSVNHistoryCacheSeesRevpropChangeWithoutCommit(t *testing.T) {
 	if err := os.Mkdir(source.CacheRoot, 0700); err != nil {
 		t.Fatal(err)
 	}
-	head := RepositoryRevision{Number: 1, UUID: "test-incarnation"}
+	head := RepositoryRevision{Number: 1, UUID: "test-incarnation", HistoryIdentity: "test-physical-source"}
 	first, err := source.history(t.Context(), "repo", url, head)
 	if err != nil || len(first.Entries) != 1 || first.Entries[0].FirstCommitter != "before" {
 		t.Fatal(first, err)

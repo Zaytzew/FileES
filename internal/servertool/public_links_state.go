@@ -22,6 +22,10 @@ func publicLinksState(config serverconfig.Config, clientID string, req publicsta
 	defer cancel()
 	var raw []byte
 	err := repoworker.WithFileLockContext(ctx, filepath.Join(config.Activation.Root, ".service-wc.lock"), func() error {
+		confirm, err := stateObservationFence(config.Activation.Root)
+		if err != nil {
+			return err
+		}
 		view, _, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, reservationv1.Request{Schema: reservationv1.StateSchema})
 		if err != nil {
 			return err
@@ -60,7 +64,13 @@ func publicLinksState(config serverconfig.Config, clientID string, req publicsta
 		if len(raw) > publicstate.MaxResponseBytes {
 			return errors.New("public link state exceeds response limit")
 		}
-		return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return confirm()
 	})
-	return raw, err
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }

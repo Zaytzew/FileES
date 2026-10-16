@@ -188,6 +188,7 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 	}
 	if access.needCapacityWriter {
 		paths = append(paths, capacityWriterCompletionPath(capacityWriterRoot(root, activationConfig.Root)))
+		paths = append(paths, observationCompletionPath(capacityWriterRoot(root, activationConfig.Root)))
 	}
 	if access.needActivation {
 		sessionRoot := activationConfig.SessionRoot

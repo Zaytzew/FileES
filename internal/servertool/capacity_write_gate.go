@@ -31,6 +31,10 @@ func capacityWriterCompletionPath(root string) obsandbox.Path {
 	return obsandbox.Path{Label: "capacity-writer-completion", Name: filepath.Join(root, "capacity-active-writers"), Perms: "rwc"}
 }
 
+func observationCompletionPath(root string) obsandbox.Path {
+	return obsandbox.Path{Label: "state-observation-completion", Name: filepath.Join(root, "state-observation"), Perms: "rwc"}
+}
+
 func runConfiguredCapacityWriter(path string, stderr io.Writer, run func() int) int {
 	c, err := serverconfig.LoadFor(path, 0)
 	if err != nil {

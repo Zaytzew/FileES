@@ -35,6 +35,7 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 				{Label: "operations", Name: "/srv/filees/operations", Perms: "rwc"},
 				{Label: "audit", Name: "/srv/filees/audit", Perms: "rwc"},
 				{Label: "capacity-writer-completion", Name: "/srv/activation/capacity-active-writers", Perms: "rwc"},
+				{Label: "state-observation-completion", Name: "/srv/activation/state-observation", Perms: "rwc"},
 			},
 		},
 		{
@@ -102,7 +103,7 @@ func TestCapacityCompletionProfileUsesOnlyWriterDirectory(t *testing.T) {
 		root := capacityWriterRoot("/srv/onboarding", activationRoot)
 		access := toolAccess{name: "capacity-test", write: true, needCapacityWriter: true}
 		profile := repositoryProfile("/srv/onboarding", access, activation.Config{Root: activationRoot}, "", "", "")
-		if len(profile.Paths) != 2 || profile.Paths[1] != capacityWriterCompletionPath(root) {
+		if len(profile.Paths) != 3 || profile.Paths[1] != capacityWriterCompletionPath(root) || profile.Paths[2] != observationCompletionPath(root) {
 			t.Fatalf("completion profile = %+v", profile.Paths)
 		}
 		wantRoot := activationRoot

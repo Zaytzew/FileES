@@ -136,6 +136,7 @@ func passportMaintenanceProfile(config serverconfig.Config, statusDir string, ch
 	profile.Paths[0].Perms = "rwc"
 	profile.Paths = append(profile.Paths,
 		capacityWriterCompletionPath(capacityWriterRoot(config.Root, config.Activation.Root)),
+		observationCompletionPath(capacityWriterRoot(config.Root, config.Activation.Root)),
 		obsandbox.Path{Label: "worker-lock", Name: filepath.Join(config.Repositories.ResultsRoot, ".worker.lock"), Perms: "rwc"},
 		obsandbox.Path{Label: "service-lock", Name: filepath.Join(config.Activation.Root, ".service-wc.lock"), Perms: "rwc"},
 		obsandbox.Path{Label: "repositories-parent", Name: filepath.Dir(config.Repositories.Root), Perms: "r"},

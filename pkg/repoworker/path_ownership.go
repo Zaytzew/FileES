@@ -24,8 +24,15 @@ import (
 type SVNPathOwners struct{ SVN, RepositoriesRoot, ServiceWC, CacheRoot string }
 
 type RepositoryRevision struct {
-	Number int64
-	UUID   string
+	Number          int64
+	UUID            string
+	HistoryIdentity string
+}
+
+type ownershipHistoryCache struct {
+	Schema   string                 `json:"schema"`
+	Source   string                 `json:"source"`
+	Snapshot pathownership.Snapshot `json:"snapshot"`
 }
 
 func (s SVNPathOwners) repositoryURL(repoID string) (string, error) {
@@ -83,7 +90,11 @@ func (s SVNPathOwners) Head(ctx context.Context, repoID string) (RepositoryRevis
 	if _, err := uuid.Parse(info.Entries[0].UUID); err != nil {
 		return RepositoryRevision{}, errors.New("invalid repository incarnation")
 	}
-	return RepositoryRevision{Number: info.Entries[0].Revision, UUID: info.Entries[0].UUID}, nil
+	identity, err := repositoryHistoryIdentity(filepath.Join(s.RepositoriesRoot, repoID), info.Entries[0].UUID)
+	if err != nil {
+		return RepositoryRevision{}, err
+	}
+	return RepositoryRevision{Number: info.Entries[0].Revision, UUID: info.Entries[0].UUID, HistoryIdentity: identity}, nil
 }
 func (s SVNPathOwners) Snapshot(ctx context.Context, repoID string) (pathownership.Snapshot, error) {
 	target, err := s.repositoryURL(repoID)
@@ -112,8 +123,9 @@ func (s SVNPathOwners) history(ctx context.Context, repoID, target string, head 
 			return pathownership.Snapshot{}, errors.New("ownership cache must be absolute")
 		}
 		cachePath = filepath.Join(s.CacheRoot, repoID+".history.json")
-		var cached pathownership.Snapshot
-		if decodeJSONFile(cachePath, &cached) == nil && cached.RepositoryUUID == head.UUID && cached.Revision == head.Number {
+		var envelope ownershipHistoryCache
+		if decodeJSONFile(cachePath, &envelope) == nil && head.HistoryIdentity != "" && envelope.Schema == "filees.ownership-history/v2" && envelope.Source == head.HistoryIdentity && envelope.Snapshot.RepositoryUUID == head.UUID && envelope.Snapshot.Revision == head.Number {
+			cached := envelope.Snapshot
 			// Origins are immutable, svn:author is not. Revalidate revision
 			// properties locally even when HEAD did not move; never infer their
 			// freshness from the history cache or filesystem timestamps.
@@ -122,7 +134,8 @@ func (s SVNPathOwners) history(ctx context.Context, repoID, target string, head 
 				return pathownership.Snapshot{}, err
 			}
 			if changed {
-				if err := atomicJSON(cachePath, updated); err != nil {
+				envelope.Snapshot = updated
+				if err := atomicJSON(cachePath, envelope); err != nil {
 					return pathownership.Snapshot{}, err
 				}
 			}
@@ -145,8 +158,8 @@ func (s SVNPathOwners) history(ctx context.Context, repoID, target string, head 
 		return pathownership.Snapshot{}, err
 	}
 	snapshot.RepositoryUUID = head.UUID
-	if cachePath != "" {
-		if err := atomicJSON(cachePath, snapshot); err != nil {
+	if cachePath != "" && head.HistoryIdentity != "" {
+		if err := atomicJSON(cachePath, ownershipHistoryCache{Schema: "filees.ownership-history/v2", Source: head.HistoryIdentity, Snapshot: snapshot}); err != nil {
 			return pathownership.Snapshot{}, err
 		}
 	}

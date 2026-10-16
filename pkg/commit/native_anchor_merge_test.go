@@ -21,6 +21,102 @@ func TestNativeAnchorCopiedTreeMergesWithoutPublishingRemotePathsAsAdds(t *testi
 	t.Run("remote-edit-after-base", func(t *testing.T) { testNativeAnchorMerge(t, false, true) })
 }
 
+func TestNativeAnchorFirstPublicationFromZero(t *testing.T) {
+	for _, collision := range []bool{false, true} {
+		name := "first-publication"
+		if collision {
+			name = "newer-head-collision"
+		}
+		t.Run(name, func(t *testing.T) {
+			helper := os.Getenv("FILEES_SVN_PROBE")
+			if helper == "" {
+				t.Fatal("FILEES_SVN_PROBE required")
+			}
+			root := t.TempDir()
+			t.Cleanup(func() {
+				_ = filepath.WalkDir(root, func(p string, e os.DirEntry, err error) error {
+					if err == nil && e.Type().IsRegular() {
+						_ = os.Chmod(p, 0600)
+					}
+					return nil
+				})
+			})
+			run := func(dir, bin string, args ...string) string {
+				t.Helper()
+				c := exec.CommandContext(t.Context(), bin, args...)
+				c.Dir = dir
+				out, err := c.CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s %v: %v %s", bin, args, err, out)
+				}
+				return string(out)
+			}
+			repo, wc := filepath.Join(root, "repo"), filepath.Join(root, "wc")
+			run(root, "svnadmin", "create", repo)
+			uri := svnurl.File(repo)
+			run(root, "svn", "checkout", "--quiet", "--depth", "empty", uri, wc)
+			for _, rel := range []string{".filees/state", ".filees/commit_cache"} {
+				if err := os.MkdirAll(filepath.Join(wc, rel), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write := func(p, body string) {
+				t.Helper()
+				if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(filepath.Join(wc, "new.txt"), "local bytes")
+			if collision {
+				other := filepath.Join(root, "other")
+				run(root, "svn", "checkout", "--quiet", uri, other)
+				write(filepath.Join(other, "new.txt"), "newer remote bytes")
+				run(other, "svn", "add", "--quiet", "new.txt")
+				run(other, "svn", "commit", "--quiet", "-m", "remote addition")
+			}
+			cli := client.New(client.Options{NativeSVNPath: helper, Timeout: 15 * time.Second})
+			s := &Service{Anchor: true, AnchorMergeRevision: func() (int64, error) { return 0, nil }, Cli: cli, RepoURL: uri, wc: wc, repoID: "zero-fixture", UUID: "zero-fixture", Rules: Rules{MaxBatchFiles: 100, MaxBatchBytes: 1 << 20}, staging: map[string]*stageItem{}, cachePath: filepath.Join(wc, ".filees/commit_cache/cache.json")}
+			s.addEvent(watcher.Event{Rel: "new.txt", Path: filepath.Join(wc, "new.txt"), Op: watcher.Added, Type: watcher.EntryFile})
+			err := s.tryCommitMode(t.Context(), wc, true)
+			if collision {
+				if err == nil {
+					t.Fatal("newer remote addition overwritten")
+				}
+				if got := run(root, "svn", "cat", uri+"/new.txt"); got != "newer remote bytes" {
+					t.Fatal(got)
+				}
+			} else {
+				if err != nil {
+					t.Fatal("first publication refused", err)
+				}
+				if got := run(root, "svn", "cat", uri+"/new.txt"); got != "local bytes" {
+					t.Fatal(got)
+				}
+				if len(s.staging) != 0 {
+					t.Fatal("published item still queued")
+				}
+				if err := s.tryCommitMode(t.Context(), wc, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := strings.TrimSpace(run(root, "svnlook", "youngest", repo)); got != "1" {
+				t.Fatal("unexpected commit", got)
+			}
+			if got, err := os.ReadFile(filepath.Join(wc, "new.txt")); err != nil || string(got) != "local bytes" {
+				t.Fatal("local bytes changed", err)
+			}
+			plan := filepath.Join(root, "zero.jsonl")
+			summary, err := cli.(client.HistoryTreeReader).HistoryListTree(t.Context(), uri, 0, plan)
+			if err != nil || summary.Revision != 0 {
+				t.Fatal("zero became HEAD", summary, err)
+			}
+			if raw, err := os.ReadFile(plan); err != nil || len(strings.TrimSpace(string(raw))) != 0 {
+				t.Fatal("nonempty revision zero", string(raw), err)
+			}
+		})
+	}
+}
+
 func testNativeAnchorMerge(t *testing.T, scheduled, remoteEdit bool) {
 	helper := os.Getenv("FILEES_SVN_PROBE")
 	if helper == "" {

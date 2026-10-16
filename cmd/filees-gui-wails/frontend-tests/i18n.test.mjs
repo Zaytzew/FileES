@@ -7,6 +7,7 @@ import { publicShareURL } from "../frontend/public-share-link.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 import {updateDownloadLine} from "../frontend/update-download.js";
 import {importProgressLine, reconcileProgressLine} from "../frontend/import-progress.js";
+import {queuePreparing, queuedChangesLine} from "../frontend/queue-state.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 
@@ -354,7 +355,7 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
   let locale = "en";
   const escapeHTML = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
   const render = runInNewContext(`${extract("repoAction")}\n${extract("repoProblemLine")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
-    t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
+    queuePreparing, queuedChangesLine, t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
     repoSection: () => "active", readRepoView: () => ({}), drawerPicker: () => "",
     repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "", importProgressLine, reconcileProgressLine,
   });

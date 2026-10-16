@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filees/pkg/localrepo"
@@ -35,26 +36,55 @@ func TestAnchorMergeRevisionRequiresBoundManifestAndRoot(t *testing.T) {
 	if rev, err := anchorMergeBoundRevision(r); err != nil || rev != 7 {
 		t.Fatal(rev, err)
 	}
-	for _, mode := range []string{"attachment", "url", "root", "revision"} {
-		t.Run(mode, func(t *testing.T) {
-			changed := tree
-			switch mode {
-			case "attachment":
-				changed.Operation = "other"
-			case "url":
-				changed.URL += "-other"
-			case "root":
-				changed.Root.Index++
-			case "revision":
-				changed.Revision = 0
-			}
-			if err := saveAnchorRemoteTree(r, changed); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := anchorMergeBoundRevision(r); err == nil {
-				t.Fatal("unbound manifest admitted")
-			}
-		})
+	tree.Revision = 0
+	if err := saveAnchorRemoteTree(r, tree); err != nil {
+		t.Fatal(err)
+	}
+	if rev, err := anchorMergeBoundRevision(r); err != nil || rev != 0 {
+		t.Fatal("explicit empty r0 refused", rev, err)
+	}
+	raw, err := os.ReadFile(anchorTreePath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(anchorTreePath(root), []byte(strings.Replace(string(raw), `"revision":0,`, "", 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := anchorMergeBoundRevision(r); err == nil {
+		t.Fatal("missing revision treated as r0")
+	}
+	if err := os.WriteFile(anchorTreePath(root), []byte(strings.Replace(string(raw), `"revision":0`, `"revision":null`, 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := anchorMergeBoundRevision(r); err == nil {
+		t.Fatal("null revision treated as r0")
+	}
+	for _, baseline := range []int64{0, 7} {
+		tree.Revision = baseline
+		for _, mode := range []string{"attachment", "url", "root", "revision", "nonempty-zero"} {
+			t.Run(mode, func(t *testing.T) {
+				changed := tree
+				switch mode {
+				case "attachment":
+					changed.Operation = "other"
+				case "url":
+					changed.URL += "-other"
+				case "root":
+					changed.Root.Index++
+				case "revision":
+					changed.Revision = -1
+				case "nonempty-zero":
+					changed.Revision = 0
+					changed.Nodes = []anchorRemoteNode{{}}
+				}
+				if err := saveAnchorRemoteTree(r, changed); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := anchorMergeBoundRevision(r); err == nil {
+					t.Fatal("unbound manifest admitted")
+				}
+			})
+		}
 	}
 	if err := os.Remove(anchorTreePath(root)); err != nil {
 		t.Fatal(err)

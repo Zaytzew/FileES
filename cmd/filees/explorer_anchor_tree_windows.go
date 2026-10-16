@@ -146,7 +146,8 @@ func (m *anchorManager) readRemoteTree(ctx context.Context, record localrepo.Rec
 }
 
 func loadAnchorRemoteTree(record localrepo.Record, root anchorReleaseFileID) (anchorRemoteTree, error) {
-	var tree anchorRemoteTree
+	// Missing/null revision is unknown, not SVN's legitimate empty revision 0.
+	tree := anchorRemoteTree{Revision: -1}
 	file, _, err := openAnchorReleaseFile(anchorTreePath(record.LocalPath), false)
 	if err != nil {
 		return tree, err
@@ -161,7 +162,7 @@ func loadAnchorRemoteTree(record localrepo.Record, root anchorReleaseFileID) (an
 	if decoder.Decode(&extra) != io.EOF {
 		return tree, errors.New("trailing remote tree data")
 	}
-	if tree.Schema != "filees.anchor-tree/v1" || tree.Operation != record.OperationID || tree.URL != record.RepoURL || tree.Root != root || tree.Revision <= 0 {
+	if tree.Schema != "filees.anchor-tree/v1" || tree.Operation != record.OperationID || tree.URL != record.RepoURL || tree.Root != root || tree.Revision < 0 || (tree.Revision == 0 && len(tree.Nodes) != 0) {
 		return tree, errors.New("remote tree binding changed")
 	}
 	return tree, validateAnchorRemoteNodes(tree.Nodes)
@@ -268,8 +269,8 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 		old, loadErr := loadAnchorRemoteTree(record, root)
 		if os.IsNotExist(loadErr) {
 			raw, readErr := os.ReadFile(anchorSeedPath(record.LocalPath))
-			var seed anchorSeed
-			if readErr != nil || len(raw) > 4096 || json.Unmarshal(raw, &seed) != nil || seed.Schema != anchorSeedSchema || seed.Revision <= 0 {
+			seed := anchorSeed{Revision: -1}
+			if readErr != nil || len(raw) > 4096 || json.Unmarshal(raw, &seed) != nil || seed.Schema != anchorSeedSchema || seed.Revision < 0 || (seed.Revision == 0 && (seed.Dirs != 0 || seed.Files != 0)) {
 				return
 			}
 			old = anchorRemoteTree{Schema: "filees.anchor-tree/v1", Operation: record.OperationID, URL: record.RepoURL, Root: root, Revision: seed.Revision}

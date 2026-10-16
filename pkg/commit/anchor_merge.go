@@ -95,9 +95,9 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 	}
 	revision, err := s.AnchorMergeRevision()
 	if err != nil {
-		return err
+		return fmt.Errorf("virtual folder publication: bound remote baseline unavailable: %w", err)
 	}
-	if revision < 1 {
+	if revision < 0 {
 		return errors.New("invalid virtual folder merge revision")
 	}
 	u, err := url.Parse(s.RepoURL)
@@ -109,6 +109,11 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 	// Older test adapters retain the narrow listing path; production clients
 	// must surface a failed tree read rather than treating it as an empty tree.
 	wholeTree := false
+	if revision == 0 {
+		if _, ok := s.Cli.(client.HistoryTreeReader); !ok {
+			return errors.New("empty virtual folder baseline requires an explicit revision-zero tree read")
+		}
+	}
 	if reader, ok := s.Cli.(client.HistoryTreeReader); ok {
 		dir, err := os.MkdirTemp("", "filees-merge-plan-")
 		if err != nil {
@@ -120,6 +125,9 @@ func (s *Service) prepareAnchorMerge(ctx context.Context, wc string, candidates 
 			return err
 		}
 		if err := client.EachHistoryTreeNode(file, func(node client.HistoryTreeNode) error {
+			if revision == 0 {
+				return errors.New("revision-zero repository tree is not empty")
+			}
 			if !safeIntentPath(node.Path) {
 				return errors.New("invalid virtual folder merge remote path")
 			}

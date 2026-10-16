@@ -1,4 +1,5 @@
 import test from "node:test";
+import {queueSummary} from "../frontend/queue-state.js";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
@@ -54,7 +55,7 @@ test("stale public shares do not claim a connected daemon is offline", () => {
   const render = source.slice(source.indexOf("function renderMetrics("), source.indexOf("function plural("));
   const nodes = new Map();
   const get = key => { if (!nodes.has(key)) nodes.set(key, {dataset:{}, setAttribute(name, value) { this[name] = value; }}); return nodes.get(key); };
-  const context = {$:get, t:key=>key, tn:key=>key, bytes:()=>""};
+  const context = {queueSummary, $:get, t:key=>key, tn:key=>key, bytes:()=>""};
   runInNewContext(render, context);
   const snapshot = {connected:true, repos:[], public_shares_known:true,
     reservation_status:{state:"current"}, public_shares:[{state:"active",stale:true}]};
@@ -76,7 +77,7 @@ test("stale public shares do not claim a connected daemon is offline", () => {
 test("public share spinner only waits for an unknown inventory and keeps known counts calm", () => {
  const source=readFileSync(new URL("../frontend/app.js",import.meta.url),"utf8");
  const nodes=new Map(); const get=key=>{if(!nodes.has(key))nodes.set(key,{dataset:{},setAttribute(name,value){this[name]=value}});return nodes.get(key)};
- const ctx={$:get,t:key=>key,tn:key=>key,bytes:()=>""};
+ const ctx={queueSummary,$:get,t:key=>key,tn:key=>key,bytes:()=>""};
  runInNewContext(source.slice(source.indexOf("function renderMetrics("),source.indexOf("function plural(")),ctx);
  const snapshot={connected:true,projection:{state:"current"},public_shares_known:false,public_shares_loading:true,reservation_status:{state:"complete"}};
  ctx.renderMetrics(snapshot);
@@ -110,7 +111,7 @@ test("unknown metrics spin only while the projection waits, then settle to data 
     if (!nodes.has(key)) nodes.set(key, {dataset:{}, setAttribute(name, value) { this[name] = value; }});
     return nodes.get(key);
   };
-  const context = {$:get, t:key=>key, tn:key=>key, bytes:()=>""};
+  const context = {queueSummary, $:get, t:key=>key, tn:key=>key, bytes:()=>""};
   runInNewContext(render, context);
   const snapshot = {connected:true, projection:{state:"server_unverified"},
     public_shares_known:false, reservations:[{}],

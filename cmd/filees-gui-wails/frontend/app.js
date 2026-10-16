@@ -15,6 +15,7 @@ import { storageCapacityMarkup } from "./storage-capacity.js";
 import { localAllocationMarkup } from "./local-allocation.js";
 import { importProgressLine, reconcileProgressLine } from "./import-progress.js";
 import { filterRepositories, searchText } from "./repository-search.js";
+import { queuePreparing, queuedChangesLine, queueSummary } from "./queue-state.js";
 
 initializeTheme();
 initializeLanguage();
@@ -368,8 +369,7 @@ function renderConnection(snapshot) {
 function renderMetrics(snapshot) {
   const waiting = countWaitsForServer(snapshot);
   const repos = snapshot.repositories || [];
-  const pending = repos.reduce((sum, repo) => sum + Number(repo.pending_files || 0), 0);
-  const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
+  const queue = queueSummary(snapshot, t, bytes);
   const conflicts = repos.reduce((sum, repo) => sum + Number(repo.conflicts || 0), 0);
   const reservations = snapshot.reservations || [];
   const reservationState = snapshot.reservation_status || { state: "daemon_offline", unavailable: [], offline: [], stale: [] };
@@ -384,11 +384,11 @@ function renderMetrics(snapshot) {
 
   $("#metric-servers").textContent = snapshot.servers?.length ?? 0;
   $("#metric-repos").textContent = repos.length;
-  $("#metric-pending").textContent = pending;
+  $("#metric-pending").textContent = queue.value;
   $("#metric-servers-note").textContent = t("summary.activations");
   $("#metric-repos-note").textContent = t("summary.inView");
   $("#metric-attention-note").textContent = t("summary.notes");
-  $("#metric-pending-note").textContent = pending ? t("summary.pendingBytes", { size: bytes(pendingBytes) }) : t("summary.emptyQueue");
+  $("#metric-pending-note").textContent = queue.note;
   renderWaitingCount("#metric-reservations", reservationsOffline
     ? reservations.length
     : reservationsPartial ? `${reservations.length}+?` : reservations.length,
@@ -635,11 +635,11 @@ function renderRepo(repo) {
     ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
     : localProvisioning
       ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : importProgressLine(repo, t, bytes) || t("queue.importRunning"))
-    : (reconcileProgressLine(repo, t) || (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}`
-      : localUnavailable ? t("copy.localUnavailable")
+    : (reconcileProgressLine(repo, t) || queuedChangesLine(repo, t, bytes) || (
+      localUnavailable ? t("copy.localUnavailable")
       : localCheck ? t("copy.checking")
       : localPresent && (state === "offline" || repo.local_copy_waiting_connection) ? t("copy.waitingConnection")
-      : checkingCopy ? t("copy.refreshing") : t("queue.empty")));
+      : checkingCopy ? t("copy.refreshing") : queuePreparing(repo) ? t("queue.loading") : t("queue.empty")));
   const virtualCopy = repo.local_copy_kind === "virtual";
   const source = virtualCopy && repo.local_path ? repo.local_path
     : ["working_copy", "sparse"].includes(repo.local_copy_kind) && repo.local_path

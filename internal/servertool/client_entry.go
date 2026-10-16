@@ -152,6 +152,9 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	}
 	if originalCommand == ClientReservationCommand {
 		r := config.Repositories
+		if config.PublicShares.Enabled {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "public-share-state-read", Name: config.PublicShares.EffectiveStateRoot(r.ResultsRoot), Perms: "r"})
+		}
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-write-policy", Name: filepath.Join(config.Activation.Root, "capacity-write-policy.json"), Perms: "r"})
 		profile.Paths = append(profile.Paths, storageWriteReadPaths(configPath)...)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "capacity-results-volume", Name: r.ResultsRoot, Perms: "r"})

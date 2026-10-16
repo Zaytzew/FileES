@@ -7,11 +7,13 @@ import (
 )
 
 // refreshingPublicShareService decorates the server-backed service with the
-// local cache invalidation E1 needs. The remote mutation remains authoritative;
-// a notification is emitted only after it has succeeded.
+// local notification E1 needs. A canonical ACK updates the cache directly;
+// only a legacy/inapplicable receipt schedules a read. Failed mutations never
+// emit success, and a local cache is never mutation authority.
 type refreshingPublicShareService struct {
 	delegate publicShareService
 	changed  func(serverID string)
+	observed func(serverID string)
 }
 
 type publicShareService interface {
@@ -27,30 +29,40 @@ func (service refreshingPublicShareService) ListPublicShares(ctx context.Context
 }
 
 func (service refreshingPublicShareService) CreatePublicShare(ctx context.Context, serverID string, declaration contract.PublicShareDeclaration) (contract.PublicShareResult, error) {
+	ctx = withPublicShareReceipt(ctx)
 	result, err := service.delegate.CreatePublicShare(ctx, serverID, declaration)
-	service.notify(serverID, err)
+	service.notify(ctx, serverID, err)
 	return result, err
 }
 
 func (service refreshingPublicShareService) UpdatePublicShare(ctx context.Context, serverID, channelID string, declaration contract.PublicShareDeclaration, keepPassword bool) (contract.PublicShareResult, error) {
+	ctx = withPublicShareReceipt(ctx)
 	result, err := service.delegate.UpdatePublicShare(ctx, serverID, channelID, declaration, keepPassword)
-	service.notify(serverID, err)
+	service.notify(ctx, serverID, err)
 	return result, err
 }
 
 func (service refreshingPublicShareService) RevokePublicShare(ctx context.Context, serverID, channelID string) (contract.PublicShareResult, error) {
+	ctx = withPublicShareReceipt(ctx)
 	result, err := service.delegate.RevokePublicShare(ctx, serverID, channelID)
-	service.notify(serverID, err)
+	service.notify(ctx, serverID, err)
 	return result, err
 }
 
 func (service refreshingPublicShareService) DeletePublicShare(ctx context.Context, serverID, channelID string) (contract.PublicShareResult, error) {
+	ctx = withPublicShareReceipt(ctx)
 	result, err := service.delegate.DeletePublicShare(ctx, serverID, channelID)
-	service.notify(serverID, err)
+	service.notify(ctx, serverID, err)
 	return result, err
 }
 
-func (service refreshingPublicShareService) notify(serverID string, err error) {
+func (service refreshingPublicShareService) notify(ctx context.Context, serverID string, err error) {
+	if applied, ok := ctx.Value(publicShareReceiptKey{}).(*bool); ok && *applied && err == nil {
+		if service.observed != nil {
+			service.observed(serverID)
+		}
+		return
+	}
 	if err == nil && service.changed != nil {
 		service.changed(serverID)
 	}

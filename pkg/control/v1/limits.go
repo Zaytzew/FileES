@@ -6,9 +6,10 @@ import "errors"
 // shares carry file metadata, not contents. Keep ordinary control operations
 // small; a declaration and an aggregate listing need separate bounded budgets.
 const (
-	DefaultMessageBytes = 64 << 10
-	MaxShareTicketBytes = 2 << 20
-	MaxShareListBytes   = 16 << 20
+	DefaultMessageBytes  = 64 << 10
+	MaxShareTicketBytes  = 2 << 20
+	MaxShareReceiptBytes = 4 << 20 // one canonical map plus projection/envelope overhead
+	MaxShareListBytes    = 16 << 20
 )
 
 var (
@@ -26,6 +27,10 @@ func TicketByteLimit(kind TicketType) int {
 func ResultByteLimit(kind TicketType) int {
 	if kind == TicketListPublicShares {
 		return MaxShareListBytes
+	}
+	// Negotiated canonical mutation receipts contain one full file map.
+	if kind == TicketCreatePublicShare || kind == TicketUpdatePublicShare || kind == TicketRevokePublicShare {
+		return MaxShareReceiptBytes
 	}
 	return DefaultMessageBytes
 }

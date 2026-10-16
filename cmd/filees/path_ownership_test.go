@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,17 +19,112 @@ import (
 
 type ownershipSVN struct {
 	client.Client
-	revision int64
-	uuid     string
-	onInfo   func()
+	revision    int64
+	uuid        string
+	onInfo      func()
+	revisionErr error
+	infoErr     error
 }
 
-func (c ownershipSVN) Revision(context.Context, string) (int64, error) { return c.revision, nil }
+func (c ownershipSVN) Revision(context.Context, string) (int64, error) {
+	return c.revision, c.revisionErr
+}
 func (c ownershipSVN) GetInfo(context.Context, string) (string, error) {
 	if c.onInfo != nil {
 		c.onInfo()
 	}
-	return "Repository UUID: " + c.uuid + "\n", nil
+	return "Repository UUID: " + c.uuid + "\n", c.infoErr
+}
+
+func TestOwnershipDiagnosticPreservesEveryGateAndCancellation(t *testing.T) {
+	repo := config.Repo{ID: uuid.NewString(), ServerID: "lab", RealmID: uuid.NewString(), RepoURL: "svn://example/repo", LocalPath: t.TempDir()}
+	incarnation := uuid.NewString()
+	for _, tc := range []struct {
+		reason string
+		change func(*reservationProjectionCoordinator, *cachedReservationResult, *ownershipSVN)
+	}{
+		{"view_missing", func(c *reservationProjectionCoordinator, _ *cachedReservationResult, _ *ownershipSVN) {
+			delete(c.views, "lab")
+		}},
+		{"realm_mismatch", func(c *reservationProjectionCoordinator, _ *cachedReservationResult, _ *ownershipSVN) {
+			c.views["lab"] = clientview.View{RealmID: uuid.NewString()}
+		}},
+		{"state_lane_paused", func(c *reservationProjectionCoordinator, _ *cachedReservationResult, _ *ownershipSVN) {
+			c.paused["lab"] = true
+		}},
+		{"activation_mismatch", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.profileEpoch++
+		}},
+		{"observation_missing", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.present = false
+		}},
+		{"state_lane_offline", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.offline = true
+		}},
+		{"client_detached", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.detached = true
+		}},
+		{"receipt_missing", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.receivedAt = time.Time{}
+		}},
+		{"receipt_in_future", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.receivedAt = time.Now().Add(time.Hour)
+		}},
+		{"observation_expired", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.receivedAt = time.Now().Add(-time.Hour)
+		}},
+		{"ownership_schema_unavailable", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.Schema = reservationv1.Schema
+		}},
+		{"repository_mismatch", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.RepoID = uuid.NewString()
+		}},
+		{"repository_not_active", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.RepositoryState = "deleted"
+		}},
+		{"server_state_unknown", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.Unknown = true
+		}},
+		{"server_state_stale", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.Stale = true
+		}},
+		{"ownership_snapshot_missing", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.PathOwnership = nil
+		}},
+		{"view_generation_behind", func(_ *reservationProjectionCoordinator, r *cachedReservationResult, _ *ownershipSVN) {
+			r.result.ViewGeneration = 1
+		}},
+		{"revision_mismatch", func(_ *reservationProjectionCoordinator, _ *cachedReservationResult, s *ownershipSVN) { s.revision = 4 }},
+		{"working_copy_incarnation_mismatch", func(_ *reservationProjectionCoordinator, _ *cachedReservationResult, s *ownershipSVN) {
+			s.uuid = uuid.NewString()
+		}},
+		{"head_read_failed", func(_ *reservationProjectionCoordinator, _ *cachedReservationResult, s *ownershipSVN) {
+			s.revisionErr = context.Canceled
+		}},
+		{"working_copy_info_failed", func(_ *reservationProjectionCoordinator, _ *cachedReservationResult, s *ownershipSVN) {
+			s.infoErr = context.Canceled
+		}},
+		{"after_svn_check: activation_changed", func(c *reservationProjectionCoordinator, _ *cachedReservationResult, s *ownershipSVN) {
+			s.onInfo = func() { c.mu.Lock(); c.profileEpochs["lab"]++; c.mu.Unlock() }
+		}},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			c := newReservationProjectionCoordinator(t.Context(), nil)
+			defer c.Close()
+			c.views["lab"] = clientview.View{RealmID: repo.RealmID, Generation: 2}
+			r := cachedReservationResult{present: true, receivedAt: time.Now(), result: reservationv1.Result{Schema: reservationv1.AutolockSchema, RepoID: repo.ID, RepositoryState: "active", ViewGeneration: 2, PathOwnership: &pathownership.Snapshot{RepositoryUUID: incarnation, Revision: 3}}}
+			s := ownershipSVN{revision: 3, uuid: incarnation}
+			tc.change(c, &r, &s)
+			c.results[reposupervisor.Key{ServerID: "lab", RepoID: repo.ID}] = r
+			_, err := c.Ownership(t.Context(), repo, s)
+			if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("wanted %q got %v", tc.reason, err)
+			}
+			if (s.revisionErr != nil || s.infoErr != nil) && !errors.Is(err, context.Canceled) {
+				t.Fatal("lost wrapped cancellation")
+			}
+		})
+	}
 }
 
 func TestDaemonOwnershipRequiresFreshBoundBrokerState(t *testing.T) {

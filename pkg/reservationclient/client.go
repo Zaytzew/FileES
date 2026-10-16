@@ -147,52 +147,9 @@ func (c *Client) fetch(ctx context.Context, repoID, schema string, storage ...bo
 	if err != nil {
 		return reservationv1.Result{}, err
 	}
-	connection, err := (&net.Dialer{Timeout: c.timeout}).DialContext(ctx, "tcp", c.address)
-	if err != nil {
-		return reservationv1.Result{}, fmt.Errorf("connect reservation worker: %w", err)
-	}
-	defer connection.Close()
-	deadline := time.Now().Add(c.timeout)
-	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
-		deadline = contextDeadline
-	}
-	if err := connection.SetDeadline(deadline); err != nil {
-		return reservationv1.Result{}, err
-	}
-	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
-	defer stop()
-	sshConfig := &ssh.ClientConfig{User: ServiceUser, Auth: []ssh.AuthMethod{ssh.PublicKeys(c.signer)}, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, HostKeyCallback: c.hostKeys, Timeout: c.timeout}
-	clientConnection, channels, requests, err := ssh.NewClientConn(connection, c.address, sshConfig)
-	if err != nil {
-		return reservationv1.Result{}, fmt.Errorf("reservation worker SSH handshake: %w", err)
-	}
-	sshClient := ssh.NewClient(clientConnection, channels, requests)
-	defer sshClient.Close()
-	session, err := sshClient.NewSession()
+	response, err := c.exchange(ctx, raw, MaxResponseBytes)
 	if err != nil {
 		return reservationv1.Result{}, err
-	}
-	defer session.Close()
-	session.Stdin = bytes.NewReader(append(raw, '\n'))
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		return reservationv1.Result{}, err
-	}
-	var stderr limitedBuffer
-	session.Stderr = &stderr
-	if err := session.Start(Command); err != nil {
-		return reservationv1.Result{}, fmt.Errorf("start reservation worker: %w", err)
-	}
-	response, readErr := io.ReadAll(io.LimitReader(stdout, MaxResponseBytes+1))
-	waitErr := session.Wait()
-	if waitErr != nil {
-		return reservationv1.Result{}, fmt.Errorf("reservation worker failed: %w: %s", waitErr, stderr.String())
-	}
-	if readErr != nil {
-		return reservationv1.Result{}, fmt.Errorf("read reservation worker result: %w", readErr)
-	}
-	if len(response) > MaxResponseBytes {
-		return reservationv1.Result{}, errors.New("reservation worker result exceeds limit")
 	}
 	result, err := reservationv1.ParseResult(bytes.TrimSpace(response))
 	if err != nil {
@@ -202,6 +159,59 @@ func (c *Client) fetch(ctx context.Context, repoID, schema string, storage ...bo
 		return reservationv1.Result{}, errors.New("reservation worker result does not match request")
 	}
 	return result, nil
+}
+
+// All read contracts share the existing pinned identity and one-shot transport.
+func (c *Client) exchange(ctx context.Context, raw []byte, maxResponse int64) ([]byte, error) {
+	connection, err := (&net.Dialer{Timeout: c.timeout}).DialContext(ctx, "tcp", c.address)
+	if err != nil {
+		return nil, fmt.Errorf("connect reservation worker: %w", err)
+	}
+	defer connection.Close()
+	deadline := time.Now().Add(c.timeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if err := connection.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
+	sshConfig := &ssh.ClientConfig{User: ServiceUser, Auth: []ssh.AuthMethod{ssh.PublicKeys(c.signer)}, HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, HostKeyCallback: c.hostKeys, Timeout: c.timeout}
+	clientConnection, channels, requests, err := ssh.NewClientConn(connection, c.address, sshConfig)
+	if err != nil {
+		return nil, fmt.Errorf("reservation worker SSH handshake: %w", err)
+	}
+	sshClient := ssh.NewClient(clientConnection, channels, requests)
+	defer sshClient.Close()
+	session, err := sshClient.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	session.Stdin = bytes.NewReader(append(raw, '\n'))
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr limitedBuffer
+	session.Stderr = &stderr
+	if err := session.Start(Command); err != nil {
+		return nil, fmt.Errorf("start reservation worker: %w", err)
+	}
+	response, readErr := io.ReadAll(io.LimitReader(stdout, maxResponse+1))
+	if int64(len(response)) > maxResponse {
+		// Do not wait for a writer blocked behind a full SSH window.
+		return nil, errors.New("reservation worker result exceeds limit")
+	}
+	waitErr := session.Wait()
+	if waitErr != nil {
+		return nil, fmt.Errorf("reservation worker failed: %w: %s", waitErr, stderr.String())
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("read reservation worker result: %w", readErr)
+	}
+	return response, nil
 }
 
 type limitedBuffer struct{ bytes.Buffer }

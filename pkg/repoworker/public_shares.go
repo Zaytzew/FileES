@@ -13,6 +13,7 @@ func (w *Worker) publicShare(ctx context.Context, session Session, ticket contro
 	}
 	var response any
 	var err error
+	includeState := false
 	switch ticket.Type {
 	case control.TicketListPublicShares:
 		var payload control.ListPublicSharesPayload
@@ -32,24 +33,28 @@ func (w *Worker) publicShare(ctx context.Context, session Session, ticket contro
 			return control.Result{}, err
 		}
 		response, err = w.PublicShares.Create(ctx, ticket.OperationID, session.RealmID, payload.PublicShareDeclaration)
+		includeState = payload.IncludeState
 	case control.TicketUpdatePublicShare:
 		var payload control.UpdatePublicSharePayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 			return control.Result{}, err
 		}
 		response, err = w.PublicShares.Update(ctx, ticket.OperationID, session.RealmID, payload.ChannelID, payload.PublicShareDeclaration, payload.KeepPassword)
+		includeState = payload.IncludeState
 	case control.TicketRevokePublicShare:
 		var payload control.RevokePublicSharePayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 			return control.Result{}, err
 		}
 		response, err = w.PublicShares.Revoke(ctx, session.RealmID, payload.ChannelID)
+		includeState = payload.IncludeState
 	case control.TicketDeletePublicShare:
 		var payload control.DeletePublicSharePayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 			return control.Result{}, err
 		}
 		response, err = w.PublicShares.Delete(ctx, session.RealmID, payload.ChannelID)
+		includeState = payload.IncludeState
 	default:
 		return control.Result{}, errors.New("unsupported public share ticket")
 	}
@@ -58,6 +63,19 @@ func (w *Worker) publicShare(ctx context.Context, session Session, ticket contro
 			return w.failure(ticket, "PUBLIC_SHARE_REJECTED", "public share request was rejected")
 		}
 		return w.retryable(ticket, "PUBLIC_SHARE_RETRY", err.Error())
+	}
+	if result, ok := response.(control.PublicShareResult); ok {
+		if !includeState {
+			result.StateReceipt = nil // old clients strictly decode mutation results
+		} else if result.StateReceipt != nil {
+			for _, repo := range session.Repositories {
+				if repo.RepoID == result.StateReceipt.RepoID {
+					result.StateReceipt.RepoDisplayName = repo.DisplayName
+					break
+				}
+			}
+		}
+		response = result
 	}
 	wire, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, response, w.now())
 	if err == nil {

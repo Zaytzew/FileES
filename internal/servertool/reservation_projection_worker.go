@@ -20,6 +20,7 @@ import (
 	"filees/internal/storagewatch"
 	"filees/internal/svnurl"
 	"filees/pkg/clientview"
+	"filees/pkg/publicstate"
 	"filees/pkg/repoworker"
 	reservationv1 "filees/pkg/reservation/v1"
 	"filees/pkg/reservationprojection"
@@ -104,10 +105,34 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		return ExitSoftware
 	}
 
-	raw, err := io.ReadAll(io.LimitReader(in, reservationWorkerMaxRequest+1))
+	raw, err := io.ReadAll(io.LimitReader(in, publicstate.MaxRequestBytes+1))
 	if err != nil {
 		report(stderr, "serving-state request read", err)
 		return ExitData
+	}
+	if len(raw) > publicstate.MaxRequestBytes {
+		fmt.Fprintln(stderr, "filees-serving-state: request exceeds size limit")
+		return ExitData
+	}
+	var selector struct {
+		Schema string `json:"schema"`
+	}
+	if json.Unmarshal(raw, &selector) == nil && selector.Schema == publicstate.Schema {
+		req, err := publicstate.ParseRequest(raw)
+		if err != nil {
+			report(stderr, "public link state request", err)
+			return ExitData
+		}
+		payload, err := publicLinksState(config, clientID, req)
+		if err != nil {
+			report(stderr, "public link state", err)
+			return ExitSoftware
+		}
+		if _, err := out.Write(append(payload, '\n')); err != nil {
+			report(stderr, "public link state response", err)
+			return ExitSoftware
+		}
+		return ExitOK
 	}
 	if len(raw) > reservationWorkerMaxRequest {
 		fmt.Fprintln(stderr, "filees-serving-state: request exceeds size limit")

@@ -9,7 +9,8 @@ import (
 )
 
 type recordingPublicShareService struct {
-	err error
+	err     error
+	receipt bool
 }
 
 func (service *recordingPublicShareService) ListPublicShares(context.Context, string, string) ([]contract.PublicShareSummary, error) {
@@ -24,8 +25,30 @@ func (service *recordingPublicShareService) UpdatePublicShare(context.Context, s
 	return contract.PublicShareResult{ChannelID: "updated"}, service.err
 }
 
-func (service *recordingPublicShareService) RevokePublicShare(context.Context, string, string) (contract.PublicShareResult, error) {
+func (service *recordingPublicShareService) RevokePublicShare(ctx context.Context, _ string, _ string) (contract.PublicShareResult, error) {
+	if service.receipt {
+		if applied, ok := ctx.Value(publicShareReceiptKey{}).(*bool); ok {
+			*applied = true
+		}
+	}
 	return contract.PublicShareResult{ChannelID: "revoked"}, service.err
+}
+
+func TestPublicShareACKNotifiesGUIWithoutAnotherServerListing(t *testing.T) {
+	delegate := &recordingPublicShareService{receipt: true}
+	reads, events := 0, 0
+	service := refreshingPublicShareService{delegate: delegate, changed: func(string) { reads++ }, observed: func(string) { events++ }}
+	if _, err := service.RevokePublicShare(t.Context(), "lab", "channel"); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 0 || events != 1 {
+		t.Fatalf("reads=%d events=%d", reads, events)
+	}
+	delegate.err = errors.New("lost response")
+	_, _ = service.RevokePublicShare(t.Context(), "lab", "channel")
+	if reads != 0 || events != 1 {
+		t.Fatal("failed command notified success")
+	}
 }
 
 func (service *recordingPublicShareService) DeletePublicShare(context.Context, string, string) (contract.PublicShareResult, error) {

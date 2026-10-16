@@ -14,8 +14,13 @@ func TestPublicShareSizeBudgetsAndIPCPreflight(t *testing.T) {
 	if control.TicketByteLimit(control.TicketCreatePublicShare) != 2<<20 || control.TicketByteLimit(control.TicketUpdatePublicShare) != 2<<20 || control.ResultByteLimit(control.TicketListPublicShares) != 16<<20 {
 		t.Fatal("public share wire budgets changed")
 	}
-	if control.TicketByteLimit(control.TicketListPublicShares) != 64<<10 || control.ResultByteLimit(control.TicketCreatePublicShare) != 64<<10 || control.TicketByteLimit(control.TicketCreateRepository) != 64<<10 {
+	if control.TicketByteLimit(control.TicketListPublicShares) != 64<<10 || control.ResultByteLimit(control.TicketDeletePublicShare) != 64<<10 || control.TicketByteLimit(control.TicketCreateRepository) != 64<<10 {
 		t.Fatal("ordinary operations received larger budgets")
+	}
+	for _, kind := range []control.TicketType{control.TicketCreatePublicShare, control.TicketUpdatePublicShare, control.TicketRevokePublicShare} {
+		if control.ResultByteLimit(kind) != 4<<20 {
+			t.Fatal("canonical receipt must fit one complete share map")
+		}
 	}
 	for _, command := range []string{contract.CmdRepoPublicShareCreate, contract.CmdRepoPublicShareUpdate} {
 		payload, _ := json.Marshal(map[string]string{"oversized": strings.Repeat("a", 4<<20)})

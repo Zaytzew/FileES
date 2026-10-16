@@ -275,13 +275,16 @@ func runDaemon() {
 	}
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
 	shareCache := newPublicShareCache()
+	realmAliases.shareCache = shareCache
 	ipc.SetPublicShareSource(shareCache)
 	ipc.SetRealmAliasService(realmAliases)
 	ipc.SetRealmGrantService(realmAliases)
 	ipc.SetRealmPublicBrandingService(realmAliases)
 	ipc.SetGUIBlobService(realmAliases)
 	ipc.SetEditingPolicyService(realmAliases)
-	ipc.SetPublicShareService(refreshingPublicShareService{delegate: realmAliases, changed: func(serverID string) {
+	ipc.SetPublicShareService(refreshingPublicShareService{delegate: realmAliases, observed: func(string) {
+		ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
+	}, changed: func(serverID string) {
 		select {
 		case publicShareEvents <- serverID:
 		case <-ctx.Done():

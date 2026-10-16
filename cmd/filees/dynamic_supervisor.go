@@ -94,12 +94,14 @@ type publicShareRefreshCoordinator struct {
 	mu      sync.Mutex
 	running map[string]bool
 	pending map[string]clientview.View
+	mirrors map[string]*publicLinksMirror
 }
 
 func newPublicShareRefreshCoordinator(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server) *publicShareRefreshCoordinator {
 	return &publicShareRefreshCoordinator{
 		ctx: ctx, lister: lister, cache: cache, ipc: ipc,
 		running: make(map[string]bool), pending: make(map[string]clientview.View),
+		mirrors: make(map[string]*publicLinksMirror),
 	}
 }
 
@@ -119,8 +121,15 @@ func (coordinator *publicShareRefreshCoordinator) Schedule(serverID string, view
 }
 
 func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clientview.View) {
+	coordinator.mu.Lock()
+	mirror := coordinator.mirrors[serverID]
+	if mirror == nil {
+		mirror = &publicLinksMirror{}
+		coordinator.mirrors[serverID] = mirror
+	}
+	coordinator.mu.Unlock()
 	for {
-		refreshPublicShares(coordinator.ctx, coordinator.lister, coordinator.cache, coordinator.ipc, serverID, view)
+		refreshPublicShares(coordinator.ctx, coordinator.lister, coordinator.cache, coordinator.ipc, serverID, view, mirror)
 		coordinator.mu.Lock()
 		next, rerun := coordinator.pending[serverID]
 		if rerun {
@@ -140,11 +149,11 @@ func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clie
 // listening GUI. It runs off the same cadence as the server's projection
 // sync (clientview.Monitor's configured interval) — piggybacked onto an
 // already-throttled, already-scheduled poll instead of a new ticker, so it
-// never adds SSH control-plane load beyond what that interval already
-// budgets for. Called from a bounded-lifetime goroutine (see updates
-// handling below), never from the supervisor's own select loop, since each
-// owned repo costs one blocking SSH exchange.
-func refreshPublicShares(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server, serverID string, view clientview.View) {
+// uses one differential read on capable servers. Legacy servers retain the
+// per-repository fallback. Called from a bounded-lifetime goroutine, never
+// from the supervisor's select loop. Own canonical mutation receipts update
+// the mirror directly and do not schedule a redundant refresh.
+func refreshPublicShares(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server, serverID string, view clientview.View, mirrors ...*publicLinksMirror) {
 	if lister == nil || cache == nil || view.RealmID == "" || ctx.Err() != nil {
 		return
 	}
@@ -167,6 +176,9 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 				ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
 			}
 		}()
+	}
+	if hasScoped && len(mirrors) > 0 && refreshPublicLinksState(listingCtx, lister, cache, serverID, view, epoch, mirrors[0]) {
+		return
 	}
 	shares := make([]contract.PublicShareSummary, 0, len(view.Repositories))
 	var failed []string

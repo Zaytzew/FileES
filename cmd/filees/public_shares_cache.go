@@ -13,6 +13,7 @@ import (
 	"filees/internal/durable"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/privatefile"
+	"filees/pkg/publicstate"
 	"filees/pkg/talk"
 )
 
@@ -21,20 +22,24 @@ import (
 // ipcserver.PublicShareSource so a GUI can render one cross-repo panel from a
 // single cached answer instead of opening repository.html per repo.
 type publicShareCache struct {
-	mu         sync.RWMutex
-	byServer   map[string][]contract.PublicShareSummary
-	observed   map[string]time.Time
-	failed     map[string]bool
-	blocked    map[string]bool
-	loading    map[string]bool
-	bindings   map[string]publicShareCacheBinding
-	epochs     map[string]uint64
-	generation uint64
-	now        func() time.Time
+	mu            sync.RWMutex
+	byServer      map[string][]contract.PublicShareSummary
+	observed      map[string]time.Time
+	failed        map[string]bool
+	blocked       map[string]bool
+	loading       map[string]bool
+	bindings      map[string]publicShareCacheBinding
+	epochs        map[string]uint64
+	generation    uint64
+	now           func() time.Time
+	states        map[string]publicstate.Snapshot
+	stateSerial   map[string]uint64
+	mutating      map[string]bool
+	mutationGates map[string]chan struct{}
 }
 
 func newPublicShareCache() *publicShareCache {
-	return &publicShareCache{byServer: make(map[string][]contract.PublicShareSummary), observed: map[string]time.Time{}, failed: map[string]bool{}, blocked: map[string]bool{}, loading: map[string]bool{}, bindings: map[string]publicShareCacheBinding{}, epochs: map[string]uint64{}, now: time.Now}
+	return &publicShareCache{byServer: make(map[string][]contract.PublicShareSummary), observed: map[string]time.Time{}, failed: map[string]bool{}, blocked: map[string]bool{}, loading: map[string]bool{}, bindings: map[string]publicShareCacheBinding{}, epochs: map[string]uint64{}, now: time.Now, states: map[string]publicstate.Snapshot{}, stateSerial: map[string]uint64{}, mutating: map[string]bool{}, mutationGates: map[string]chan struct{}{}}
 }
 
 // The disposable presenter cache is scoped to one activation, not just a
@@ -65,6 +70,7 @@ func (c *publicShareCache) Bind(serverID, clientID, address string, port int, pa
 	}
 	c.epochs[serverID]++
 	c.bindings[serverID] = binding
+	delete(c.states, serverID)
 	delete(c.byServer, serverID)
 	delete(c.observed, serverID)
 	delete(c.failed, serverID)
@@ -142,6 +148,16 @@ func (c *publicShareCache) CompleteRefresh(serverID string, epoch uint64, shares
 	defer c.mu.Unlock()
 	if c.epochs[serverID] == epoch {
 		c.setPartialLocked(serverID, shares, failed)
+	}
+}
+
+// A failed aggregate verification is not evidence that any link disappeared.
+func (c *publicShareCache) FailRefresh(serverID string, epoch uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.epochs[serverID] == epoch && !c.blocked[serverID] {
+		c.failed[serverID] = true
+		c.generation++
 	}
 }
 
@@ -260,6 +276,7 @@ func (c *publicShareCache) SetDetached(serverID string, detached bool) {
 			}
 		}
 		delete(c.bindings, serverID)
+		delete(c.states, serverID)
 		delete(c.byServer, serverID)
 		delete(c.observed, serverID)
 		delete(c.failed, serverID)

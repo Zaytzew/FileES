@@ -35,6 +35,23 @@ func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID st
 	if err != nil {
 		return nil, classifyPublicShareError(err)
 	}
+	return publicShareSummaries(s.BaseURL, records)
+}
+
+// ListOwnedRepositories projects the state worker's server-derived inventory.
+// It does not expose channel credentials, password hashes or invitation tokens.
+func (s ChannelPublicShareService) ListOwnedRepositories(ctx context.Context, ownerRealm string, repoIDs []string) ([]control.PublicShareSummary, error) {
+	if s.Channels == nil {
+		return nil, errors.New("public share channel store is unavailable")
+	}
+	records, err := s.Channels.ListOwnedRepositories(ctx, ownerRealm, repoIDs)
+	if err != nil {
+		return nil, classifyPublicShareError(err)
+	}
+	return publicShareSummaries(s.BaseURL, records)
+}
+
+func publicShareSummaries(baseURL string, records []channel.Record) ([]control.PublicShareSummary, error) {
 	result := make([]control.PublicShareSummary, 0, len(records))
 	for _, record := range records {
 		if record.Manifest == nil {
@@ -46,7 +63,7 @@ func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID st
 		}
 		result = append(result, control.PublicShareSummary{
 			InvitationMessage: record.Manifest.InvitationMessage,
-			PublicURL:         publicShareRecipientURL(s.BaseURL, record.Alias, record.Slug),
+			PublicURL:         publicShareRecipientURL(baseURL, record.Alias, record.Slug),
 			ChannelID:         record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
 			SourceRoot: record.Manifest.SourceRoot, Recipients: append([]string(nil), record.Manifest.Recipients...), PasswordProtected: record.Manifest.Password != "",
 			DoNotFollow: record.Manifest.DoNotFollow, Objects: objects, UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -88,7 +105,7 @@ func (s ChannelPublicShareService) Create(ctx context.Context, operationID, owne
 			return control.PublicShareResult{}, err
 		}
 	}
-	return publicShareResult(record, len(deliveries)), nil
+	return s.resultWithState(record, len(deliveries))
 }
 
 func (s ChannelPublicShareService) Update(ctx context.Context, operationID, ownerRealm, channelID string, declaration control.PublicShareDeclaration, keepPassword bool) (control.PublicShareResult, error) {
@@ -124,7 +141,7 @@ func (s ChannelPublicShareService) Update(ctx context.Context, operationID, owne
 			return control.PublicShareResult{}, err
 		}
 	}
-	return publicShareResult(record, len(deliveries)), nil
+	return s.resultWithState(record, len(deliveries))
 }
 
 func (s ChannelPublicShareService) Revoke(_ context.Context, ownerRealm, channelID string) (control.PublicShareResult, error) {
@@ -135,7 +152,7 @@ func (s ChannelPublicShareService) Revoke(_ context.Context, ownerRealm, channel
 	if err != nil {
 		return control.PublicShareResult{}, classifyPublicShareError(err)
 	}
-	return publicShareResult(record, 0), nil
+	return s.resultWithState(record, 0)
 }
 
 func (s ChannelPublicShareService) Delete(_ context.Context, ownerRealm, channelID string) (control.PublicShareResult, error) {
@@ -146,7 +163,21 @@ func (s ChannelPublicShareService) Delete(_ context.Context, ownerRealm, channel
 	if err != nil {
 		return control.PublicShareResult{}, classifyPublicShareError(err)
 	}
-	return publicShareResult(record, 0), nil
+	return s.resultWithState(record, 0)
+}
+
+func (s ChannelPublicShareService) resultWithState(record channel.Record, deliveries int) (control.PublicShareResult, error) {
+	result := publicShareResult(record, deliveries)
+	result.StateReceipt = &control.PublicShareStateReceipt{RealmID: record.OwnerRealm, RepoID: record.RepoID}
+	if record.State != "deleted" {
+		rows, err := publicShareSummaries(s.BaseURL, []channel.Record{record})
+		if err != nil {
+			return control.PublicShareResult{}, err
+		}
+		rows[0].InvitationMessage = ""
+		result.StateReceipt.Share = &rows[0]
+	}
+	return result, nil
 }
 
 func toShare(ownerRealm string, declaration control.PublicShareDeclaration) manifest.Share {

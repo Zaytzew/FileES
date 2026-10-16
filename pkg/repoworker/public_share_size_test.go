@@ -25,7 +25,7 @@ func TestDispatcherLargePublicShareRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := Dispatcher{Worker: &Worker{Store: store, PublicShares: ChannelPublicShareService{Channels: channels}}, Resolver: guiBlobResolver{client: Session{ClientID: client, RealmID: owner, CanCreateRepositories: true}}}
-	declaration := control.PublicShareDeclaration{RepoID: repo, SourceRoot: "wydanie", Slug: "archiwum"}
+	declaration := control.PublicShareDeclaration{RepoID: repo, SourceRoot: "wydanie", Slug: "archiwum", IncludeState: true}
 	for i := 0; i < 4096; i++ {
 		name := fmt.Sprintf("projekt-archiwalny/rysunki/Załącznik-%04d.dwg", i)
 		declaration.Objects = append(declaration.Objects, control.PublicShareObject{PublicID: fmt.Sprintf("%016x", i), RepoPath: "wydanie/" + name, DisplayName: name})
@@ -58,6 +58,9 @@ func TestDispatcherLargePublicShareRoundTrip(t *testing.T) {
 	if err := control.DecodePayload(created.Result, &creation); err != nil {
 		t.Fatal(err)
 	}
+	if creation.StateReceipt == nil || len(creation.StateReceipt.Share.Objects) != 4096 {
+		t.Fatal("large ACK lost canonical objects")
+	}
 	declaration.Objects[4095].DisplayName = "Zmieniona nazwa.dwg"
 	exchange(control.TicketUpdatePublicShare, control.UpdatePublicSharePayload{ChannelID: creation.ChannelID, PublicShareDeclaration: declaration}, true)
 	listed := exchange(control.TicketListPublicShares, control.ListPublicSharesPayload{RepoID: repo}, false)
@@ -70,6 +73,14 @@ func TestDispatcherLargePublicShareRoundTrip(t *testing.T) {
 	}
 	if len(listed.Result) <= control.DefaultMessageBytes {
 		t.Fatal("listing fixture does not cross old response limit")
+	}
+	revoked := exchange(control.TicketRevokePublicShare, control.RevokePublicSharePayload{ChannelID: creation.ChannelID, IncludeState: true}, false)
+	var revocation control.PublicShareResult
+	if err := control.DecodePayload(revoked.Result, &revocation); err != nil {
+		t.Fatal(err)
+	}
+	if revocation.StateReceipt == nil || len(revocation.StateReceipt.Share.Objects) != 4096 {
+		t.Fatal("large revoke ACK truncated")
 	}
 }
 

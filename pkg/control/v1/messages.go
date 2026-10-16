@@ -275,6 +275,7 @@ type PublicShareObject struct {
 // from the authenticated session. PasswordHash is a verifier prepared on the
 // client; plaintext passwords must never enter the SVN-backed ticket stream.
 type PublicShareDeclaration struct {
+	IncludeState      bool                `json:"include_state,omitempty"`
 	ManageInvitations bool                `json:"manage_invitations,omitempty"`
 	InvitationMessage string              `json:"invitation_message,omitempty"`
 	ResendInvitations bool                `json:"resend_invitations,omitempty"`
@@ -317,17 +318,29 @@ type ListPublicSharesResult struct {
 	Shares               []PublicShareSummary `json:"shares"`
 }
 type RevokePublicSharePayload struct {
-	ChannelID string `json:"channel_id"`
+	ChannelID    string `json:"channel_id"`
+	IncludeState bool   `json:"include_state,omitempty"`
 }
 type DeletePublicSharePayload struct {
-	ChannelID string `json:"channel_id"`
+	ChannelID    string `json:"channel_id"`
+	IncludeState bool   `json:"include_state,omitempty"`
+}
+
+// PublicShareStateReceipt is canonical mutation output, requested explicitly
+// by clients supporting the differential state lane. It carries no credentials.
+type PublicShareStateReceipt struct {
+	RealmID         string              `json:"realm_id"`
+	RepoID          string              `json:"repo_id"`
+	RepoDisplayName string              `json:"repo_display_name"`
+	Share           *PublicShareSummary `json:"share,omitempty"` // nil only for deletion
 }
 type PublicShareResult struct {
-	ChannelID           string `json:"channel_id"`
-	Alias               string `json:"alias"`
-	Slug                string `json:"slug"`
-	State               string `json:"state"`
-	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
+	StateReceipt        *PublicShareStateReceipt `json:"state_receipt,omitempty"`
+	ChannelID           string                   `json:"channel_id"`
+	Alias               string                   `json:"alias"`
+	Slug                string                   `json:"slug"`
+	State               string                   `json:"state"`
+	RecipientDeliveries int                      `json:"recipient_deliveries,omitempty"`
 }
 
 // UploadChannelDeclaration is the owner-supplied CREATE/UPDATE body. Owner
@@ -1394,6 +1407,27 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.State != wantState {
 			return errors.New("public share result state is invalid")
+		}
+		if receipt := result.StateReceipt; receipt != nil {
+			if validateUUID("receipt.realm_id", receipt.RealmID) != nil || validateUUID("receipt.repo_id", receipt.RepoID) != nil {
+				return errors.New("public share receipt identity is invalid")
+			}
+			if result.State == "deleted" {
+				if receipt.Share != nil {
+					return errors.New("deleted share receipt contains a live item")
+				}
+			} else if receipt.Share == nil || receipt.Share.ChannelID != result.ChannelID || receipt.Share.RepoID != receipt.RepoID || receipt.Share.State != result.State || receipt.Share.Alias != result.Alias || receipt.Share.Slug != result.Slug || receipt.Share.InvitationMessage != "" {
+				return errors.New("public share receipt content does not match mutation")
+			}
+			if share := receipt.Share; share != nil {
+				declaration := PublicShareDeclaration{RepoID: share.RepoID, SourceRoot: share.SourceRoot, Slug: share.Slug, Recipients: share.Recipients, DoNotFollow: share.DoNotFollow, Objects: share.Objects}
+				if err := validatePublicShareDeclaration(declaration); err != nil {
+					return fmt.Errorf("public share receipt: %w", err)
+				}
+				if _, err := time.Parse(time.RFC3339Nano, share.UpdatedAt); err != nil {
+					return errors.New("public share receipt updated_at is invalid")
+				}
+			}
 		}
 	case TicketClientDeactivate:
 		var result ClientDeactivateResult

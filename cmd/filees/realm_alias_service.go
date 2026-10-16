@@ -13,7 +13,9 @@ import (
 	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
+	"filees/pkg/publicstate"
 	"filees/pkg/realmbranding"
+	"filees/pkg/reservationclient"
 )
 
 // realmAliasService is the daemon's only bridge between local GUI IPC and
@@ -27,8 +29,10 @@ type realmAliasService struct {
 	// next polling tick must not erase it while that server publishes its
 	// repaired view. Keys include the realm ID to avoid carrying an alias across
 	// a later detach/join on the same server profile.
-	projectionRealms map[string]string
-	confirmedAliases map[realmAliasProjectionKey]string
+	projectionRealms        map[string]string
+	confirmedAliases        map[realmAliasProjectionKey]string
+	shareCache              *publicShareCache
+	publicLinksCapabilities map[string]publicLinksCapability
 }
 
 type realmAliasProjectionKey struct {
@@ -249,6 +253,39 @@ func (s *realmAliasService) ListPublicShares(ctx context.Context, serverID, repo
 	return shares, nil
 }
 
+// FetchPublicLinks uses the read-only emitter, not mutation tickets or a
+// client-generated repository inventory. The activated profile binds the reply.
+func (s *realmAliasService) FetchPublicLinks(ctx context.Context, serverID string, req publicstate.Request) (publicstate.Response, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return publicstate.Response{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	reader, err := reservationclient.New(reservationclient.Config{Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile, KnownHosts: profile.KnownHosts, Timeout: 90 * time.Second})
+	if err != nil {
+		return publicstate.Response{}, err
+	}
+	result, err := reader.FetchPublicLinks(ctx, req)
+	if err != nil {
+		if errors.Is(err, reservationclient.ErrPublicLinksUnsupported) {
+			s.mu.Lock()
+			delete(s.publicLinksCapabilities, serverID)
+			s.mu.Unlock()
+		}
+		return publicstate.Response{}, err
+	}
+	current, ok := s.provisioner.Profile(serverID)
+	if !ok || current.ClientID != profile.ClientID || current.Address != profile.Address || current.SSHPort != profile.SSHPort || current.IdentityFile != profile.IdentityFile || current.KnownHosts != profile.KnownHosts || result.Binding.ServerID != serverID || result.Binding.ClientID != profile.ClientID {
+		return publicstate.Response{}, errors.New("public link state activation changed or response identity mismatch")
+	}
+	s.mu.Lock()
+	if s.publicLinksCapabilities == nil {
+		s.publicLinksCapabilities = map[string]publicLinksCapability{}
+	}
+	s.publicLinksCapabilities[serverID] = publicLinksCapability{profile: profile, binding: result.Binding}
+	s.mu.Unlock()
+	return result, nil
+}
+
 func (s *realmAliasService) CreatePublicShare(ctx context.Context, serverID string, declaration contract.PublicShareDeclaration) (contract.PublicShareResult, error) {
 	return s.publicShareExchange(ctx, serverID, control.TicketCreatePublicShare, control.CreatePublicSharePayload{PublicShareDeclaration: publicShareDeclarationToControl(declaration)})
 }
@@ -266,10 +303,25 @@ func (s *realmAliasService) DeletePublicShare(ctx context.Context, serverID, cha
 }
 
 func (s *realmAliasService) publicShareExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.PublicShareResult, error) {
+	var epoch uint64
+	if s.shareCache != nil {
+		var release func()
+		var err error
+		epoch, release, err = s.shareCache.beginMutation(ctx, serverID)
+		if err != nil {
+			return contract.PublicShareResult{}, err
+		}
+		defer release()
+	}
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {
 		return contract.PublicShareResult{}, fmt.Errorf("no activated profile for server %q", serverID)
 	}
+	s.mu.Lock()
+	capability, capable := s.publicLinksCapabilities[serverID]
+	s.mu.Unlock()
+	include := capable && capability.profile == profile && s.shareCache != nil
+	payload = publicShareReceiptRequest(payload, include)
 	result, err := s.exchange(ctx, profile, typ, payload)
 	if err != nil {
 		return contract.PublicShareResult{}, err
@@ -277,6 +329,14 @@ func (s *realmAliasService) publicShareExchange(ctx context.Context, serverID st
 	var remote control.PublicShareResult
 	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
 		return contract.PublicShareResult{}, err
+	}
+	current, active := s.provisioner.Profile(serverID)
+	if include && active && current == profile && remote.StateReceipt != nil && remote.StateReceipt.RealmID == capability.binding.RealmID {
+		if s.shareCache.applyReceipt(serverID, profile.ClientID, epoch, remote) {
+			if applied, ok := ctx.Value(publicShareReceiptKey{}).(*bool); ok {
+				*applied = true
+			}
+		}
 	}
 	return contract.PublicShareResult{ChannelID: remote.ChannelID, Alias: remote.Alias, Slug: remote.Slug, State: remote.State, RecipientDeliveries: remote.RecipientDeliveries}, nil
 }

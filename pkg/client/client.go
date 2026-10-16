@@ -575,6 +575,10 @@ func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, 
 	} else {
 		out, err = c.run(ctx, rootDirectory, args)
 	}
+	return c.recoverMissingPathLock(ctx, rootDirectory, paths, comment, out, err)
+}
+
+func (c *execClient) recoverMissingPathLock(ctx context.Context, rootDirectory string, paths []string, comment, out string, err error) (string, error) {
 	if err != nil && c.MetadataMovesEnabled() && len(paths) == 1 && ctx.Err() == nil {
 		// SVN stores the lock token before chmod'ing svn:needs-lock. A renamed
 		// source is absent, so chmod can fail AFTER the lock succeeded. Prove

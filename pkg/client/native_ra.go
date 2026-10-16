@@ -284,9 +284,10 @@ func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string
 
 // NativePathResult is a path's lock outcome; process success is not path success.
 type NativePathResult struct {
-	Path  string  `json:"path"`
-	OK    bool    `json:"ok"`
-	Error *string `json:"error"`
+	Path     string    `json:"path"`
+	OK       bool      `json:"ok"`
+	Error    *string   `json:"error"`
+	Acquired *LockInfo `json:"-"` // never include tokens in ordinary command output
 }
 type NativePathFailure struct {
 	Verb    string
@@ -331,6 +332,13 @@ func nativeLockReceipt(raw map[string]any, verb string, rels []string) ([]Native
 			return nil, errors.New("native SVN: missing lock outcome")
 		}
 		r := NativePathResult{Path: p, OK: success}
+		if value, present := row["acquired_lock"]; present {
+			proof, err := parseAcquiredLock(value)
+			if err != nil || !success || verb != "lock" {
+				return nil, errors.New("native SVN: invalid acquisition receipt")
+			}
+			r.Acquired = proof
+		}
 		if !success {
 			msg, ok := row["error"].(string)
 			if !ok || msg == "" {
@@ -347,17 +355,22 @@ func nativeLockReceipt(raw map[string]any, verb string, rels []string) ([]Native
 	return results, nil
 }
 func (c *execClient) nativeLock(ctx context.Context, wc string, paths []string, verb, comment string) (string, error) {
+	rows, err := c.nativeLockResults(ctx, wc, paths, verb, comment)
+	return nativeJSON(map[string]any{"results": rows}), err
+}
+
+func (c *execClient) nativeLockResults(ctx context.Context, wc string, paths []string, verb, comment string) ([]NativePathResult, error) {
 	rels, e := nativeRelatives(wc, paths)
 	if e != nil {
-		return "", e
+		return nil, e
 	}
 	if len(rels) == 0 {
-		return "", errors.New("native lock requires explicit paths")
+		return nil, errors.New("native lock requires explicit paths")
 	}
 	seen := make(map[string]bool, len(rels))
 	for _, rel := range rels {
 		if seen[rel] {
-			return "", errors.New("native lock refuses duplicate paths before mutation")
+			return nil, errors.New("native lock refuses duplicate paths before mutation")
 		}
 		seen[rel] = true
 	}
@@ -371,7 +384,7 @@ func (c *execClient) nativeLock(ctx context.Context, wc string, paths []string, 
 		args = append(args, batch...)
 		raw, e := c.nativeRemote(ctx, wc, args...)
 		if e != nil {
-			return nativeJSON(map[string]any{"results": all}), e
+			return all, e
 		}
 		part, e := nativeLockReceipt(raw, verb, batch)
 		all = append(all, part...)
@@ -380,10 +393,10 @@ func (c *execClient) nativeLock(ctx context.Context, wc string, paths []string, 
 			if errors.As(e, &f) {
 				f.Results = all
 			}
-			return nativeJSON(map[string]any{"results": all}), e
+			return all, e
 		}
 	}
-	return nativeJSON(map[string]any{"results": all}), nil
+	return all, nil
 }
 
 type nativeLogEntry struct {

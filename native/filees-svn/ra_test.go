@@ -512,6 +512,15 @@ func TestRALockReportsEachPathSeparately(t *testing.T) {
 	if len(locked) != 1 || locked[0].(map[string]any)["ok"] != true {
 		t.Fatalf("lock = %#v", got["locked"])
 	}
+	proof, ok := locked[0].(map[string]any)["acquired_lock"].(map[string]any)
+	if !ok || proof["token"] == "" || proof["owner"] == "" || proof["comment"] != "rezerwacja" {
+		t.Fatal("missing canonical acquisition receipt")
+	}
+	observed := f.jsonCall(t, true, "status", "--disposable-wc", holder, "--show-updates", "--depth", "empty", "--", "occupied.txt")
+	local := observed["entries"].([]any)[0].(map[string]any)["local_lock"].(map[string]any)
+	if local["token"] != proof["token"] {
+		t.Fatal("receipt not stored in WC")
+	}
 
 	// The contested attempt: the process succeeds, the path does not.
 	contested := f.jsonCall(t, true, "lock", "--disposable-wc", rival, "--", "occupied.txt")
@@ -523,6 +532,9 @@ func TestRALockReportsEachPathSeparately(t *testing.T) {
 	if row["ok"] != false {
 		t.Fatalf("a held path must not report success: %#v", row)
 	}
+	if row["acquired_lock"] != nil {
+		t.Fatal("refusal emitted receipt")
+	}
 	if reason, _ := row["error"].(string); !strings.Contains(reason, "locked") {
 		t.Fatalf("refusal must say why: %#v", row["error"])
 	}
@@ -531,6 +543,9 @@ func TestRALockReportsEachPathSeparately(t *testing.T) {
 	unlocked, _ := released["unlocked"].([]any)
 	if len(unlocked) != 1 || unlocked[0].(map[string]any)["ok"] != true {
 		t.Fatalf("unlock = %#v", released["unlocked"])
+	}
+	if unlocked[0].(map[string]any)["acquired_lock"] != nil {
+		t.Fatal("unlock emitted acquisition")
 	}
 }
 

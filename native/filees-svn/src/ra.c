@@ -766,6 +766,7 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
 struct lock_result {
     const char *path;
     const char *failure; /* NULL when it worked */
+    svn_lock_t *acquired; /* server receipt, after WC token storage */
 };
 
 struct lock_baton {
@@ -808,6 +809,10 @@ static void collect_lock(void *baton, const svn_wc_notify_t *notify,
     row = apr_array_push(b->results);
     row->path = apr_pstrdup(b->pool, path);
     row->failure = NULL;
+    row->acquired = NULL;
+    if (!failed && notify->action == svn_wc_notify_locked &&
+        notify->lock_state == svn_wc_notify_lock_state_locked && notify->lock)
+        row->acquired = svn_lock_dup(notify->lock, b->pool);
     if (failed) {
         char buf[512];
         row->failure = notify->err
@@ -828,6 +833,13 @@ static void print_lock_receipt(const char *field, apr_array_header_t *results)
         printf(",\"ok\":%s,\"error\":", row->failure ? "false" : "true");
         if (row->failure) filees_json_string(row->failure);
         else printf("null");
+        if (row->acquired) {
+            printf(",\"acquired_lock\":{\"token\":");
+            filees_json_string(row->acquired->token);
+            printf(",\"owner\":"); filees_json_string(row->acquired->owner);
+            printf(",\"comment\":"); filees_json_string(row->acquired->comment ? row->acquired->comment : "");
+            printf("}");
+        }
         putchar('}');
     }
     puts("]}");

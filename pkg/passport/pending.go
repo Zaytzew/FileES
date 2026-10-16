@@ -108,6 +108,8 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		}
 	}
 	var out string
+	var acquired *Lock
+	var acquisitionStarted time.Time
 	if i.Stage == "prepare" {
 		if err := m.saveLocked(); err != nil {
 			return p, "", err
@@ -139,7 +141,12 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 			return p, "", err
 		}
 		var err error
-		out, err = b.AcquireLockIntent(ctx, p.Path, i)
+		acquisitionStarted = time.Now()
+		if receipt, ok := b.(acquisitionReceiptBackend); ok {
+			acquired, out, err = receipt.AcquireLockIntentReceipt(ctx, p.Path, i)
+		} else {
+			out, err = b.AcquireLockIntent(ctx, p.Path, i)
+		}
 		if err != nil {
 			return p, out, err
 		}
@@ -158,7 +165,13 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 			return p, out, err
 		}
 		var gone bool
-		lock, gone, err = b.ReconcileCompletedLockIntent(ctx, p.Path, i)
+		if acquired != nil && acquisitionReceiptFresh(acquisitionStarted, time.Now()) && ctx.Err() == nil {
+			// This exact call received the server token after local WC storage.
+			// Saving the completed intent precedes using the one-shot receipt.
+			lock = acquired
+		} else {
+			lock, gone, err = b.ReconcileCompletedLockIntent(ctx, p.Path, i)
+		}
 		if err == nil && gone {
 			return p, out, m.retirePending(p, errcat.New(errcat.KeyPassportStale, nil, nil))
 		}

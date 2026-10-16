@@ -1,5 +1,21 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Ograniczona diagnostyka rejestracji
+
+2026-10-16: `registration_evidence_v1` dodaje opcjonalny JSON stderr przed/po
+native i Shell register/unregister oraz odczytowe `registration-snapshot`
+z `--phase move_before|move_after|rollback`. Manager włącza
+`FILEES_REGISTRATION_TRACE=sample|anomaly|mutation` i hex
+`FILEES_REGISTRATION_OPERATION` tylko dla znanych korzeni lifecycle.
+Zwykły CLI nie zapisuje niczego; stdout zachowuje dotychczasowy protokół.
+
+Sample przechwytuje pierwsze info; anomaly pełne klasy tylko przy odmowie
+lub innym dostawcy. Before/after obejmuje rzeczywiste wywołanie API, bez
+automatycznej naprawy. Surowe bufory po 4096 B z returned/HRESULT, metadane
+korzenia, stan Shell i wersje systemu; bez treści dzieci. Prywatny bounded
+dziennik utrzymuje demon poza WC, nie helper. Opis granic i testy:
+`implementation notes (not distributed)`.
+
 ## Widoczność skrótu osobno dla lokalnej WC
 
 2026-10-12, baza r2098 + WC: shell_visibility_v1 rozdziela integrację CFAPI

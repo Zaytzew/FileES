@@ -95,7 +95,8 @@ func testAnchorRelocationProviderSequence(t *testing.T, rollback bool) {
 	}
 	state := bind()
 	m := &anchorManager{helper: helper, nativeSVN: native, lifecycle: store, stateEvery: 50 * time.Millisecond, options: &anchorOptions{},
-		repos: func(string, string) *ipcserver.RepoState { return state },
+		profiles: filepath.Join(root, "diagnostic-state", "servers"),
+		repos:    func(string, string) *ipcserver.RepoState { return state },
 		newSVN: func(string) (client.Client, error) {
 			return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}, nil
 		},
@@ -159,6 +160,7 @@ func testAnchorRelocationProviderSequence(t *testing.T, rollback bool) {
 	p.attachments = requests
 	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return &attachmentSVNStub{url: authority} }
 	p.anchorChanged = m.notifyLifecycle
+	p.traceAnchorRelocation = m.traceRelocation
 	p.quiesceAnchor = func(stopCtx context.Context, current localrepo.Record) error {
 		if err := m.quiesceRelocation(stopCtx, current); err != nil {
 			return err
@@ -189,6 +191,22 @@ func testAnchorRelocationProviderSequence(t *testing.T, rollback bool) {
 	p.runRelocate(ctx, record, clientprofile.Profile{ServerID: "server"})
 	<-answered
 	current, _ := store.Get(record.OperationID)
+	// The same production path must actually persist lifecycle evidence, not
+	// merely execute a diagnostic helper whose stderr is discarded.
+	evidenceRoot, evidencePhase := newPoint, "move_after"
+	if rollback {
+		evidenceRoot, evidencePhase = oldPoint, "rollback"
+	}
+	evidence, evidenceErr := m.registration.read(registrationEvidenceKey(evidenceRoot))
+	found := false
+	for _, raw := range evidence.Recent {
+		if bytes.Contains(raw, []byte(`"phase":"`+evidencePhase+`"`)) {
+			found = true
+		}
+	}
+	if evidenceErr != nil || !found || evidence.Lifecycle == nil || evidence.Lifecycle.Repo != "repo" {
+		t.Fatalf("missing durable relocation diagnostic: phase=%s err=%v", evidencePhase, evidenceErr)
+	}
 	if current.State != localrepo.StateAttached {
 		t.Fatal("relocation did not settle", current)
 	}

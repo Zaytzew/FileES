@@ -8,11 +8,13 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
+#include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Storage.Provider.h>
 #include <winrt/Windows.Security.Cryptography.h>
 #include <winrt/Windows.Security.Cryptography.Core.h>
 #include <vector>
 #include <string>
+#include <sstream>
 
 using namespace winrt;
 using namespace Windows::Storage;
@@ -235,6 +237,48 @@ void notify_navigation(const std::wstring &clsid, BOOL visible) {
 
 }
 
+const char *filees_shell_diagnostic(const WCHAR *root) {
+    // Called only for a bounded diagnostic snapshot, never every tick. Only
+    // the deterministic owned ID is returned; no document files are opened.
+    static thread_local std::string result;
+    try {
+        apartment runtime;
+        auto id = root_id(root);
+        // Some Windows builds return an unusable object from lookup-by-ID for
+        // native-only roots. Enumerate supported Shell records, bounded here.
+        StorageProviderSyncRootInfo info{nullptr};
+        unsigned count=0;
+        for (auto const &item : StorageProviderSyncRootManager::GetCurrentSyncRoots()) {
+            if (++count>512) { result="{\"hr\":2147942634}"; return result.c_str(); }
+            if (item.Id()==id) {info=item;break;}
+        }
+        if (!info) { result="{\"hr\":2147943568}"; return result.c_str(); }
+        auto hex = [](const void *data, size_t length) {
+            std::string s;
+            const auto *bytes = static_cast<const unsigned char *>(data);
+            const char *digits = "0123456789abcdef";
+            for (size_t i=0;i<length;++i) { s+=digits[bytes[i]>>4]; s+=digits[bytes[i]&15]; }
+            return s;
+        };
+        auto context = info.Context();
+        com_array<uint8_t> bytes;
+        if (context && context.Length()<=4096) CryptographicBuffer::CopyToByteArray(context,bytes);
+        auto provider = info.ProviderId();
+        auto folder = info.Path();
+        auto path = folder ? folder.Path() : hstring{};
+        std::ostringstream out;
+        out << "{\"hr\":0,\"provider_id_hex\":\"" << hex(&provider,sizeof provider)
+            << "\",\"context_length\":" << (context?context.Length():0)
+            << ",\"context_hex\":\"" << hex(bytes.data(),bytes.size())
+            << "\",\"path_utf16_hex\":\"" << hex(path.c_str(),path.size()*sizeof(WCHAR))
+            << "\",\"hydration\":" << static_cast<unsigned>(info.HydrationPolicy())
+            << ",\"population\":" << static_cast<unsigned>(info.PopulationPolicy())
+            << ",\"insync\":" << static_cast<unsigned>(info.InSyncPolicy()) << "}";
+        result=out.str();
+    } catch (...) { result="{\"hr\":"+std::to_string(static_cast<unsigned long>(to_hresult()))+"}"; }
+    return result.c_str();
+}
+
 int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registration_id) {
     const char *stage = "obsolete_shell_id";
     try {
@@ -353,7 +397,14 @@ int filees_cfapi_shell_register(const WCHAR *root, const WCHAR *identity, const 
         auto first = reinterpret_cast<const uint8_t *>(identity);
         auto length = static_cast<uint32_t>((wcslen(identity)+1)*sizeof(WCHAR));
         info.Context(CryptographicBuffer::CreateFromByteArray(array_view<const uint8_t>(first, first+length)));
-        StorageProviderSyncRootManager::Register(info);
+        filees_registration_trace(root,"shell_register","before",S_OK,identity);
+        try {
+            StorageProviderSyncRootManager::Register(info);
+        } catch (...) {
+            filees_registration_trace(root,"shell_register","after",to_hresult(),identity);
+            throw;
+        }
+        filees_registration_trace(root,"shell_register","after",S_OK,identity);
         // SDK registration and navigation visibility are separate. Never
         // unregister a sync root merely to hide its navigation shortcut.
         return filees_cfapi_shell_visibility(root,visible);
@@ -374,7 +425,14 @@ HRESULT filees_shell_unregister(const WCHAR *root) {
         // retain a Shell record but no longer expose its former provider GUID.
         if (info && canonical_path(info.Path().Path().c_str()) != canonical_path(root))
             return E_ACCESSDENIED;
-        StorageProviderSyncRootManager::Unregister(id);
+        filees_registration_trace(root,"shell_unregister","before",S_OK,nullptr);
+        try {
+            StorageProviderSyncRootManager::Unregister(id);
+        } catch (...) {
+            filees_registration_trace(root,"shell_unregister","after",to_hresult(),nullptr);
+            throw;
+        }
+        filees_registration_trace(root,"shell_unregister","after",S_OK,nullptr);
         SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW, root, nullptr);
         return S_OK;
     } catch (...) {

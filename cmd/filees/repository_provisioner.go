@@ -33,25 +33,26 @@ import (
 )
 
 type daemonProvisioner struct {
-	admission        *hostruntime.Admission
-	local            *localrepo.Store
-	provisioning     *provisioning.Store
-	mu               sync.RWMutex
-	detachMu         sync.Mutex
-	localIntentMu    sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
-	creationWaiters  atomic.Int32 // metadata observers yield to queued creation preparation
-	detachAnchor     func(context.Context, localrepo.Record) error
-	quiesceAnchor    func(context.Context, localrepo.Record) error
-	anchorChanged    func()                       // wake provider reconciliation after move or rollback
-	anchorEnabled    func(string) bool            // immutable wiring; reads per-server durable preference
-	relocationCheck  func(localrepo.Record) error // fresh projected authority before queued execution
-	profiles         map[string]clientprofile.Profile
-	queue            chan string
-	queued           map[string]bool // deduplicate wakeups; durable journals remain authoritative
-	attachments      chan<- provisionedAttachment
-	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
-	recoveryRegistry recoverykit.Registry
-	running          map[string]provisionerOperation
+	admission             *hostruntime.Admission
+	local                 *localrepo.Store
+	provisioning          *provisioning.Store
+	mu                    sync.RWMutex
+	detachMu              sync.Mutex
+	localIntentMu         sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
+	creationWaiters       atomic.Int32 // metadata observers yield to queued creation preparation
+	detachAnchor          func(context.Context, localrepo.Record) error
+	quiesceAnchor         func(context.Context, localrepo.Record) error
+	traceAnchorRelocation func(context.Context, localrepo.Record, string) // diagnostics only; cannot authorize or fail a move
+	anchorChanged         func()                                          // wake provider reconciliation after move or rollback
+	anchorEnabled         func(string) bool                               // immutable wiring; reads per-server durable preference
+	relocationCheck       func(localrepo.Record) error                    // fresh projected authority before queued execution
+	profiles              map[string]clientprofile.Profile
+	queue                 chan string
+	queued                map[string]bool // deduplicate wakeups; durable journals remain authoritative
+	attachments           chan<- provisionedAttachment
+	newAttachmentSVN      func(clientprofile.Profile, string) attachmentSVN
+	recoveryRegistry      recoverykit.Registry
+	running               map[string]provisionerOperation
 	// importProgress is the last report of each initial publication in
 	// flight, answered with repo.lifecycle_status; memory only, like the
 	// progress of ordinary publications.
@@ -868,9 +869,15 @@ func (p *daemonProvisioner) runMoveExisting(ctx context.Context, record localrep
 		return
 	}
 	if sourceExists {
+		if record.Anchor && p.traceAnchorRelocation != nil {
+			p.traceAnchorRelocation(ctx, record, "move_before")
+		}
 		if err := moveWorkingCopyWithRetry(ctx, source, target, os.Rename); err != nil {
 			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("move working copy within one volume: %w", err))
 			return
+		}
+		if record.Anchor && p.traceAnchorRelocation != nil {
+			p.traceAnchorRelocation(ctx, record, "move_after")
 		}
 	}
 	if err := ensureWorkingCopyIdentity(target, expected); err != nil {
@@ -1487,6 +1494,9 @@ func (p *daemonProvisioner) rollbackReconcile(ctx context.Context, record localr
 func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {
 	if record.RelocationQueued && ctx.Err() != nil {
 		return
+	}
+	if record.Anchor && p.traceAnchorRelocation != nil {
+		p.traceAnchorRelocation(ctx, record, "rollback")
 	}
 	if _, err := p.local.FailRelocation(record.OperationID, cause); err != nil {
 		talk.With("relocation:"+record.OperationID).Errorf("persist rollback: %v", err)

@@ -8,7 +8,7 @@ if(NOT WIN32)
 endif()
 
 enable_language(RC)
-set(FILEES_CFAPI_SOURCES src/main.c src/common.c src/sync_root.c src/placeholders.c src/connect.c src/bridge.c src/file_state.c src/shell_root.cpp filees-cfapi.rc)
+set(FILEES_CFAPI_SOURCES src/main.c src/common.c src/sync_root.c src/registration_diagnostics.cpp src/placeholders.c src/connect.c src/bridge.c src/file_state.c src/shell_root.cpp filees-cfapi.rc)
 add_executable(filees-cfapi ${FILEES_CFAPI_SOURCES})
 # Disposable callback characterization, NEVER the shipped provider. Even an
 # opted-in build keeps filees-cfapi.exe unchanged; only this extra executable

@@ -9,6 +9,7 @@
 #include <cfapi.h>
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 
 /* One product GUID, stable forever: the shell keys its record of this
  * provider on it, so a new one would orphan every anchor already registered.
@@ -49,7 +50,9 @@ int filees_cfapi_register(const WCHAR *root, const WCHAR *identity)
     policies.HardLink = CF_HARDLINK_POLICY_NONE;
     policies.PlaceholderManagement = CF_PLACEHOLDER_MANAGEMENT_POLICY_DEFAULT;
 
+    filees_registration_trace(root, "native_register_update", "before", S_OK, identity);
     hr = CfRegisterSyncRoot(root, &registration, &policies, CF_REGISTER_FLAG_UPDATE);
+    filees_registration_trace(root, "native_register_update", "after", hr, identity);
     if (FAILED(hr)) {
         filees_cfapi_fail("register_sync_root", hr);
         return 1;
@@ -107,6 +110,8 @@ static HRESULT verified_provider(const WCHAR *path, CF_SYNC_ROOT_PROVIDER_INFO *
     }
     hr = CfGetSyncRootInfoByHandle(point, CF_SYNC_ROOT_INFO_PROVIDER, provider, sizeof *provider, &returned);
 done:
+    if (SUCCEEDED(hr) && (returned < sizeof *provider ||
+        !wmemchr(provider->ProviderName, L'\0', ARRAYSIZE(provider->ProviderName)))) hr = E_UNEXPECTED;
     if (point != INVALID_HANDLE_VALUE) CloseHandle(point);
     CloseHandle(file);
     return hr;
@@ -124,6 +129,12 @@ int filees_cfapi_info(const WCHAR *root)
 
     ZeroMemory(&info, sizeof info);
     hr = verified_provider(root, &info);
+    if (filees_registration_trace_enabled()) {
+        char mode[16] = {0};
+        GetEnvironmentVariableA("FILEES_REGISTRATION_TRACE", mode, sizeof mode);
+        if (!strcmp(mode,"sample") || FAILED(hr) || wcscmp(info.ProviderName,FILEES_CFAPI_PROVIDER))
+            filees_registration_trace(root,"info","observation",hr,NULL);
+    }
     if (FAILED(hr)) {
         /* Absence is not the same as inability to verify a boundary. */
         const char *code = (hr == HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) ||
@@ -152,7 +163,9 @@ int filees_cfapi_unregister(const WCHAR *root)
         filees_cfapi_fail("unregister_root_not_owned", hr);
         return 1;
     }
+    filees_registration_trace(root, "native_unregister", "before", S_OK, NULL);
     hr = CfUnregisterSyncRoot(root);
+    filees_registration_trace(root, "native_unregister", "after", hr, NULL);
     if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT) &&
         hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) && hr != HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND)) {
         filees_cfapi_fail("unregister_sync_root", hr);

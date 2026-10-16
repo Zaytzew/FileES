@@ -84,6 +84,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
 	provisioner.quiesceAnchor = anchors.quiesceRelocation
+	provisioner.traceAnchorRelocation = anchors.traceRelocation
 	provisioner.anchorChanged = anchors.notifyLifecycle
 	return anchors.run
 }
@@ -99,6 +100,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 // survive them. A folder whose record is gone or detached is left alone:
 // taking a registration down is the detach path's decision, not this loop's.
 type anchorManager struct {
+	registration   registrationEvidence
 	helper         string
 	nativeSVN      string
 	profiles       string
@@ -192,6 +194,7 @@ type cfapiAnswer struct {
 
 func (m *anchorManager) call(ctx context.Context, stdin string, args ...string) (cfapiAnswer, error) {
 	command := exec.CommandContext(ctx, m.helper, args...)
+	m.registrationTrace(command, args)
 	if stdin != "" {
 		command.Stdin = strings.NewReader(stdin)
 	}

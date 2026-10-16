@@ -46,6 +46,12 @@ void filees_cfapi_ok(const char *detail);
 void filees_cfapi_fail(const char *code, HRESULT hr);
 void filees_cfapi_json_string(const char *value);
 
+/* Optional metadata-only stderr evidence. No registration repair or authority. */
+int filees_registration_trace_enabled(void);
+void filees_registration_trace(const WCHAR *root, const char *operation, const char *phase,
+    HRESULT result, const WCHAR *identity);
+const char *filees_shell_diagnostic(const WCHAR *root);
+
 /* UTF-8 argv into wide strings; the shell is wide everywhere. */
 int filees_cfapi_widen(const char *utf8, WCHAR *out, size_t out_chars);
 

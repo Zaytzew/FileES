@@ -117,6 +117,23 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 	var selector struct {
 		Schema string `json:"schema"`
 	}
+	if json.Unmarshal(raw, &selector) == nil && selector.Schema == reservationv1.BatchSchema {
+		req, err := reservationv1.ParseBatchRequest(raw)
+		if err != nil {
+			report(stderr, "reservation batch request", err)
+			return ExitData
+		}
+		payload, err := reservationBatch(configPath, config, clientID, req, stateRoot)
+		if err != nil {
+			report(stderr, "reservation batch", err)
+			return ExitSoftware
+		}
+		if _, err := out.Write(append(payload, '\n')); err != nil {
+			report(stderr, "reservation batch response", err)
+			return ExitSoftware
+		}
+		return ExitOK
+	}
 	if json.Unmarshal(raw, &selector) == nil && selector.Schema == publicstate.Schema {
 		req, err := publicstate.ParseRequest(raw)
 		if err != nil {

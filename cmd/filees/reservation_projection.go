@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -48,12 +49,13 @@ type reservationProjectionCoordinator struct {
 	onRepositoryDeleted func(context.Context, reposupervisor.Key) error
 	terminalApplied     map[reposupervisor.Key]bool
 
-	mu            sync.RWMutex
-	profiles      map[string]clientprofile.Profile
-	profileEpochs map[string]uint64
-	views         map[string]clientview.View
-	viewEpochs    map[string]uint64
-	results       map[reposupervisor.Key]cachedReservationResult
+	mu               sync.RWMutex
+	profiles         map[string]clientprofile.Profile
+	profileEpochs    map[string]uint64
+	views            map[string]clientview.View
+	viewEpochs       map[string]uint64
+	batchLegacyUntil map[string]time.Time
+	results          map[reposupervisor.Key]cachedReservationResult
 	// detached remembers which servers have told us this client is no longer
 	// one of theirs, so the fact is stated once instead of every cycle.
 	detached map[string]bool
@@ -92,16 +94,17 @@ type reservationLocalOverlay struct {
 func newReservationProjectionCoordinator(ctx context.Context, ipc *ipcserver.Server) *reservationProjectionCoordinator {
 	coordinator := &reservationProjectionCoordinator{
 		ctx: ctx, ipc: ipc,
-		profiles:        make(map[string]clientprofile.Profile),
-		profileEpochs:   make(map[string]uint64),
-		views:           make(map[string]clientview.View),
-		viewEpochs:      make(map[string]uint64),
-		results:         make(map[reposupervisor.Key]cachedReservationResult),
-		detached:        make(map[string]bool),
-		paused:          make(map[string]bool),
-		overlays:        make(map[reposupervisor.Key]reservationLocalOverlay),
-		started:         make(map[string]bool),
-		terminalApplied: make(map[reposupervisor.Key]bool),
+		profiles:         make(map[string]clientprofile.Profile),
+		profileEpochs:    make(map[string]uint64),
+		views:            make(map[string]clientview.View),
+		viewEpochs:       make(map[string]uint64),
+		batchLegacyUntil: make(map[string]time.Time),
+		results:          make(map[reposupervisor.Key]cachedReservationResult),
+		detached:         make(map[string]bool),
+		paused:           make(map[string]bool),
+		overlays:         make(map[reposupervisor.Key]reservationLocalOverlay),
+		started:          make(map[string]bool),
+		terminalApplied:  make(map[reposupervisor.Key]bool),
 	}
 	coordinator.newClient = func(profile clientprofile.Profile) (reservationFetcher, error) {
 		timeout := profile.SVNTimeout()
@@ -136,6 +139,7 @@ func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clien
 	old, exists := coordinator.profiles[profile.ServerID]
 	if exists && (old.ClientID != profile.ClientID || old.Address != profile.Address || old.SSHPort != profile.SSHPort || old.IdentityFile != profile.IdentityFile || old.KnownHosts != profile.KnownHosts) {
 		coordinator.profileEpochs[profile.ServerID]++
+		delete(coordinator.batchLegacyUntil, profile.ServerID)
 		for key := range coordinator.results {
 			if key.ServerID == profile.ServerID {
 				delete(coordinator.results, key)
@@ -424,21 +428,36 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	fetched, failed := 0, 0
 	var firstErr error
 	var firstErrRepo string
+	batch := coordinator.batchReader(fetcher, profile, view)
 	for _, repoID := range repoIDs {
 		requestStarted := time.Now()
 		var result reservationv1.Result
 		var fetchErr error
-		if broker, ok := fetcher.(interface {
-			FetchAutolockStorage(context.Context, string) (reservationv1.Result, error)
-		}); ok {
-			result, fetchErr = broker.FetchAutolockStorage(ctx, repoID)
-		} else if broker, ok := fetcher.(interface {
-			FetchAutolock(context.Context, string) (reservationv1.Result, error)
-		}); ok {
-			result, fetchErr = broker.FetchAutolock(ctx, repoID)
-		} else {
-			result, fetchErr = fetcher.Fetch(ctx, repoID)
-		} // legacy injected transports never confer ownership
+		if batch != nil {
+			result, requestStarted, fetchErr = batch.fetch(ctx, repoID)
+			if errors.Is(fetchErr, reservationclient.ErrBatchUnsupported) {
+				coordinator.mu.Lock()
+				if coordinator.profileEpochs[serverID] == profileEpoch {
+					coordinator.batchLegacyUntil[serverID] = time.Now().Add(5 * time.Minute)
+				}
+				coordinator.mu.Unlock()
+				batch = nil
+				requestStarted = time.Now()
+			}
+		}
+		if batch == nil {
+			if broker, ok := fetcher.(interface {
+				FetchAutolockStorage(context.Context, string) (reservationv1.Result, error)
+			}); ok {
+				result, fetchErr = broker.FetchAutolockStorage(ctx, repoID)
+			} else if broker, ok := fetcher.(interface {
+				FetchAutolock(context.Context, string) (reservationv1.Result, error)
+			}); ok {
+				result, fetchErr = broker.FetchAutolock(ctx, repoID)
+			} else {
+				result, fetchErr = fetcher.Fetch(ctx, repoID)
+			} // legacy injected transports never confer ownership
+		}
 		if isDetachedClient(fetchErr) {
 			failed++
 			firstErr, firstErrRepo = fetchErr, repoID
@@ -465,7 +484,11 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 				// A failed persistence must keep writes blocked in memory too.
 				storageErr = reservationclient.ObserveStorage(profile.CachePath, serverID, repoID, result, elapsed)
 			}
-			coordinator.results[key] = cachedReservationResult{storageErr: storageErr, result: result, profileEpoch: profileEpoch, receivedAt: time.Now(), present: true, detached: coordinator.detached[serverID]}
+			observedAt := time.Now()
+			if batch != nil {
+				observedAt = requestStarted
+			} // includes all server work, transit and time waiting for this page
+			coordinator.results[key] = cachedReservationResult{storageErr: storageErr, result: result, profileEpoch: profileEpoch, receivedAt: observedAt, present: true, detached: coordinator.detached[serverID]}
 		}
 		coordinator.mu.Unlock()
 		// Every repository on one server shares that server's client view, so

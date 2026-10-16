@@ -1,5 +1,14 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.refresh": "Actualizar bandeja",
+  "shelf.import.all": "Colocar todo en la carpeta principal",
+  "shelf.import.unavailable": "La carpeta principal no está lista para escribir. Revise su estado y actualice la bandeja.",
+  "shelf.import.batchStopped": "Importación detenida",
+  "shelf.import.batchProgress": "Archivos colocados en la carpeta principal",
+  "confirm.shelfImportAll.title": "¿Importar archivos de la bandeja?",
+  "confirm.shelfImportAll.text": "Bandeja «{name}»: {count} archivos de la lista mostrada. No se sobrescribirán archivos existentes. Un error detiene los archivos restantes. Al cerrar FileES no se iniciarán más archivos; el servicio continuará la transferencia actual.",
+  "confirm.shelfImportAll.confirm": "Colocar archivos",
+  "confirm.shelfImportAll.cancel": "Cancelar",
   "localAllocation.label": "Asignación local: {amount}",
   "localAllocation.details": "Asignación aproximada de las copias de este servidor, incluidos .svn, .filees y archivos ignorados. Sin sobrecarga global del sistema de archivos.",
   "localAllocation.ready": "Medición en caché",

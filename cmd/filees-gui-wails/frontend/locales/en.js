@@ -1,5 +1,14 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.refresh": "Refresh shelf",
+  "shelf.import.all": "Place all in parent folder",
+  "shelf.import.unavailable": "The parent folder is not ready for writing. Check its status and refresh the shelf.",
+  "shelf.import.batchStopped": "Shelf import stopped",
+  "shelf.import.batchProgress": "Files placed in parent folder",
+  "confirm.shelfImportAll.title": "Import shelf files?",
+  "confirm.shelfImportAll.text": "Shelf “{name}”: {count} files from the displayed list. Existing files will not be overwritten. An error stops the remaining work. Closing FileES stops starting further files; the daemon keeps the current transfer.",
+  "confirm.shelfImportAll.confirm": "Place files",
+  "confirm.shelfImportAll.cancel": "Cancel",
   "localAllocation.label": "Local allocation: {amount}",
   "localAllocation.details": "Approximate allocation of this server’s working copies, including .svn, .filees and ignored files. Excludes global filesystem overhead.",
   "localAllocation.ready": "Cached measurement",

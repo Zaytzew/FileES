@@ -228,6 +228,9 @@ function render(snapshot) {
 		$("#create-upload").disabled = Boolean(snapshot.busy);
 	}
 	if (shelfMode) {
+		$("#shelf-import-all").disabled = !snapshot.shelf_can_import || !(snapshot.shelf || []).length || Boolean(snapshot.busy);
+		$("#shelf-refresh").disabled = Boolean(snapshot.busy);
+		$("#shelf-import-unavailable").hidden = Boolean(snapshot.shelf_can_import);
 		const items = snapshot.shelf || [];
 		// The shelf name is server data, never a translated label.
 		$("#shelf-heading").textContent = snapshot.shelf_name ? `${t("shelf.title")} — ${snapshot.shelf_name}` : t("shelf.title");
@@ -439,18 +442,22 @@ $("#quarantine-items").addEventListener("click", (event) => {
 	const button = event.target.closest("[data-quarantine-action]");
 	if (button) chooseQuarantine(button.dataset.quarantineAction, button.dataset.uploadId || "", button);
 });
-$("#shelf-items").addEventListener("click", async (event) => {
-	const button = event.target.closest("[data-shelf-fetch]");
-	if (!button) return;
+async function chooseShelf(action, uploadID, button) {
 	button.disabled = true;
 	try {
-		const choice = contextChoice(button.dataset.shelfImport ? "import" : "fetch", currentSnapshot.focus_channel_id);
-		choice.upload_id = button.dataset.shelfFetch;
+		const choice = contextChoice(action, currentSnapshot.focus_channel_id);
+		choice.upload_id = uploadID;
 		const result = await RepositoryService.ChooseShelf(choice);
 		if (!result.accepted) showToast(t("ui.unavailable"), result.code);
 	} catch (error) { showToast(t("ui.sendFailed"), error?.message || String(error)); }
 	finally { button.disabled = false; }
+}
+$("#shelf-items").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-shelf-fetch]");
+	if (button) chooseShelf(button.dataset.shelfImport ? "import" : "fetch", button.dataset.shelfFetch, button);
 });
+$("#shelf-import-all").addEventListener("click", event => chooseShelf("import_all", "", event.currentTarget));
+$("#shelf-refresh").addEventListener("click", event => chooseShelf("refresh", "", event.currentTarget));
 $("#repository-close").addEventListener("click", closeRepository);
 $("#repository-done").addEventListener("click", closeRepository);
 $("#back-to-actions").addEventListener("click", closeRepository);

@@ -1,5 +1,14 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.refresh": "Odśwież półkę",
+  "shelf.import.all": "Umieść wszystkie w folderze macierzystym",
+  "shelf.import.unavailable": "Folder macierzysty nie jest gotowy do zapisu. Sprawdź jego stan i odśwież półkę.",
+  "shelf.import.batchStopped": "Osadzanie półki zatrzymane",
+  "shelf.import.batchProgress": "Umieszczono pliki w folderze macierzystym",
+  "confirm.shelfImportAll.title": "Umieścić pliki z półki?",
+  "confirm.shelfImportAll.text": "Półka „{name}”: {count} plików z wyświetlonej listy. Istniejące pliki nie zostaną nadpisane. Błąd zatrzyma pozostałą część zadania. Zamknięcie FileES zatrzyma uruchamianie kolejnych plików; trwający transfer pozostanie w demonie.",
+  "confirm.shelfImportAll.confirm": "Umieść pliki",
+  "confirm.shelfImportAll.cancel": "Anuluj",
   "localAllocation.label": "Alokacja lokalna: {amount}",
   "localAllocation.details": "Przybliżona alokacja kopii tego serwera, z .svn, .filees i plikami ignorowanymi. Bez globalnego narzutu systemu plików.",
   "localAllocation.ready": "Pomiar z cache",

@@ -369,11 +369,14 @@ func (service *RepositoryService) ChooseShelf(choice RepositoryChoice) Repositor
 	service.mu.Lock()
 	session := service.shelf
 	snapshot := service.snapshot
-	if session == nil || session.resolved || !sameRepositoryContext(snapshot, choice) || (choice.Action != "fetch" && choice.Action != "import") || (choice.Action == "import" && !snapshot.ShelfCanImport) || choice.ChannelID != snapshot.FocusChannelID {
+	importing := choice.Action == "import" || choice.Action == "import_all"
+	batch := choice.Action == "import_all" && choice.UploadID == "" && len(snapshot.Shelf) > 0
+	refresh := choice.Action == "refresh" && choice.UploadID == ""
+	if session == nil || session.resolved || !sameRepositoryContext(snapshot, choice) || (choice.Action != "fetch" && choice.Action != "import" && !batch && !refresh) || (importing && !snapshot.ShelfCanImport) || choice.ChannelID != snapshot.FocusChannelID {
 		service.mu.Unlock()
 		return RepositoryAcceptance{Code: "shelf_action_unavailable"}
 	}
-	found := false
+	found := batch || refresh
 	for _, item := range snapshot.Shelf {
 		if item.UploadID == choice.UploadID {
 			found = true

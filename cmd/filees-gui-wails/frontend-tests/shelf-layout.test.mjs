@@ -34,7 +34,7 @@ test("shelf browser renders its own name in both headers without reusing reposit
   };
   const render = runInNewContext(`let currentSnapshot = null, renaming = null;\n${source.slice(begin, end)}\nrender`, {
     $: node, t: key => key, labelHTML: key => key, escapeHTML: value => String(value),
-    renderProblem() {}, renameOffered: () => false, readRepoView: () => ({}),
+    renderProblem() {}, shelfCard: () => "<row>", renameOffered: () => false, readRepoView: () => ({}),
     repoSection: () => "active", canArchive: () => false,
     window: {requestAnimationFrame() {}},
   });
@@ -49,6 +49,11 @@ test("shelf browser renders its own name in both headers without reusing reposit
     assert.equal(JSON.stringify(snapshot), before, "presentation must not change operation identity");
   }
   render({revision: 2, mode: "shelf", context});
+  assert.equal(node("#shelf-import-all").disabled, true);
+  assert.equal(node("#shelf-import-unavailable").hidden, false);
+  render({revision: 3, mode: "shelf", context, shelf_can_import:true, shelf:[{upload_id:"one"}]});
+  assert.equal(node("#shelf-import-all").disabled, false);
+  assert.equal(node("#shelf-import-unavailable").hidden, true);
   assert.equal(node("#repository-name").textContent, "shelf.title");
   assert.equal(node("#window-context").textContent, "shelf.title");
   for (const mode of ["actions", "uploads", "shares", "quarantine", "grants"]) {

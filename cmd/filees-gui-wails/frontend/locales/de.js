@@ -1,5 +1,14 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.refresh": "Ablage aktualisieren",
+  "shelf.import.all": "Alle im übergeordneten Ordner ablegen",
+  "shelf.import.unavailable": "Der übergeordnete Ordner ist nicht schreibbereit. Status prüfen und Ablage aktualisieren.",
+  "shelf.import.batchStopped": "Ablageimport angehalten",
+  "shelf.import.batchProgress": "Dateien im übergeordneten Ordner abgelegt",
+  "confirm.shelfImportAll.title": "Dateien aus der Ablage importieren?",
+  "confirm.shelfImportAll.text": "Ablage „{name}“: {count} Dateien aus der angezeigten Liste. Vorhandene Dateien werden nicht überschrieben. Ein Fehler stoppt die restlichen Dateien. Beim Schließen von FileES werden keine weiteren Dateien gestartet; der Dienst setzt die aktuelle Übertragung fort.",
+  "confirm.shelfImportAll.confirm": "Dateien ablegen",
+  "confirm.shelfImportAll.cancel": "Abbrechen",
   "localAllocation.label": "Lokale Belegung: {amount}",
   "localAllocation.details": "Ungefähre Belegung der Arbeitskopien dieses Servers, einschließlich .svn, .filees und ignorierter Dateien. Ohne globalen Dateisystem-Overhead.",
   "localAllocation.ready": "Zwischengespeicherte Messung",

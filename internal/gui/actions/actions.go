@@ -2576,6 +2576,10 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 		return
 	}
 	key := "shelf." + serverID + "." + shelf.ChannelID
+refreshShelf:
+	if ctx.Err() != nil {
+		return
+	}
 	listed, err := c.cfg.Shelf.ListShelf(ctx, serverID, shelf.ChannelID)
 	if err != nil {
 		c.reportActionError(ctx, key, c.uiText("feedback.n132", "Nie udało się odczytać półki"), err.Error())
@@ -2613,6 +2617,28 @@ func (c *Controller) showShelf(ctx context.Context, serverID, repoID string, she
 	if err != nil {
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n133", "Nie udało się otworzyć półki"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 		return
+	}
+	if choice.Action == platform.ShelfDialogRefresh {
+		goto refreshShelf
+	}
+	if choice.Action == platform.ShelfDialogImportAll {
+		if request.CanImport {
+			c.importShelfItems(ctx, key, serverID, repoID, shelf.ChannelID, shelf.Slug, request.Items)
+		}
+		return
+	}
+	if choice.Action == platform.ShelfDialogFetch || choice.Action == platform.ShelfDialogImport {
+		found := false
+		for _, item := range request.Items {
+			if item.UploadID == choice.UploadID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.reportActionError(ctx, key, c.uiText("feedback.n055", "Nie udało się pobrać pliku"), c.uiText("feedback.n053", "Wybrany plik nie pochodzi z aktualnej listy."))
+			return
+		}
 	}
 	if choice.Action == platform.ShelfDialogFetch {
 		c.downloadShelfItem(ctx, key, serverID, repoID, shelf.ChannelID, choice.UploadID, shelf.Slug)

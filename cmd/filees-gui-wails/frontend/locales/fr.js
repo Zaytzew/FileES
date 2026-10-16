@@ -1,5 +1,14 @@
 // GUI presentation catalogue. Keep keys and named arguments aligned across languages.
 export default {
+  "shelf.refresh": "Actualiser le dépôt",
+  "shelf.import.all": "Tout placer dans le dossier parent",
+  "shelf.import.unavailable": "Le dossier parent n’est pas prêt pour l’écriture. Vérifiez son état et actualisez le dépôt.",
+  "shelf.import.batchStopped": "Import du dépôt arrêté",
+  "shelf.import.batchProgress": "Fichiers placés dans le dossier parent",
+  "confirm.shelfImportAll.title": "Importer les fichiers du dépôt ?",
+  "confirm.shelfImportAll.text": "Dépôt « {name} » : {count} fichiers de la liste affichée. Aucun fichier existant ne sera écrasé. Une erreur arrête les fichiers restants. Fermer FileES empêche de lancer les fichiers suivants ; le service poursuit le transfert en cours.",
+  "confirm.shelfImportAll.confirm": "Placer les fichiers",
+  "confirm.shelfImportAll.cancel": "Annuler",
   "localAllocation.label": "Allocation locale : {amount}",
   "localAllocation.details": "Allocation approximative des copies de ce serveur, y compris .svn, .filees et les fichiers ignorés. Hors surcharge globale du système de fichiers.",
   "localAllocation.ready": "Mesure en cache",

@@ -45,3 +45,35 @@ func TestShelfImportChoiceRequiresDaemonCapability(t *testing.T) {
 		t.Fatal("import became ordinary download")
 	}
 }
+
+func TestShelfBatchChoiceRequiresCurrentNonemptyAuthorizedSnapshot(t *testing.T) {
+	for _, action := range []string{"import_all", "refresh"} {
+		s := &RepositoryService{}
+		s.snapshot = RepositorySnapshot{Mode: "shelf", Context: RepositoryContextProjection{ServerID: "office", RepoID: "parent"}, FocusChannelID: "channel", Shelf: []ShelfItemProjection{{UploadID: "one"}, {UploadID: "two"}}}
+		s.shelf = &repositoryShelfSession{result: make(chan platform.ShelfDialogResult, 1)}
+		choice := RepositoryChoice{ServerID: "office", RepoID: "parent", ChannelID: "channel", Action: action}
+		if action == "import_all" && s.ChooseShelf(choice).Accepted {
+			t.Fatal("batch without authority")
+		}
+		s.snapshot.ShelfCanImport = true
+		choice.ChannelID = "foreign"
+		if s.ChooseShelf(choice).Accepted {
+			t.Fatal("foreign channel")
+		}
+		choice.ChannelID = "channel"
+		choice.UploadID = "one"
+		if s.ChooseShelf(choice).Accepted {
+			t.Fatal("ambiguous batch selection")
+		}
+		choice.UploadID = ""
+		if !s.ChooseShelf(choice).Accepted {
+			t.Fatal("valid choice refused", action)
+		}
+		if s.ChooseShelf(choice).Accepted {
+			t.Fatal("duplicate accepted")
+		}
+		if result := <-s.shelf.result; string(result.Action) != action || result.UploadID != "" {
+			t.Fatal(result)
+		}
+	}
+}

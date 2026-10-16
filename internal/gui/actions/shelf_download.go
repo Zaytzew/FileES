@@ -27,7 +27,7 @@ type ShelfImporter interface {
 	ShelfImport(context.Context, string, string, string, string, string, string) (ShelfDownload, error)
 }
 
-func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoID, channelID, uploadID, shelfName string, importing ...bool) {
+func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoID, channelID, uploadID, shelfName string, importing ...bool) (completed bool) {
 	downloads, ok := c.cfg.Shelf.(ShelfDownloader)
 	if !ok {
 		return
@@ -52,9 +52,11 @@ func (c *Controller) downloadShelfItem(ctx context.Context, key, serverID, repoI
 	destination := ""
 	if len(importing) > 0 && importing[0] {
 		if !status.CanImport || !filepath.IsAbs(status.ParentPath) {
+			fail(errors.New(c.uiText("shelf.import.unavailable", "Folder macierzysty nie jest gotowy do zapisu. Sprawdź jego stan i odśwież półkę.")))
 			return
 		}
 		if _, ok := c.cfg.Shelf.(ShelfImporter); !ok {
+			fail(errors.New(c.uiText("shelf.import.unavailable", "Folder macierzysty nie jest gotowy do zapisu. Sprawdź jego stan i odśwież półkę.")))
 			return
 		}
 		destination = status.ParentPath
@@ -151,7 +153,46 @@ chooseLocalFolder:
 				body = status.Destination
 			}
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body})
+			return true
+		}
+	}
+}
+
+// The displayed list is the entire consent boundary. Do not relist to extend
+// it while importing: every selected upload is reauthorized by the daemon.
+func (c *Controller) importShelfItems(ctx context.Context, key, serverID, repoID, channelID, shelfName string, items []platform.ShelfItem) {
+	if len(items) == 0 || c.cfg.Prompter == nil {
+		return
+	}
+	seen := make(map[string]bool, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.UploadID) == "" || seen[item.UploadID] {
+			c.reportActionError(ctx, key, c.uiText("shelf.import.failed", "Nie udało się umieścić pliku"), c.uiText("feedback.n053", "Wybrany plik nie pochodzi z aktualnej listy."))
 			return
 		}
+		seen[item.UploadID] = true
+	}
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		PresentationKey: "confirm.shelfImportAll", PresentationArgs: map[string]string{"count": fmt.Sprint(len(items)), "name": shelfName},
+		Title:       c.uiText("shelf.import.all", "Umieść wszystkie w folderze macierzystym"),
+		Text:        fmt.Sprintf("Półka %s: %d plików. Istniejące pliki nie zostaną nadpisane. Błąd zatrzyma pozostałą część zadania.", shelfName, len(items)),
+		ConfirmText: c.uiText("shelf.import.action", "Umieść w folderze macierzystym"), CancelText: c.uiText("action.cancel", "Anuluj"),
+	})
+	if err != nil || !confirmed || ctx.Err() != nil {
+		return
+	}
+	done := 0
+	for _, item := range items {
+		if ctx.Err() != nil {
+			return
+		}
+		if !c.downloadShelfItem(ctx, key, serverID, repoID, channelID, item.UploadID, shelfName, true) {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: key + ".batch", Group: key, Title: c.uiText("shelf.import.batchStopped", "Osadzanie półki zatrzymane"), Body: fmt.Sprintf("%d / %d", done, len(items)), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		done++
+		c.notify(ctx, platform.Notification{ID: key + ".batch", Group: key, Title: c.uiText("shelf.import.batchProgress", "Umieszczono pliki w folderze macierzystym"), Body: fmt.Sprintf("%d / %d", done, len(items))})
 	}
 }

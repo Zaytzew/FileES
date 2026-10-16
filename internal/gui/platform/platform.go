@@ -246,9 +246,11 @@ type ShelfItem struct {
 type ShelfDialogAction string
 
 const (
-	ShelfDialogClose  ShelfDialogAction = "close"
-	ShelfDialogFetch  ShelfDialogAction = "fetch"
-	ShelfDialogImport ShelfDialogAction = "import"
+	ShelfDialogClose     ShelfDialogAction = "close"
+	ShelfDialogFetch     ShelfDialogAction = "fetch"
+	ShelfDialogImport    ShelfDialogAction = "import"
+	ShelfDialogImportAll ShelfDialogAction = "import_all"
+	ShelfDialogRefresh   ShelfDialogAction = "refresh"
 )
 
 type ShelfDialogResult struct {

@@ -32,6 +32,8 @@ type diskCache struct {
 	Records map[string]record `json:"records"`
 }
 
+const maxCachedRoots = 1024
+
 // Manager owns exactly one worker. Update and Values touch memory only.
 // The disk cache stores directory totals, not a second index of document data.
 type Manager struct {
@@ -83,6 +85,16 @@ func (m *Manager) Update(roots []Root, busy bool) {
 	}
 	sort.Slice(next, func(i, j int) bool { return rootKey(next[i]) < rootKey(next[j]) })
 	m.mu.Lock()
+	active := make(map[string]bool, len(next))
+	for _, r := range next {
+		active[rootKey(r)] = true
+	}
+	for key, value := range m.results {
+		if !active[key] && value.State == "ready" {
+			value.State = "stale"
+			m.results[key] = value
+		}
+	}
 	m.roots = next
 	m.busy = busy
 	m.mu.Unlock()
@@ -104,6 +116,7 @@ func (m *Manager) Values() map[string]Value {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := map[string]Value{}
+	missing := map[string]bool{}
 	for _, r := range m.roots {
 		v, ok := m.results[rootKey(r)]
 		if !ok {
@@ -111,12 +124,13 @@ func (m *Manager) Values() map[string]Value {
 		}
 		sum, exists := out[r.Server]
 		if !exists {
-			sum = Value{Known: true, State: "ready"}
+			sum = Value{State: "ready"}
 		}
 		if v.Known {
 			sum.Bytes += v.Bytes
+			sum.Known = true
 		} else {
-			sum.Known = false
+			missing[r.Server] = true
 		}
 		priority := map[string]int{"ready": 0, "stale": 1, "waiting": 2, "partial": 3}
 		if priority[v.State] > priority[sum.State] {
@@ -126,6 +140,12 @@ func (m *Manager) Values() map[string]Value {
 			sum.MeasuredAt = v.MeasuredAt
 		}
 		out[r.Server] = sum
+	}
+	for server, sum := range out {
+		if missing[server] && sum.Known {
+			sum.State = "partial" // measured subtotal, never a complete total
+			out[server] = sum
+		}
 	}
 	return out
 }
@@ -181,51 +201,77 @@ func hintsChanged(a, b map[string]string) bool {
 	return false
 }
 
+// Evict oldest dormant bindings only under cache pressure. A partial startup
+// list must not evict useful records merely because they are not visible yet.
+func (m *Manager) trimDormant(records map[string]record, roots []Root) bool {
+	if len(records) <= maxCachedRoots {
+		return false
+	}
+	active := make(map[string]bool, len(roots))
+	for _, root := range roots {
+		active[rootKey(root)] = true
+	}
+	var candidates []string
+	for key := range records {
+		if !active[key] {
+			candidates = append(candidates, key)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := records[candidates[i]].Value.MeasuredAt, records[candidates[j]].Value.MeasuredAt
+		if a == b {
+			return candidates[i] < candidates[j]
+		}
+		return a < b
+	})
+	changed := false
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, key := range candidates {
+		if len(records) <= maxCachedRoots {
+			break
+		}
+		delete(records, key)
+		delete(m.results, key)
+		changed = true
+	}
+	return changed
+}
+
 // Run stops with the GUI context. A cached directory is listed again only
 // after mtime/hint changes or a slow 30-minute audit (mtime alone misses writes
 // into existing files, hydration and dehydration). No new daemon watcher.
 func (m *Manager) Run(ctx context.Context, changed func()) {
 	records := m.load()
+	// Restore all bindings before starting any paced scan. A later projection
+	// may add another root while the worker is paused inside a large first WC.
+	// Values still filters by the exact current server/repo/path binding.
+	for key, old := range records {
+		if old.Value.Known {
+			v := old.Value
+			if v.State != "partial" {
+				v.State = "stale"
+			}
+			m.publish(key, v, changed)
+		}
+	}
 	attempts := map[string]time.Time{}
 	dirtyCache := false
+	defer func() {
+		if dirtyCache {
+			m.save(records)
+		}
+	}()
 	lastSave := time.Time{}
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		roots, busy := m.input()
-		active := map[string]bool{}
-		for _, r := range roots {
-			active[rootKey(r)] = true
+		if m.trimDormant(records, roots) {
+			dirtyCache = true
 		}
-		// The first GUI snapshot can be empty while the offline mirror is loading.
-		// Do not discard the persisted cache before learning the current bindings.
-		if len(roots) > 0 {
-			for key := range records {
-				if !active[key] {
-					delete(records, key)
-				}
-			}
-		}
-		m.mu.Lock()
-		for key := range m.results {
-			if !active[key] {
-				delete(m.results, key)
-			}
-		}
-		m.mu.Unlock()
-		// Publish every cached root first: a large first WC must not hide the
-		// last known total of all the other copies while it is being measured.
-		for _, r := range roots {
-			key := rootKey(r)
-			m.mu.Lock()
-			_, shown := m.results[key]
-			m.mu.Unlock()
-			if old := records[key]; !shown && old.Value.Known {
-				v := old.Value
-				v.State = "stale"
-				m.publish(key, v, changed)
-			}
-		}
+		// Absence from a progressive GUI projection is not detach confirmation.
+		// Keep dormant records; only Values decides which current bindings count.
 		for i, r := range roots {
 			if ctx.Err() != nil {
 				return
@@ -289,7 +335,7 @@ func (m *Manager) load() map[string]record {
 		return result
 	}
 	for key, r := range cache.Records {
-		if len(result) >= 1024 || len(r.Directories) > maxDirectories {
+		if len(result) >= maxCachedRoots || len(r.Directories) > maxDirectories {
 			break
 		}
 		if r.Value.Bytes < 0 {

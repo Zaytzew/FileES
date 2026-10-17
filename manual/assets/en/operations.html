@@ -71,6 +71,9 @@
 <li><a href="#ops-provision">Provisioning tickets</a></li>
 <li><a href="#ops-passports">Passport internals</a></li>
 <li><a href="#ops-gui">GUI IPC sequence</a></li>
+<li><a href="#ops-cfapi">CFAPI and freeing space</a></li>
+<li><a href="#ops-state-cache">State emissions and cache</a></li>
+<li><a href="#ops-shelf-batch">Shelf batch placement</a></li>
 <li><a href="#ops-update">Signed update envelope</a></li>
 </ol>
 </nav>
@@ -657,6 +660,27 @@ doas -u _filees-state filees-mail send</code></pre>
 </ol>
 <p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
 
+<h2 id="ops-cfapi">CFAPI: reconciliation, download and freeing space</h2>
+<div class="section-meta"><span class="status status-implemented">Windows alpha</span><span>Foundations and rationale: <a href="architecture.html#ch1-cfapi">virtual-folder architecture</a>.</span></div>
+<p><strong>Preparation is not publication.</strong> The placeholder tree and SVN metadata must reference the same bound baseline. Reconciliation may adopt directory metadata in batches without downloading content. The completed-item counter describes that phase, not overall synchronization percentage. An empty or zero-byte startup queue is not a completion receipt.</p>
+<p><strong>Download locally</strong> may wait for local publication or writer admission. Recognized waiting is handled in the background with a phase indicator. Missing permissions, an identity conflict or an unknown outcome require an explanation rather than endless retries.</p>
+<p><strong>Free local space</strong> retains the server file and removes local content only after safety checks. Preview fixes selection membership, including already remote entries. New paths do not join the confirmed job; an updated published version of the same member does not need consent to a new list. Missing members are not reconstructed.</p>
+<ul>
+<li>A queued intent is durable and can wait for publication or provider readiness after restart.</li>
+<li>A recognized transient guard before an effect defers execution. A zero completed count alone does not prove no effect occurred.</li>
+<li>Partial or unknown effects require reconciliation before further work. Restarting a running series does not automatically replay its entire selection.</li>
+<li>Changes to attachment, root, URL or permissions require revalidation; an intent does not expand authority.</li>
+</ul>
+<p>A bulk action still performs safe per-file steps. Retained baseline evidence reduces repeated downloads and checks, but does not replace current write conditions, reservations and local identity. Clean <code>svn status</code> alone is not permission to remove bytes. Do not delete <code>.svn</code>, <code>.filees</code> or journals manually to unblock a job.</p>
+<h3 id="ops-cfapi-diagnosis">Diagnosing a stalled root</h3>
+<p>Compare phase, completed count, the last finished cycle, queue and active problem. Explorer icon changes are useful observations but do not replace an operation receipt. For an unreadable provider name, preserve raw BASIC/PROVIDER/STANDARD responses, physical root identity and the FileES marker. That signature alone does not locate the fault in durable registration, the Windows filter or the read path. Refreshing a known root's registration is a separate identity-checked repair, not a general automatic fallback.</p>
+<h2 id="ops-state-cache">Operating state emissions and cache</h2>
+<p>Across many repositories, distinguish local process-queue waiting from SSH and server execution time. User reads have bounded priority and do not interrupt an existing transfer. A speed test measures bandwidth, not these delays. After a disconnect, also examine gateway, SSH, DHCP and interface-driver logs rather than assuming FileES server failure.</p>
+<p>The server cache does not replace the current lock index or authority. Direct <code>svnadmin unlock</code>, revision-property edits and repository restoration may leave HEAD unchanged. Hybrid source checks and repository-incarnation binding must remain enabled. Do not remove writer markers or the observation epoch as cache housekeeping; do not increase TTL to conceal delays.</p>
+<p><strong>Passports require server maintenance.</strong> An expired label in the GUI does not mean SVN has removed the lock. On OpenBSD check the <code>_filees-state</code> schedule and <code>filees-worker passport-reap</code> status. It is independent of <code>upload-reap</code> and capacity measurement. <code>passport-reap -config /etc/filees/server.json --check</code> reports missing, failed or stale results; an initially absent record is not evidence that maintenance has run.</p>
+<h2 id="ops-shelf-batch">Shelf batch placement: consent boundary</h2>
+<p>The GUI confirms the displayed list and starts existing daemon transfers sequentially. Each file rechecks channel and parent authority, size/SHA-256 and no-overwrite rules. New uploads do not join. The first error, including a collision with an existing name, stops the remainder and reports the completed count.</p>
+<p>This is not the CFAPI space-release queue: the series list lives in the GUI. Closing it stops further files from starting, while the current transfer remains daemon-owned. On retry, account for files already placed; collisions are not automatically replaced or skipped. Explicit shelf refresh reads both the list and placement availability again.</p>
 <h2 id="ops-update">Signed desktop-update envelope</h2>
 <p>The tray flow is in <a href="user-guide.html#ch2-update">§2.7</a>.</p>
 <p>The signed release envelope v2 binds the release ID, monotonic <code>sequence</code>, <code>security_epoch</code>, expiry time, component and platform to a separately signed artifact manifest. The client verifies the signify format internally with standard Ed25519, then checks the bundle's exact size and SHA-256 before extraction. Its private, fsynced high-water state rejects sequence rollback, security-epoch rollback and a different release reusing the same sequence.</p>

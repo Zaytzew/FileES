@@ -56,6 +56,7 @@
 <li><a href="#ch4-operation">After a crash</a></li>
 <li><a href="#ch4-audit">Where to look</a></li>
 <li><a href="#ch4-capacity">Capacity alerts</a></li>
+<li><a href="#ch4-passport-maintenance">Passport maintenance</a></li>
 <li><a href="#ch4-mail">When mail does not arrive</a></li>
 <li><a href="#ch4-recovery">Recover and move storage</a></li>
 <li><a href="#ch4-monitoring">Daily checks</a></li>
@@ -130,7 +131,17 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 doas -u _filees-state filees-admin -config /etc/filees/server.json \
   alert capacity</code></pre>
 <p><code>--dry-run</code> prints measurement JSON without state changes, email or publication. The scheduled job quietly does nothing when the settings file is absent. The OpenBSD installer repairs the per-minute cron entry; on Linux a selected systemd timer replaces cron. Verify that the chosen scheduler is running. <code>upload-reap</code> is separate.</p>
-<p>The monitor groups paths by filesystem and uses thresholds with hysteresis. Desktop reads the alert channel; email is an independent fallback. An ordinary successful measurement is silent. Current server code adds durable write admission and a session barrier for critical conditions. Full OpenBSD interruption and disk-full acceptance of this new integration is still outstanding. An alert neither reserves space nor guarantees action before ENOSPC. Do not remove held records merely because a parent process is absent: missing writer-completion evidence requires operator inspection.</p>
+<p>The monitor groups paths by filesystem and uses thresholds with hysteresis. Desktop reads the alert channel; email is an independent fallback. An ordinary successful measurement is silent. Current server code adds durable write admission and a session barrier for critical conditions. Isolated OpenBSD and Debian tests covered open/held admission and actual ENOSPC. This does not certify every disk-full phase or production configuration. An alert neither reserves space nor guarantees action before ENOSPC. Do not remove held records merely because a parent process is absent: missing writer-completion evidence requires operator inspection.</p>
+<h3 id="ch4-storage-gauges">Storage and local-allocation indicators</h3>
+<p>The gauge beside the server name shows storage usage from the state-server emission and remains available when the card is collapsed. It observes a filesystem, not an account quota or space reserved for the next operation. Stale or unknown data is not zero usage. <strong>Local allocation</strong> is a separate GUI measurement of this server's copies on the computer, including metadata and ignored files. Local CFAPI release does not remove server history.</p>
+<h3 id="ch4-passport-maintenance">Expired-passport maintenance</h3>
+<p>Three jobs have different roles: <code>upload-reap</code> processes uploads, <code>alert capacity --scheduled</code> measures capacity, and <code>passport-reap</code> reconciles passports and locks after expiry. The first two do not replace the third. On OpenBSD the package supplies a passport-job example; check the state account's crontab:</p>
+<pre><code>doas -u _filees-state crontab -l
+doas -u _filees-state /usr/local/libexec/filees/filees-worker \
+  passport-reap -config /etc/filees/server.json --check</code></pre>
+<p>If not already present, the entry to run from <code>_filees-state</code>'s crontab is:</p>
+<pre><code>* * * * * /usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json &gt;/dev/null</code></pre>
+<p>Edit the existing crontab with your chosen editor and preserve its other entries; do not replace it with this example alone. Run maintenance as the state owner, not root. After the first successful pass, <code>--check</code> has a current result; a missing file, running/failed state or result older than five minutes is not a healthy acknowledgement. On contention the job reports a problem and the next minute resumes reconciliation without forcing another token's release. Expiry means the next successful pass, not a strict deadline for removing the SVN lock.</p>
 <h2 id="ch4-mail">4.4 When mail does not arrive</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span></div>
 <p>Invitation, OTP and realm-removal mail go through the server outbox. If the first letter never arrived:</p>

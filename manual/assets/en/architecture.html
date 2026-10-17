@@ -58,6 +58,12 @@
 <li><a href="#truth-map">Truth and artifact map</a></li>
 <li><a href="#onboarding-lifecycle">Onboarding lifecycle</a></li>
 <li><a href="#ch1-client-arch">Client architecture</a></li>
+<li><a href="#ch1-locality">Local presence and readiness</a></li>
+<li><a href="#ch1-cfapi">CFAPI and SVN baseline</a></li>
+<li><a href="#ch1-intents">Intents and transactions</a></li>
+<li><a href="#ch1-state-cache">Cache and invalidation</a></li>
+<li><a href="#ch1-admission">Process budget and reads</a></li>
+<li><a href="#ch1-presentation">Presentation cache and allocation</a></li>
 <li><a href="#ch1-states">Operation states</a></li>
 <li><a href="#ch1-bundle">Bundle and filesystem protocol</a></li>
 <li><a href="#ch1-otp">OTP mechanism</a></li>
@@ -364,7 +370,7 @@
 </div>
 <h4>Commit Service (<code>pkg/commit</code>)</h4>
 <p>Coalesces scanner events per path and, on each commit tick, produces batches bounded by <code>max_batch_files</code> (default 100) and <code>max_batch_mib</code> (default 512 MiB). A single file larger than the MiB limit gets its own batch so it cannot starve the queue. If total staged bytes reach <code>backlog_flush_mib</code> (default 1024 MiB) and at least one entry is outside the new-file latency window, a flush is forced without waiting for the regular interval.</p>
-<p>Before any SVN operation, each path is re-classified by <code>svn status --xml --verbose</code> to confirm its actual state in the working copy. Empty commits are prohibited.</p>
+<p>The publication plan uses current working-copy classification from the SVN helper rather than watcher events alone. For CFAPI folders, interpretation also accounts for the revision-bound manifest and placeholders: missing local bytes do not by themselves mean deletion. Bulk operations do not require a separate network session for each path. Empty commits are prohibited.</p>
 <p>Event coalescing rules:</p>
 <div class="table-wrap"><table>
 <tr><th>Sequence</th><th>Result</th></tr>
@@ -392,17 +398,67 @@
 </div>
 </div>
 <h4>IPC Server (<code>pkg/ipcserver</code>) and Client (<code>pkg/ipcclient</code>)</h4>
-<p>GUI and CLI talk to the daemon over local <code>AF_UNIX</code> using <code>filees.contract/v1</code>, including on Windows. Availability comes from each command’s capability, not a static list. General pause uses <code>sync.pause</code>, the announcement editor uses <code>shout.draft</code>, and unconfirmed publication has separate recovery planning and acceptance. Legacy <code>repo.pause</code> and <code>repo.sync_now</code> are not substitutes for those working paths. See <a href="user-guide.html#ch2-commit-recovery">publication recovery</a>.</p><div class="decision">
+<p>The GUI and local daemon-control tools communicate over <code>AF_UNIX</code> using <code>filees.contract/v1</code>, including on Windows. The standalone <a href="cli-client.html">filees-client</a> is a separate client, not a desktop IPC wrapper. Availability comes from each command’s capability, not a static list. General pause uses <code>sync.pause</code>, the announcement editor uses <code>shout.draft</code>, and unconfirmed publication has separate recovery planning and acceptance. Legacy <code>repo.pause</code> and <code>repo.sync_now</code> are not substitutes for those working paths. See <a href="user-guide.html#ch2-commit-recovery">publication recovery</a>.</p><div class="decision">
 <div class="decision-head">Design rationale / events invalidate snapshots</div>
 <div class="decision-grid">
 <div class="decision-label">Decision</div><div class="decision-value">GUI events are signals to refetch daemon-owned snapshots, not a second state machine.</div>
 <div class="decision-label">Why</div><div class="decision-value">A lost event, reconnect or version gap cannot make the GUI permanently diverge from daemon truth.</div>
-<div class="decision-label">Rejected</div><div class="decision-value">Building durable GUI state solely by replaying an event stream; letting the GUI inspect <code>.filees</code> or execute SVN.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Building authoritative GUI state solely from events; reading engine protocols in <code>.filees</code> or executing SVN from the GUI. The bounded allocation measurement below reads filesystem metadata for presentation only.</div>
 <div class="decision-label">Cost</div><div class="decision-value">The GUI performs additional status reads after events and remains intentionally dependent on the daemon contract.</div>
 </div>
 </div>
 <h4>Runtime Gates (<code>pkg/runtime</code>)</h4>
 <p><strong>HostGate</strong> limits the number of concurrent commits across all daemon instances on the host (directory-based locking). <strong>RepoMutex</strong> enforces at most one commit at a time per repository. Both use atomic directory operations with PID, creation timestamp, and a unique owner token. On Linux/POSIX (S3 correction), the owner file carries an OS-managed <code>flock</code> so that PID recycling cannot produce a false “lock is still held” result.</p>
+<h3 id="ch1-locality">Local presence, readiness and connectivity are separate facts</h3>
+<p>At startup the daemon knows saved attachments and paths before all runtimes are ready and server data has been reconciled. Local-copy presence comes from the durable lifecycle registry and cheap root-metadata observation. It requires no server listing, content scan or download. A present root does not prove complete local bytes, synchronization readiness or write authority.</p>
+<div class="decision"><div class="decision-head">Design rationale / local copies remain local offline</div><div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The GUI retains the local path and copy kind while showing refresh, connectivity loss or an error separately.</div>
+<div class="decision-label">Why</div><div class="decision-value">An unanswered server request does not remove local files. Startup across many repositories is progressive.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Known local presence does not enable mutations. The daemon still requires a ready runtime, matching identity and current permissions.</div>
+</div></div>
+<h3 id="ch1-cfapi">CFAPI and the bound SVN baseline</h3>
+<div class="section-meta"><span class="status status-implemented">Windows alpha</span><span>Virtual-folder stabilization continues. Linux uses ordinary and partial SVN copies; Windows Store is built without CFAPI.</span></div>
+<p>The Go daemon owns lifecycle, publication and consistency evidence. Native <code>filees-cfapi</code> connects the root to the Cloud Files filter and handles downloads and Explorer gestures; <code>filees-svn</code> performs bounded SVN operations. A helper does not choose the server or repository. The provider connection belongs to one root; the shared budget for short SVN processes is separate.</p>
+<p>The Explorer tree can contain placeholders without local content. The bound manifest and seed identify the server baseline, root, URL and lifecycle operation. SVN metadata must be reconciled with them before publication. Downloading is not a new add, and absent bytes of a remote file do not mean deletion.</p>
+<p><strong>Explicit empty revision zero:</strong> revision zero is a valid first-publication baseline only when supplied explicitly, properly bound and confirmed to contain an empty tree. A missing manifest, absent field or <code>null</code> is not revision zero. Reads use a numeric revision rather than moving HEAD; concurrent writes still face SVN conflict checks.</p>
+<p><strong>Batch reconciliation:</strong> one bound listing classifies the selection, then directories are adopted in bounded batches, parents before children. Local bytes remain local changes; unrequested children are not downloaded. This is not one atomic tree transaction: the next cycle reads state again after partial failure. Progress counts confirmed metadata, not uploaded files.</p>
+<div class="decision"><div class="decision-head">Design rationale / reorganizing without downloading a whole tree</div><div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">A directory move within one root uses a single SVN URL-only copyfrom/delete operation that preserves history, then reconciles the Windows gesture and local metadata.</div>
+<div class="decision-label">Why</div><div class="decision-value">Moving a directory does not require transporting unchanged content.</div>
+<div class="decision-label">Cost</div><div class="decision-value">A durable intent, server receipt, Windows completion and bindings for both ends are needed. An uncertain result requires reconciliation rather than another remote send.</div>
+</div></div>
+<p>Moving the whole root is a separate lifecycle operation: stop its CFAPI handling, move the verified root and reconnect the provider. An Explorer navigation-pane shortcut is an independent per-copy preference, off by default; the CFAPI root does not require a shortcut.</p>
+<h3 id="ch1-intents">Confirmed intents and transaction boundaries</h3>
+<p>Request acceptance, writer admission, applying an effect and confirming the outcome are different stages. Queued actions retain the confirmed scope and wait for the shared writer/scanner guard; before an effect they recheck attachment, root and permissions. The text <code>writer busy</code> does not justify arbitrary retries: only a recognized refusal before an effect can be deferred. Partial or unknown effects require the corresponding recovery protocol.</p>
+<p>For <strong>freeing local space</strong>, folder preview determines a path list. The daemon's confirmed intent survives restart, excludes new files and executes against the current safely published versions of selected files. An interrupted running series with an uncertain outcome is not replayed blindly. See <a href="operations.html#ops-cfapi">CFAPI operations</a>.</p>
+<p>Retained local evidence of baseline consistency can avoid downloading content again and some repeated checks. Evidence is bound to a file, revision and local version; clean status and equal size alone are insufficient. Permissions, reservations, change and handle checks, and a durable byte-release journal still apply. Older or uncertain cases need fuller verification or are refused.</p>
+<div class="decision"><div class="decision-head">Design rationale / waiting belongs to the operation</div><div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Confirmed operations wait for safe conditions within their scope.</div>
+<div class="decision-label">Why</div><div class="decision-value">The user expresses an intent once rather than managing writer guards between synchronization ticks.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Each queue needs consent boundaries, limits, idempotency and an explicit partial result. Actions do not all share one queue or one restart contract.</div>
+</div></div>
+<h3 id="ch1-state-cache">State cache, acknowledgements and invalidation</h3>
+<p>Batch and differential emissions require server support for the corresponding contract. An older server retains a compatible read path; a missing capability does not mean an empty state.</p>
+<p>An authenticated server emission supplies the initial lock and path-ownership snapshot within the installation's scope. Later reconciliations acknowledge an unchanged snapshot or return differences, including removals. The public-link management list uses an analogous projection. Saved last-known state speeds presentation; until currently acknowledged it is not fresh authority evidence.</p>
+<p>Acknowledging a local acquire, renewal or release updates exactly that path and token. Durable <code>releasing</code> state resolves a lost response without releasing a newer lock. Mutations advance the local observation generation, so an older response in flight cannot overwrite their effect. One successful mutation does not refresh other data. Partial failure, a missing response and an unsupported contract are neither an empty inventory nor an unchanged acknowledgement.</p>
+<div class="decision"><div class="decision-head">Design rationale / hybrid server invalidation</div><div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Retain direct <code>svnadmin</code>. The emitter uses cache and still checks local SVN sources and canonical authority/link records.</div>
+<div class="decision-label">Why</div><div class="decision-value">An administrator can change a lock or revision property without a commit or a worker. HEAD alone or an incomplete producer journal cannot detect this.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Cheap local lock-index and server-record reads remain. There is no promise of zero I/O or cache-only acknowledgements; authority lifetimes are unchanged.</div>
+</div></div>
+<p>Writer markers and a durable observation epoch reject responses intersected by a mutation, including between repositories in a batch. Cached history is bound to the physical repository incarnation, not just UUID/HEAD; revision authors are revalidated independently. An interrupted marker is neither automatically removed nor interpreted as permission to use old cache.</p>
+<h3 id="ch1-admission">Shared process budget and read priority</h3>
+<p>Independent repository pipelines share the native-SVN budget. A short listing or state read triggered by the user has priority for a bounded run of admissions; synchronization still receives slots. Running processes are not preempted. Long transfers and mutations do not gain priority merely because they start in the GUI.</p>
+<p>Successfully validated helper capabilities are shared in a cache bound to the executable's file identity. Replacing the binary requires another probe; failure is not remembered as lack of a feature. This cache contains no server authority, credentials or mutation outcomes.</p>
+<div class="decision"><div class="decision-head">Design rationale / admission instead of unlimited parallelism</div><div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Bound process starts, share capability probes and order the queue.</div>
+<div class="decision-label">Why</div><div class="decision-value">More SSH sessions cannot remove a serial writer guard and may increase disk load.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Link bandwidth does not determine response time. Measure slot waiting, SSH, server reads and SVN execution separately; interrupted transport still requires network diagnosis.</div>
+</div></div>
+<h3 id="ch1-presentation">Presentation cache and local allocation</h3>
+<p><strong>Local allocation</strong> approximates allocated space for known copies per server, including <code>.svn</code>, <code>.filees</code> and ignored files. It is neither logical repository size nor global filesystem overhead. The GUI's bounded scanner reads metadata without hydrating placeholders, saves results and restores them before measuring again.</p>
+<p>Cache bindings include server, repository and path. Progressive startup does not discard results for copies absent from the projection so far; detached or moved bindings do not contribute. A partial sum is labelled. Closing the GUI stops measurement, not synchronization. This is a deliberate presentation exception to the rule that the GUI does not read engine state.</p>
+<p><strong>Implementation boundary:</strong> ordinary-copy conversion to CFAPI and server-side archival aggregates remain concepts. Encryption is a separate prototype and does not protect official-channel data. A complete journal of all external producers is not a guarantee of the current hybrid model.</p>
 <h2 id="ch1-states">1.3 Operation States</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Onboarding transitions through active, expiry and revocation paths are implemented and tested.</span></div>
 <p>Onboarding operations (from <code>pkg/onboarding/types.go</code>) progress through the following states:</p>
 <div class="table-wrap"><table>

@@ -51,8 +51,9 @@
 <h1>Podręcznik FileES</h1>
 <p class="hero-copy">FileES synchronizuje katalogi ze zdalnym repozytorium i pozwala udostępniać pliki osobom, które nie mają zainstalowanej aplikacji klienckiej. Podręcznik jest podzielony na część dotyczącą obsługi oraz część techniczną. Pierwsza opisuje codzienną pracę, druga architekturę, instalację, eksploatację i bezpieczeństwo systemu.</p>
 <div class="meta-strip">
-<span><strong>Wersja</strong> 0.1.18</span>
-<span><strong>Data</strong> 2026-10-03</span>
+<span><strong>Desktop alpha</strong> 0.2.0</span>
+<span><strong>Windows Store</strong> 0.1.19 · bez CFAPI</span>
+<span><strong>Data</strong> 2026-10-17</span>
 <span><strong>Serwer</strong> OpenBSD 7.9 i Linux · podpisane kanały</span>
 <span><strong>Aplikacje</strong> pulpit Linux i Windows · Android</span>
 <span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
@@ -118,11 +119,14 @@
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li><a href="man-pages.html">Polecenia systemowe</a> — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
-<h2>Stan na 2026-10-03</h2>
-<p>Stan po przeglądzie kodu i podpisanych kanałów 2026-10-03. Oznaczenie <em>Zweryfikowane</em> dotyczy wskazanego zakresu testów lub odbioru, nie całego produktu. Desktop ma kanały alpha i beta, Android osobny kanał, serwer OpenBSD kanały alpha i beta, a Linux osobny alpha-linux. Kanały mogą wskazywać różne wersje; kanał stable nie jest jeszcze opublikowany.</p>
+<h2>Stan dokumentacji na 2026-10-17</h2>
+<p>Opisy zaktualizowano względem bieżącego kodu i kontraktów. Oznaczenie <em>Zweryfikowane</em> dotyczy wskazanego zakresu testów lub odbioru, nie całego produktu ani każdego hosta. Foldery wirtualne CFAPI należą do desktopowej alfy Windows 0.2.0; Windows Store 0.1.19 ich nie zawiera, a Linux korzysta z kopii SVN, również częściowych. Wersje klienta, serwera i kanałów mogą się różnić. Datowane dowody opisują swój zakres; aktualną wersję instalacji sprawdź w aplikacji lub poleceniem wersji.</p>
 <div class="table-wrap"><table>
 <tr><th>Obszar</th><th>Stan</th></tr>
 <tr><td>Demon pulpitu i zasobnik systemowy</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
+<tr><td>Foldery wirtualne CFAPI</td><td><span class="status status-implemented">Alfa Windows</span> Związana baza SVN, uzgadnianie partiami, przenoszenie katalogów z historią i trwałe zwalnianie miejsca. Stabilizacja trwa; Linux i Store korzystają z innych wariantów. Zobacz <a href="architecture.html#ch1-cfapi">mechanikę i uzasadnienia</a>.</td></tr>
+<tr><td>Cache stanu i potwierdzenia własnych zmian</td><td><span class="status status-implemented">Zaimplementowane</span> Zbiorcze emisje, różnice, ACK i bariery generacji ograniczają zapytania. Hybrydowy serwer nadal sprawdza lokalne źródła SVN; nie wydłuża ważności praw. <a href="architecture.html#ch1-state-cache">Granice cache</a>.</td></tr>
+<tr><td>Lokalność offline i alokacja</td><td><span class="status status-implemented">Zaimplementowane</span> Lokalna kopia pozostaje rozpoznana podczas startu i offline. GUI przywraca przybliżony pomiar alokacji z cache i uzupełnia go oszczędnie w tle.</td></tr>
 <tr><td>Języki GUI pulpitu</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-11 w prawdziwym oknie Wails: polski, angielski, francuski, niemiecki i hiszpański, wybierane w nagłówku okna albo automatycznie zgodnie z ustawieniami systemu; liczebniki i czas względny są dopasowane do wybranego języka bez ponownego uruchamiania GUI</td></tr>
 <tr><td>Aplikacja na Androida</td><td><span class="status status-verified">Zweryfikowane na żywo</span> Parowanie, przegląd i pobieranie odebrano wcześniej; 2026-09-27 właściciel potwierdził nowe wskaźniki wysyłki oraz opróżnienie dużej kolejki po naprawie lokalizacji tymczasowej serwera. Pozostają ograniczenia pracy w tle zależne od telefonu. Zobacz <a href="android.html">Android</a>.</td></tr>
 <tr><td>Aktywacja i dołączenie do strefy</td><td><span class="status status-verified">Zweryfikowane</span> Klient generuje klucz lokalnie, przekazuje OTP przez wbudowany SSH z przypięciem klucza serwera i wznawia przyjętą próbę.</td></tr>
@@ -136,7 +140,7 @@
 <tr><td>Kanał przyjęcia — strona nadawcy</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-12 na hoście produkcyjnym: wysłanie z publicznej strony, skan antywirusowy i zatwierdzenie do repozytorium półki. Wcześniej trzeba było poprawić trzy domyślne ustawienia pakietu; instalator nadal nie planuje zadania <code>upload-reap</code>, a bez niego pliki są przyjmowane, lecz nigdy nie są przetwarzane (zobacz <a href="install.html">Instalację</a>). <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
 <tr><td>Kanał przyjęcia — strona odbiorcy</td><td><span class="status status-implemented">Zaimplementowane i wydane</span> Lista półki, pobieranie tylko do odczytu na żądanie oraz umieszczenie w folderze rodzica bez nadpisania. Rzeczywiste pobranie wybiórcze sprawdzono na Windows; ten test nie zastępuje ręcznego odbioru wszystkich akcji GUI.</td></tr>
 <tr><td>Bezpieczeństwo pamięci demona</td><td><span class="status status-implemented">Zaimplementowane</span> Ograniczone ramki IPC i kontrolowane zatrzymanie przy presji pamięci. Jest pierwsza próbka pomiaru; długotrwała obserwacja jest osobnym zadaniem tygodniowym. Brak jeszcze dowodu wykluczającego wyciek pamięci.</td></tr>
-<tr><td>Alarmy pojemności serwera</td><td><span class="status status-implemented">Zaimplementowane</span> Powiadomienia w GUI i pocztą odebrano na żywo. Nowsza bramka zapisu i blokada sesji wymagają jeszcze pełnego odbioru OpenBSD, przerwania i braku miejsca. Zobacz <a href="administration.html#ch4-capacity">konfigurację</a>.</td></tr>
+<tr><td>Alarmy pojemności serwera</td><td><span class="status status-implemented">Zaimplementowane</span> Powiadomienia w GUI i pocztą odebrano na żywo. Bramka open/held i rzeczywisty ENOSPC mają testy izolowane OpenBSD/Linux; nie wszystkie fazy braku miejsca ani produkcyjne konfiguracje są tym odebrane. Zobacz <a href="administration.html#ch4-capacity">konfigurację</a>.</td></tr>
 <tr><td>Szyfrowanie, Backstage, konsola administracyjna użytkownika</td><td><span class="status status-planned">Planowane</span> Crypto ma izolowany prototyp; nie jest ochroną oficjalnie wydanych repozytoriów. Backstage i konsola pozostają koncepcjami.</td></tr>
 </table></div>
 </div>

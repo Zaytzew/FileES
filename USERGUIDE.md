@@ -10,10 +10,13 @@ Ten plik tylko do niego prowadzi.
 |---|---|---|
 | Start here / Od czego zacząć | [Overview](https://manual.filees.space/assets/en/index.html) | [Wprowadzenie](https://manual.filees.space/assets/pl/index.html) |
 | Desktop app (Windows, Linux) / Aplikacja desktopowa | [User guide](https://manual.filees.space/assets/en/user-guide.html) | [Podręcznik użytkownika](https://manual.filees.space/assets/pl/user-guide.html) |
+| Standalone CLI / Samodzielny klient CLI | [CLI client](https://manual.filees.space/assets/en/cli-client.html) | [Klient CLI](https://manual.filees.space/assets/pl/cli-client.html) |
 | Android | [Android](https://manual.filees.space/assets/en/android.html) | [Android](https://manual.filees.space/assets/pl/android.html) |
 | Shares and public links / Udostępnianie i linki | [Shares](https://manual.filees.space/assets/en/public-shares.html) | [Udostępnianie](https://manual.filees.space/assets/pl/public-shares.html) |
 | Server installation / Instalacja serwera | [Install](https://manual.filees.space/assets/en/install.html) | [Instalacja](https://manual.filees.space/assets/pl/install.html) |
 | Administration / Administracja | [Administration](https://manual.filees.space/assets/en/administration.html) | [Administracja](https://manual.filees.space/assets/pl/administration.html) |
+| Architecture and decisions / Architektura i uzasadnienia decyzji | [Architecture](https://manual.filees.space/assets/en/architecture.html#ch1-locality) | [Architektura](https://manual.filees.space/assets/pl/architecture.html#ch1-locality) |
+| Virtual folders and state cache / Foldery wirtualne i cache stanu | [Operations](https://manual.filees.space/assets/en/operations.html#ops-cfapi) | [Eksploatacja](https://manual.filees.space/assets/pl/operations.html#ops-cfapi) |
 | Manual pages / Strony man | [Index](https://manual.filees.space/assets/man/index.html) | (English) |
 
 Downloads / Pobieranie: [filees.space/download](https://filees.space/download/) ·

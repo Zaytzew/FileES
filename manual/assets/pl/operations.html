@@ -72,6 +72,9 @@
 <li><a href="#ops-provision">Przygotowanie repozytorium</a></li>
 <li><a href="#ops-passports">Wnętrze paszportów</a></li>
 <li><a href="#ops-gui">Sekwencja IPC GUI</a></li>
+<li><a href="#ops-cfapi">CFAPI i zwalnianie miejsca</a></li>
+<li><a href="#ops-state-cache">Emisje stanu i cache</a></li>
+<li><a href="#ops-shelf-batch">Osadzanie całej półki</a></li>
 <li><a href="#ops-update">Koperta podpisanej aktualizacji</a></li>
 </ol>
 </nav>
@@ -637,6 +640,27 @@ doas -u _filees-state filees-mail send</code></pre>
 <li>Przy ponownym połączeniu, luce sekwencji albo nieznanym zdarzeniu: wykonaj pełną resynchronizację.</li>
 </ol>
 <p>Zdarzenia są sygnałami unieważnienia pamięci podręcznej. GUI nigdy nie buduje stanu wyłącznie przez stosowanie zdarzeń; każde zdarzenie wyzwala świeże pobranie <code>repo.status</code>. Akcje zmieniające stan (blokada/odblokowanie) są pokazywane tylko wtedy, gdy demon zgłasza je jako uprawnienia, a stan połączenia to <code>Connected</code> (nie <code>Stale</code>).</p>
+<h2 id="ops-cfapi">CFAPI: uzgadnianie, pobieranie i zwalnianie miejsca</h2>
+<div class="section-meta"><span class="status status-implemented">Alfa Windows</span><span>Podstawy i uzasadnienia: <a href="architecture.html#ch1-cfapi">architektura folderu wirtualnego</a>.</span></div>
+<p><strong>Przygotowanie nie jest publikacją.</strong> Drzewo plików zastępczych i metadane SVN muszą wskazywać tę samą związaną bazę. Uzgadnianie może przejmować katalogi partiami bez pobierania ich treści. Licznik wykonanych elementów dotyczy tego etapu; nie jest procentem całej synchronizacji. Pusta lub zerobajtowa kolejka podczas startu nie jest pokwitowaniem zakończenia.</p>
+<p><strong>Pobierz lokalnie</strong> może czekać na opublikowanie lokalnych zmian lub zwolnienie pisarza. Rozpoznane oczekiwanie jest realizowane w tle, z informacją o fazie. Brak uprawnień, konflikt tożsamości albo nieznany wynik są błędem wymagającym wyjaśnienia, nie powodem do nieskończonego retry.</p>
+<p><strong>Zwolnij miejsce lokalnie</strong> zachowuje plik na serwerze i usuwa jego lokalną treść dopiero po sprawdzeniu bezpieczeństwa. Podgląd utrwala członkostwo wyboru, także wpisów już zdalnych. Nowe ścieżki nie dołączają do potwierdzonego zadania; aktualizacja opublikowanej wersji tego samego członka nie wymaga zgody na nową listę. Brakujący członek nie jest odtwarzany.</p>
+<ul>
+<li>Oczekująca intencja jest trwała i może poczekać na publikację lub dostawcę po restarcie.</li>
+<li>Znana chwilowa blokada przed efektem odracza wykonanie. Sam licznik „0 ukończonych” nie dowodzi, że nic się nie wydarzyło.</li>
+<li>Po częściowym lub nieznanym efekcie dalsza praca wymaga uzgodnienia. Restart trwającej serii nie uruchamia automatycznego replayu całego wyboru.</li>
+<li>Zmiana przypięcia, korzenia, URL lub praw wymaga ponownej weryfikacji; intencja nie rozszerza uprawnień.</li>
+</ul>
+<p>Operacja masowa nadal wykonuje bezpieczne kroki per plik. Zachowany dowód zgodności z bazą ogranicza dodatkowe pobrania i kontrole, lecz nie zastępuje świeżych warunków zapisu, rezerwacji i lokalnej tożsamości. <code>svn status</code> bez zmian nie jest samodzielną zgodą na usunięcie bajtów. Nie usuwaj ręcznie <code>.svn</code>, <code>.filees</code> ani dzienników, żeby odblokować zadanie.</p>
+<h3 id="ops-cfapi-diagnosis">Co sprawdzić przy zatrzymanym punkcie</h3>
+<p>Porównaj fazę, licznik wykonanych elementów, ostatni zakończony cykl, kolejkę i aktywny problem. Zmiana ikon Eksploratora jest użyteczną obserwacją, ale nie zastępuje pokwitowania operacji. Przy nieczytelnej nazwie dostawcy zachowaj surowe odpowiedzi BASIC/PROVIDER/STANDARD, identyfikator fizycznego korzenia i marker FileES. Taka sygnatura sama nie rozstrzyga, czy problem leży w trwałej rejestracji, filtrze Windows czy sposobie odczytu. Odświeżanie rejestracji znanego punktu jest osobną naprawą po weryfikacji tożsamości; nie jest ogólnym automatycznym fallbackiem.</p>
+<h2 id="ops-state-cache">Eksploatacja emisji stanu i cache</h2>
+<p>Przy wielu repozytoriach odróżniaj czas oczekiwania w kolejce lokalnych procesów od czasu SSH i pracy serwera. Odczyt użytkownika ma ograniczone pierwszeństwo; nie przerywa już trwającego transferu. Speedtest mierzy przepustowość, nie te czasy. Po zerwaniu sprawdź także logi bramy, SSH, DHCP i sterownika interfejsu, zamiast z góry przypisywać winę serwerowi FileES.</p>
+<p>Serwerowy cache nie jest zamiennikiem aktualnego indeksu blokad ani uprawnień. Bezpośrednie <code>svnadmin unlock</code>, zmiana właściwości rewizji i odtworzenie repozytorium mogą nie zmienić HEAD. Hybrydowa kontrola źródeł i tożsamości instancji musi pozostać włączona. Nie kasuj markerów zapisów lub epoki obserwacji jako „sprzątania cache”; nie zwiększaj TTL w celu ukrycia opóźnienia.</p>
+<p><strong>Paszporty wymagają utrzymania na serwerze.</strong> Wygaśnięcie w interfejsie nie oznacza, że SVN sam zdjął blokadę. Na OpenBSD sprawdź harmonogram konta <code>_filees-state</code> i stan zadania <code>filees-worker passport-reap</code>. Jest niezależne od <code>upload-reap</code> i pomiaru pojemności. Kontrola <code>passport-reap -config /etc/filees/server.json --check</code> zgłasza m.in. brak, błąd lub zbyt stary wynik; pierwszy brak rekordu nie jest dowodem uruchomionej konserwacji.</p>
+<h2 id="ops-shelf-batch">Zbiorcze osadzanie półki: granica zgody</h2>
+<p>GUI potwierdza wyświetloną listę i uruchamia istniejące transfery demona kolejno. Każdy plik ponownie przechodzi autoryzację kanału i rodzica oraz kontrolę rozmiaru/SHA-256 i zakaz nadpisania. Nowe przesyłki nie dołączają. Pierwszy błąd, także kolizja z istniejącą nazwą, zatrzymuje resztę i pokazuje liczbę ukończonych.</p>
+<p>To nie ta sama kolejka co zwalnianie miejsca CFAPI: lista serii żyje w GUI. Zamknięcie GUI zatrzymuje uruchamianie kolejnych plików, ale bieżący transfer pozostaje w demonie. Przy wznowieniu trzeba uwzględnić już osadzone pliki; nie ma automatycznego zastępowania ani pomijania kolizji. Jawne odświeżenie półki ponownie odczytuje listę i dostępność osadzenia.</p>
 <h2 id="ops-update">Koperta podpisanej aktualizacji pulpitu</h2>
 <p>Przepływ zasobnika jest w <a href="user-guide.html#ch2-update">§2.7</a>.</p>
 <p>Podpisana koperta wydania v2 wiąże identyfikator wydania, rosnący <code>sequence</code>, <code>security_epoch</code>, czas wygaśnięcia, komponent i platformę z osobno podpisanym manifestem artefaktu. Klient weryfikuje format signify wewnętrznie standardowym Ed25519, a następnie sprawdza dokładny rozmiar pakietu i SHA-256 przed rozpakowaniem. Prywatny stan znacznika najwyższej zainstalowanej wersji jest synchronizowany przez <code>fsync</code> i odrzuca wycofanie sekwencji, wycofanie epoki bezpieczeństwa oraz inne wydanie ponownie używające tej samej sekwencji.</p>

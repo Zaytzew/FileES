@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 17, 2026
 .Dt FILEES-SERVING-STATE 8
 .Os
 .Sh NAME
@@ -19,8 +19,10 @@ authenticates the key, unveils what the worker needs and executes
 with the client ID of that key.
 An operator does not run it.
 .Pp
-It reads one JSON request of at most 4 KiB from standard input and writes
-one JSON result to standard output.
+It reads one bounded JSON request from standard input and writes one
+JSON result to standard output.
+Legacy reservation requests are limited to 4 KiB;
+batch and public-link state requests are limited to 1 MiB.
 The request schema selects the answer:
 .Bl -tag -width Ds
 .It Cm filees.reservation/v1
@@ -32,6 +34,15 @@ active, or the server ID and display name when no repository is named.
 .It Cm filees.reservation/v3
 Per-object lock ownership of one repository for automatic locking,
 refreshed under the service working copy lock.
+.It Cm filees.reservation-batch/v1
+A scope-bound, paginated emission for the authenticated client's view.
+The initial request obtains state; subsequent requests may name known
+content versions and receive unchanged acknowledgements or changed results.
+Each page covers at most four repositories and is checked as one observation.
+.It Cm filees.public-links-state/v1
+An authenticated management snapshot or differences for owned public links,
+including removals.
+It grants no public-recipient access or new sharing authority.
 .El
 .Pp
 A client may ask only about repositories that are active in its own
@@ -47,6 +58,24 @@ The last known lock state is kept under
 in the repository results root.
 When a live query fails, the result carries the last stored answer marked
 stale, or is marked unknown when there is none.
+.Pp
+Acknowledgements require current source checks.
+On Unix the lock source is the local SVN lock index;
+revision authors and canonical authority records remain independently checked.
+Direct administrative changes may leave HEAD unchanged.
+History reuse binds the physical repository incarnation as well as UUID
+and revision.
+.Pp
+FileES writer markers and a durable observation epoch reject responses
+intersected by a mutation, including between repositories in a batch.
+An interrupted marker is not silently removed and does not permit a
+cache-only acknowledgement.
+Failed, incomplete or unsupported observations are not empty inventories
+and do not refresh client authority lifetimes.
+.Pp
+Clients fence in-flight reads across their own mutations.
+A canonical acknowledgement updates only the affected path or link;
+saved presentation state never proves freshness by itself.
 .Pp
 The worker keeps its own
 .Xr pledge 2

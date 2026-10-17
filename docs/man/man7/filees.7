@@ -1,4 +1,4 @@
-.Dd September 29, 2026
+.Dd October 17, 2026
 .Dt FILEES 7
 .Os
 .Sh NAME
@@ -22,6 +22,43 @@ SVN is transport and storage.
 Revision-control semantics are secondary.
 On-disk files, atomic rename and short-lived forced commands are the
 operational contract.
+.Sh CLIENT MODEL
+The desktop daemon owns synchronization and durable operation intents.
+The separate GUI observes state and requests actions over local IPC.
+Local-copy presence, runtime readiness and server connectivity are distinct:
+an offline server does not turn an existing local copy into a remote folder.
+.Pp
+Windows alpha also supports CFAPI virtual folders.
+Placeholders, a bound remote baseline and SVN working-copy metadata are
+reconciled without treating downloaded bytes as new files.
+Explicit empty revision zero is a valid first-publication baseline;
+missing metadata is not revision zero.
+Linux uses ordinary or partial working copies.
+.Pp
+Confirmed folder space-release intents retain a fixed selection and can
+wait for publication and writer admission.
+Unknown or partial effects require reconciliation, not blind replay.
+The GUI's separate local-allocation cache measures filesystem metadata
+without hydrating placeholders; it grants no write authority.
+.Sh STATE CACHE
+Authenticated server snapshots and differential acknowledgements reduce
+network requests for reservations and public-link management state.
+Cached presentation is not permission evidence.
+Acknowledging one mutation does not refresh unrelated authority.
+.Pp
+The server retains direct
+.Nm svnadmin
+administration.
+Hybrid invalidation therefore keeps live local lock-index,
+revision-author and canonical authority checks.
+Writer markers and observation epochs reject reads intersected by a
+FileES mutation; history cache also binds the physical repository incarnation.
+Equal UUID and HEAD alone cannot identify a restored repository.
+.Pp
+Passport expiry requires scheduled
+.Xr filees-worker 8
+passport-reap maintenance.
+Capacity alerts and upload processing are separate jobs.
 .Sh ACCOUNTS
 .Bl -tag -width _filees-recovery
 .It Sy _filees-state

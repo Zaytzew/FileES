@@ -50,8 +50,9 @@
 <h1>FileES Manual: User and Tech</h1>
 <p class="hero-copy">FileES synchronises folders with a remote repository and lets you share files with someone who will never install the client. The manual has two parts: <strong>User</strong> covers everyday use — what to click and why, <strong>Tech</strong> covers the architecture and contracts of the system. Administration mostly uses the User part. The OpenBSD manual pages (<code>mandoc</code>) belong to Tech.</p>
 <div class="meta-strip">
-<span><strong>Version</strong> 0.1.18</span>
-<span><strong>Date</strong> 2026-10-03</span>
+<span><strong>Desktop alpha</strong> 0.2.0</span>
+<span><strong>Windows Store</strong> 0.1.19 · without CFAPI</span>
+<span><strong>Date</strong> 2026-10-17</span>
 <span><strong>Server</strong> OpenBSD 7.9 and Linux · signed channels</span>
 <span><strong>Client</strong> Linux and Windows desktop · Android</span>
 <span><strong>GUI</strong> PL · EN · FR · DE · ES</span>
@@ -117,11 +118,14 @@
 <li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
 <li><a href="man-pages.html">Man pages / CLI extract</a> — role, invocation, flags and examples for every server command.</li>
 </ul>
-<h2>What is current as of 2026-10-03</h2>
-<p>Reviewed against source and signed channels on 2026-10-03. <em>Verified</em> applies to the named test or acceptance scope, not the whole product. Desktop has alpha and beta channels, Android its own channel, OpenBSD server alpha and beta, and Linux server a separate alpha-linux. Channels may carry different versions; stable is not published yet.</p>
+<h2>Documentation checkpoint: 2026-10-17</h2>
+<p>The descriptions have been reconciled with current code and contracts. <em>Verified</em> applies to the named test or acceptance scope, not the whole product or every host. CFAPI virtual folders belong to the Windows desktop alpha 0.2.0; Windows Store 0.1.19 excludes them, while Linux uses SVN working copies, including partial copies. Client, server and channel versions may differ. Dated evidence retains its own scope; check the application or version command for the installed version.</p>
 <div class="table-wrap"><table>
 <tr><th>Surface</th><th>State</th></tr>
 <tr><td>Desktop daemon + tray</td><td><span class="status status-verified">Verified</span> Linux and Windows; GUI is a thin IPC client</td></tr>
+<tr><td>CFAPI virtual folders</td><td><span class="status status-implemented">Windows alpha</span> Bound SVN baseline, batch reconciliation, directory moves retaining history and durable space-release intents. Stabilization continues; Linux and Store use other variants. See <a href="architecture.html#ch1-cfapi">mechanics and rationale</a>.</td></tr>
+<tr><td>State cache and own-mutation acknowledgements</td><td><span class="status status-implemented">Implemented</span> Batch emissions, differences, acknowledgements and generation barriers reduce requests. The hybrid server still checks local SVN sources; authority lifetime is unchanged. <a href="architecture.html#ch1-state-cache">Cache boundaries</a>.</td></tr>
+<tr><td>Offline local presence and allocation</td><td><span class="status status-implemented">Implemented</span> Local copies remain recognized during startup and offline. The GUI restores approximate allocation from cache and measures gradually in the background.</td></tr>
 <tr><td>Desktop GUI languages</td><td><span class="status status-verified">Verified</span> 2026-09-11 in a real Wails window: Polish, English, French, German and Spanish, chosen from the window header or following the system; plural forms and relative times follow the chosen language without restarting the GUI</td></tr>
 <tr><td>Android client</td><td><span class="status status-verified">Verified live</span> Pairing, browsing and download were accepted earlier; on 2026-09-27 the owner confirmed the new upload indicators and completion of a large queue after correcting server temporary storage. Phone-specific background limits remain. See <a href="android.html">Android</a>.</td></tr>
 <tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> The client generates its key locally, supplies OTP through embedded SSH with host-key pinning, and resumes an accepted attempt.</td></tr>
@@ -135,7 +139,7 @@
 <tr><td>Upload Channel — sender side</td><td><span class="status status-verified">Verified</span> 2026-09-12 on a production host: public upload, antivirus scan and commit into the delivery repository. It needed three fixes to package defaults first; the installer still does not schedule the <code>upload-reap</code> job, and without it uploads are accepted and never processed (see <a href="install.html">Install</a>). <code>slots</code>/DROPPER remain deliberately off</td></tr>
 <tr><td>Upload Channel — recipient side</td><td><span class="status status-implemented">Implemented and shipped</span> Shelf listing, read-only fetch on demand and placement in the parent folder without replacement. Real sparse download was tested on Windows; this does not replace manual acceptance of every GUI action.</td></tr>
 <tr><td>Daemon memory safety</td><td><span class="status status-implemented">Implemented</span> Bounded IPC frames and controlled shutdown under memory pressure. An initial measurement exists; long-term observation is a separate weekly task. There is no proof ruling out a memory leak yet.</td></tr>
-<tr><td>Server capacity alerts</td><td><span class="status status-implemented">Implemented</span> GUI and email notifications passed live acceptance. The newer write gate and session barrier still need full OpenBSD, interruption and disk-full acceptance. See <a href="administration.html#ch4-capacity">configuration</a>.</td></tr>
+<tr><td>Server capacity alerts</td><td><span class="status status-implemented">Implemented</span> GUI and email notifications passed live acceptance. Open/held admission and actual ENOSPC have isolated OpenBSD/Linux tests; these do not certify every disk-full phase or production configuration. See <a href="administration.html#ch4-capacity">configuration</a>.</td></tr>
 <tr><td>Encryption, Backstage, user administration console</td><td><span class="status status-planned">Planned</span> Crypto has an isolated prototype; it does not protect officially released repositories. Backstage and the console remain concepts.</td></tr>
 </table></div>
 <p>On the server host the Tech pages pair with:</p>

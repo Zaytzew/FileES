@@ -59,6 +59,12 @@
 <li><a href="#truth-map">Źródła prawdy i dane pochodne</a></li>
 <li><a href="#onboarding-lifecycle">Cykl aktywacji klienta</a></li>
 <li><a href="#ch1-client-arch">Architektura klienta</a></li>
+<li><a href="#ch1-locality">Lokalność, gotowość i łączność</a></li>
+<li><a href="#ch1-cfapi">CFAPI i baza SVN</a></li>
+<li><a href="#ch1-intents">Intencje i transakcje</a></li>
+<li><a href="#ch1-state-cache">Cache i unieważnianie</a></li>
+<li><a href="#ch1-admission">Budżet procesów i odczyty</a></li>
+<li><a href="#ch1-presentation">Cache prezentacji i alokacja</a></li>
 <li><a href="#ch1-states">Stany operacji</a></li>
 <li><a href="#ch1-bundle">Pakiet operacji i protokół systemu plików</a></li>
 <li><a href="#ch1-otp">Mechanizm OTP</a></li>
@@ -364,7 +370,7 @@
 </div>
 <h4>Usługa zatwierdzenia (<code>pkg/commit</code>)</h4>
 <p>Usługa scala zdarzenia skanera dla każdej ścieżki i przy każdym cyklu zatwierdzania tworzy partie ograniczone przez <code>max_batch_files</code> (domyślnie 100) oraz <code>max_batch_mib</code> (domyślnie 512 MiB). Pojedynczy plik większy od limitu MiB dostaje własną partię, żeby nie zagłodził kolejki. Jeśli suma bajtów oczekujących danych osiągnie <code>backlog_flush_mib</code> (domyślnie 1024 MiB) i przynajmniej jeden wpis jest poza oknem opóźnienia nowego pliku, wymuszane jest zatwierdzenie bez czekania na regularny interwał.</p>
-<p>Przed każdą operacją SVN każda ścieżka jest ponownie klasyfikowana przez <code>svn status --xml --verbose</code>, żeby potwierdzić jej rzeczywisty stan w kopii roboczej. Puste zatwierdzenia są zabronione.</p>
+<p>Plan publikacji opiera się na bieżącej klasyfikacji stanu kopii roboczej przez pomocnika SVN, a nie na samych zdarzeniach obserwatora. Dla folderów CFAPI interpretacja uwzględnia również związany z rewizją manifest i placeholdery: brak lokalnych bajtów nie jest sam w sobie usunięciem. Operacje zbiorcze nie wymagają osobnej sesji sieciowej dla każdej ścieżki. Puste zatwierdzenia są zabronione.</p>
 <p>Reguły scalania zdarzeń:</p>
 <div class="table-wrap"><table>
 <tr><th>Sekwencja</th><th>Wynik</th></tr>
@@ -392,17 +398,67 @@
 </div>
 </div>
 <h4>Serwer IPC (<code>pkg/ipcserver</code>) i klient (<code>pkg/ipcclient</code>)</h4>
-<p>GUI i CLI komunikują się z demonem przez lokalne <code>AF_UNIX</code> i kontrakt <code>filees.contract/v1</code>, również na Windows. Dostępność polecenia wynika z jego capability, nie ze statycznej listy. Ogólna pauza to <code>sync.pause</code>, edytor ogłoszenia używa <code>shout.draft</code>, a niepewna publikacja ma osobny plan i zatwierdzenie odzyskiwania. Dawne <code>repo.pause</code> i <code>repo.sync_now</code> nie są zamiennikami tych działających ścieżek. Zobacz <a href="user-guide.html#ch2-commit-recovery">obsługę publikacji</a>.</p><div class="decision">
+<p>GUI i narzędzia sterujące lokalnym demonem komunikują się przez <code>AF_UNIX</code> i kontrakt <code>filees.contract/v1</code>, również na Windows. Samodzielny <a href="cli-client.html">filees-client</a> jest osobnym klientem, nie nakładką na desktopowy IPC. Dostępność polecenia wynika z jego capability, nie ze statycznej listy. Ogólna pauza to <code>sync.pause</code>, edytor ogłoszenia używa <code>shout.draft</code>, a niepewna publikacja ma osobny plan i zatwierdzenie odzyskiwania. Dawne <code>repo.pause</code> i <code>repo.sync_now</code> nie są zamiennikami tych działających ścieżek. Zobacz <a href="user-guide.html#ch2-commit-recovery">obsługę publikacji</a>.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / zdarzenia unieważniają snapshoty</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Zdarzenia GUI są sygnałem do ponownego pobrania obrazów stanu należących do demona, nie drugą maszyną stanów.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Utracone zdarzenie, ponowne połączenie albo luka wersji nie mogą sprawić, że GUI trwale rozjedzie się z prawdą demona.</div>
-<div class="decision-label">Odrzucono</div><div class="decision-value">Budowanie trwałego stanu GUI wyłącznie przez odtwarzanie strumienia zdarzeń; pozwalanie GUI inspekcjonować <code>.filees</code> albo uruchamiać SVN.</div>
+<div class="decision-label">Odrzucono</div><div class="decision-value">Budowanie autorytatywnego stanu GUI wyłącznie ze zdarzeń; odczytywanie protokołów silnika w <code>.filees</code> lub uruchamianie SVN przez GUI. Ograniczony pomiar alokacji opisany niżej czyta metadane systemu plików tylko dla prezentacji.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">GUI wykonuje dodatkowe odczyty statusu po zdarzeniach i pozostaje celowo zależne od kontraktu demona.</div>
 </div>
 </div>
 <h4>Bramki środowiska uruchomieniowego (<code>pkg/runtime</code>)</h4>
 <p><strong>HostGate</strong> ogranicza liczbę równoczesnych zatwierdzeń we wszystkich instancjach demona na komputerze (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jedno zatwierdzenie naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. W systemach Linux/POSIX plik blokady wykorzystuje zarządzany przez system operacyjny mechanizm <code>flock</code>, żeby ponowne użycie PID nie dawało fałszywego wyniku „blokada nadal trzymana”.</p>
+<h3 id="ch1-locality">Lokalność, gotowość i łączność to osobne fakty</h3>
+<p>Przy starcie demon zna zapisane przypięcia i ścieżki, zanim uruchomi wszystkie potoki i uzgodni dane serwera. Obecność lokalnej kopii wynika z trwałego rejestru cyklu życia i taniej obserwacji metadanych korzenia. Nie wymaga listingu serwera, skanu zawartości ani pobrania plików. Obecny korzeń nie dowodzi jednak kompletności bajtów, gotowości synchronizacji ani prawa zapisu.</p>
+<div class="decision"><div class="decision-head">Uzasadnienie / lokalna kopia również offline</div><div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">GUI zachowuje lokalną ścieżkę i rodzaj kopii, a osobno pokazuje aktualizację danych, brak łączności lub błąd.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Brak odpowiedzi serwera nie usuwa plików z komputera. Przy wielu repozytoriach start jest stopniowy.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Znana lokalność nie odblokowuje mutacji. Demon nadal wymaga gotowego potoku, zgodnej tożsamości i aktualnych uprawnień.</div>
+</div></div>
+<h3 id="ch1-cfapi">CFAPI i związana baza SVN</h3>
+<div class="section-meta"><span class="status status-implemented">Alfa Windows</span><span>Stabilizacja folderów wirtualnych trwa. Linux używa zwykłych i częściowych kopii SVN; Windows Store jest budowany bez CFAPI.</span></div>
+<p>Demon Go prowadzi cykl życia, publikację i dowody zgodności. Natywny <code>filees-cfapi</code> łączy punkt z filtrem Cloud Files i obsługuje pobrania oraz gesty Eksploratora; <code>filees-svn</code> wykonuje ograniczone operacje SVN. Pomocnik nie wybiera sam serwera ani repozytorium. Połączenie dostawcy należy do konkretnego punktu, a wspólny budżet krótkich procesów SVN jest osobnym mechanizmem.</p>
+<p>Drzewo Eksploratora może składać się z plików zastępczych bez lokalnej treści. Związany manifest i seed wskazują bazę serwera, korzeń, URL i operację cyklu życia. Metadane SVN muszą zostać z nimi uzgodnione przed publikacją. Pobranie nie jest nowym dodaniem, a nieobecność bajtów zdalnego pliku nie jest usunięciem.</p>
+<p><strong>Jawne puste r0:</strong> rewizja zero jest legalną bazą pierwszej publikacji tylko przy jawnie podanej rewizji, prawidłowym powiązaniu i potwierdzonym pustym drzewie. Brak manifestu, brak pola albo <code>null</code> nie oznacza r0. Odczyt używa rewizji numerycznej, nie ruchomego HEAD; równoległy zapis nadal podlega kontroli konfliktu SVN.</p>
+<p><strong>Zbiorcze uzgadnianie:</strong> jeden związany listing klasyfikuje wybór, a katalogi są przejmowane ograniczonymi partiami, rodzice przed dziećmi. Lokalne bajty pozostają lokalnymi zmianami; nie pobiera się niezamówionych dzieci. To nie jest atomowa transakcja całego drzewa: po częściowym błędzie kolejny cykl ponownie sprawdza stan. Postęp liczy potwierdzone metadane, nie wysłane pliki.</p>
+<div class="decision"><div class="decision-head">Uzasadnienie / reorganizacja bez pobierania całego drzewa</div><div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Przeniesienie katalogu wewnątrz jednego punktu wykorzystuje jedną operację SVN URL-only copyfrom/delete, zachowującą historię, a potem uzgadnia gest Windows i lokalne metadane.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Zmiana położenia katalogu nie wymaga transportowania niezmienionej treści.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Potrzebne są trwały zamiar, pokwitowanie serwera, potwierdzenie Windows i powiązanie obu końców. Niepewny wynik wymaga uzgodnienia zamiast ponownego wysłania operacji.</div>
+</div></div>
+<p>Przeniesienie całego punktu jest oddzielną operacją cyklu życia: zatrzymuje jego obsługę CFAPI, przenosi zweryfikowany korzeń i ponownie łączy dostawcę. Skrót w bocznym drzewie Eksploratora jest niezależną preferencją danej kopii, domyślnie wyłączoną; punkt CFAPI nie wymaga skrótu.</p>
+<h3 id="ch1-intents">Potwierdzona intencja i granice transakcji</h3>
+<p>Przyjęcie dyspozycji, dopuszczenie pisarza, wykonanie efektu i potwierdzenie wyniku są różnymi etapami. Akcje posiadające kolejkę zachowują potwierdzony zakres i czekają na wspólną blokadę pisarza/skanera; przed efektem ponownie sprawdzają przypięcie, korzeń i prawa. Sam tekst <code>writer busy</code> nie uprawnia do dowolnych retry: odraczać wolno rozpoznaną odmowę przed efektem. Częściowy lub nieznany efekt wymaga właściwego protokołu odzyskiwania.</p>
+<p>Przy <strong>zwalnianiu miejsca</strong> podgląd ustala listę ścieżek. Potwierdzona intencja demona przeżywa restart, nie dołącza nowych plików i wykonuje się dla aktualnych, bezpiecznie opublikowanych wersji wybranych plików. Trwająca seria o niepewnym wyniku nie jest ślepo odtwarzana po restarcie. Szczegóły: <a href="operations.html#ops-cfapi">eksploatacja CFAPI</a>.</p>
+<p>Zachowany lokalny dowód zgodności z bazą pozwala pominąć ponowne pobranie treści i część powtarzanych kontroli. Jest związany z plikiem, rewizją i wersją lokalną; sam czysty status oraz zgodny rozmiar nie wystarczają. Nadal obowiązują prawa, rezerwacje, kontrola zmian i uchwytów oraz trwały dziennik zwalniania bajtów. Starszy lub niepewny przypadek wymaga pełniejszej weryfikacji albo odmowy.</p>
+<div class="decision"><div class="decision-head">Uzasadnienie / czekanie należy do operacji</div><div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Potwierdzone operacje czekają na bezpieczne warunki w swoim zakresie.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Użytkownik wyraża zamiar raz, a nie zarządza blokadami między tickami.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Każda kolejka potrzebuje granic zgody, limitu, idempotentności i jawnego wyniku częściowego. Nie wszystkie akcje mają wspólną kolejkę ani ten sam kontrakt restartu.</div>
+</div></div>
+<h3 id="ch1-state-cache">Cache stanu, ACK i unieważnianie</h3>
+<p>Emisje zbiorcze i różnicowe wymagają obsługi odpowiedniego kontraktu przez serwer. Starszy serwer zachowuje zgodną ścieżkę odczytu; brak capability nie oznacza pustego stanu.</p>
+<p>Uwierzytelniona emisja serwera dostarcza początkowy obraz blokad i własności ścieżek w zakresie instalacji. Kolejne uzgodnienia potwierdzają niezmieniony obraz lub zwracają różnice, w tym usunięcia. Lista publicznych linków zarządczych korzysta z analogicznej projekcji. Zapisany ostatni stan przyspiesza prezentację; przed bieżącym potwierdzeniem nie staje się aktualnym dowodem praw.</p>
+<p>ACK własnego założenia, odnowienia lub zwolnienia blokady aktualizuje dokładnie tę ścieżkę i token. Trwały etap <code>releasing</code> pozwala rozliczyć utraconą odpowiedź bez zwalniania nowszej blokady. Mutacje podnoszą lokalną generację obserwacji: starsza odpowiedź w locie nie może nadpisać ich skutku. Sukces jednej mutacji nie odmładza pozostałych danych. Błąd częściowy, brak odpowiedzi i brak obsługi kontraktu nie są pustym zbiorem ani potwierdzeniem „bez zmian”.</p>
+<div class="decision"><div class="decision-head">Uzasadnienie / hybrydowe unieważnianie serwera</div><div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Zachowujemy bezpośrednie <code>svnadmin</code>. Emitent korzysta z cache i nadal sprawdza lokalne źródła SVN oraz kanoniczne rekordy uprawnień i linków.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Administrator może zmienić blokadę lub właściwość rewizji bez commitu i poza workerem. Sam HEAD lub niepełny dziennik producentów tego nie wykryje.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Pozostają tanie lokalne odczyty indeksu blokad i rekordów serwera. Nie obiecujemy zerowego I/O ani cache-only ACK; nie wydłużamy ważności praw.</div>
+</div></div>
+<p>Markery zapisu i trwała epoka obserwacji odrzucają odpowiedź przeciętą mutacją, również między repozytoriami partii. Cache historii jest związany z fizyczną instancją repozytorium, nie tylko UUID/HEAD; autorzy rewizji są rewalidowani osobno. Przerwany marker nie jest automatycznie kasowany ani uznawany za zgodę na użycie starego cache.</p>
+<h3 id="ch1-admission">Wspólny budżet procesów i priorytet odczytu</h3>
+<p>Niezależne potoki repozytoriów współdzielą budżet natywnego SVN. Krótki listing lub odczyt stanu wywołany przez użytkownika ma pierwszeństwo w ograniczonej serii przyjęć; synchronizacja nadal dostaje miejsce. Trwające procesy nie są wywłaszczane. Długi transfer i mutacja nie dostają priorytetu tylko dlatego, że zaczęły się w GUI.</p>
+<p>Poprawnie zweryfikowane możliwości pomocnika są współdzielone w cache związanym z tożsamością pliku wykonywalnego. Wymiana binarium wymaga nowej próby; awaria nie jest zapamiętywana jako brak funkcji. Ten cache nie zawiera praw serwera, poświadczeń ani wyników mutacji.</p>
+<div class="decision"><div class="decision-head">Uzasadnienie / admission zamiast nieograniczonej równoległości</div><div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Ograniczamy starty procesów, współdzielimy próby możliwości i porządkujemy kolejkę.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Więcej sesji SSH nie usuwa seryjnej blokady pisarza i może zwiększyć obciążenie dysku.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Pasmo łącza nie określa czasu odpowiedzi. Osobno mierzymy czekanie na slot, SSH, odczyt serwera i wykonanie SVN; zerwania transportu nadal wymagają diagnozy sieci.</div>
+</div></div>
+<h3 id="ch1-presentation">Cache prezentacji i alokacja lokalna</h3>
+<p><strong>Alokacja lokalna</strong> to przybliżone przydzielone miejsce znanych kopii per serwer, razem z <code>.svn</code>, <code>.filees</code> i plikami ignorowanymi. To nie logiczny rozmiar repozytorium ani globalny narzut filesystemu. Ograniczony skaner GUI czyta metadane bez hydratacji plików zastępczych; zapisuje wyniki i odtwarza je przed kolejnym pomiarem.</p>
+<p>Cache jest związany z serwerem, repozytorium i ścieżką. Stopniowy start nie usuwa wyników kopii nieobecnych jeszcze w projekcji; odłączone lub przeniesione powiązania nie są doliczane. Niepełna suma jest oznaczona. Zamknięcie GUI zatrzymuje pomiar, a nie synchronizację. To świadomy wyjątek prezentacyjny od reguły, że GUI nie odczytuje stanu silnika.</p>
+<p><strong>Granica wdrożenia:</strong> konwersja zwykłej kopii na CFAPI i serwerowe agregaty archiwalne pozostają koncepcjami. Szyfrowanie jest osobnym prototypem i nie chroni danych oficjalnego kanału. Pełny dziennik wszystkich zewnętrznych producentów nie jest gwarancją obecnego modelu hybrydowego.</p>
 <h2 id="ch1-states">1.3 Stany operacji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Ścieżki aktywacji, wygaśnięcia i cofnięcia są wdrożone i przetestowane.</span></div>
 <p>Operacje aktywacji klienta (z <code>pkg/onboarding/types.go</code>) przechodzą przez następujące stany:</p>
 <div class="table-wrap"><table>

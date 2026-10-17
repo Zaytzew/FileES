@@ -7,7 +7,7 @@
 <title>Operations — FileES Tech</title>
 <link rel="alternate" hreflang="en" href="operations.html"/>
 <link rel="alternate" hreflang="pl" href="../pl/operations.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="stylesheet" href="../css/manual.css?v=20261017"/>
 <link rel="icon" href="../../favicon.ico"/>
 </head>
 <body>
@@ -246,18 +246,26 @@ done</code></pre>
 
 <h2 id="ops-monitoring">Monitoring sources</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Current diagnostics and recovery counters; broader metrics remain non-contractual.</span></div>
 <p>FileES does not yet expose a metrics endpoint. The following sources are available for monitoring:</p>
-<div class="table-wrap"><table>
-<tr><th>Source</th><th>Contents</th></tr>
-<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</td></tr>
-<tr><td><code>filees status</code></td><td>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</td></tr>
-<tr><td><code>filees log N</code></td><td>Last N error log entries, newest first</td></tr>
-<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Combined newest-first activity and error snapshot, grouped by repository revision or stage; the daemon keeps 20 groups by default and IPC returns at most 100. Each path keeps only its latest state, so this is not a commit history. The full view opens in the Wails journal window.</td></tr>
-<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Operation bundle files; inspect state field with <code>jq</code></td></tr>
-<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Timestamped audit events</td></tr>
-<tr><td><code>/var/filees/activation/records/</code></td><td>Staged, active, revoking, revoked and expired activation records</td></tr>
-<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Generated current installation-key access; never edit by hand</td></tr>
-<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Exposed over IPC as the <code>recovery</code> field of <code>repo.status</code> (shown by <code>filees status</code> when non-zero, r405): resumed cache entries, entries skipped as already accepted, batches executed</td></tr>
-</table></div>
+<dl class="reference-list">
+<dt><code>.filees/logs/errors.jsonl</code></dt>
+<dd>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</dd>
+<dt><code>filees status</code></dt>
+<dd>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</dd>
+<dt><code>filees log N</code></dt>
+<dd>Last N error log entries, newest first</dd>
+<dt>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></dt>
+<dd>Combined newest-first activity and error snapshot, grouped by repository revision or stage; the daemon keeps 20 groups by default and IPC returns at most 100. Each path keeps only its latest state, so this is not a commit history. The full view opens in the Wails journal window.</dd>
+<dt><code>/var/filees/onboarding/operations/</code></dt>
+<dd>Operation bundle files; inspect state field with <code>jq</code></dd>
+<dt><code>/var/filees/onboarding/audit/</code></dt>
+<dd>Timestamped audit events</dd>
+<dt><code>/var/filees/activation/records/</code></dt>
+<dd>Staged, active, revoking, revoked and expired activation records</dd>
+<dt><code>/var/filees/activation/authorized_keys</code></dt>
+<dd>Generated current installation-key access; never edit by hand</dd>
+<dt><code>commit.Service.RecoveryStats()</code></dt>
+<dd>Exposed over IPC as the <code>recovery</code> field of <code>repo.status</code> (shown by <code>filees status</code> when non-zero, r405): resumed cache entries, entries skipped as already accepted, batches executed</dd>
+</dl>
 <p>For CI or automated checks, <code>make verify</code> runs <code>go test ./...</code> (including race detector for key packages), <code>go vet ./...</code>, and a local SVN recovery smoke test (<code>scripts/svn-recovery-smoke.sh</code>) that creates a temporary <code>svnadmin</code> repository and does not require network access.</p>
 
 <p>Filesystem measurement and GUI/email alerts: <a href="administration.html#ch4-capacity">capacity monitoring configuration</a>. The private mobile log <code>/var/filees-mobile/ledger/errors.log</code> retains diagnostics with request IDs: the active file and three older files, each up to 4 MiB. Rotation removes older diagnostics; logging is best-effort and may fail. The phone receives a safe outcome. No new error line proves neither success nor delivery: check the operation receipt. Operation records and replay results are not rotated.</p>

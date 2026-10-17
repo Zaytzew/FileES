@@ -157,6 +157,18 @@ td { padding: 9px 12px; border: 1px solid var(--line); vertical-align: top; }
 tr:nth-child(even) td { background: #FAFBFC; }
 .field-table td:first-child code { white-space: nowrap; }
 
+/* Name/description catalogues are not comparison grids on a phone. */
+.reference-list {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  margin: 18px 0 26px; border: 1px solid var(--line); font-size: 14px;
+}
+.reference-list > dt, .reference-list > dd {
+  min-width: 0; margin: 0; padding: 12px; overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--line);
+}
+.reference-list > dt { background: #F1F5FA; border-right: 1px solid var(--line); color: var(--navy); font-weight: 600; }
+.reference-list > :nth-last-child(-n+2) { border-bottom: 0; }
+
 .note, .warn {
   margin: 22px 0; padding: 15px 18px; border-left: 4px solid var(--orange); background: #FFF8F1; border-radius: 0;
 }
@@ -225,6 +237,9 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
   footer.manual-footer { flex-direction: column; }
 }
 @media (max-width: 520px) {
+  .reference-list { grid-template-columns: minmax(0, 1fr); }
+  .reference-list > dt { border-right: 0; border-bottom: 0; padding-bottom: 6px; }
+  .reference-list > dd { padding-top: 6px; background: #F1F5FA; }
   .maturity-legend { grid-template-columns: 1fr; }
   .legend-item { border-right: 0; border-bottom: 1px solid var(--line); }
   .legend-item:last-child { border-bottom: 0; }

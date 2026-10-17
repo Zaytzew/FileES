@@ -8,7 +8,7 @@
 <title>Eksploatacja — podręcznik FileES</title>
 <link href="../en/operations.html" hreflang="en" rel="alternate"/>
 <link href="operations.html" hreflang="pl" rel="alternate"/>
-<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../css/manual.css?v=20261017" rel="stylesheet"/>
 <link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
@@ -241,18 +241,26 @@ done</code></pre>
 <p>Kanoniczny model uprawnień działa niezależnie od szerokiej konsoli administracyjnej. Aktywacja zapisuje pierwszy widok klienta w tej samej rewizji SVN co jego kanoniczny rekord; dołączenie do istniejącej strefy dziedziczy jej alias. Odbudowa mechanizmu uprawnień ponownie generuje projekcje repozytoriów i uzupełnia alias w aktywnych widokach klientów. Operacja <code>realm.alias_claim</code> może również naprawić starszy widok pozbawiony <code>realm_alias</code>. Nie edytuj ręcznie lokalnego <code>view.json</code>: jest to projekcja należąca do serwera i zostanie zastąpiona przy następnej aktualizacji.</p>
 <h2 id="ops-monitoring">Źródła monitoringu</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Bieżąca diagnostyka i liczniki odzyskiwania; szersze metryki pozostają poza kontraktem.</span></div>
 <p>FileES nie udostępnia jeszcze punktu dostępu metryk. Do monitorowania służą następujące źródła:</p>
-<div class="table-wrap"><table>
-<tr><th>Źródło</th><th>Zawartość</th></tr>
-<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Strukturalny dziennik błędów: kody, ważność, wskazówki i znaczniki czasu. Odczytuj go standardowymi narzędziami JSON.</td></tr>
-<tr><td><code>filees status</code></td><td>Bieżący zrzut stanów wszystkich repozytoriów, łączności, liczby oczekujących zmian oraz rewizji lokalnych i HEAD</td></tr>
-<tr><td><code>filees log N</code></td><td>Ostatnie N wpisów dziennika błędów, od najnowszego</td></tr>
-<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Wspólny obraz aktywności i błędów, od najnowszych, grupowany według rewizji albo etapu repozytorium; demon przechowuje domyślnie 20 grup, a IPC zwraca najwyżej 100. Każda ścieżka zachowuje tylko swój ostatni stan, więc nie jest to historia zatwierdzeń. Pełny widok otwiera okno dziennika Wails.</td></tr>
-<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Pakiety operacji; pole stanu można odczytać przez jq</td></tr>
-<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Zdarzenia ze znacznikiem czasu</td></tr>
-<tr><td><code>/var/filees/activation/records/</code></td><td>Rekordy aktywacji w stanach <code>staged</code>, <code>active</code>, <code>revoking</code>, <code>revoked</code> i <code>expired</code></td></tr>
-<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Wygenerowany bieżący dostęp klucza instalacji; nigdy nie edytuj ręcznie</td></tr>
-<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code>: liczba wznowionych wpisów, wpisów pominiętych jako już przyjęte oraz wykonanych partii.</td></tr>
-</table></div>
+<dl class="reference-list">
+<dt><code>.filees/logs/errors.jsonl</code></dt>
+<dd>Strukturalny dziennik błędów: kody, ważność, wskazówki i znaczniki czasu. Odczytuj go standardowymi narzędziami JSON.</dd>
+<dt><code>filees status</code></dt>
+<dd>Bieżący zrzut stanów wszystkich repozytoriów, łączności, liczby oczekujących zmian oraz rewizji lokalnych i HEAD</dd>
+<dt><code>filees log N</code></dt>
+<dd>Ostatnie N wpisów dziennika błędów, od najnowszego</dd>
+<dt>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></dt>
+<dd>Wspólny obraz aktywności i błędów, od najnowszych, grupowany według rewizji albo etapu repozytorium; demon przechowuje domyślnie 20 grup, a IPC zwraca najwyżej 100. Każda ścieżka zachowuje tylko swój ostatni stan, więc nie jest to historia zatwierdzeń. Pełny widok otwiera okno dziennika Wails.</dd>
+<dt><code>/var/filees/onboarding/operations/</code></dt>
+<dd>Pakiety operacji; pole stanu można odczytać przez jq</dd>
+<dt><code>/var/filees/onboarding/audit/</code></dt>
+<dd>Zdarzenia ze znacznikiem czasu</dd>
+<dt><code>/var/filees/activation/records/</code></dt>
+<dd>Rekordy aktywacji w stanach <code>staged</code>, <code>active</code>, <code>revoking</code>, <code>revoked</code> i <code>expired</code></dd>
+<dt><code>/var/filees/activation/authorized_keys</code></dt>
+<dd>Wygenerowany bieżący dostęp klucza instalacji; nigdy nie edytuj ręcznie</dd>
+<dt><code>commit.Service.RecoveryStats()</code></dt>
+<dd>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code>: liczba wznowionych wpisów, wpisów pominiętych jako już przyjęte oraz wykonanych partii.</dd>
+</dl>
 
 <p>Pomiar dysków i alarmy GUI/poczta: <a href="administration.html#ch4-capacity">konfiguracja monitoringu pojemności</a>. Dziennik mobilny <code>/var/filees-mobile/ledger/errors.log</code> zachowuje diagnostykę serwera z identyfikatorem żądania: bieżący plik i trzy starsze, każdy do 4 MiB. Starsza diagnostyka jest usuwana podczas rotacji; zapis jest pomocniczy i może się nie udać. Telefon otrzymuje bezpieczny wynik. Brak nowej linii błędu nie dowodzi sukcesu: sprawdź pokwitowanie operacji. Rekordy operacji i wyniki ponowień nie podlegają tej rotacji.</p>
 <p>Powiadomienia o opróżnionej kwarantannie w <code>purged.jsonl</code> są przechowywane przez 48 godzin od usunięcia pliku. Istniejące sprzątanie usuwa potem także te wpisy. Nie jest to dziennik audytowy; wpis o nieustalonym wieku pozostaje do sprawdzenia przez administratora. Błąd wymiany pliku nie usuwa poprzedniej zawartości.</p>

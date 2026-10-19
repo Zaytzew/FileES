@@ -158,10 +158,17 @@ func TestConversionJournalRollbackAndCorruptionFailClosed(t *testing.T) {
 		t.Fatal("journal would move with source")
 	}
 	r := conversionPrepared(t, j)
+	if _, err := j.MarkRolledBack(r, r.SourceFileID); err == nil {
+		t.Fatal("rollback effect lacked durable direction")
+	}
+	r, err := j.BeginRollback(r)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := j.MarkRolledBack(r, "wrong-id"); err == nil {
 		t.Fatal("rollback over unknown root accepted")
 	}
-	r, err := j.MarkRolledBack(r, r.SourceFileID)
+	r, err = j.MarkRolledBack(r, r.SourceFileID)
 	if err != nil || r.Phase != ConversionRolledBack {
 		t.Fatalf("rollback receipt=%+v %v", r, err)
 	}
@@ -199,5 +206,35 @@ func TestConversionJournalCancelOnlyBeforePreparation(t *testing.T) {
 	r = conversionPrepared(t, j)
 	if _, err := j.Cancel(r); err == nil {
 		t.Fatal("prepared operation canceled without filesystem rollback")
+	}
+}
+
+func TestConversionJournalBoundsFailureAndRollbackOrigin(t *testing.T) {
+	j, _ := conversionFixture(t)
+	r, err := j.Block(j.Get(), errors.New(strings.Repeat("żółć", 5000)))
+	if err != nil || len(r.Blocked) > 16384 || !strings.Contains(r.Blocked, "truncated") {
+		t.Fatalf("large error=%d %v", len(r.Blocked), err)
+	}
+	j, err = OpenConversionJournal(j.path)
+	if err != nil || j.Get() != r {
+		t.Fatalf("bounded error restart: %v", err)
+	}
+	if _, err := j.Retry(r); err != nil {
+		t.Fatal(err)
+	}
+	r = conversionPrepared(t, j)
+	r, err = j.BeginRollback(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := r
+	bad.RollbackFrom = ConversionCleanup
+	if err := validateConversion(bad); err == nil {
+		t.Fatal("rollback from irreversible cleanup accepted")
+	}
+	bad = r
+	bad.RollbackFrom = ""
+	if err := validateConversion(bad); err == nil {
+		t.Fatal("rollback with no durable origin accepted")
 	}
 }

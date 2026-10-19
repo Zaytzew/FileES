@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"filees/internal/durable"
 	"github.com/google/uuid"
@@ -26,16 +27,17 @@ const conversionSchema = "filees.wc-conversion/v1"
 type ConversionPhase string
 
 const (
-	ConversionWaiting    ConversionPhase = "waiting"
-	ConversionRetaining  ConversionPhase = "retaining"
-	ConversionRetained   ConversionPhase = "retained"
-	ConversionCreating   ConversionPhase = "creating"
-	ConversionPreserving ConversionPhase = "preserving"
-	ConversionVerifying  ConversionPhase = "verifying"
-	ConversionCleanup    ConversionPhase = "cleanup"
-	ConversionComplete   ConversionPhase = "complete"
-	ConversionRolledBack ConversionPhase = "rolled_back"
-	ConversionCanceled   ConversionPhase = "canceled"
+	ConversionWaiting     ConversionPhase = "waiting"
+	ConversionRetaining   ConversionPhase = "retaining"
+	ConversionRetained    ConversionPhase = "retained"
+	ConversionCreating    ConversionPhase = "creating"
+	ConversionPreserving  ConversionPhase = "preserving"
+	ConversionVerifying   ConversionPhase = "verifying"
+	ConversionCleanup     ConversionPhase = "cleanup"
+	ConversionComplete    ConversionPhase = "complete"
+	ConversionRollingBack ConversionPhase = "rolling_back"
+	ConversionRolledBack  ConversionPhase = "rolled_back"
+	ConversionCanceled    ConversionPhase = "canceled"
 )
 
 // ConversionRecord is a value receipt: callers cannot mutate the journal by
@@ -51,6 +53,7 @@ type ConversionRecord struct {
 	SourcePath   string          `json:"source_path"`
 	BackupPath   string          `json:"backup_path"`
 	Phase        ConversionPhase `json:"phase"`
+	RollbackFrom ConversionPhase `json:"rollback_from,omitempty"`
 	SourceFileID string          `json:"source_file_id,omitempty"`
 	Prepared     bool            `json:"prepared,omitempty"`
 	Revision     int64           `json:"revision"` // meaningful only with Prepared; r0 is valid
@@ -66,6 +69,7 @@ type ConversionRecord struct {
 
 type ConversionJournal struct {
 	mu     sync.Mutex
+	runMu  sync.Mutex // one executor across all callers sharing this journal
 	path   string
 	record ConversionRecord
 }
@@ -194,11 +198,22 @@ func (j *ConversionJournal) Cancel(expected ConversionRecord) (ConversionRecord,
 	return j.change(expected, ConversionWaiting, func(r *ConversionRecord) { r.Phase = ConversionCanceled; r.Blocked = "" })
 }
 
+// BeginRollback records the direction before any rollback effect. A restart
+// must never execute a forward step on an interrupted recovery.
+func (j *ConversionJournal) BeginRollback(expected ConversionRecord) (ConversionRecord, error) {
+	if !expected.Prepared || expected.Phase == ConversionCleanup || expected.Phase == ConversionRollingBack || conversionTerminal(expected.Phase) {
+		return ConversionRecord{}, errors.New("conversion cannot begin rollback from this stage")
+	}
+	return j.change(expected, expected.Phase, func(r *ConversionRecord) {
+		r.RollbackFrom, r.Phase, r.Blocked = r.Phase, ConversionRollingBack, ""
+	})
+}
+
 // MarkRolledBack is a receipt, not a request to restore over an occupied root.
 // The coordinator must first prove the restored original FileID, preservation
 // of every local object, and absence of an unaccounted-for new point.
 func (j *ConversionJournal) MarkRolledBack(expected ConversionRecord, restoredFileID string) (ConversionRecord, error) {
-	if !expected.Prepared || restoredFileID != expected.SourceFileID || expected.Phase == ConversionCleanup || conversionTerminal(expected.Phase) {
+	if !expected.Prepared || restoredFileID != expected.SourceFileID || expected.Phase != ConversionRollingBack {
 		return ConversionRecord{}, errors.New("conversion rollback has no matching source receipt")
 	}
 	return j.change(expected, expected.Phase, func(r *ConversionRecord) { r.Phase = ConversionRolledBack; r.Blocked = "" })
@@ -210,7 +225,15 @@ func (j *ConversionJournal) Block(expected ConversionRecord, cause error) (Conve
 	if cause == nil || strings.TrimSpace(cause.Error()) == "" || conversionTerminal(expected.Phase) {
 		return ConversionRecord{}, errors.New("conversion requires a concrete failure")
 	}
-	return j.change(expected, expected.Phase, func(r *ConversionRecord) { r.Blocked = cause.Error() })
+	reason := strings.ToValidUTF8(cause.Error(), "�")
+	if len(reason) > 8192 {
+		reason = reason[:8192]
+		for !utf8.ValidString(reason) {
+			reason = reason[:len(reason)-1]
+		}
+		reason += "\n[truncated]"
+	}
+	return j.change(expected, expected.Phase, func(r *ConversionRecord) { r.Blocked = reason })
 }
 
 func (j *ConversionJournal) Retry(expected ConversionRecord) (ConversionRecord, error) {
@@ -260,9 +283,16 @@ func (j *ConversionJournal) change(expected ConversionRecord, from ConversionPha
 }
 
 func writeConversion(f *os.File, r ConversionRecord) error {
-	err := f.Chmod(0600)
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return errors.Join(err, f.Close())
+	}
+	if len(raw)+1 > 64<<10 {
+		return errors.Join(errors.New("conversion journal exceeds its read limit"), f.Close())
+	}
+	err = f.Chmod(0600)
 	if err == nil {
-		err = json.NewEncoder(f).Encode(r)
+		_, err = f.Write(append(raw, '\n'))
 	}
 	if err == nil {
 		err = f.Sync()
@@ -301,10 +331,19 @@ func validateConversion(r ConversionRecord) error {
 		return errors.New("invalid conversion recovery path")
 	}
 	phase := map[ConversionPhase]int{ConversionWaiting: 0, ConversionRetaining: 1, ConversionRetained: 2,
-		ConversionCreating: 3, ConversionPreserving: 4, ConversionVerifying: 5, ConversionCleanup: 6, ConversionComplete: 7, ConversionRolledBack: 8, ConversionCanceled: 0}
+		ConversionCreating: 3, ConversionPreserving: 4, ConversionVerifying: 5, ConversionCleanup: 6, ConversionComplete: 7, ConversionRollingBack: 8, ConversionRolledBack: 9, ConversionCanceled: 0}
 	n, ok := phase[r.Phase]
 	if !ok || r.CreatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) || r.LocalObjects < 0 || len(r.Blocked) > 16384 {
 		return errors.New("invalid conversion stage")
+	}
+	rollback := r.Phase == ConversionRollingBack || r.Phase == ConversionRolledBack
+	if rollback {
+		from, ok := phase[r.RollbackFrom]
+		if !ok || from < 1 || from > 5 {
+			return errors.New("invalid conversion rollback origin")
+		}
+	} else if r.RollbackFrom != "" {
+		return errors.New("rollback origin exists outside recovery")
 	}
 	if n == 0 {
 		if r.Prepared || r.SourceFileID != "" || r.Revision != 0 || r.PlanPath != "" || r.PlanSHA256 != "" || r.LocalObjects != 0 {
@@ -318,11 +357,15 @@ func validateConversion(r ConversionRecord) error {
 			return errors.New("conversion is missing its prepared snapshot")
 		}
 	}
-	if n >= 4 && r.Phase != ConversionRolledBack {
+	needsPoint := n >= 4
+	if rollback {
+		needsPoint = phase[r.RollbackFrom] >= 4
+	}
+	if needsPoint {
 		if r.PointFileID == "" || r.PointFileID == r.SourceFileID || r.ProviderID == "" {
 			return errors.New("conversion is missing its distinct point receipt")
 		}
-	} else if r.Phase != ConversionRolledBack && (r.PointFileID != "" || r.ProviderID != "") {
+	} else if r.PointFileID != "" || r.ProviderID != "" {
 		return errors.New("conversion carries a point receipt before point creation")
 	}
 	if conversionTerminal(r.Phase) && r.Blocked != "" {

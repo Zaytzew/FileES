@@ -100,10 +100,7 @@ func run(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	paths := []obsandbox.Path{
-		{Label: "capacity-policy", Name: filepath.Join(config.Activation.Root, "capacity-write-policy.json"), Perms: "r"},
-		{Label: "capacity-writer-lock", Name: filepath.Join(config.Activation.Root, ".capacity-writers.lock"), Perms: "rw"},
-		{Label: "capacity-writer-acknowledgements", Name: filepath.Join(config.Activation.Root, "capacity-active-writers"), Perms: "rwc"},
+	paths := append(authorityGateSandboxPaths(config.Activation.Root), []obsandbox.Path{
 		{Label: "public-share-state", Name: stateRoot, Perms: "rwc"},
 		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
 		{Label: "repositories", Name: r.Root, Perms: "r"},
@@ -114,7 +111,7 @@ func run(ctx context.Context, configPath string) error {
 		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
 		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
-	}
+	}...)
 	if config.PublicShares.BackchannelNetwork == "unix" {
 		paths = append(paths, obsandbox.Path{Label: "backchannel-socket", Name: config.PublicShares.BackchannelAddress, Perms: "rwc"})
 	}
@@ -197,6 +194,17 @@ func checkMaintenance(configPath string) error {
 		return encodeErr
 	}
 	return err
+}
+
+// A spool is a guarded writer: completion must also persist cache invalidation.
+// Unveil only its private epoch directory, never the whole activation root.
+func authorityGateSandboxPaths(root string) []obsandbox.Path {
+	return []obsandbox.Path{
+		{Label: "capacity-policy", Name: filepath.Join(root, "capacity-write-policy.json"), Perms: "r"},
+		{Label: "capacity-writer-lock", Name: filepath.Join(root, ".capacity-writers.lock"), Perms: "rw"},
+		{Label: "capacity-writer-acknowledgements", Name: filepath.Join(root, "capacity-active-writers"), Perms: "rwc"},
+		{Label: "state-observation", Name: filepath.Join(root, "state-observation"), Perms: "rwc"},
+	}
 }
 
 func startPublicMailer(configPath string) (*exec.Cmd, <-chan error, error) {

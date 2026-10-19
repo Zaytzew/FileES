@@ -46,6 +46,7 @@ func confineRotation(repo, archive string, gateRoots ...string) error {
 		}
 		p.Paths = append(p.Paths, obsandbox.Path{Label: "capacity-policy", Name: filepath.Join(root, "capacity-write-policy.json"), Perms: "r"}, obsandbox.Path{Label: "capacity-writer-lease", Name: filepath.Join(root, ".capacity-writers.lock"), Perms: "rw"})
 		p.Paths = append(p.Paths, obsandbox.Path{Label: "capacity-writer-acknowledgements", Name: filepath.Join(root, "capacity-active-writers"), Perms: "rwc"})
+		p.Paths = append(p.Paths, obsandbox.Path{Label: "state-observation", Name: filepath.Join(root, "state-observation"), Perms: "rwc"})
 	}
 	for _, name := range []string{"svn", "svnadmin", "svnlook"} {
 		path, err := exec.LookPath(name)

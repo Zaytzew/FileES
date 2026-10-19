@@ -1099,6 +1099,7 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
+	Conversion *WCConversionStatus `json:"conversion,omitempty"`
 	// LocalCopy describes local filesystem knowledge, not attachment readiness
 	// or server authorization. Absent on older daemons and remote-only rows.
 	LocalCopy           *LocalCopySummary `json:"local_copy,omitempty"`

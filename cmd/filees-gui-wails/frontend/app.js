@@ -633,13 +633,13 @@ function renderRepo(repo) {
   const checkingCopy = localPresent && (!repo.attached || ["initializing", "baselining"].includes(state));
   const pending = deleted
     ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
-    : localProvisioning
+    : (repo.conversion ? reconcileProgressLine(repo, t) : "") || (localProvisioning
       ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : importProgressLine(repo, t, bytes) || t("queue.importRunning"))
     : (reconcileProgressLine(repo, t) || queuedChangesLine(repo, t, bytes) || (
       localUnavailable ? t("copy.localUnavailable")
       : localCheck ? t("copy.checking")
       : localPresent && (state === "offline" || repo.local_copy_waiting_connection) ? t("copy.waitingConnection")
-      : checkingCopy ? t("copy.refreshing") : queuePreparing(repo) ? t("queue.loading") : t("queue.empty")));
+      : checkingCopy ? t("copy.refreshing") : queuePreparing(repo) ? t("queue.loading") : t("queue.empty"))));
   const virtualCopy = repo.local_copy_kind === "virtual";
   const source = virtualCopy && repo.local_path ? repo.local_path
     : ["working_copy", "sparse"].includes(repo.local_copy_kind) && repo.local_path
@@ -694,7 +694,7 @@ function renderRepo(repo) {
       ${open}
       <div class="repo-name"><strong title="${escapeHTML(repo.own_name ? `${repo.display_name} (${t("rename.ownName", {name: repo.own_name})})` : repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small>${repoProblemLine(repo)}${repoSection(repo,readRepoView())==="archived" && repo.last_commit_at ? `<small class="repo-last-commit">${escapeHTML(t("drawers.lastCommit",{date:dateTime(repo.last_commit_at)}))}</small>`:""}${drawerPicker(repo)}</div>
     </div>
-    <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
+    <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : repo.conversion ? pending : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>
     <div class="repo-meta repo-size"><small>${escapeHTML(t("repo.size"))}</small><span>${escapeHTML(size)}</span></div>
     ${renderUnportable(repo)}

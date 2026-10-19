@@ -148,6 +148,7 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
+	Conversion *contract.WCConversionStatus `json:"conversion,omitempty"`
 	// Problem names a state the folder window explains (app.FolderProblem
 	// kinds); the row only points there.
 	Problem                    string `json:"problem,omitempty"`
@@ -1196,6 +1197,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			PublishFilesDone: publishField(repo.PublishProgress, "files_done"), PublishFilesTotal: publishField(repo.PublishProgress, "files_total"),
 			ReconcileProgress: currentReconcileProgress(repo.ReconcileProgress, vm.Connected && !vm.Stale),
+			Conversion:        repo.Conversion,
 			PublishBytesSent:  publishBytes(repo.PublishProgress, false), PublishBytesTotal: publishBytes(repo.PublishProgress, true),
 			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
 			CommitRecoveryRequired:   repo.Attached && !repo.ServerDeleted && repo.CommitRecoveryRequired,

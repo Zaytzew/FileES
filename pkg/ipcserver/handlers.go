@@ -42,6 +42,8 @@ func (s *Server) dispatchAdmitted(req contract.Request) contract.Response {
 		return s.handleSystemStatus(req)
 	case contract.CmdVirtualFolders:
 		return s.handleVirtualFolders(req)
+	case contract.CmdWCConversion:
+		return s.handleWCConversion(req)
 	case contract.CmdRepoExplorerShortcut:
 		return s.handleExplorerShortcut(req)
 	case contract.CmdSystemRestart:
@@ -1872,7 +1874,11 @@ func (s *Server) handleRepoList(req contract.Request) contract.Response {
 			}
 		}
 	}
-	return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: s.mergeLocalRepositories(summaries)})
+	summaries = s.mergeLocalRepositories(summaries)
+	for i := range summaries {
+		summaries[i].Conversion = s.conversionStatus(summaries[i].ServerID, summaries[i].ID)
+	}
+	return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: summaries})
 }
 
 // handleRepoStatus implements repo.status — full snapshot (§8).
@@ -1884,13 +1890,16 @@ func (s *Server) handleRepoStatus(req contract.Request) contract.Response {
 	rs := s.repoByID(req.RepoID)
 	if rs == nil {
 		if local := s.localRepositoryStatus(req.RepoID); local != nil {
+			local.Conversion = s.conversionStatus(local.ServerID, local.RepoID)
 			return contract.OKResponse(req.RequestID, *local)
 		}
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0005", "ERROR", "NONE", "proto.repo_not_found",
 			map[string]string{"repo_id": req.RepoID})
 	}
-	return contract.OKResponse(req.RequestID, rs.Snapshot())
+	snapshot := rs.Snapshot()
+	snapshot.Conversion = s.conversionStatus(snapshot.ServerID, snapshot.RepoID)
+	return contract.OKResponse(req.RequestID, snapshot)
 }
 
 // handleErrorList implements error.list — returns recent structured errors from

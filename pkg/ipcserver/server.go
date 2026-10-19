@@ -63,6 +63,7 @@ type Server struct {
 	anchorBatch          AnchorBatchService
 	anchorMove           AnchorMoveService
 	anchorConsent        AnchorConsent
+	wcConversion         WCConversionService
 	virtualFolders       VirtualFoldersService
 	explorerShortcut     ExplorerShortcutService
 	partialAnchor        bool
@@ -447,6 +448,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.anchorConsentHandler() != nil {
 		caps = append(caps, contract.CapRepoAnchorConsent)
+	}
+	if s.conversionService() != nil {
+		caps = append(caps, contract.CapWCConversion)
 	}
 	if s.partialAnchorMode() {
 		caps = append(caps, contract.CapRepoPartialAnchor)

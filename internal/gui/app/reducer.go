@@ -277,6 +277,7 @@ func (s appState) viewModel() ViewModel {
 			serverID = sum.ServerID
 		}
 		repos = append(repos, RepoViewModel{
+			Conversion:             snap.Conversion,
 			LocalCopy:              sum.LocalCopy,
 			AnchorDownloadBlocks:   append([]contract.AnchorDownloadBlock(nil), snap.AnchorDownloadBlocks...),
 			AnchorDamage:           snap.AnchorDamage,

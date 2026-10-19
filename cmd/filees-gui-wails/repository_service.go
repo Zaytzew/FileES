@@ -982,13 +982,26 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 		}
 	}
 	if folder.CanConnect {
+		// Ordinary connection remains separate from conversion recovery.
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogConnectRepos), LabelKey: "repoAction.connect_repositories.label", DescriptionKey: "repoAction.connect_repositories.description", Tone: "primary"})
+	}
+	if folder.ConversionError != "" {
+		snapshot.Problem = &RepositoryProblemProjection{Kind: "conversion", Reason: folder.ConversionError, Path: folder.ConversionRecoveryPath}
 	}
 	if folder.CanLocate {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLocateFolder), LabelKey: "repoAction.locate_folder.label", DescriptionKey: "repoAction.locate_folder.description", Tone: "warning"})
 	}
 	if folder.CanMove {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogMoveFolder), LabelKey: "repoAction.move_folder.label", DescriptionKey: "repoAction.move_folder.description", Tone: "primary"})
+	}
+	if folder.CanConvert {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogConvertFolder), LabelKey: "repoAction.convert_folder.label", DescriptionKey: "repoAction.convert_folder.description", Tone: "warning"})
+	}
+	if folder.CanRetryConversion {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRetryConversion), LabelKey: "repoAction.retry_conversion.label", DescriptionKey: "repoAction.retry_conversion.description", Tone: "warning"})
+	}
+	if folder.CanRollbackConversion {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRollbackConversion), LabelKey: "repoAction.rollback_conversion.label", DescriptionKey: "repoAction.rollback_conversion.description", Tone: "warning"})
 	}
 	if folder.CanExplorerShortcut {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogExplorerShortcut), LabelKey: "repoAction.explorer_shortcut.label", DescriptionKey: "repoAction.explorer_shortcut.description", Tone: "primary"})

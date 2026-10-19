@@ -43,6 +43,9 @@ type daemonProvisioner struct {
 	conversionRoot        string
 	conversionMu          sync.Mutex
 	conversionJournals    map[string]*localrepo.ConversionJournal
+	conversionControlMu   sync.Mutex
+	conversionProgress    map[string]conversionObservation
+	conversionChanged     func(string)
 	newConversionEffects  func(localrepo.Record, localrepo.ConversionRecord) (conversionEffectsAdapter, error)
 	conversionReady       func(localrepo.Record) bool // startup projection is not yet an authority decision
 	detachAnchor          func(context.Context, localrepo.Record) error

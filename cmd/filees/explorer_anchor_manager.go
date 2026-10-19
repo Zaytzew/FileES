@@ -87,6 +87,14 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	provisioner.traceAnchorRelocation = anchors.traceRelocation
 	provisioner.anchorChanged = anchors.notifyLifecycle
 	wireNativeConversion(provisioner, anchors)
+	if provisioner.newConversionEffects != nil {
+		ipc.SetWCConversionService(provisioner)
+		provisioner.conversionChanged = func(id string) {
+			if record, ok := lifecycle.Get(id); ok {
+				ipc.Emit(ipc.NewRepoEvent(record.RepoID, contract.EvRepoStateChanged, nil))
+			}
+		}
+	}
 	return anchors.run
 }
 

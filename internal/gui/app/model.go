@@ -43,6 +43,7 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
+	Conversion           *contract.WCConversionStatus
 	LocalCopy            *contract.LocalCopySummary
 	AnchorDownloadBlocks []contract.AnchorDownloadBlock
 	AnchorDamage         *contract.AnchorDamage
@@ -618,6 +619,12 @@ func (r RepoViewModel) NeedsLocate() bool {
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.
 func (r RepoViewModel) DisplayState() RepoDisplayState {
+	if p := r.Conversion; !r.ServerDeleted && !r.LocalCopyPreserved && p != nil && p.OperationID != "" && p.Phase != "complete" && p.Phase != "canceled" && p.Phase != "rolled_back" {
+		if p.Error != "" {
+			return RepoDisplayAttention
+		}
+		return RepoDisplayBusy
+	}
 	if r.LocalCopyPreserved {
 		if r.LocalCleanupPending || r.LocalCopyStatus != "clean" {
 			return RepoDisplayAttention

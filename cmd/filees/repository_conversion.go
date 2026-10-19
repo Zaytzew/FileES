@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// No producer/GUI command is enabled until this complete native adapter is
-// installed. Finalize pins the terminal root until its lifecycle CAS commits;
+// The public producer is registered only with a complete native adapter.
+// Finalize pins the terminal root until its lifecycle CAS commits;
 // it does not perform cleanup or infer identity from directory existence.
 type conversionEffectsAdapter interface {
 	localrepo.ConversionEffects
@@ -27,15 +27,45 @@ func (p *daemonProvisioner) conversionJournal(r localrepo.Record, create bool) (
 	if !filepath.IsAbs(p.conversionRoot) || uuid.Validate(r.OperationID) != nil {
 		return nil, errors.New("conversion needs its private absolute journal store")
 	}
-	if j := p.conversionJournals[r.OperationID]; j != nil {
-		return j, nil
-	}
 	path := filepath.Join(p.conversionRoot, r.OperationID+".json")
-	j, err := localrepo.OpenConversionJournal(path)
+	j, known := p.conversionJournals[r.OperationID]
+	if known && j == nil && !create {
+		return nil, os.ErrNotExist
+	}
+	var err error
+	if j == nil {
+		j, err = localrepo.OpenConversionJournal(path)
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if j != nil && create && r.ConversionID == "" && conversionEnded(j.Get().Phase) {
+		// Keep the terminal receipt before allowing another confirmed intent on
+		// the same attachment. A collision never overwrites older evidence.
+		archive := filepath.Join(p.conversionRoot, r.OperationID+"-"+j.Get().ID+".json")
+		if err := os.Link(path, archive); err != nil {
+			a, aerr := os.Stat(archive)
+			b, berr := os.Stat(path)
+			if aerr != nil || berr != nil || !os.SameFile(a, b) {
+				return nil, err
+			}
+		}
+		if err := os.Remove(path); err != nil {
+			return nil, err
+		}
+		delete(p.conversionJournals, r.OperationID)
+		j, err = nil, os.ErrNotExist
+	}
 	if errors.Is(err, os.ErrNotExist) && create && r.ConversionID == "" {
 		j, err = localrepo.CreateConversionJournal(path, r)
 	}
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if p.conversionJournals == nil {
+				p.conversionJournals = map[string]*localrepo.ConversionJournal{}
+			}
+			p.conversionJournals[r.OperationID] = nil
+		}
 		return nil, err
 	}
 	if p.conversionJournals == nil {
@@ -168,12 +198,18 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 	if !ok || r.ConversionID == "" || r.RemoteDeletionObserved {
 		return
 	}
+	if r.LastError != "" {
+		return
+	} // queued duplicates/restart are not explicit Retry
 	if p.conversionReady != nil && !p.conversionReady(r) {
 		return
 	}
 	fail := func(err error) {
 		if ctx.Err() == nil {
 			_, _ = p.local.RecordConversionError(operationID, r.ConversionID, err)
+			if p.conversionChanged != nil {
+				p.conversionChanged(operationID)
+			}
 		}
 	}
 	j, err := p.conversionJournal(r, false)
@@ -190,6 +226,8 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 		fail(errors.New(intent.Blocked))
 		return
 	}
+	p.observeConversion(operationID, conversionObservation{Running: true, Phase: string(intent.Phase)})
+	defer func() { p.finishConversionObservation(operationID) }()
 	if p.newConversionEffects == nil {
 		fail(errors.New("native conversion adapter unavailable; both paths retained"))
 		return
@@ -220,6 +258,14 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 		})
 	}
 	executor := &localrepo.ConversionExecutor{Journal: j, Effects: effects}
+	executor.Progress = func(progress localrepo.ConversionProgress) { p.conversionPhase(operationID, string(progress.Phase)) }
+	if observed, ok := adapter.(interface {
+		bindConversionProgress(func(string, int64, int64))
+	}); ok {
+		observed.bindConversionProgress(func(phase string, done, total int64) {
+			p.observeConversion(operationID, conversionObservation{Running: true, Phase: phase, Known: phase == "preserving" || phase == "cleanup", Done: done, Total: total})
+		})
+	}
 	outcome, err := executor.Run(ctx)
 	if ctx.Err() != nil {
 		return

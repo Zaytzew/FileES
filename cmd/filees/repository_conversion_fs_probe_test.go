@@ -6,11 +6,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"filees/internal/svnurl"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/cloudfiles"
+	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
+	"filees/pkg/privatefile"
 	"filees/pkg/provisioning"
 	"fmt"
 	"golang.org/x/sys/windows"
@@ -18,9 +23,103 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestWCConversionNativeIPCProgressAndRetry(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	ipcDir, err := os.MkdirTemp("", "fcvipc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(ipcDir) }) // this test's freshly allocated directory only
+	if err := privatefile.Harden(ipcDir); err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(ipcDir, "ipc.sock")
+	server := ipcserver.New(socket)
+	server.RegisterActivation(contract.ActivationStatus{ServerID: f.record.ServerID})
+	server.RegisterRepoAccess(f.record.RepoID, f.record.RepoURL, f.record.LocalPath, f.record.ServerID, "rw")
+	server.SetWCConversionService(f.p)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cli := ipcclient.New(socket, "conversion-native")
+	accepted, err := cli.WCConversion(ctx, contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "begin", SourcePath: f.record.LocalPath})
+	if err != nil || accepted.OperationID == "" {
+		t.Fatal(accepted, err)
+	}
+	var sawPreserve, sawCleanup atomic.Bool
+	f.p.conversionChanged = func(string) {
+		p := f.p.WCConversionStatus(f.record.ServerID, f.record.RepoID)
+		if p == nil || !p.CountersKnown || p.Done < 1 {
+			return
+		}
+		if p.Phase == "preserving" {
+			sawPreserve.Store(true)
+		}
+		if p.Phase == "cleanup" {
+			sawCleanup.Store(true)
+		}
+	}
+	f.hook = func(label string) error {
+		if strings.HasPrefix(label, "copy-ready:") {
+			return errors.New("fixture copy interruption")
+		}
+		return nil
+	}
+	f.run(t, ctx)
+	blocked, err := cli.RepoStatus(ctx, f.record.RepoID)
+	if err != nil || blocked.Conversion == nil || !blocked.Conversion.CanRetry || blocked.Conversion.Error == "" {
+		t.Fatal(blocked, err)
+	}
+	// Clearing the known error is explicit and bound to this same intent.
+	if _, err = cli.WCConversion(ctx, contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "retry", OperationID: accepted.OperationID}); err != nil {
+		t.Fatal(err)
+	}
+	f.hook = nil
+	f.run(t, ctx)
+	f.assertComplete(t)
+	final, err := cli.WCConversion(ctx, contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "status"})
+	if err != nil || final.Phase != "complete" || final.Running || final.CanRollback || final.CanRetry || final.Error != "" || !sawPreserve.Load() || !sawCleanup.Load() {
+		t.Fatal(final, err, sawPreserve.Load(), sawCleanup.Load())
+	}
+}
+
+func TestWCConversionNativePublicRollbackRestoresOriginal(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	f.hook = func(label string) error {
+		if label == "point-ready" {
+			return errors.New("fixture before preservation")
+		}
+		return nil
+	}
+	f.run(t, t.Context())
+	status := f.p.WCConversionStatus(f.record.ServerID, f.record.RepoID)
+	if status == nil || !status.CanRollback {
+		t.Fatal(status)
+	}
+	if _, err := f.p.WCConversion(t.Context(), contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "rollback", OperationID: status.OperationID}); err != nil {
+		t.Fatal(err)
+	}
+	f.hook = nil
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if r.ConversionID != "" || r.Anchor || r.State != localrepo.StateAttached || r.LastError != "" {
+		t.Fatal(r)
+	}
+	if _, err := os.Stat(filepath.Join(r.LocalPath, "folder", "drawing00.dwg")); err != nil {
+		t.Fatal(err)
+	}
+	status = f.p.WCConversionStatus(r.ServerID, r.RepoID)
+	if status.Phase != "rolled_back" || !status.CanBegin {
+		t.Fatal(status)
+	}
+}
 
 func TestConversionInventoryUnderMetadataReadPin(t *testing.T) {
 	base := t.TempDir()
@@ -469,13 +568,27 @@ func TestConversionNativeRefusesAlternateStreamsWithoutDeletingThem(t *testing.T
 	}
 }
 
-func TestConversionNativeAuthorityWithdrawalStopsBeforeRetirement(t *testing.T){
-	f:=newConversionNativeRunFixture(t);var selected string
-	f.hook=func(label string)error{if selected=="" && strings.HasPrefix(label,"delete-intent:"){selected=strings.TrimPrefix(label,"delete-intent:");return f.p.local.ObserveRemoteDeletion(f.record.ServerID,f.record.RepoID)};return nil}
-	f.run(t,t.Context());r,_:=f.p.local.Get(f.record.OperationID)
-	if selected=="" || !r.RemoteDeletionObserved || r.ConversionID==""{t.Fatal("authority withdrawal not retained",r)}
-	if _,err:=os.Stat(filepath.Join(r.PreservedAlternatePath,filepath.FromSlash(selected)));err!=nil{t.Fatal("retired after authority withdrawal",err)}
-	if len(f.events)!=0{t.Fatal("runtime published after authority withdrawal")}
+func TestConversionNativeAuthorityWithdrawalStopsBeforeRetirement(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	var selected string
+	f.hook = func(label string) error {
+		if selected == "" && strings.HasPrefix(label, "delete-intent:") {
+			selected = strings.TrimPrefix(label, "delete-intent:")
+			return f.p.local.ObserveRemoteDeletion(f.record.ServerID, f.record.RepoID)
+		}
+		return nil
+	}
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if selected == "" || !r.RemoteDeletionObserved || r.ConversionID == "" {
+		t.Fatal("authority withdrawal not retained", r)
+	}
+	if _, err := os.Stat(filepath.Join(r.PreservedAlternatePath, filepath.FromSlash(selected))); err != nil {
+		t.Fatal("retired after authority withdrawal", err)
+	}
+	if len(f.events) != 0 {
+		t.Fatal("runtime published after authority withdrawal")
+	}
 }
 
 func TestConversionNativeRollbackPreservesNewPointBytes(t *testing.T) {

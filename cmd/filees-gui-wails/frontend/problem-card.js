@@ -7,6 +7,10 @@
 // Pure: the caller passes the translator and the escaper, so a test renders
 // it without the Wails runtime.
 export function problemCardHTML(problem, t, escapeHTML) {
+  if (problem?.kind === "conversion") {
+    const recovery = problem.path ? `<p>${escapeHTML(t("conversion.recovery", {path: problem.path}))}</p>` : "";
+    return `<p class="eyebrow">${escapeHTML(t("problem.eyebrow"))}</p><h2>${escapeHTML(t("conversion.stopped"))}</h2><p class="problem-reason">${escapeHTML(problem.reason || "")}</p>${recovery}`;
+  }
   if (!problem || problem.kind !== "borrow_pending") return "";
   const path = problem.path || "—";
   const lines = [`<p>${escapeHTML(t("problem.borrowPending.text", { path }))}</p>`];

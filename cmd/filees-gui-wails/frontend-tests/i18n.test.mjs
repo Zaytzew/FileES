@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./conversion.test.mjs";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";

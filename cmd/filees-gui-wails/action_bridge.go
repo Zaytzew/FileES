@@ -35,6 +35,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 	}
 	intents := make(chan tray.Intent, 32)
 	shortcut, _ := repositoryRelocator.(actions.ExplorerShortcutManager)
+	converter, _ := repositoryRelocator.(actions.RepositoryConverter)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
 		Text:                 service.localizeText,
@@ -81,6 +82,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		RepositoryCreator:    repositoryCreator,
 		RepositoryLocator:    repositoryLocator,
 		RepositoryRelocator:  repositoryRelocator,
+		RepositoryConverter:  converter,
 		RepositoryDetacher:   repositoryDetacher,
 		RepositoryRepairer:   repositoryRepairer,
 		RepositoryDumpLoader: repositoryDumpLoader,
@@ -981,6 +983,14 @@ type repositoryRelocateClient interface {
 }
 
 type repositoryRelocateAdapter struct{ client repositoryRelocateClient }
+
+func (adapter repositoryRelocateAdapter) WCConversion(ctx context.Context, p contract.WCConversionPayload) (*contract.WCConversionStatus, error) {
+	client, ok := adapter.client.(actions.RepositoryConverter)
+	if !ok {
+		return nil, errors.New("daemon does not support working-copy conversion")
+	}
+	return client.WCConversion(ctx, p)
+}
 
 func (adapter repositoryRelocateAdapter) RelocateRepository(ctx context.Context, serverID, repoID, newLocalPath string) (string, error) {
 	result, err := adapter.client.RepoRelocate(ctx, contract.RepoRelocatePayload{ServerID: serverID, RepoID: repoID, NewLocalPath: newLocalPath, MoveExisting: true})

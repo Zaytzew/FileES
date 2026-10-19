@@ -55,12 +55,21 @@ type nativeConversionEffects struct {
 	guards       []windows.Handle
 	stopProvider func()
 	admission    func(context.Context) error
+	progress     func(string, int64, int64)
 	// Test-only fault injection at real per-object receipt boundaries; nil in production.
 	checkpoint func(string) error
 }
 
 func (f *nativeConversionEffects) bindConversionAdmission(check func(context.Context) error) {
 	f.admission = check
+}
+func (f *nativeConversionEffects) bindConversionProgress(observe func(string, int64, int64)) {
+	f.progress = observe
+}
+func (f *nativeConversionEffects) reportProgress(phase string, done, total int64) {
+	if f.progress != nil {
+		f.progress(phase, done, total)
+	}
 }
 func (f *nativeConversionEffects) check(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -194,6 +203,7 @@ func (f *nativeConversionEffects) Revalidate(ctx context.Context, r localrepo.Co
 }
 
 func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.ConversionRecord) (localrepo.ConversionPreparation, error) {
+	f.reportProgress("inspecting", 0, 0)
 	refuse := func(err error) (localrepo.ConversionPreparation, error) {
 		return localrepo.ConversionPreparation{}, err
 	}
@@ -587,6 +597,13 @@ func (f *nativeConversionEffects) Preserve(ctx context.Context, r localrepo.Conv
 		return fmt.Errorf("pin preservation staging directory: %w", err)
 	}
 	defer closeAnchorReleaseGuards(metadata)
+	var done, total int64
+	for _, node := range f.plan.Objects {
+		if node.Local {
+			total++
+		}
+	}
+	f.reportProgress("preserving", 0, total)
 	for _, node := range f.plan.Objects {
 		if !node.Local {
 			continue
@@ -607,6 +624,8 @@ func (f *nativeConversionEffects) Preserve(ctx context.Context, r localrepo.Conv
 		if err != nil {
 			return fmt.Errorf("preserve %q: %w", node.Path, err)
 		}
+		done++
+		f.reportProgress("preserving", done, total)
 	}
 	return nil
 }
@@ -912,7 +931,7 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 		}
 		return objects[i].Path > objects[j].Path
 	})
-	for _, node := range objects {
+	for index, node := range objects {
 		if err := f.check(ctx); err != nil {
 			return err
 		}
@@ -965,6 +984,7 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 		if err = conversionWriteJSON(f.deletePath(node.Path), receipt, false); err != nil {
 			return err
 		}
+		f.reportProgress("cleanup", int64(index+1), int64(len(objects)))
 	}
 	f.state.CleanupComplete = true
 	return f.saveState(r)
@@ -1049,6 +1069,11 @@ func (f *nativeConversionEffects) Finalize(ctx context.Context, r localrepo.Conv
 			file.Close()
 			release()
 			return nil, errors.New("rollback final root identity differs")
+		}
+		if err := validateWorkingCopyIdentity(r.SourcePath, expectedWorkingCopyIdentity(r.ServerID, r.RepoID, r.RepoURL)); err != nil {
+			file.Close()
+			release()
+			return nil, err
 		}
 		return func() { file.Close(); release() }, nil
 	}

@@ -51,6 +51,7 @@ const (
 )
 
 type RepoStatus struct {
+	Conversion           *WCConversionStatus   `json:"conversion,omitempty"`
 	AnchorDownloadBlocks []AnchorDownloadBlock `json:"anchor_download_blocks,omitempty"`
 	AnchorDamage         *AnchorDamage         `json:"anchor_damage,omitempty"`
 	// Current local uncertainty, not historical log errors. Empty after recovery.

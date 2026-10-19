@@ -1,3 +1,4 @@
+import { conversionProgressLine } from "./conversion-progress.js";
 // Reuse the daemon's measured first-publication counters, not the global queue.
 // A complete byte count is still publication progress, not an activation receipt.
 export function importProgressLine(repo, t, bytes) {
@@ -11,6 +12,8 @@ export function importProgressLine(repo, t, bytes) {
 }
 
 export function reconcileProgressLine(repo, t) {
+  const conversion = conversionProgressLine(repo, t);
+  if (conversion) return conversion;
   const p = repo.reconcile_progress;
   if (!p) return "";
   if (p.phase === "planning") return t("progress.reconcile.planning");

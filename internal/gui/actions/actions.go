@@ -440,6 +440,7 @@ type Config struct {
 	AnchorRepairSettle   time.Duration
 	RepositoryLocator    RepositoryLocator
 	RepositoryRelocator  RepositoryRelocator
+	RepositoryConverter  RepositoryConverter
 	ExplorerShortcut     ExplorerShortcutManager
 	RepositoryDetacher   RepositoryDetacher
 	RepositoryRepairer   RepositoryLifecycleRepairer
@@ -764,6 +765,12 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogMoveFolder:
 			c.endOperation(operationKey)
 			c.startMoveRepository(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogConvertFolder:
+			c.startWCConversion(ctx, result.ServerID, result.RepoID, "begin")
+		case platform.SettingsDialogRetryConversion:
+			c.startWCConversion(ctx, result.ServerID, result.RepoID, "retry")
+		case platform.SettingsDialogRollbackConversion:
+			c.startWCConversion(ctx, result.ServerID, result.RepoID, "rollback")
 		case platform.SettingsDialogExplorerShortcut:
 			c.startExplorerShortcut(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogDetachFolder:
@@ -1098,6 +1105,10 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			}
 			problem = &platform.FolderProblem{Kind: found.Kind, Path: found.Path, Since: found.Since, Code: found.Code, Reason: found.Reason, Holder: found.Holder, HolderSince: found.HolderSince, More: found.More, Remedy: remedy}
 		}
+		conversionError, conversionRecovery := "", ""
+		if repo.Conversion != nil {
+			conversionError, conversionRecovery = repo.Conversion.Error, repo.Conversion.RecoveryPath
+		}
 		row.Folders = append(row.Folders, platform.SettingsFolder{
 			Problem: problem,
 			ID:      repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
@@ -1116,6 +1127,11 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanConnect:               repo.Purpose == "" && !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:                repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanMove:                  repo.Purpose == "" && repo.Attached && repo.DisplayState() == app.RepoDisplayActive && vm.CanRelocateRepository(),
+			CanConvert:               conversionAllowed(vm, repo, "begin"),
+			CanRetryConversion:       conversionAllowed(vm, repo, "retry"),
+			CanRollbackConversion:    conversionAllowed(vm, repo, "rollback"),
+			ConversionError:          conversionError,
+			ConversionRecoveryPath:   conversionRecovery,
 			CanExplorerShortcut:      repo.Purpose == "" && repo.ExplorerShortcut != nil && repo.Attached && !locallyProvisioning && vm.Connected && !vm.Stale && vm.CanExplorerShortcut(),
 			CanDetach:                repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
 			CanDelete:                repo.Purpose == "" && !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
@@ -1127,6 +1143,11 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanFoldInactive:          vm.CanFoldInactive(repo),
 			CanAbandonLifecycle:      vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})
+		if p := repo.Conversion; p != nil && p.OperationID != "" && p.Phase != "complete" && p.Phase != "canceled" && p.Phase != "rolled_back" {
+			folder := &row.Folders[len(row.Folders)-1]
+			folder.CanMove, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = false, false, false, false
+			folder.CanRetryLifecycle, folder.CanAbandonLifecycle, folder.CanLocate = false, false, false
+		}
 	}
 	return row, hadPending
 }

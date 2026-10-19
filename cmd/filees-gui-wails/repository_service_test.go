@@ -114,6 +114,17 @@ func TestRepositoryServiceProjectsControlledMoveSeparatelyFromLocate(t *testing.
 	}
 }
 
+func TestWCConversionRepositoryMenuUsesOnlyProjectedPermissions(t *testing.T) {
+	for _, field := range []string{"begin", "retry", "rollback", "none"} {
+		folder := platform.SettingsFolder{ID: "docs", Name: "Fixture", CanConvert: field == "begin", CanRetryConversion: field == "retry", CanRollbackConversion: field == "rollback"}
+		snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{ID: "lab", Folders: []platform.SettingsFolder{folder}}}})
+		want := map[string]string{"begin": "convert_folder", "retry": "retry_conversion", "rollback": "rollback_conversion"}[field]
+		if !ok || want == "" && len(snapshot.Actions) != 0 || want != "" && (len(snapshot.Actions) != 1 || snapshot.Actions[0].ID != want) {
+			t.Fatal(field, snapshot, ok)
+		}
+	}
+}
+
 func TestRepositorySettingsShortcutIsAnExplicitScopedAction(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{FocusRepoID: "docs", Servers: []platform.SettingsServer{{ID: "spot", Folders: []platform.SettingsFolder{{ID: "docs", Name: "Folder", CanExplorerShortcut: enabled}}}}})

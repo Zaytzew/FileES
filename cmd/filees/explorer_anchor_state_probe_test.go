@@ -486,7 +486,7 @@ func newLocalStateProbe(t *testing.T, root, content, listing string, shell ...bo
 					line = "ok\t" + fields[1] + "\t" + content
 				}
 				p.write(line)
-			} else if len(fields) == 3 && (fields[0] == "directory-set" || fields[0] == "state-set" || fields[0] == "release-prepared" || fields[0] == "release-restored" || fields[0] == "tree-set") {
+			} else if len(fields) == 3 && (fields[0] == "directory-set" || fields[0] == "state-set" || fields[0] == "stream-set" || fields[0] == "release-prepared" || fields[0] == "release-restored" || fields[0] == "tree-set") {
 				p.reply <- fields
 			}
 		}

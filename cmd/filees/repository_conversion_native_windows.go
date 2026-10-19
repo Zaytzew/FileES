@@ -54,6 +54,7 @@ type nativeConversionEffects struct {
 	old          *conversionTreePin
 	guards       []windows.Handle
 	stopProvider func()
+	bridge       *anchorBridge
 	admission    func(context.Context) error
 	progress     func(string, int64, int64)
 	// Test-only fault injection at real per-object receipt boundaries; nil in production.
@@ -131,6 +132,7 @@ func (f *nativeConversionEffects) Acquire(ctx context.Context, r localrepo.Conve
 			f.stopProvider()
 			f.stopProvider = nil
 		}
+		f.bridge = nil
 		f.old.close()
 		f.old = nil
 		closeAnchorReleaseGuards(f.guards)
@@ -185,6 +187,9 @@ func (f *nativeConversionEffects) Revalidate(ctx context.Context, r localrepo.Co
 	locals := int64(0)
 	seen := map[string]bool{}
 	for _, node := range f.plan.Objects {
+		if _, err := conversionDecodeStreams(node.Streams); err != nil {
+			return err
+		}
 		if node.Path != "." && (!anchorBatchSafePath(node.Path) && !strings.HasPrefix(node.Path, ".svn/") && !strings.HasPrefix(node.Path, ".filees/") && node.Path != ".svn" && node.Path != ".filees") {
 			return errors.New("unsafe conversion plan path")
 		}
@@ -281,7 +286,25 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 		return refuse(err)
 	}
 	var locals int64
+	checkedStreamHelper := false
 	for i, node := range plan.Objects {
+		if !node.Directory && node.Streams != "" && !checkedStreamHelper {
+			answer, err := f.manager.call(ctx, "", "version")
+			if err != nil || !answer.OK {
+				return refuse(errors.Join(err, errors.New("stream metadata helper capability unavailable")))
+			}
+			for _, feature := range answer.Features {
+				if feature == "remote_stream_state_usn_v1" {
+					checkedStreamHelper = true
+				}
+			}
+			if !checkedStreamHelper {
+				return refuse(errors.New("CFAPI helper lacks remote_stream_state_usn_v1"))
+			}
+		}
+		if node.Directory && node.Streams != "" && (node.Path == "." || entries[node.Path].Versioned) {
+			return refuse(fmt.Errorf("conversion does not yet preserve streams on versioned directory %q", node.Path))
+		}
 		if node.Path == "." || node.Path == ".svn" || strings.HasPrefix(node.Path, ".svn/") || node.Path == ".filees" || strings.HasPrefix(node.Path, ".filees/") {
 			continue
 		}
@@ -399,6 +422,10 @@ func (f *nativeConversionEffects) Retain(ctx context.Context, r localrepo.Conver
 			pin.Close()
 			delete(f.old.Files, rel)
 		}
+	}
+	for rel, pins := range f.old.Streams {
+		conversionCloseStreams(pins)
+		delete(f.old.Streams, rel)
 	}
 	if err := f.cut("retain-unpinned"); err != nil {
 		return err
@@ -553,14 +580,17 @@ func (f *nativeConversionEffects) connect(ctx context.Context, r localrepo.Conve
 		return err
 	}
 	ready, done := make(chan struct{}), make(chan struct{})
-	bridge := &anchorBridge{root: r.SourcePath, guard: newAnchorGuard(talk.With("conversion")), log: talk.With("conversion"), onConnected: func(context.Context) { close(ready) }, materialize: func(context.Context, string) (string, int64, error) {
+	bridge := &anchorBridge{root: r.SourcePath, guard: newAnchorGuard(talk.With("conversion")), log: talk.With("conversion"), onConnected: func(context.Context) { close(ready) }, materialize: func(_ context.Context, identity string) (string, int64, error) {
+		_ = f.cut("fetch-request:" + identity)
 		return "", 0, errors.New("conversion is still preparing this folder")
 	}}
+	bridge.stopStateWriter = streams.abort
 	go func() { defer close(done); _ = bridge.serve(providerCtx, streams) }()
 	stop := func() { cancel(); streams.abort(); <-done }
 	select {
 	case <-ready:
 		f.stopProvider = stop
+		f.bridge = bridge
 		return nil
 	case <-done:
 		cancel()
@@ -599,13 +629,13 @@ func (f *nativeConversionEffects) Preserve(ctx context.Context, r localrepo.Conv
 	defer closeAnchorReleaseGuards(metadata)
 	var done, total int64
 	for _, node := range f.plan.Objects {
-		if node.Local {
+		if node.Local || node.Streams != "" {
 			total++
 		}
 	}
 	f.reportProgress("preserving", 0, total)
 	for _, node := range f.plan.Objects {
-		if !node.Local {
+		if !node.Local && node.Streams == "" {
 			continue
 		}
 		if err := f.check(ctx); err != nil {
@@ -615,11 +645,19 @@ func (f *nativeConversionEffects) Preserve(ctx context.Context, r localrepo.Conv
 			return err
 		}
 		target := filepath.Join(r.SourcePath, filepath.FromSlash(node.Path))
-		parents, err := guardAnchorReleaseDirectories(filepath.Dir(target), r.SourcePath)
+		parent := filepath.Dir(target)
+		if node.Path == "." {
+			parent = r.SourcePath
+		}
+		parents, err := guardAnchorReleaseDirectories(parent, r.SourcePath)
 		if err != nil {
 			return fmt.Errorf("pin ignored target parent %q: %w", node.Path, err)
 		}
-		err = f.copyOne(ctx, r, node, target)
+		if node.Local {
+			err = f.copyOne(ctx, r, node, target)
+		} else {
+			err = f.preserveRemoteStreams(ctx, r, node)
+		}
 		closeAnchorReleaseGuards(parents)
 		if err != nil {
 			return fmt.Errorf("preserve %q: %w", node.Path, err)
@@ -676,6 +714,9 @@ func (f *nativeConversionEffects) copyOne(ctx context.Context, r localrepo.Conve
 			if err := conversionCheckMetadata(file, info, node); err != nil {
 				return err
 			}
+			if err := conversionCheckStreams(ctx, file, node.Streams); err != nil {
+				return err
+			}
 			if !node.Directory {
 				hash, err := conversionFileHash(ctx, file, node.Size)
 				if err != nil {
@@ -730,10 +771,16 @@ func (f *nativeConversionEffects) copyOne(ctx context.Context, r localrepo.Conve
 		}
 	}
 	if receipt.Phase == "staged" {
+		if err = f.copyLocalStreams(ctx, node, file); err != nil {
+			return err
+		}
 		if err = conversionSetMetadata(file, node); err != nil {
 			return err
 		}
 	} else {
+		if err = conversionCheckStreams(ctx, file, node.Streams); err != nil {
+			return err
+		}
 		if err = conversionCheckMetadata(file, info, node); err != nil {
 			return err
 		}
@@ -790,6 +837,9 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 	if err != nil || !answer.OK || !answer.Ours || answer.Status != 1 {
 		return errors.Join(err, errors.New("new CFAPI provider is not connected and idle"))
 	}
+	if err = f.acknowledgeStreamMetadata(ctx, r); err != nil {
+		return err
+	}
 	for start := 0; start < len(f.plan.Remote); start += 64 {
 		end := start + 64
 		if end > len(f.plan.Remote) {
@@ -838,6 +888,10 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 			file.Close()
 			return err
 		}
+		if err := conversionCheckStreams(ctx, file, node.Streams); err != nil {
+			file.Close()
+			return err
+		}
 		if !node.Directory {
 			hash, err := conversionFileHash(ctx, file, node.Size)
 			if err != nil || hash != node.SHA256 {
@@ -847,6 +901,11 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 		}
 		file.Close()
 	}
+	streamPins, err := f.pinPreservedStreams(ctx, r)
+	if err != nil {
+		return err
+	}
+	conversionCloseStreams(streamPins)
 	if f.state.CleanupComplete {
 		if _, err := os.Lstat(r.BackupPath); !conversionMissing(err) {
 			return errors.New("retired root reappeared")
@@ -879,6 +938,11 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 			file.Close()
 		}
 	}()
+	streamPins, err := f.pinPreservedStreams(ctx, r)
+	if err != nil {
+		return err
+	}
+	defer conversionCloseStreams(streamPins)
 	for _, node := range f.plan.Objects {
 		if !node.Local {
 			continue
@@ -903,6 +967,14 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 		}
 		if err := conversionCheckMetadata(file, info, node); err != nil {
 			return err
+		}
+		gotStreams, localStreamPins, err := conversionPinStreams(ctx, file)
+		pins = append(pins, localStreamPins...)
+		if err != nil {
+			return err
+		}
+		if gotStreams != node.Streams {
+			return errors.New("preserved local streams changed before cleanup")
 		}
 		if !node.Directory {
 			hash, err := conversionFileHash(ctx, file, node.Size)
@@ -968,6 +1040,8 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 				return err
 			}
 			if f.old != nil {
+				conversionCloseStreams(f.old.Streams[node.Path])
+				delete(f.old.Streams, node.Path)
 				if pin := f.old.Files[node.Path]; pin != nil {
 					pin.Close()
 					delete(f.old.Files, node.Path)

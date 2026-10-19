@@ -208,6 +208,7 @@ type conversionNativeRunFixture struct {
 	directory string
 	storePath string
 	hook      func(string) error
+	fetches   atomic.Int64
 }
 
 func newConversionNativeRunFixture(t *testing.T, counts ...int) *conversionNativeRunFixture {
@@ -276,6 +277,9 @@ func newConversionNativeRunFixture(t *testing.T, counts ...int) *conversionNativ
 		adapter, err := factory(record, intent)
 		if err == nil {
 			adapter.(*nativeConversionEffects).checkpoint = func(label string) error {
+				if strings.HasPrefix(label, "fetch-request:") {
+					f.fetches.Add(1)
+				}
 				if f.hook != nil {
 					return f.hook(label)
 				}
@@ -299,7 +303,7 @@ func newConversionNativeRunFixture(t *testing.T, counts ...int) *conversionNativ
 }
 func (f *conversionNativeRunFixture) run(t *testing.T, ctx context.Context) {
 	t.Helper()
-	daemonConversionFixture{p: f.p, r: f.record, events: f.events}.run(t, ctx)
+	daemonConversionFixture{p: f.p, r: f.record, events: f.events}.runWithin(t, ctx, 30*time.Second)
 }
 func (f *conversionNativeRunFixture) restart(t *testing.T) {
 	t.Helper()
@@ -313,6 +317,9 @@ func (f *conversionNativeRunFixture) restart(t *testing.T) {
 }
 func (f *conversionNativeRunFixture) assertComplete(t *testing.T) {
 	t.Helper()
+	if f.fetches.Load() != 0 {
+		t.Fatal("conversion attempted hydration", f.fetches.Load())
+	}
 	r, _ := f.p.local.Get(f.record.OperationID)
 	if r.State != localrepo.StateAttached || !r.Anchor || !r.Sparse || r.ConversionID != "" || r.LastError != "" {
 		t.Fatalf("conversion not complete: %+v", r)
@@ -548,23 +555,158 @@ func TestConversionNativeLateWriteDuringRetainGapIsPreserved(t *testing.T) {
 	}
 }
 
-func TestConversionNativeRefusesAlternateStreamsWithoutDeletingThem(t *testing.T) {
+func TestConversionNativePreservesAlternateStreamsWithoutHydration(t *testing.T) {
 	f := newConversionNativeRunFixture(t)
-	path := filepath.Join(f.record.LocalPath, "local.bak") + ":notes"
-	if err := os.WriteFile(path, []byte("extra stream"), 0600); err != nil {
+	streams := map[string]string{
+		"folder/drawing00.dwg:Zone.Identifier": "[ZoneTransfer]\r\nZoneId=3\r\n",
+		"folder/drawing00.dwg:Zażółć":          "named unicode stream",
+		"folder/drawing00.dwg:empty":           "",
+		"local.bak:notes":                      "extra stream",
+		"empty-cache:notes":                    "directory stream",
+	}
+	for rel, bytes := range streams {
+		base, name, _ := strings.Cut(rel, ":")
+		if err := os.WriteFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(base))+":"+name, []byte(bytes), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.run(t, t.Context())
+	f.assertComplete(t)
+	for rel, bytes := range streams {
+		base, name, _ := strings.Cut(rel, ":")
+		raw, err := os.ReadFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(base)) + ":" + name)
+		if err != nil || string(raw) != bytes {
+			t.Fatal("alternate stream lost", rel, err)
+		}
+	}
+}
+
+func TestConversionNativePreservesAlternateStreamsInLargerBatch(t *testing.T) {
+	f := newConversionNativeRunFixture(t, 70)
+	for i := range 70 {
+		path := filepath.Join(f.record.LocalPath, "folder", fmt.Sprintf("drawing%02d.dwg", i)) + ":Zone.Identifier"
+		if err := os.WriteFile(path, []byte("[ZoneTransfer]\r\nZoneId=3\r\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.run(t, t.Context())
+	f.assertComplete(t)
+	for i := range 70 {
+		path := filepath.Join(f.record.LocalPath, "folder", fmt.Sprintf("drawing%02d.dwg", i)) + ":Zone.Identifier"
+		if raw, err := os.ReadFile(path); err != nil || string(raw) != "[ZoneTransfer]\r\nZoneId=3\r\n" {
+			t.Fatal("batch lost ADS", i, err)
+		}
+	}
+}
+
+func TestConversionNativeStreamReceiptsResumeAfterInterruption(t *testing.T) {
+	for _, boundary := range []string{"stream-ready:", "stream-moved:", "copy-moved:local.bak", "deleted:.svn/wc.db"} {
+		t.Run(boundary, func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			for _, rel := range []string{"folder/drawing00.dwg", "local.bak"} {
+				if err := os.WriteFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(rel))+":Zone.Identifier", []byte("[ZoneTransfer]\r\nZoneId=3\r\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			hit := false
+			f.hook = func(label string) error {
+				if strings.HasPrefix(label, boundary) {
+					hit = true
+					cancel()
+					return context.Canceled
+				}
+				return nil
+			}
+			f.run(t, ctx)
+			if !hit {
+				r, _ := f.p.local.Get(f.record.OperationID)
+				t.Fatal("stream interruption boundary not reached", r)
+			}
+			f.restart(t)
+			f.run(t, t.Context())
+			f.assertComplete(t)
+			for _, rel := range []string{"folder/drawing00.dwg", "local.bak"} {
+				raw, err := os.ReadFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(rel)) + ":Zone.Identifier")
+				if err != nil || string(raw) != "[ZoneTransfer]\r\nZoneId=3\r\n" {
+					t.Fatal("ADS lost after resume", rel, err)
+				}
+			}
+		})
+	}
+}
+
+func TestConversionNativeStreamChangesStopRetirement(t *testing.T) {
+	for _, change := range []string{"source-gap", "target-after-copy", "late-new-source-stream", "target-before-ack"} {
+		t.Run(change, func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			rel := "folder/drawing00.dwg"
+			if err := os.WriteFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(rel))+":Zone.Identifier", []byte("original"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			hit := false
+			f.hook = func(label string) error {
+				if change == "source-gap" && label == "retain-unpinned" {
+					hit = true
+					return os.WriteFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(rel))+":Zone.Identifier", []byte("late metadata"), 0600)
+				}
+				if change != "source-gap" && strings.HasPrefix(label, "stream-moved:") {
+					hit = true
+					cancel()
+					return context.Canceled
+				}
+				return nil
+			}
+			f.run(t, ctx)
+			if !hit {
+				t.Fatal("fault boundary absent")
+			}
+			r, _ := f.p.local.Get(f.record.OperationID)
+			if change != "source-gap" {
+				path := filepath.Join(r.LocalPath, filepath.FromSlash(rel)) + ":Zone.Identifier"
+				if change == "late-new-source-stream" {
+					path = filepath.Join(r.PendingLocalPath, filepath.FromSlash(rel)) + ":new-stream"
+				}
+				if err := os.WriteFile(path, []byte("late metadata"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				f.restart(t)
+				f.run(t, t.Context())
+				raw, err := os.ReadFile(path)
+				if err != nil || string(raw) != "late metadata" {
+					t.Fatal("new metadata lost", err)
+				}
+			}
+			r, _ = f.p.local.Get(f.record.OperationID)
+			if r.LastError == "" || r.State != localrepo.StateRelocating {
+				t.Fatal("changed stream was silently retired", r)
+			}
+			if _, err := os.Stat(r.PendingLocalPath); err != nil {
+				t.Fatal("source not retained", err)
+			}
+		})
+	}
+}
+
+func TestConversionNativeRefusesStreamsOnVersionedDirectoriesBeforeRename(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	path := filepath.Join(f.record.LocalPath, "folder") + ":Zone.Identifier"
+	if err := os.WriteFile(path, []byte("keep directory metadata"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f.run(t, t.Context())
 	r, _ := f.p.local.Get(f.record.OperationID)
-	if !strings.Contains(r.LastError, "alternate data streams") {
-		t.Fatal("unsupported streams not refused", r.LastError)
+	if !strings.Contains(r.LastError, "versioned directory") {
+		t.Fatal(r)
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil || string(raw) != "extra stream" {
-		t.Fatal("alternate stream lost", err)
+	if _, err := os.Stat(r.PendingLocalPath); !conversionMissing(err) {
+		t.Fatal("source moved despite unsupported directory ADS")
 	}
-	if _, err := os.Lstat(r.PendingLocalPath); !conversionMissing(err) {
-		t.Fatal("unsupported source was renamed", err)
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != "keep directory metadata" {
+		t.Fatal(err)
 	}
 }
 
@@ -706,9 +848,13 @@ func TestConversionNativeProcessChild(t *testing.T) {
 }
 
 func TestConversionNativeRecoversAfterRealProcessDeath(t *testing.T) {
-	for _, boundary := range []string{"copy-moved:local.bak", "deleted:.svn/wc.db"} {
+	for _, boundary := range []string{"copy-moved:local.bak", "deleted:.svn/wc.db", "stream-ready:folder/drawing00.dwg:Zone.Identifier:$DATA", "stream-moved:folder/drawing00.dwg:Zone.Identifier:$DATA"} {
 		t.Run(boundary, func(t *testing.T) {
 			f := newConversionNativeRunFixture(t)
+			streamPath := filepath.Join(f.record.LocalPath, "folder", "drawing00.dwg") + ":Zone.Identifier"
+			if err := os.WriteFile(streamPath, []byte("preserved after real process death"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			r, _ := f.p.local.Get(f.record.OperationID)
 			native := probeTool(t, "FILEES_SVN_PROBE")
 			uri := svnurl.File(filepath.Join(f.directory, "repo"))
@@ -735,6 +881,9 @@ func TestConversionNativeRecoversAfterRealProcessDeath(t *testing.T) {
 			f.restart(t)
 			f.run(t, t.Context())
 			f.assertComplete(t)
+			if raw, err := os.ReadFile(streamPath); err != nil || string(raw) != "preserved after real process death" {
+				t.Fatal("ADS lost after process death", err)
+			}
 		})
 	}
 }

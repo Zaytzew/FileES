@@ -71,6 +71,7 @@ void filees_bridge_start(void);
 void filees_bridge_answer(char *line);
 void filees_bridge_say_reverted(const char *id, HRESULT hr);
 void filees_bridge_say_state_set(const char *id, HRESULT hr);
+void filees_bridge_say_stream_set(const char *id, HRESULT hr);
 void filees_bridge_say_release_prepared(const char *id, HRESULT hr);
 void filees_bridge_say_release_restored(const char *id, HRESULT hr);
 void filees_bridge_say_tree_set(const char *id, HRESULT hr);
@@ -128,6 +129,7 @@ HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
     const WCHAR *identity, LONGLONG expected_usn, int clean, char **lines, unsigned input_count);
 void filees_bridge_say_directory_set(const char *id, HRESULT hr);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
+HRESULT filees_ack_remote_streams(const WCHAR *root, const WCHAR *relative, const char *expected_id, const WCHAR *identity, LONGLONG size, LONGLONG expected_usn);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);
 HRESULT filees_prepare_release_verified(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn,

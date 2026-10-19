@@ -38,7 +38,7 @@ static void print_version(void)
 #ifdef FILEES_CFAPI_DELETE_PROBE
     printf(",\"delete_callback_probe_v1\",\"delete_bridge_probe_v1\"");
 #endif
-    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\",\"shell_visibility_v1\",\"shell_namespace_visibility_v1\",\"registration_evidence_v1\"");
+    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\",\"shell_visibility_v1\",\"shell_namespace_visibility_v1\",\"registration_evidence_v1\",\"remote_stream_state_usn_v1\"");
     puts("]}");
     fflush(stdout);
 }

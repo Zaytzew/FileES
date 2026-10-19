@@ -213,7 +213,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 			renames.receive(line)
 		case strings.HasPrefix(line, "delete-request\t"), strings.HasPrefix(line, "delete-complete\t"), strings.HasPrefix(line, "delete-acked\t"):
 			deletion.receive(line)
-		case strings.HasPrefix(line, "directory-set\t"), strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"), strings.HasPrefix(line, "tree-moved\t"), strings.HasPrefix(line, "tree-identity\t"):
+		case strings.HasPrefix(line, "directory-set\t"), strings.HasPrefix(line, "state-set\t"), strings.HasPrefix(line, "stream-set\t"), strings.HasPrefix(line, "release-prepared\t"), strings.HasPrefix(line, "release-restored\t"), strings.HasPrefix(line, "tree-set\t"), strings.HasPrefix(line, "tree-moved\t"), strings.HasPrefix(line, "tree-identity\t"):
 			fields := strings.Split(line, "\t")
 			if len(fields) == 3 {
 				bridge.stateMu.Lock()

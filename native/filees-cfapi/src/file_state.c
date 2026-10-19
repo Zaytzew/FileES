@@ -835,3 +835,41 @@ HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLON
     if (SUCCEEDED(hr)) SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, path, NULL);
     return hr;
 }
+
+/* Conversion copied and verified the ADS, not the primary data. This must run
+ * on the connected provider. Never use the ordinary ALWAYS_FULL conversion:
+ * only an unchanged, byte-free remote file may regain its clean metadata bit.
+ * FileID, point, remote identity, length and USN are all mandatory bindings. */
+HRESULT filees_ack_remote_streams(const WCHAR *root, const WCHAR *relative,
+    const char *expected_id, const WCHAR *identity, LONGLONG size, LONGLONG expected_usn)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    char expected[FILEES_CFAPI_MAX_IDENTITY * 4];
+    BY_HANDLE_FILE_INFORMATION object;
+    struct state before = {0};
+    HANDLE file;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || size < 0 || expected_usn <= 0 || !identity || !*identity ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, expected, sizeof expected, NULL, NULL))
+        return FAILED(hr) ? hr : E_INVALIDARG;
+    /* APPEND access participates in NTFS write sharing, unlike an
+     * attribute-only handle, but does not request primary data reads.
+     * Never issue a read, write, append or truncate through this handle. */
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | FILE_APPEND_DATA | WRITE_DAC, 0,
+        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OPEN_NO_RECALL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
+    hr = move_object(file, root, expected_id, &object);
+    if (SUCCEEDED(hr)) hr = inspect_tree(file, root, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || before.directory || before.local ||
+        before.on_disk != 0 || before.modified != 0 || before.size != size ||
+        strcmp(before.identity, expected) || before.usn != expected_usn)) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+    if (SUCCEEDED(hr))
+        /* InSyncUsn is NOT a current-USN CAS on a NOT_IN_SYNC placeholder
+         * (it yields CLOUD_FILE_NOT_IN_SYNC). Compare our current USN under
+         * the write-excluding handle instead; Go retains named-stream pins
+         * throughout this ACK. No null-USN fallback after a failed proof. */
+        hr = CfSetInSyncState(file, CF_IN_SYNC_STATE_IN_SYNC, CF_SET_IN_SYNC_FLAG_NONE, NULL);
+    CloseHandle(file);
+    if (SUCCEEDED(hr)) SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, path, NULL);
+    return hr;
+}

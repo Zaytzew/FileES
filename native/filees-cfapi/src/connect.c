@@ -528,6 +528,24 @@ int filees_cfapi_connect(const WCHAR *root)
             free(rows);
             filees_bridge_say_directory_set(parts[0], hr);
         }
+        else if (!strncmp(line, "stream-set\t", 11)) {
+            char *parts[6], *cursor = line + 11, *sep;
+            WCHAR rel[FILEES_CFAPI_MAX_PATH], identity[FILEES_CFAPI_MAX_IDENTITY];
+            LONGLONG usn = 0, size = -1;
+            unsigned i;
+            hr = E_INVALIDARG;
+            for (i = 0; i < 6; ++i) {
+                parts[i] = cursor; sep = strchr(cursor, '\t');
+                if (i == 5) { if (sep) break; }
+                else { if (!sep) break; *sep = 0; cursor = sep + 1; }
+            }
+            if (i == 6 && *parts[0] && release_number(parts[2], &usn, 0) &&
+                release_number(parts[5], &size, 1) &&
+                filees_cfapi_widen(parts[1], rel, FILEES_CFAPI_MAX_PATH) &&
+                filees_cfapi_widen(parts[4], identity, FILEES_CFAPI_MAX_IDENTITY))
+                hr = filees_ack_remote_streams(g_root, rel, parts[3], identity, size, usn);
+            filees_bridge_say_stream_set(line + 11, hr);
+        }
         else if (!strncmp(line, "state-set\t", 10)) {
             char *id = line + 10, *rel = strchr(id, '\t'), *token = NULL, *clean = NULL, *end = NULL;
             WCHAR wide[FILEES_CFAPI_MAX_PATH];

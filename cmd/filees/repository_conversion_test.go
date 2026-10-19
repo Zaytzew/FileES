@@ -138,6 +138,10 @@ func (f daemonConversionFixture) queue(t *testing.T) localrepo.Record {
 }
 
 func (f daemonConversionFixture) run(t *testing.T, ctx context.Context, quiesceErrors ...error) {
+	f.runWithin(t, ctx, 5*time.Second, quiesceErrors...)
+}
+
+func (f daemonConversionFixture) runWithin(t *testing.T, ctx context.Context, timeout time.Duration, quiesceErrors ...error) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() { defer close(done); f.p.runOne(ctx, f.r.OperationID) }()
@@ -155,12 +159,12 @@ func (f daemonConversionFixture) run(t *testing.T, ctx context.Context, quiesceE
 			quiesceErr = quiesceErrors[0]
 		}
 		event.Result <- quiesceErr
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("conversion did not request supervisor quiescence")
 	}
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("conversion worker did not finish")
 	}
 }

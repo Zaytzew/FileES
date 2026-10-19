@@ -23,11 +23,13 @@ import (
 const conversionEvidenceLimit = 40 << 20
 
 type conversionObject struct {
-	Path              string
-	ID                string
-	Directory         bool
-	Size              int64
-	SHA256            string
+	Path      string
+	ID        string
+	Directory bool
+	Size      int64
+	SHA256    string
+	// Canonical optional inventory, kept comparable for immutable delete receipts.
+	Streams           string `json:",omitempty"`
 	Local             bool
 	DACL              string
 	Attributes        uint32
@@ -36,6 +38,7 @@ type conversionObject struct {
 type conversionTreePin struct {
 	Objects []conversionObject
 	Files   map[string]*os.File
+	Streams map[string][]*os.File
 }
 
 func (p *conversionTreePin) close() {
@@ -43,7 +46,13 @@ func (p *conversionTreePin) close() {
 		for _, f := range p.Files {
 			_ = f.Close()
 		}
+		for _, files := range p.Streams {
+			for _, f := range files {
+				_ = f.Close()
+			}
+		}
 		p.Files = nil
+		p.Streams = nil
 	}
 }
 
@@ -101,7 +110,7 @@ func conversionFileHash(ctx context.Context, f *os.File, size int64) (string, er
 }
 
 func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, error) {
-	p := &conversionTreePin{Files: map[string]*os.File{}}
+	p := &conversionTreePin{Files: map[string]*os.File{}, Streams: map[string][]*os.File{}}
 	var walk func(string) error
 	walk = func(rel string) error {
 		if err := ctx.Err(); err != nil {
@@ -125,8 +134,14 @@ func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, er
 		if err != nil {
 			return err
 		}
-		if err = conversionCheckStreams(f, node.Directory); err != nil {
+		var streams []*os.File
+		node.Streams, streams, err = conversionPinStreams(ctx, f)
+		p.Streams[rel] = streams
+		if err != nil {
 			return fmt.Errorf("inspect %q: %w", rel, err)
+		}
+		if node.Streams != "" && (rel == ".svn" || strings.HasPrefix(rel, ".svn/") || rel == ".filees" || strings.HasPrefix(rel, ".filees/")) {
+			return errors.New("conversion refuses alternate streams on private engine metadata")
 		}
 		if !node.Directory {
 			node.SHA256, err = conversionFileHash(ctx, f, node.Size)
@@ -168,40 +183,6 @@ func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, er
 	return p, nil
 }
 
-// A main-stream hash is not custody of NTFS alternate streams or EFS secrets.
-// Refuse these unsupported objects rather than silently discard/decrypt them.
-func conversionCheckStreams(file *os.File, directory bool) error {
-	raw := conversionAlignedBuffer(4 << 10)
-	err := windows.GetFileInformationByHandleEx(windows.Handle(file.Fd()), windows.FileStreamInfo, &raw[0], uint32(len(raw)))
-	if directory && errors.Is(err, windows.ERROR_HANDLE_EOF) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for offset := 0; ; {
-		if offset+24 > len(raw) {
-			return errors.New("invalid file-stream observation")
-		}
-		next := *(*uint32)(unsafe.Pointer(&raw[offset]))
-		length := *(*uint32)(unsafe.Pointer(&raw[offset+4]))
-		if length == 0 || length%2 != 0 || uint64(offset)+24+uint64(length) > uint64(len(raw)) {
-			return errors.New("incomplete file-stream observation")
-		}
-		name := windows.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(&raw[offset+24])), int(length/2)))
-		if name != "::$DATA" {
-			return errors.New("conversion refuses unsupported NTFS alternate data streams")
-		}
-		if next == 0 {
-			return nil
-		}
-		if next < 24 || next > uint32(len(raw)-offset) {
-			return errors.New("invalid file-stream chain")
-		}
-		offset += int(next)
-	}
-}
-
 // FILE_STREAM_INFO requires 8-byte alignment, which a stack []byte does not
 // promise. Use a uint64 backing allocation for all variable Windows records.
 func conversionAlignedBuffer(size int) []byte {
@@ -210,7 +191,7 @@ func conversionAlignedBuffer(size int) []byte {
 }
 
 func conversionSameObject(got, want conversionObject) bool {
-	return got.Path == want.Path && got.ID == want.ID && conversionSameDACL(got.DACL, want.DACL) && got.Directory == want.Directory && (got.Directory || got.Size == want.Size && got.SHA256 == want.SHA256 && got.Attributes == want.Attributes && got.Modified == want.Modified)
+	return got.Path == want.Path && got.ID == want.ID && got.Streams == want.Streams && conversionSameDACL(got.DACL, want.DACL) && got.Directory == want.Directory && (got.Directory || got.Size == want.Size && got.SHA256 == want.SHA256 && got.Attributes == want.Attributes && got.Modified == want.Modified)
 }
 
 // AUTO_INHERITED/AUTO_INHERIT_REQ are bookkeeping, not access permissions.
@@ -391,7 +372,15 @@ func conversionDelete(ctx context.Context, path string, want conversionObject) e
 	if conversionID(info) != want.ID || (info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0) != want.Directory {
 		return errors.New("cleanup refuses a replaced object")
 	}
-	if err := conversionCheckStreams(f, want.Directory); err != nil {
+	streams, streamPins, err := conversionPinStreams(ctx, f)
+	defer conversionCloseStreams(streamPins)
+	if err != nil {
+		return err
+	}
+	if streams != want.Streams {
+		return errors.New("cleanup refuses changed alternate streams")
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	metadata := want
@@ -426,5 +415,16 @@ func conversionDelete(ctx context.Context, path string, want conversionObject) e
 		}
 	}
 	remove := byte(1)
-	return windows.SetFileInformationByHandle(windows.Handle(f.Fd()), windows.FileDispositionInfo, &remove, 1)
+	if err := windows.SetFileInformationByHandle(windows.Handle(f.Fd()), windows.FileDispositionInfo, &remove, 1); err != nil {
+		return err
+	}
+	// Delete-pending blocks NEW stream opens. Existing streams are still pinned
+	// against writers. Re-enumerate after this barrier to catch a new ADS created
+	// between the last inventory and the deletion intent; revoke disposition on
+	// mismatch instead of deleting unobserved metadata.
+	if err := conversionCheckStreamNames(f, want.Streams); err != nil {
+		remove = 0
+		return errors.Join(err, windows.SetFileInformationByHandle(windows.Handle(f.Fd()), windows.FileDispositionInfo, &remove, 1))
+	}
+	return nil
 }

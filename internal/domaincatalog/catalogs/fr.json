@@ -29,6 +29,7 @@
     "auth.session_ended": "Le serveur a mis fin à cette session. Réessayez dans un instant",
     "catalog.unknown_message": "Le service a signalé une erreur absente du catalogue ({code}/{key})",
     "commit.failed": "Échec de l’enregistrement sur le serveur",
+    "repo.file_delete_failed": "Impossible de supprimer le fichier",
     "commit.not_versioned": "Ce chemin n’est pas sous contrôle de version",
     "commit.outdated": "Votre copie locale n’est pas à jour. Récupérez d’abord les dernières modifications",
     "commit.recovery_held": "La récupération de la publication est en pause. Consultez le diagnostic et ne supprimez pas les modifications en attente",

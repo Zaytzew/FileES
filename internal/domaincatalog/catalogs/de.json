@@ -29,6 +29,7 @@
     "auth.session_ended": "Der Server hat diese Sitzung beendet. Versuchen Sie es gleich erneut",
     "catalog.unknown_message": "Der Hintergrunddienst hat einen Fehler gemeldet, der nicht im Katalog steht ({code}/{key})",
     "commit.failed": "Speichern auf dem Server fehlgeschlagen",
+    "repo.file_delete_failed": "Datei konnte nicht gelöscht werden",
     "commit.not_versioned": "Dieser Pfad steht nicht unter Versionskontrolle",
     "commit.outdated": "Ihre lokale Kopie ist veraltet. Rufen Sie zuerst die neuesten Änderungen ab",
     "commit.recovery_held": "Die Wiederherstellung der Veröffentlichung ist pausiert. Prüfen Sie die Diagnose und entfernen Sie keine ausstehenden Änderungen",

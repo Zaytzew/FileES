@@ -29,6 +29,7 @@
     "auth.session_ended": "El servidor finalizó esta sesión. Vuelva a intentarlo en un momento",
     "catalog.unknown_message": "El servicio notificó un error que no está en el catálogo ({code}/{key})",
     "commit.failed": "No se pudo guardar en el servidor",
+    "repo.file_delete_failed": "No se pudo eliminar el archivo",
     "commit.not_versioned": "Esta ruta no está bajo control de versiones",
     "commit.outdated": "Su copia local está desactualizada. Obtenga primero los últimos cambios",
     "commit.recovery_held": "La recuperación de la publicación está en pausa. Revise el diagnóstico y no elimine los cambios pendientes",

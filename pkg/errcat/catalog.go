@@ -144,6 +144,7 @@ var specs = []Spec{
 	{CodeRecon, KeyReconConflict, SevError, HintRequireAction, nil, "Conflict detected during update"},
 	{CodePolicyWait, KeyPolicyDeferred, SevWarn, HintRetryLocal, nil, "Editing-policy migration waiting on a clean working copy"},
 	{CodeWCBusy, KeyWorkingCopyBusy, SevWarn, HintRetryLocal, nil, "Working copy is busy in another local process"},
+	{"FILE-3001", "repo.file_delete_failed", SevWarn, HintRequireAction, detailOnly(), "File deletion could not be completed"},
 	{CodeUnknown, KeyUnknown, SevError, HintRetryLocal, nil, "Unexpected error"},
 
 	// Protocol envelopes built by protoErr (PROTO-0001) or typed PROTO-000n.

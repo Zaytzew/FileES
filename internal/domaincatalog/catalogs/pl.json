@@ -29,6 +29,7 @@
     "auth.session_ended": "Serwer zakończył tę sesję — spróbuj ponownie za chwilę",
     "catalog.unknown_message": "Daemon zgłosił błąd, którego nie ma w katalogu ({code}/{key})",
     "commit.failed": "Zapis na serwer nie powiódł się",
+    "repo.file_delete_failed": "Nie udało się usunąć pliku",
     "commit.not_versioned": "Ścieżka nie jest pod kontrolą wersji",
     "commit.outdated": "Kopia robocza jest nieaktualna — najpierw pobierz zmiany",
     "commit.recovery_held": "Odtwarzanie publikacji wstrzymane — sprawdź diagnostykę; nie usuwaj stanu oczekujących zmian",

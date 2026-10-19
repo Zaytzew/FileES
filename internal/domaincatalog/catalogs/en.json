@@ -29,6 +29,7 @@
     "auth.session_ended": "The server ended this session — try again in a moment",
     "catalog.unknown_message": "The daemon reported an error that is not in the catalogue ({code}/{key})",
     "commit.failed": "Saving to the server failed",
+    "repo.file_delete_failed": "Could not delete the file",
     "commit.not_versioned": "This path is not under version control",
     "commit.outdated": "Your local copy is out of date — get the latest changes first",
     "commit.recovery_held": "Publication recovery is paused — check the diagnostics and do not remove the pending changes",

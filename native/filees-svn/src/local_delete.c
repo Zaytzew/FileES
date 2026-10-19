@@ -10,6 +10,7 @@
 #include <svn_dirent_uri.h>
 #include <svn_path.h>
 #include <svn_string.h>
+#include <svn_checksum.h>
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -20,6 +21,7 @@ struct delete_binding {
     const svn_client_info2_t *info;
     apr_pool_t *pool;
     int count;
+    svn_boolean_t preflight;
 };
 
 static svn_error_t *delete_info(void *baton, const char *path,
@@ -34,7 +36,8 @@ static svn_error_t *delete_info(void *baton, const char *path,
         strcmp(info->repos_root_URL, b->root) || strcmp(info->repos_UUID, b->uuid) ||
         strcmp(info->URL, svn_path_url_add_component2(b->root, rel, pool)) ||
         (w->conflicts && w->conflicts->nelts) || w->copyfrom_url ||
-        w->moved_from_abspath || w->moved_to_abspath || info->lock)
+        w->moved_from_abspath || w->moved_to_abspath ||
+        (info->lock && (!b->preflight || info->kind != svn_node_file)))
         return filees_refuse("file delete metadata: foreign binding, conflict, move, copy or lock");
     b->info = svn_client_info2_dup(info, b->pool);
     return SVN_NO_ERROR;
@@ -122,7 +125,17 @@ static svn_error_t *delete_locked(const char **state, const char *phase,
     SVN_ERR(delete_parents(b, src, ctx, pool));
     SVN_ERR(delete_read(&info, b, src, ctx, pool));
     if (!info) {
-        *state = !strcmp(phase, "inspect") ? "virtual" : "complete";
+        *state = (!strcmp(phase, "inspect") || b->preflight) ? "virtual" : "complete";
+        return SVN_NO_ERROR;
+    }
+    if (b->preflight) {
+        if (info->kind != svn_node_file || info->rev < 1 || info->rev > base ||
+            info->wc_info->schedule != svn_wc_schedule_normal ||
+            info->wc_info->depth == svn_depth_exclude || !info->wc_info->checksum ||
+            info->wc_info->checksum->kind != svn_checksum_sha1)
+            return filees_refuse("file delete preflight: no normal bound file BASE/checksum");
+        SVN_ERR(delete_props(src, ctx, pool));
+        *state = "present";
         return SVN_NO_ERROR;
     }
     if (!strcmp(phase, "verify"))
@@ -165,10 +178,10 @@ svn_error_t *filees_local_file_delete(const char *phase, const char *wc_arg,
     svn_wc_adm_access_t *adm;
     svn_error_t *err;
     const unsigned char *p;
-    if (strcmp(phase, "inspect") && strcmp(phase, "stage") &&
+    if (strcmp(phase, "preflight") && strcmp(phase, "inspect") && strcmp(phase, "stage") &&
         strcmp(phase, "ack") && strcmp(phase, "verify"))
         return filees_refuse("file delete metadata: invalid phase");
-    if (base < 1 || (!strcmp(phase, "inspect") ? revision != 0 : revision <= base) ||
+    if (base < 1 || ((!strcmp(phase, "inspect") || !strcmp(phase, "preflight")) ? revision != 0 : revision <= base) ||
         !uuid || !*uuid || !source || strlen(source) > 4096 || !filees_safe_relative(source))
         return filees_refuse("file delete metadata: invalid binding");
     for (p = (const unsigned char *)source; *p; ++p)
@@ -179,6 +192,7 @@ svn_error_t *filees_local_file_delete(const char *phase, const char *wc_arg,
     SVN_ERR(filees_writer_guard(wc, pool));
     memset(&b, 0, sizeof b);
     b.wc = wc; b.root = root; b.uuid = uuid; b.pool = pool;
+    b.preflight = !strcmp(phase, "preflight");
     src = svn_dirent_join(wc, source, pool);
     /* Lock and revalidate in every phase. Never release a foreign SVN lock,
      * cleanup the WC, ACK children or change parent revisions. */
@@ -190,6 +204,15 @@ svn_error_t *filees_local_file_delete(const char *phase, const char *wc_arg,
     filees_json_string(state);
     printf(",\"base_revision\":%ld,\"revision\":%ld,\"root_url\":", (long)base, (long)revision);
     filees_json_string(root); printf(",\"uuid\":"); filees_json_string(uuid);
-    printf(",\"source\":"); filees_json_string(source); puts("}");
+    printf(",\"source\":"); filees_json_string(source);
+    if (b.preflight) {
+        printf(",\"local_base_revision\":%ld,\"checksum_sha1\":", (long)(b.info ? b.info->rev : base));
+        if (b.info) filees_json_string(svn_checksum_to_cstring(b.info->wc_info->checksum, pool));
+        else printf("null");
+        printf(",\"local_lock_token\":");
+        if (b.info && b.info->lock && b.info->lock->token) filees_json_string(b.info->lock->token);
+        else printf("null");
+    }
+    puts("}");
     return SVN_NO_ERROR;
 }

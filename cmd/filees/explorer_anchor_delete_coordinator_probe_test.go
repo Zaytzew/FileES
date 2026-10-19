@@ -11,17 +11,39 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"filees/pkg/client"
 	"filees/pkg/commit"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
+	"golang.org/x/sys/windows"
 )
+
+// Metadata-only deletion still goes through the real Cloud Filter callbacks.
+// DeleteFileW can request hydration for registered DWG handlers on this host;
+// opening the reparse point avoids interpreting document bytes as a file type.
+func deleteProbePlaceholder(file string) error {
+	p, err := windows.UTF16PtrFromString(file)
+	if err != nil {
+		return err
+	}
+	h, err := windows.CreateFile(p, windows.DELETE|windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	disposition := int32(1)
+	return windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, (*byte)(unsafe.Pointer(&disposition)), uint32(unsafe.Sizeof(disposition)))
+}
 
 type anchorDeleteProbeClient struct {
 	anchorMoveProbeClient
@@ -31,6 +53,21 @@ type anchorDeleteProbeClient struct {
 }
 
 func (c *anchorDeleteProbeClient) RemoteFileDeletesEnabled() bool { return true }
+func (c *anchorDeleteProbeClient) Revision(ctx context.Context, target string) (int64, error) {
+	if filepath.IsAbs(target) {
+		return c.Client.Revision(ctx, target)
+	}
+	return c.anchorBatchProbeReader.Revision(ctx, target)
+}
+func (c *anchorDeleteProbeClient) HistoryLog(ctx context.Context, target string, newest, oldest int64, limit int) ([]client.HistoryCommit, error) {
+	return c.Client.(client.HistoryReader).HistoryLog(ctx, c.target(target), newest, oldest, limit)
+}
+func (c *anchorDeleteProbeClient) ReadLockObservation(ctx context.Context, wc, rel string) (client.LockObservation, error) {
+	return c.Client.(client.LockObservationReader).ReadLockObservation(ctx, wc, rel)
+}
+func (c *anchorDeleteProbeClient) ReleaseLock(ctx context.Context, wc, rel, token string) (*client.LockReleaseReceipt, string, error) {
+	return c.Client.(client.LockReleaser).ReleaseLock(ctx, wc, rel, token)
+}
 func (c *anchorDeleteProbeClient) RemoteFileDelete(ctx context.Context, in client.RemoteFileDelete) (*client.RemoteFileDeleteReceipt, error) {
 	c.deleteSends.Add(1)
 	actual := in
@@ -63,13 +100,24 @@ func (c *anchorDeleteProbeClient) LocalFileDeleteMetadata(ctx context.Context, w
 	}
 	return state, err
 }
+func (c *anchorDeleteProbeClient) LocalFileDeletePreflight(ctx context.Context, wc string, in client.RemoteFileDelete) (client.LocalFileDeleteProof, error) {
+	in.RootURL = c.actual
+	return c.Client.(client.LocalFileDeletePreflighter).LocalFileDeletePreflight(ctx, wc, in)
+}
 
 // Product helper, real attachment/grant, real Service/Scanner, native SVN and
 // real Cloud Filter callbacks. Only the network authority is substituted with
 // a disposable file:// repository; no owner's point or running pair is touched.
 func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
-	for _, scenario := range []string{"virtual", "metadata", "reply", "stage", "ack", "recreated", "read-only"} {
+	for _, scenario := range []string{"virtual", "metadata", "stale-nonresident", "stale-metadata", "stale-own-lock", "stale-changed", "foreign-lock", "reply", "stage", "ack", "recreated", "read-only"} {
 		t.Run(scenario, func(t *testing.T) {
+			selected := "gone 新.txt"
+			if strings.HasPrefix(scenario, "stale-") || scenario == "foreign-lock" {
+				selected = "fin.dwg"
+			}
+			if scenario == "stale-nonresident" {
+				selected = "fin.txt"
+			}
 			helper, native := probeTool(t, "FILEES_CFAPI"), probeTool(t, "FILEES_SVN_PROBE")
 			cli, admin := probeTool(t, "FILEES_PROBE_SVN"), probeTool(t, "FILEES_PROBE_SVNADMIN")
 			base := t.TempDir()
@@ -78,7 +126,7 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 			if err := os.Mkdir(seed, 0700); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"gone 新.txt", "stay.txt"} {
+			for _, name := range []string{selected, "stay.txt"} {
 				if err := os.WriteFile(filepath.Join(seed, name), []byte("original bytes"), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -86,18 +134,45 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 			uri := (&url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(repo)}).String()
 			probeRun(t, base, cli, "import", "-q", "-m", "delete fixture", seed, uri)
 			depth := "empty"
-			if scenario == "metadata" {
+			metadata := scenario == "metadata" || strings.HasPrefix(scenario, "stale-") || scenario == "foreign-lock"
+			initial := int64(1)
+			if metadata {
 				depth = "infinity"
 			}
 			probeRun(t, base, cli, "checkout", "-q", "--depth", depth, uri, point)
+			if metadata && scenario != "metadata" {
+				probeRun(t, point, cli, "propset", "fixture:bump", "yes", "stay.txt")
+				if scenario == "stale-changed" {
+					if err := os.WriteFile(filepath.Join(point, selected), []byte("modified bytes"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				probeRun(t, point, cli, "commit", "-q", "-m", "new revision", ".")
+				probeRun(t, point, cli, "update", "-q")
+				initial = 2
+			}
+			if scenario == "stale-own-lock" || scenario == "foreign-lock" {
+				targets := filepath.Join(base, "lock-targets.txt")
+				if err := os.WriteFile(targets, []byte(selected+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"lock", "-m", "isolated reservation", "--targets", targets}
+				if scenario == "foreign-lock" {
+					args = append(args, "--username", "someone-else")
+				}
+				probeRun(t, point, cli, args...)
+			}
 			if depth == "infinity" {
-				for _, name := range []string{"gone 新.txt", "stay.txt"} {
+				for _, name := range []string{selected, "stay.txt"} {
 					if err := os.Remove(filepath.Join(point, name)); err != nil {
 						t.Fatal(err)
 					}
 				}
 			}
 			if err := os.MkdirAll(filepath.Join(point, ".filees", "state"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(point, ".filees", "logs"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
@@ -126,6 +201,21 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 			state := server.RegisterRepoAccess("repo", authority, point, "server", "rw")
 			reader := &anchorDeleteProbeClient{anchorMoveProbeClient: anchorMoveProbeClient{anchorBatchProbeReader: anchorBatchProbeReader{Client: svn, actual: uri, authority: authority}}, phase: scenario}
 			service := &commit.Service{Cli: svn}
+			reservationSnapshot := ipcserver.ReservationSnapshot{}
+			if scenario == "stale-own-lock" || scenario == "foreign-lock" {
+				// Capture before any Cloud Files point exists, exactly like the
+				// daemon's server-state cache; listing is not a document read.
+				rows, err := svn.(client.LockLister).ListLocks(t.Context(), point)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, row := range rows {
+					reservationSnapshot.Reservations = append(reservationSnapshot.Reservations, contract.Reservation{Path: filepath.ToSlash(row.Path), Token: row.Token, CanRelease: scenario != "foreign-lock"})
+				}
+			}
+			state.SetReservationListFunc(func(ctx context.Context) (ipcserver.ReservationSnapshot, error) {
+				return reservationSnapshot, nil
+			})
 			service.BindWorkingCopy("repo", point)
 			state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 				return service.WithLocalStatus(ctx, point, paths, confirm)
@@ -139,15 +229,15 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 			state.SetFileDeleteFunc(func(ctx context.Context, source string, p *watcher.FileDeleteSnapshot, op func(*watcher.FileDeleteSnapshot) error, finish func() error) error {
 				return service.WithRemoteFileDelete(ctx, point, source, p, op, finish)
 			})
-			m := &anchorManager{helper: helper, profiles: filepath.Join(base, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) { return reader, nil }, log: talk.With("delete-native"), stateEvery: time.Hour, options: &anchorOptions{}}
+			m := &anchorManager{helper: helper, profiles: filepath.Join(base, "profiles.json"), lifecycle: store, repos: server.RepoState, newSVN: func(string) (client.Client, error) { return reader, nil }, log: talk.With("delete-native"), stateEvery: time.Hour, options: &anchorOptions{}, localIntentMu: &sync.Mutex{}}
 			m.options.servers.Store(map[string]bool{"server": true})
-			if scenario == "metadata" {
+			if metadata {
 				// The full-WC prerequisite already has canonical FileES remote
 				// identities and a bound tree. Cold legacy seeding is a different
 				// migration and may legitimately require content for SVN status.
-				gone, _ := anchorRemoteIdentity("gone 新.txt", 1, 14)
+				gone, _ := anchorRemoteIdentity(selected, 1, 14)
 				stay, _ := anchorRemoteIdentity("stay.txt", 1, 14)
-				p := newLocalStateProbe(t, point, "", fmt.Sprintf("f\t14\t%s\tgone 新.txt\nf\t14\t%s\tstay.txt\n", gone, stay))
+				p := newLocalStateProbe(t, point, "", fmt.Sprintf("f\t14\t%s\t%s\nf\t14\t%s\tstay.txt\n", gone, selected, stay))
 				p.stop()
 				guards, root, err := guardAnchorMoveState(record)
 				if err != nil {
@@ -155,7 +245,11 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 				}
 				closeAnchorReleaseGuards(guards)
 				tree := anchorRemoteTree{Schema: "filees.anchor-tree/v1", Operation: record.OperationID, URL: authority, Root: root, Revision: 1,
-					Nodes: []anchorRemoteNode{{HistoryTreeNode: client.HistoryTreeNode{Path: "gone 新.txt", Kind: "file", Size: 14}, Identity: gone}, {HistoryTreeNode: client.HistoryTreeNode{Path: "stay.txt", Kind: "file", Size: 14}, Identity: stay}}}
+					Nodes: []anchorRemoteNode{{HistoryTreeNode: client.HistoryTreeNode{Path: selected, Kind: "file", Size: 14}, Identity: gone}, {HistoryTreeNode: client.HistoryTreeNode{Path: "stay.txt", Kind: "file", Size: 14}, Identity: stay}}}
+				tree.Revision = initial
+				for i := range tree.Nodes {
+					tree.Nodes[i].Identity, _ = anchorRemoteIdentity(tree.Nodes[i].Path, initial, 14)
+				}
 				if err := saveAnchorRemoteTree(record, tree); err != nil {
 					t.Fatal(err)
 				}
@@ -165,12 +259,21 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 				}
 			}
 			ctx, cancel := context.WithCancel(t.Context())
+			// This is deletion reception, not the independent background Shell
+			// status observer. Hold its existing priority fence so native SVN
+			// status cannot hydrate fixture files while we measure deletion.
+			if metadata {
+				m.moveWaiters.Add(1)
+			}
 			done := make(chan struct{})
 			m.running = map[string]anchorConnection{anchorKey(record): {ctx: ctx, cancel: cancel, done: done}}
 			go func() { m.keep(ctx, record); close(done) }()
 			t.Cleanup(func() { cancel(); <-done })
 			waitFor(t, 30*time.Second, "provider", func() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.running[anchorKey(record)].bridge != nil })
 			waitFor(t, 30*time.Second, "remote tree", func() bool { _, err := os.Stat(anchorTreePath(point)); return err == nil })
+			if !metadata {
+				m.moveWaiters.Add(1)
+			}
 			manifest := filepath.Join(point, ".filees", "state", "manifest.json")
 			bindScanner := func() *watcher.Scanner {
 				scanner, err := watcher.NewScanner(watcher.Options{WC: point, StatePath: manifest, PublicationPending: func() bool { return commit.HasPendingLocalMutation(point) }})
@@ -180,7 +283,7 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 				scanCtx, stop := context.WithCancel(t.Context())
 				events := scanner.Start(scanCtx)
 				waitFor(t, 5*time.Second, "scanner ready", func() bool {
-					p, err := scanner.CapturePublication([]string{"gone 新.txt"})
+					p, err := scanner.CapturePublication([]string{selected})
 					return err == nil && p.Sequence > 0
 				})
 				stop()
@@ -194,12 +297,49 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 				server.RegisterRepoAccess("repo", authority, point, "server", "r")
 			}
 			beforeFetches := reader.fetches.Load()
-			err = os.Remove(filepath.Join(point, "gone 新.txt"))
+			// Initial observer seeding is not the deletion under test. Drain it
+			// through the same admission mutex used by production user actions.
+			leave, err := m.enterMoveIntent(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leave()
+			if strings.HasPrefix(scenario, "stale-") || scenario == "foreign-lock" {
+				st, e := inspectAnchorDeleteFileState(ctx, helper, point, selected)
+				t.Logf("before deletion: local=%v clean=%v on_disk=%d modified=%d identity=%s err=%v fetches=%d", st.Local, st.InSync, st.OnDisk, st.Modified, st.Identity, e, reader.fetches.Load())
+			}
+			if strings.HasPrefix(scenario, "stale-") || scenario == "foreign-lock" {
+				err = deleteProbePlaceholder(filepath.Join(point, selected))
+			} else {
+				err = os.Remove(filepath.Join(point, selected))
+			}
+			if scenario == "stale-changed" || scenario == "foreign-lock" {
+				if scenario == "foreign-lock" {
+					waitFor(t, 5*time.Second, "foreign reservation still refused after byte proof", func() bool {
+						if e := deleteProbePlaceholder(filepath.Join(point, selected)); e == nil {
+							t.Fatal("foreign lock deleted")
+						}
+						raw, _ := os.ReadFile(filepath.Join(point, ".filees", "logs", "errors.jsonl"))
+						return strings.Contains(string(raw), "reservation is not safely releasable")
+					})
+				}
+				if err == nil || commit.HasPendingRemoteFileDelete(point) || reader.deleteSends.Load() != 0 {
+					t.Fatal("unsafe deletion admitted", err)
+				}
+				raw, readErr := os.ReadFile(filepath.Join(point, ".filees", "logs", "errors.jsonl"))
+				if readErr != nil || !strings.Contains(string(raw), "FILE-3001") || !strings.Contains(string(raw), selected) {
+					t.Fatal("missing deletion diagnostic", string(raw), readErr)
+				}
+				return
+			}
 			if scenario == "read-only" {
 				if err == nil || commit.HasPendingRemoteFileDelete(point) || reader.deleteSends.Load() != 0 {
 					t.Fatal("read-only granted delete", err)
 				}
 				return
+			}
+			if err != nil && (scenario == "stale-metadata" || scenario == "stale-own-lock") {
+				waitFor(t, 10*time.Second, "resident checksum verified outside callback", func() bool { err = deleteProbePlaceholder(filepath.Join(point, selected)); return err == nil })
 			}
 			if err != nil {
 				t.Fatal("OS delete", err)
@@ -215,7 +355,7 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 					t.Fatal("interruption lost fence")
 				}
 				if scenario == "recreated" {
-					if err := os.WriteFile(filepath.Join(point, "gone 新.txt"), []byte("new unsent bytes"), 0600); err != nil {
+					if err := os.WriteFile(filepath.Join(point, selected), []byte("new unsent bytes"), 0600); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -227,7 +367,11 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 				go func() { m.keep(ctx, record); close(done) }()
 			}
 			waitFor(t, 30*time.Second, "delete retired", func() bool { return !commit.HasPendingRemoteFileDelete(point) })
-			if reader.deleteSends.Load() != 1 || reader.fetches.Load() != beforeFetches {
+			// DWG hydration initiated by the host's delete handling is separate
+			// from the coordinator's metadata-only preflight. The checksum gate
+			// verifies such already-resident bytes; no remote bytes are discarded
+			// based on a clean bit alone.
+			if reader.deleteSends.Load() != 1 || (!strings.HasPrefix(scenario, "stale-") && reader.fetches.Load() != beforeFetches) {
 				t.Fatal("replayed or hydrated", reader.deleteSends.Load(), reader.fetches.Load(), beforeFetches)
 			}
 			guards, root, err := guardAnchorMoveState(record)
@@ -236,16 +380,16 @@ func TestAnchorFileDeleteCoordinatorNativeEndToEnd(t *testing.T) {
 			}
 			closeAnchorReleaseGuards(guards)
 			tree, err := loadAnchorRemoteTree(record, root)
-			if err != nil || tree.Revision != 2 || len(tree.Nodes) != 1 || tree.Nodes[0].Path != "stay.txt" {
+			if err != nil || tree.Revision != initial+1 || len(tree.Nodes) != 1 || tree.Nodes[0].Path != "stay.txt" {
 				t.Fatal("manifest did not scoped ACK", tree, err)
 			}
 			if scenario == "recreated" {
-				raw, err := os.ReadFile(filepath.Join(point, "gone 新.txt"))
+				raw, err := os.ReadFile(filepath.Join(point, selected))
 				if err != nil || string(raw) != "new unsent bytes" {
 					t.Fatal("recreation lost", err)
 				}
 			}
-			history, err := exec.Command(cli, "cat", "-r", "1", uri+"/gone%20%E6%96%B0.txt@1").Output()
+			history, err := exec.Command(cli, "cat", "-r", "1", uri+"/"+url.PathEscape(selected)+"@1").Output()
 			if err != nil || string(history) != "original bytes" {
 				t.Fatal("history lost", err)
 			}

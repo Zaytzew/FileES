@@ -44,6 +44,7 @@ static void print_ok_version(void)
     printf(",\"unschedule_plain_add_v1\"");
     printf(",\"sparse_adopt_batch_v1\"");
     printf(",\"unlock_token_receipt_v1\"");
+    printf(",\"local_file_delete_preflight_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");

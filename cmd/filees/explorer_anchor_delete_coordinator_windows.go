@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -69,9 +70,13 @@ func readDeleteTree(ctx context.Context, record localrepo.Record, in anchorDelet
 		return fail(err)
 	}
 	found := false
+	manifestIdentity := in.ManifestIdentity
+	if manifestIdentity == "" {
+		manifestIdentity = in.Callback.Identity // Existing durable v1 intents.
+	}
 	for _, n := range tree.Nodes {
 		if strings.EqualFold(n.Path, in.Delete.Source) {
-			if found || n.Path != in.Delete.Source || n.Kind != "file" || n.Identity != in.Callback.Identity {
+			if found || n.Path != in.Delete.Source || n.Kind != "file" || n.Identity != manifestIdentity {
 				return fail(errors.New("file deletion manifest selection differs"))
 			}
 			found = true
@@ -124,7 +129,7 @@ func (m *anchorManager) deleteAccess(record localrepo.Record) (*ipcserver.RepoSt
 }
 
 func (m *anchorManager) prepareFileDelete(ctx context.Context, record localrepo.Record, s *anchorDeleteSession, cb anchorDeleteCallback) error {
-	leave, err := m.enterReleaseIntent()
+	leave, err := m.enterMoveIntent(ctx)
 	if err != nil {
 		return err
 	}
@@ -153,16 +158,11 @@ func (m *anchorManager) prepareFileDelete(ctx context.Context, record localrepo.
 		if err != nil || tree.Revision < base {
 			return errors.Join(err, errors.New("file deletion requires the current manifest generation"))
 		}
-		found := false
-		for _, n := range tree.Nodes {
-			if n.Path == rel && n.Kind == "file" && n.Identity == cb.Identity {
-				found = true
-			}
-		}
-		if !found {
-			return errors.New("file deletion is not a current remote manifest file")
-		}
 		svn, err := m.svn(record.ServerID)
+		if err != nil {
+			return err
+		}
+		s.manifestIdentity, err = confirmAnchorDeleteSelection(ctx, svn, record, tree, cb.Identity)
 		if err != nil {
 			return err
 		}
@@ -177,8 +177,37 @@ func (m *anchorManager) prepareFileDelete(ctx context.Context, record localrepo.
 			return err
 		}
 		request := client.RemoteFileDelete{RootURL: record.RepoURL, UUID: id, BaseRevision: tree.Revision, OperationID: uuid.NewString(), Source: rel, Message: "FileES: delete file"}
+		preflighter, ok := svn.(client.LocalFileDeletePreflighter)
+		if !ok {
+			return errors.New("file deletion requires native bound metadata preflight")
+		}
+		metadata, err := preflighter.LocalFileDeletePreflight(ctx, record.LocalPath, request)
+		if err != nil {
+			return err
+		}
+		if metadata.BaseRevision < base || metadata.BaseRevision > tree.Revision {
+			return errors.New("file deletion local BASE is outside the verified revision range")
+		}
+		s.localBaseRevision = metadata.BaseRevision
+		state, err := inspectAnchorDeleteFileState(ctx, m.helper, record.LocalPath, rel)
+		if err != nil {
+			return err
+		}
+		if anchorDeleteRemoteState(state, cb.Identity) {
+			s.contentSHA1, s.contentUSN = "", ""
+		} else {
+			if !anchorDeleteResidentState(state, cb.Identity, metadata.ChecksumSHA1) {
+				return fmt.Errorf("file deletion requires clean verified FileES bytes (in_sync=%t local=%t on_disk=%d modified=%d identity_matches=%t)", state.InSync, state.Local, state.OnDisk, state.Modified, state.Identity == cb.Identity)
+			}
+			if s.contentSHA1 != metadata.ChecksumSHA1 || s.contentUSN != state.USN {
+				return anchorDeleteResidentWait{request}
+			}
+		}
+		if err := releaseAnchorDeleteLock(ctx, repo, svn, record.LocalPath, rel, metadata.LockToken); err != nil {
+			return err
+		}
 		localRequest := request
-		localRequest.BaseRevision = base
+		localRequest.BaseRevision = s.localBaseRevision
 		if _, err := local.LocalFileDeleteMetadata(ctx, record.LocalPath, "inspect", localRequest, 0); err != nil {
 			return err
 		}
@@ -281,6 +310,9 @@ func (m *anchorManager) advanceFileDelete(ctx context.Context, record localrepo.
 	for _, phase := range []string{"stage", "ack", "verify"} {
 		localRequest := in.Delete
 		_, localRequest.BaseRevision, _, _ = parseAnchorRemoteIdentity(in.Callback.Identity)
+		if in.LocalBaseRevision != 0 {
+			localRequest.BaseRevision = in.LocalBaseRevision
+		}
 		state, err := local.LocalFileDeleteMetadata(ctx, record.LocalPath, phase, localRequest, receipt.Revision)
 		if err != nil || (phase == "verify" && state != "complete") {
 			return nil, errors.Join(err, errors.New("file deletion local metadata incomplete"))
@@ -457,6 +489,10 @@ func (m *anchorManager) bindFileDelete(record localrepo.Record, bridge *anchorBr
 	}
 	var mu sync.Mutex
 	var s *anchorDeleteSession
+	lastFailure := ""
+	var resident *anchorDeleteResidentProof
+	checkingResident := false
+	closed := false
 	bridge.deleteRearm = true
 	bridge.deletePrepare = func(ctx context.Context, cb anchorDeleteCallback) error {
 		mu.Lock()
@@ -466,14 +502,45 @@ func (m *anchorManager) bindFileDelete(record localrepo.Record, bridge *anchorBr
 		}
 		s = newAnchorDeleteSession(record, streams.providerPID)
 		s.id = cb.Session
+		if resident != nil && resident.matches(cb) {
+			s.contentSHA1, s.contentUSN = resident.SHA1, resident.USN
+		}
 		err := m.prepareFileDelete(ctx, record, s, cb)
 		if err != nil {
+			var wait anchorDeleteResidentWait
+			if errors.As(err, &wait) && !checkingResident {
+				checkingResident = true
+				go func() {
+					proof, err := m.proveResidentDelete(record, cb, wait.Request)
+					mu.Lock()
+					defer mu.Unlock()
+					checkingResident = false
+					if closed {
+						return
+					}
+					if err == nil {
+						resident = proof
+						m.log.Infof("file deletion content verified; repeat the explicit delete for %s", wait.Request.Source)
+					} else if !errors.Is(err, context.Canceled) {
+						m.log.Warnf("file deletion content preflight: %v", err)
+						m.recordFileDeleteFailure(context.Background(), record, cb.Identity, err)
+					}
+				}()
+			}
 			m.log.Warnf("file deletion refused; evidence preserved if pending: %v", err)
+			failure := cb.Identity + "\n" + err.Error()
+			if failure != lastFailure {
+				m.recordFileDeleteFailure(ctx, record, cb.Identity, err)
+				lastFailure = failure
+			}
 			if !commit.HasPendingRemoteFileDelete(record.LocalPath) {
 				s.close()
 				s = nil
 				return errors.Join(err, errAnchorDeleteNotPrepared)
 			}
+		}
+		if err == nil {
+			lastFailure = ""
 		}
 		return err
 	}
@@ -490,6 +557,7 @@ func (m *anchorManager) bindFileDelete(record localrepo.Record, bridge *anchorBr
 		err := m.recoverFileDelete(ctx, record)
 		if err != nil {
 			m.log.Warnf("file deletion recovery retained its fence: %v", err)
+			m.recordFileDeleteFailure(ctx, record, cb.Identity, err)
 		} else {
 			s = nil
 		}
@@ -498,6 +566,7 @@ func (m *anchorManager) bindFileDelete(record localrepo.Record, bridge *anchorBr
 	return func() {
 		mu.Lock()
 		defer mu.Unlock()
+		closed = true
 		if s != nil {
 			s.close()
 		}

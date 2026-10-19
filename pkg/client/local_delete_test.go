@@ -1,11 +1,45 @@
 package client
 
 import (
+	"encoding/json"
 	"math"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLocalFileDeletePreflightBoundAndTokenPrivate(t *testing.T) {
+	in := remoteDeleteFixture()
+	good := map[string]any{"mutation": "delete-file", "state": "present", "base_revision": float64(19), "local_base_revision": float64(17), "revision": float64(0), "root_url": in.RootURL, "uuid": in.UUID, "source": in.Source, "checksum_sha1": strings.Repeat("a", 40), "local_lock_token": "secret-lock"}
+	p, err := parseLocalFileDeleteProof(good, in)
+	if err != nil || p.BaseRevision != 17 || p.LockToken != "secret-lock" {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(p)
+	if strings.Contains(string(raw), "secret-lock") {
+		t.Fatal("token exposed")
+	}
+	for key, bad := range map[string]any{"local_base_revision": float64(20), "checksum_sha1": "bad", "local_lock_token": "bad\nsecret", "source": "another", "uuid": "other", "revision": float64(20), "state": "complete", "destination": "other"} {
+		copy := map[string]any{}
+		for k, v := range good {
+			copy[k] = v
+		}
+		copy[key] = bad
+		if _, err := parseLocalFileDeleteProof(copy, in); err == nil {
+			t.Fatal("unbound preflight", key)
+		}
+	}
+	good["state"] = "virtual"
+	good["checksum_sha1"] = nil
+	good["local_lock_token"] = nil
+	if _, err := parseLocalFileDeleteProof(good, in); err != nil {
+		t.Fatal(err)
+	}
+	delete(good, "local_lock_token")
+	if _, err := parseLocalFileDeleteProof(good, in); err == nil {
+		t.Fatal("missing token evidence treated as absence")
+	}
+}
 
 func TestLocalFileDeleteResultBoundToOneFile(t *testing.T) {
 	in := remoteDeleteFixture()

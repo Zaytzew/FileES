@@ -1,5 +1,19 @@
 # FileES native SVN client — explicit platform integration
 
+Single-file deletion preflight, 2026-10-19, base r2203 plus delta:
+`local-file-delete --wc WC --phase preflight --url ROOT --uuid UUID
+--base MANIFEST_REV --revision 0 SOURCE` requires the advertised
+`local_file_delete_preflight_v1`. This offline phase returns the actual
+`local_base_revision`, pristine `checksum_sha1` and private
+`local_lock_token` (explicit null when absent). It reads no document bytes
+and does not authorize deletion or observe a repository lock. Normal BASE,
+root/URL/UUID, properties, ancestry, copies/moves/conflicts are checked;
+a local token is permitted only in this read phase, never inspect/stage/
+ack/verify. The coordinator must independently verify an older CFAPI pin,
+conditional unlock ACK and completed OS action. A fully resident remote
+identity additionally needs a SHA1/USN/FileID proof prepared outside the
+delete callback; no automatic OS retry or forced hydration follows.
+
 Internal remote-tree prerequisite, 2026-10-09, base r2039 plus delta:
 `remote-tree-move --url ROOT --uuid UUID --revision N --operation-id UUID
 --message TEXT -- SOURCE DESTINATION` advertises `remote_tree_move_bound_v1`.

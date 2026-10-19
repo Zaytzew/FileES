@@ -4,10 +4,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path"
@@ -37,6 +39,10 @@ type anchorDeleteIntent struct {
 	Snapshot                                   watcher.FileDeleteSnapshot
 	Parents                                    []anchorMoveObject
 	TreeSHA256                                 string `json:",omitempty"`
+	ManifestIdentity                           string `json:",omitempty"`
+	LocalBaseRevision                          int64  `json:",omitempty"`
+	ContentSHA1                                string `json:",omitempty"`
+	ContentUSN                                 string `json:",omitempty"`
 }
 
 type anchorDeleteCompleted struct {
@@ -63,6 +69,10 @@ type anchorDeleteSession struct {
 	id                string
 	providerPID       uint32
 	treeSHA256        string
+	manifestIdentity  string
+	localBaseRevision int64
+	contentSHA1       string
+	contentUSN        string
 	in                *anchorDeleteIntent
 	guards            []windows.Handle
 	object            windows.Handle
@@ -132,6 +142,28 @@ func validateAnchorDeleteIntent(in anchorDeleteIntent, record localrepo.Record, 
 	if !ok || rel != in.Delete.Source || revision <= 0 || revision > in.Delete.BaseRevision {
 		return errors.New("file deletion lacks an exact remote identity")
 	}
+	if in.LocalBaseRevision != 0 && (in.LocalBaseRevision < revision || in.LocalBaseRevision > in.Delete.BaseRevision) {
+		return errors.New("file deletion local BASE differs from its verified range")
+	}
+	if in.ManifestIdentity != "" {
+		p, r, size, valid := parseAnchorRemoteIdentity(in.ManifestIdentity)
+		_, _, pinnedSize, _ := parseAnchorRemoteIdentity(cb.Identity)
+		if !valid || p != rel || r < revision || r > in.Delete.BaseRevision || size != pinnedSize {
+			return errors.New("file deletion manifest identity differs from its verified range")
+		}
+	}
+	if in.ContentSHA1 != "" {
+		raw, e := hex.DecodeString(in.ContentSHA1)
+		if e != nil || len(raw) != sha1.Size || strings.ToLower(in.ContentSHA1) != in.ContentSHA1 {
+			return errors.New("file deletion has invalid content proof")
+		}
+		usn, e := strconv.ParseInt(in.ContentUSN, 10, 64)
+		if e != nil || usn <= 0 || strconv.FormatInt(usn, 10) != in.ContentUSN {
+			return errors.New("file deletion has invalid content USN proof")
+		}
+	} else if in.ContentUSN != "" {
+		return errors.New("file deletion has incomplete content proof")
+	}
 	if err := watcher.ValidateFileDeleteSnapshot(&in.Snapshot, in.WC); err != nil {
 		return err
 	}
@@ -188,7 +220,8 @@ func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallba
 		}
 	}()
 	in := anchorDeleteIntent{Schema: "filees.anchor-file-delete-intent/v1", ServerID: s.record.ServerID, RepoID: s.record.RepoID,
-		AttachmentID: s.record.OperationID, WC: s.record.LocalPath, Root: root, ProviderPID: s.providerPID, Callback: cb, Delete: request, Snapshot: *snapshot, TreeSHA256: s.treeSHA256}
+		AttachmentID: s.record.OperationID, WC: s.record.LocalPath, Root: root, ProviderPID: s.providerPID, Callback: cb, Delete: request, Snapshot: *snapshot, TreeSHA256: s.treeSHA256,
+		ManifestIdentity: s.manifestIdentity, LocalBaseRevision: s.localBaseRevision, ContentSHA1: s.contentSHA1, ContentUSN: s.contentUSN}
 	for _, parent := range anchorDeleteParents(request.Source) {
 		pins, err := guardAnchorReleaseDirectories(filepath.Join(s.record.LocalPath, filepath.FromSlash(parent)), s.record.LocalPath)
 		if err != nil {
@@ -208,7 +241,7 @@ func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallba
 	if err != nil {
 		return err
 	}
-	if !anchorDeleteRemoteState(state, cb.Identity) {
+	if !anchorDeleteVerifiedState(state, cb.Identity, s.contentSHA1) || (s.contentSHA1 != "" && state.USN != s.contentUSN) {
 		return errors.New("file deletion requires a clean nonresident FileES file")
 	}
 	var info windows.ByHandleFileInformation
@@ -220,7 +253,7 @@ func (s *anchorDeleteSession) prepare(ctx context.Context, cb anchorDeleteCallba
 		return errors.New("file deletion object was replaced")
 	}
 	checked, err := inspect(ctx)
-	if err != nil || !anchorDeleteRemoteState(checked, cb.Identity) || checked.USN != state.USN {
+	if err != nil || !anchorDeleteVerifiedState(checked, cb.Identity, s.contentSHA1) || checked.USN != state.USN {
 		return errors.Join(err, errors.New("file deletion metadata changed before preparation"))
 	}
 	dir := anchorMoveStateDir(s.record)
@@ -262,6 +295,40 @@ func anchorDeleteRemoteState(s anchorDeleteFileState, identity string) bool {
 	// modified bytes, not the lack-of-local-data flag. Missing metrics are NOT 0.
 	return valid && s.sizesKnown && s.OK && s.Placeholder && !s.Directory && !s.Local && s.InSync && s.OnDisk == 0 && s.Modified == 0 &&
 		s.Identity == identity && s.Size != nil && *s.Size == size && err == nil && usn > 0 && strconv.FormatInt(usn, 10) == s.USN
+}
+
+func anchorDeleteResidentState(s anchorDeleteFileState, identity, checksum string) bool {
+	_, _, size, valid := parseAnchorRemoteIdentity(identity)
+	usn, err := strconv.ParseInt(s.USN, 10, 64)
+	return valid && len(checksum) == 40 && s.sizesKnown && s.OK && s.Placeholder && !s.Directory && !s.Local && s.InSync && !s.Partial &&
+		s.Modified == 0 && s.OnDisk == size && s.Size != nil && *s.Size == size && s.Identity == identity && err == nil && usn > 0 && strconv.FormatInt(usn, 10) == s.USN
+}
+
+func anchorDeleteVerifiedState(s anchorDeleteFileState, identity, checksum string) bool {
+	if checksum == "" {
+		return anchorDeleteRemoteState(s, identity)
+	}
+	return anchorDeleteResidentState(s, identity, checksum)
+}
+
+// Only after a complete-residency proof. The caller's retained read handle
+// excludes writes while hashing; the later callback rechecks USN and FileID.
+func verifyAnchorDeleteContents(ctx context.Context, h windows.Handle, size int64, expected string) error {
+	var duplicate windows.Handle
+	if err := windows.DuplicateHandle(windows.CurrentProcess(), h, windows.CurrentProcess(), &duplicate, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		return err
+	}
+	f := os.NewFile(uintptr(duplicate), "file-delete-content-proof")
+	defer f.Close()
+	sum := sha1.New()
+	n, err := io.Copy(sum, anchorReleaseReader{ctx, io.LimitReader(f, size+1)})
+	if err != nil {
+		return err
+	}
+	if n != size || hex.EncodeToString(sum.Sum(nil)) != expected {
+		return errors.New("file bytes differ from the published SVN BASE; deletion refused")
+	}
+	return ctx.Err()
 }
 
 func (s *anchorDeleteSession) complete(ctx context.Context, cb anchorDeleteCallback) error {

@@ -49,6 +49,9 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 		if err != nil {
 			return contract.RepoLifecycleResult{}, err
 		}
+		if record.ConversionID != "" {
+			return contract.RepoLifecycleResult{}, errors.New("working copy has a pending conversion")
+		}
 		if (record.RelocationQueued || record.State == localrepo.StateRelocating) && record.RelocationMoveExisting && record.PendingLocalPath == filepath.Clean(newLocalPath) {
 			if service.onRelocate != nil {
 				service.onRelocate(record.OperationID)
@@ -574,6 +577,9 @@ func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories
 		}
 		switch record.State {
 		case localrepo.StateDetaching, localrepo.StateDeleting, localrepo.StateDetached, localrepo.StateDeleted:
+			continue
+		}
+		if record.ConversionID != "" && record.State == localrepo.StateRelocating {
 			continue
 		}
 		if record.RepoURL != "" {

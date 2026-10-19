@@ -85,6 +85,9 @@ type Record struct {
 	// It enters StateRelocating only under the execution fence; kept through
 	// execution so shutdown can resume the same intent.
 	RelocationQueued bool `json:"relocation_queued,omitempty"`
+	// Conversion reuses the queued relocation's path reservation and execution
+	// fence, but must NEVER run through the ordinary relocation/detach cleanup.
+	ConversionID string `json:"conversion_id,omitempty"`
 	// RelocationAdoptExisting distinguishes a user-selected moved WC from a
 	// normal relocation. The provisioner must validate and adopt this path;
 	// it must never checkout into or otherwise replace it.
@@ -671,6 +674,9 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 		return Record{}, err
 	}
 	operationID := record.OperationID
+	if record.ConversionID != "" {
+		return Record{}, errors.New("working copy has a pending conversion")
+	}
 	if (record.State == StateRelocating || record.RelocationQueued) && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting && record.RelocationMoveExisting == moveExisting {
 		return record, nil
 	}
@@ -899,6 +905,9 @@ func (s *Store) beginDetachLocked(serverID, repoID string, deleteRepository bool
 		return Record{}, os.ErrNotExist
 	}
 	record := s.records[operationID]
+	if record.ConversionID != "" {
+		return Record{}, errors.New("finish or roll back the working-copy conversion before detach")
+	}
 	targetState := StateDetaching
 	if deleteRepository {
 		targetState = StateDeleting
@@ -1157,7 +1166,7 @@ func (s *Store) CheckServerAnchorRetirement(serverID string) error {
 
 // NeedsAnchorRetirement includes pending lifecycle and incomplete cleanup.
 func (r Record) NeedsAnchorRetirement() bool {
-	return r.Anchor && r.State != StateDeleted &&
+	return r.ConversionID != "" || r.Anchor && r.State != StateDeleted &&
 		!(r.State == StateDetached && (!r.RemoteDeletionObserved || r.LocalCleanupCompleted))
 }
 
@@ -1192,6 +1201,9 @@ func (s *Store) Get(operationID string) (Record, bool) {
 }
 
 func validate(r Record) error {
+	if err := validateConversionLifecycle(r); err != nil {
+		return err
+	}
 	if r.Purpose != "" && r.Purpose != clientview.PurposeUploadShelf {
 		return errors.New("local repository purpose is invalid")
 	}
@@ -1314,10 +1326,11 @@ func pathsOverlap(a, b string) bool {
 	if strings.TrimSpace(a) == "" || strings.TrimSpace(b) == "" {
 		return false
 	}
-	a = filepath.Clean(a)
-	b = filepath.Clean(b)
-	sep := string(filepath.Separator)
-	return a == b || strings.HasPrefix(a, b+sep) || strings.HasPrefix(b, a+sep)
+	inside := func(root, target string) bool {
+		rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+		return err == nil && (rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))))
+	}
+	return inside(a, b) || inside(b, a)
 }
 
 func (s *Store) persist() error {

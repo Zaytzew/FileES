@@ -7,7 +7,7 @@ import "errors"
 // pending local mutations. Recording a queue entry grants no such proof.
 func (s *Store) StartQueuedRelocation(expected Record) (Record, error) {
 	return s.update(expected.OperationID, func(record *Record) error {
-		if !record.RelocationQueued || record.State != StateAttached ||
+		if record.ConversionID != "" || !record.RelocationQueued || record.State != StateAttached ||
 			record.ServerID != expected.ServerID || record.RepoID != expected.RepoID ||
 			record.RepoURL != expected.RepoURL || record.LocalPath != expected.LocalPath ||
 			record.PendingLocalPath != expected.PendingLocalPath || record.Access != expected.Access {
@@ -20,7 +20,7 @@ func (s *Store) StartQueuedRelocation(expected Record) (Record, error) {
 
 func (s *Store) DeferQueuedRelocation(expected Record) (Record, error) {
 	return s.update(expected.OperationID, func(record *Record) error {
-		if !record.RelocationQueued || record.State != StateRelocating ||
+		if record.ConversionID != "" || !record.RelocationQueued || record.State != StateRelocating ||
 			record.LocalPath != expected.LocalPath || record.PendingLocalPath != expected.PendingLocalPath ||
 			record.RepoURL != expected.RepoURL || record.RemoteDeletionObserved {
 			return errors.New("queued relocation changed before deferral")

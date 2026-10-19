@@ -16,6 +16,9 @@ func (p *daemonProvisioner) requeuePendingRelocations() {
 	records := p.local.List()
 	sort.SliceStable(records, func(i, j int) bool { return records[i].UpdatedAt.Before(records[j].UpdatedAt) })
 	for _, record := range records {
+		if record.ConversionID != "" && record.LastError != "" {
+			continue
+		}
 		if record.RelocationQueued && !record.RemoteDeletionObserved &&
 			(record.State == localrepo.StateAttached || record.State == localrepo.StateRelocating) {
 			p.Enqueue(record.OperationID)
@@ -32,7 +35,7 @@ func (p *daemonProvisioner) runQueuedRelocation(ctx context.Context, id string) 
 	}
 	defer leave()
 	record, ok := p.local.Get(id)
-	if !ok || !record.RelocationQueued || record.RemoteDeletionObserved ||
+	if !ok || record.ConversionID != "" || !record.RelocationQueued || record.RemoteDeletionObserved ||
 		(record.State != localrepo.StateAttached && record.State != localrepo.StateRelocating) {
 		return
 	}

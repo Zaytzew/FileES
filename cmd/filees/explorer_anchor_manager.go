@@ -634,6 +634,32 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 	if err != nil {
 		return err
 	}
+	return m.seedTreeAt(ctx, record, reader, revision)
+}
+
+// seedAt is used by a conversion whose clean source and local preservation
+// plan are already bound to a numeric revision. Never replace that revision
+// with HEAD, including a valid empty r0 tree. Registration and root ownership
+// must be guarded by the caller; this does not connect a provider or clean up.
+func (m *anchorManager) seedAt(ctx context.Context, record localrepo.Record, revision int64) error {
+	if revision < 0 {
+		return errors.New("conversion seed requires an explicit nonnegative revision")
+	}
+	svn, err := m.svn(record.ServerID)
+	if err != nil {
+		return err
+	}
+	reader, ok := svn.(anchorTreeReader)
+	if !ok {
+		return errors.New("SVN client cannot list the repository tree")
+	}
+	return m.seedTreeAt(ctx, record, reader, revision)
+}
+
+func (m *anchorManager) seedTreeAt(ctx context.Context, record localrepo.Record, reader anchorTreeReader, revision int64) error {
+	if revision < 0 {
+		return errors.New("anchor seed revision is invalid")
+	}
 	dir, err := os.MkdirTemp("", "filees-anchor-plan-*")
 	if err != nil {
 		return err
@@ -644,9 +670,13 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 	if err != nil {
 		return err
 	}
+	if summary.Revision != revision || summary.Dirs < 0 || summary.Files < 0 {
+		return errors.New("seed listing differs from the bound revision")
+	}
 	levels := map[string][]client.HistoryTreeNode{}
 	var validated []anchorRemoteNode
 	pathBytes := 0
+	var dirs, files int64
 	if err := client.EachHistoryTreeNode(plan, func(node client.HistoryTreeNode) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -658,6 +688,9 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 		size := node.Size
 		if node.Kind == "dir" {
 			size = 0
+			dirs++
+		} else {
+			files++
 		}
 		if _, err := anchorRemoteIdentity(node.Path, revision, size); err != nil {
 			return err
@@ -674,6 +707,9 @@ func (m *anchorManager) seed(ctx context.Context, record localrepo.Record) error
 	}
 	if err := validateAnchorRemoteNodes(validated); err != nil {
 		return err
+	}
+	if dirs != summary.Dirs || files != summary.Files || (revision == 0 && len(validated) != 0) {
+		return errors.New("seed listing counts differ from the bound tree")
 	}
 	parents := make([]string, 0, len(levels))
 	for parent := range levels {

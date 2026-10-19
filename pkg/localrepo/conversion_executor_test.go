@@ -82,6 +82,16 @@ func executorFixture(t *testing.T) (*ConversionExecutor, *conversionEffectStub) 
 	return &ConversionExecutor{Journal: j, Effects: s}, s
 }
 
+func TestConversionExecutorCannotDeferPreparedRevalidation(t *testing.T) {
+	e, s := executorFixture(t)
+	conversionPrepared(t, e.Journal)
+	s.wait = "binding"
+	r, err := e.Run(t.Context())
+	if err == nil || errors.Is(err, ErrConversionWaiting) || r.Blocked == "" || r.Phase != ConversionRetaining {
+		t.Fatalf("prepared operation lost its execution fence: %+v %v", r, err)
+	}
+}
+
 func reopenConversionExecutor(t *testing.T, e *ConversionExecutor) {
 	t.Helper()
 	j, err := OpenConversionJournal(e.Journal.path)

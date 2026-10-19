@@ -158,6 +158,9 @@ func (s *Store) BeginRemoteCleanup(operationID, status string) error {
 	if !ok || !record.RemoteDeletionObserved {
 		return os.ErrNotExist
 	}
+	if record.ConversionID != "" {
+		return errors.New("interrupted conversion requires recovery before metadata cleanup")
+	}
 	if record.RemoteCleanupStarted {
 		return nil
 	}

@@ -40,6 +40,10 @@ type daemonProvisioner struct {
 	detachMu              sync.Mutex
 	localIntentMu         sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
 	creationWaiters       atomic.Int32 // metadata observers yield to queued creation preparation
+	conversionRoot        string
+	conversionMu          sync.Mutex
+	conversionJournals    map[string]*localrepo.ConversionJournal
+	newConversionEffects  func(localrepo.Record, localrepo.ConversionRecord) (conversionEffectsAdapter, error)
 	detachAnchor          func(context.Context, localrepo.Record) error
 	quiesceAnchor         func(context.Context, localrepo.Record) error
 	traceAnchorRelocation func(context.Context, localrepo.Record, string) // diagnostics only; cannot authorize or fail a move
@@ -182,6 +186,7 @@ type provisionedAttachment struct {
 
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
 	p := &daemonProvisioner{local: local, provisioning: store, profiles: make(map[string]clientprofile.Profile), queue: make(chan string, 32)}
+	p.conversionRoot = filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "wc-conversions")
 	p.newAttachmentSVN = func(profile clientprofile.Profile, operationID string) attachmentSVN {
 		return client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: profile.SVNTimeout(), LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
 	}
@@ -406,6 +411,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.mu.Unlock()
 	}()
 	ctx = workCtx
+	if record.ConversionID != "" {
+		p.runConversion(ctx, operationID)
+		return
+	}
 	if record.RelocationQueued {
 		p.runQueuedRelocation(ctx, operationID)
 		return
@@ -706,7 +715,7 @@ func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operat
 }
 
 func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || record.ConversionID != "" {
 		return
 	}
 	mode := provisioning.LocalPathAttach
@@ -1635,17 +1644,10 @@ func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation pro
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
 	if ok {
-		// The lifecycle record is newer after locate/relocate. The provisioning
-		// journal deliberately retains the path used when the repo was created.
-		localPath := record.LocalPath
-		if localPath == "" {
-			localPath = operation.LocalPath
-		}
-		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: localPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
-		select {
-		case p.attachments <- provisionedAttachment{Repo: repo}:
-		case <-ctx.Done():
-		}
+		// The lifecycle owns the current path AND its sparse/anchor mode after
+		// relocation or conversion. The older create journal cannot revive a
+		// converted point as an ordinary full read-write copy on restart.
+		p.publishLocalRecord(ctx, record, profile)
 	}
 }
 

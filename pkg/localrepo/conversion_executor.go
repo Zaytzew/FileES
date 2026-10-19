@@ -266,7 +266,7 @@ func (e *ConversionExecutor) fail(ctx context.Context, r ConversionRecord, cause
 	if ctx.Err() != nil {
 		return e.Journal.Get(), errors.Join(cause, ctx.Err())
 	}
-	if mayWait && errors.Is(cause, ErrConversionWaiting) {
+	if mayWait && r.Phase == ConversionWaiting && !r.Prepared && errors.Is(cause, ErrConversionWaiting) {
 		return r, cause
 	}
 	if errors.Is(cause, ErrConversionWaiting) {

@@ -37,6 +37,7 @@ type conversionObject struct {
 	Created, Modified windows.Filetime
 }
 type conversionTreePin struct {
+	Root    string // ephemeral custody binding; never serialized as a reusable proof
 	Objects []conversionObject
 	Files   map[string]*os.File
 	Streams map[string][]*os.File
@@ -111,7 +112,11 @@ func conversionFileHash(ctx context.Context, f *os.File, size int64) (string, er
 }
 
 func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, error) {
-	p := &conversionTreePin{Files: map[string]*os.File{}, Streams: map[string][]*os.File{}}
+	return conversionPinTreeObserved(ctx, root, nil)
+}
+
+func conversionPinTreeObserved(ctx context.Context, root string, observed func(int64)) (*conversionTreePin, error) {
+	p := &conversionTreePin{Root: filepath.Clean(root), Files: map[string]*os.File{}, Streams: map[string][]*os.File{}}
 	var walk func(string) error
 	walk = func(rel string) error {
 		if err := ctx.Err(); err != nil {
@@ -148,6 +153,9 @@ func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, er
 			node.SHA256, err = conversionFileHash(ctx, f, node.Size)
 			if err != nil {
 				return err
+			}
+			if observed != nil {
+				observed(node.Size)
 			}
 		}
 		p.Objects = append(p.Objects, node)
@@ -404,6 +412,10 @@ func conversionMissing(err error) bool {
 
 // Ordinary files only. The source and destination ancestors stay pinned.
 func conversionDelete(ctx context.Context, path string, want conversionObject) error {
+	return conversionDeleteObserved(ctx, path, want, nil)
+}
+
+func conversionDeleteObserved(ctx context.Context, path string, want conversionObject, observed func(int64)) error {
 	f, info, err := conversionOpen(path, windows.GENERIC_READ|windows.DELETE|windows.FILE_WRITE_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
 	if err != nil {
 		return err
@@ -435,6 +447,9 @@ func conversionDelete(ctx context.Context, path string, want conversionObject) e
 		}
 		if hash != want.SHA256 {
 			return errors.New("cleanup refuses changed bytes")
+		}
+		if observed != nil {
+			observed(want.Size)
 		}
 	}
 	if err := ctx.Err(); err != nil {

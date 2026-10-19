@@ -61,6 +61,8 @@ type nativeConversionEffects struct {
 	progress     func(string, int64, int64)
 	// Test-only fault injection at real per-object receipt boundaries; nil in production.
 	checkpoint func(string) error
+	// Test-only observation of successful whole-source/retirement hash bytes.
+	observeSourceRead func(int64)
 }
 
 func (f *nativeConversionEffects) bindConversionAdmission(check func(context.Context) error) {
@@ -214,7 +216,7 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 	refuse := func(err error) (localrepo.ConversionPreparation, error) {
 		return localrepo.ConversionPreparation{}, err
 	}
-	pin, err := conversionPinTree(ctx, r.SourcePath)
+	pin, err := conversionPinTreeObserved(ctx, r.SourcePath, f.observeSourceRead)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
 			return refuse(localrepo.ErrConversionWaiting)
@@ -364,9 +366,19 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 }
 
 func (f *nativeConversionEffects) pinOld(ctx context.Context, r localrepo.ConversionRecord, root string, partial bool) error {
-	f.old.close()
-	f.old = nil
-	pin, err := conversionPinTree(ctx, root)
+	pin := f.old
+	var objects []conversionObject
+	var err error
+	if pin != nil && pin.Root == filepath.Clean(root) && len(pin.Files) == len(pin.Objects) && len(pin.Objects) != 0 {
+		objects, err = pin.refresh(ctx, root)
+	} else {
+		f.old.close()
+		f.old = nil
+		pin, err = conversionPinTreeObserved(ctx, root, f.observeSourceRead)
+		if err == nil {
+			objects = pin.Objects
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -374,7 +386,7 @@ func (f *nativeConversionEffects) pinOld(ctx context.Context, r localrepo.Conver
 	for _, node := range f.plan.Objects {
 		expected[node.Path] = node
 	}
-	for _, got := range pin.Objects {
+	for _, got := range objects {
 		want, ok := expected[got.Path]
 		if !ok {
 			pin.close()
@@ -1079,7 +1091,7 @@ func (f *nativeConversionEffects) Cleanup(ctx context.Context, r localrepo.Conve
 					delete(f.old.Files, node.Path)
 				}
 			}
-			if err = conversionDelete(ctx, path, node); err != nil {
+			if err = conversionDeleteObserved(ctx, path, node, f.observeSourceRead); err != nil {
 				return err
 			}
 			if err = f.cut("deleted:" + node.Path); err != nil {

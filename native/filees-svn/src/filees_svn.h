@@ -152,7 +152,8 @@ svn_error_t *filees_wc_delete(const char *wc, svn_boolean_t live,
                               const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_status(const char *wc, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              svn_boolean_t remote, svn_boolean_t inspect, apr_pool_t *pool);
+                              svn_boolean_t remote, svn_boolean_t inspect,
+                              svn_boolean_t inventory, apr_pool_t *pool);
 svn_error_t *filees_info(const char *url, const char *wc, svn_boolean_t live,
                             svn_boolean_t inspect,
                             const char **rels, int n, apr_pool_t *pool);

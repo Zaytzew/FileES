@@ -56,6 +56,12 @@ struct status_row {
        a local add over an incoming add, which left 93 such conflicts
        unnoticed in an owner's working copy (2026-09-25). */
     svn_boolean_t conflicted;
+    /* Offline conversion inventory: explicit facts, never defaults inferred
+       from an omitted root or from a normal text status alone. */
+    svn_node_kind_t kind;
+    svn_depth_t depth;
+    svn_revnum_t revision;
+    svn_boolean_t versioned, copied, switched, file_external, wc_locked;
 };
 
 static svn_error_t *collect_status(void *baton, const char *path,
@@ -68,6 +74,7 @@ static svn_error_t *collect_status(void *baton, const char *path,
     (void)pool;
     SVN_ERR(filees_relpath(&rel, b->wc, status->local_abspath, b->pool));
     row = apr_array_push(b->rows);
+    memset(row, 0, sizeof(*row));
     row->path = apr_pstrdup(b->pool, rel);
     /* CLI --xml: item is text when the only change is properties
        (node_status=modified, text_status=normal, prop_status=modified). */
@@ -78,6 +85,14 @@ static svn_error_t *collect_status(void *baton, const char *path,
     row->local_lock = status->lock ? svn_lock_dup(status->lock, b->pool) : NULL;
     row->repos_lock = status->repos_lock ? svn_lock_dup(status->repos_lock, b->pool) : NULL;
     row->conflicted = status->conflicted;
+    row->kind = status->kind;
+    row->depth = status->depth;
+    row->revision = status->revision;
+    row->versioned = status->versioned;
+    row->copied = status->copied;
+    row->switched = status->switched;
+    row->file_external = status->file_external;
+    row->wc_locked = status->wc_is_locked;
     return SVN_NO_ERROR;
 }
 
@@ -125,6 +140,9 @@ static svn_error_t *nested_unversioned_status(svn_error_t *original,
                 err = filees_relpath(&rel, b->wc, path, pool);
                 if (err) return svn_error_compose_create(original, err);
                 row = apr_array_push(b->rows);
+                memset(row, 0, sizeof(*row));
+                row->revision = SVN_INVALID_REVNUM;
+                row->depth = svn_depth_unknown;
                 row->path = rel;
                 row->item = ancestor->item;
                 row->props = "none";
@@ -161,6 +179,9 @@ static svn_error_t *absent_status(svn_error_t *original, const char *path,
     err = filees_relpath(&rel, b->wc, path, pool);
     if (err) return svn_error_compose_create(original, err);
     row = apr_array_push(b->rows);
+    memset(row, 0, sizeof(*row));
+    row->revision = SVN_INVALID_REVNUM;
+    row->depth = svn_depth_unknown;
     row->path = rel;
     row->item = row->props = "none";
     row->local_lock = row->repos_lock = NULL;
@@ -182,7 +203,8 @@ static void status_lock(const char *name, const svn_lock_t *lock, apr_pool_t *po
 
 svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              svn_boolean_t remote, svn_boolean_t inspect, apr_pool_t *pool)
+                              svn_boolean_t remote, svn_boolean_t inspect,
+                              svn_boolean_t inventory, apr_pool_t *pool)
 {
     const char *wc;
     svn_client_ctx_t *ctx;
@@ -235,6 +257,17 @@ svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
         printf(",\"props\":");
         filees_json_string(row->props);
         if (row->conflicted) printf(",\"conflicted\":true");
+        if (inventory) {
+            printf(",\"kind\":"); filees_json_string(svn_node_kind_to_word(row->kind));
+            printf(",\"depth\":"); filees_json_string(svn_depth_to_word(row->depth));
+            printf(",\"revision\":");
+            if (SVN_IS_VALID_REVNUM(row->revision)) printf("%ld", (long)row->revision);
+            else printf("null");
+            printf(",\"versioned\":%s,\"copied\":%s,\"switched\":%s,\"file_external\":%s,\"wc_locked\":%s",
+                   row->versioned ? "true" : "false", row->copied ? "true" : "false",
+                   row->switched ? "true" : "false", row->file_external ? "true" : "false",
+                   row->wc_locked ? "true" : "false");
+        }
         if (remote) {
             status_lock("local_lock", row->local_lock, pool);
             status_lock("repos_lock", row->repos_lock, pool);
@@ -242,6 +275,7 @@ svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
         putchar('}');
     }
     printf("]");
+    if (inventory) printf(",\"inventory_version\":1");
     if (remote) {
         printf(",\"against_revision\":");
         if (SVN_IS_VALID_REVNUM(against)) printf("%ld", (long)against);

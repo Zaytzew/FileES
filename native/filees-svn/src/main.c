@@ -45,6 +45,7 @@ static void print_ok_version(void)
     printf(",\"sparse_adopt_batch_v1\"");
     printf(",\"unlock_token_receipt_v1\"");
     printf(",\"local_file_delete_preflight_v1\"");
+    printf(",\"conversion_inventory_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -554,7 +555,7 @@ static svn_error_t *run_info(int argc, const char **argv, apr_pool_t *pool)
 static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *verb, *wc = NULL;
-    svn_boolean_t live = TRUE, recursive = FALSE, depth_set = FALSE, remote = FALSE, inspect = FALSE;
+    svn_boolean_t live = TRUE, recursive = FALSE, depth_set = FALSE, remote = FALSE, inspect = FALSE, inventory = FALSE;
     svn_depth_t depth = svn_depth_empty;
     const char *accept = NULL, *propname = NULL, *propval = NULL;
     const char *paths[FILEES_SVN_MAX_PATHS];
@@ -750,6 +751,7 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 
     for (i = 2; i < argc; ++i) {
         if (!strcmp(verb, "status") && !strcmp(argv[i], "--show-updates")) { remote = TRUE; continue; }
+        if (!strcmp(verb, "status") && !strcmp(argv[i], "--conversion-inventory")) { inventory = TRUE; continue; }
         if (!strcmp(verb, "status") && !strcmp(argv[i], "--inspect-wc") && !wc && i + 1 < argc) {
             wc = argv[++i]; inspect = TRUE; continue;
         }
@@ -803,7 +805,9 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         SVN_ERR(filees_wc_delete(wc, live, paths, n, pool));
     } else if (!strcmp(verb, "status")) {
         if (!depth_set) depth = (n == 0) ? svn_depth_infinity : svn_depth_empty;
-        SVN_ERR(filees_wc_status(wc, live, paths, n, depth, remote, inspect, pool));
+        if (inventory && (!inspect || remote || n || depth != svn_depth_infinity))
+            return filees_refuse("conversion inventory requires offline whole-WC inspection");
+        SVN_ERR(filees_wc_status(wc, live, paths, n, depth, remote, inspect, inventory, pool));
         return SVN_NO_ERROR;
     } else if (!strcmp(verb, "propset")) {
         SVN_ERR(filees_wc_propset(wc, live, propname, propval, paths, n, pool));

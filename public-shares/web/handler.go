@@ -525,7 +525,7 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 			h.notFound(w)
 			return
 		}
-		claims = freshClaims
+		projection, claims = freshProjection, freshClaims
 		leaves, err = h.prepareBundle(request.Context(), claims, objects)
 		if err != nil {
 			h.downloadFailure(w, err)
@@ -537,14 +537,14 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 	w.Header().Set("Content-Disposition", contentDisposition(archiveName+".zip"))
 	w.Header().Set("Cache-Control", "private, no-store")
 	archive := zip.NewWriter(w)
+	modified := bundleModTime(projection)
 	for _, leaf := range leaves {
 		file, openErr := leaf.lease.Open()
 		if openErr != nil {
 			_ = archive.Close()
 			return
 		}
-		header := &zip.FileHeader{Name: leaf.name, Method: zip.Store}
-		header.SetModTime(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC))
+		header := &zip.FileHeader{Name: leaf.name, Method: zip.Store, Modified: modified}
 		entry, createErr := archive.CreateHeader(header)
 		if createErr == nil {
 			_, createErr = io.CopyN(entry, file, leaf.size)
@@ -1146,6 +1146,21 @@ func publishedAt(projection channel.Projection) time.Time {
 		return projection.RevisionAt
 	}
 	return projection.UpdatedAt
+}
+
+// bundleModTime dates every file of a ZIP with the publication the page
+// shows: the same content always yields the same archive, and the date
+// says something true about it. The archive used to carry 1980-01-01 00:00
+// UTC, the very first moment a ZIP (DOS) date can hold; east of UTC that
+// instant is still 1979 locally, below the format's range, and readers showed
+// 30 December 1899 or 1979 (owner, 2026-10-19). Without any known date the
+// fallback stays a day inside the range in every time zone.
+func bundleModTime(projection channel.Projection) time.Time {
+	floor := time.Date(1980, 1, 2, 0, 0, 0, 0, time.UTC)
+	if at := publishedAt(projection); at.After(floor) {
+		return at.UTC()
+	}
+	return floor
 }
 
 func listingDateLabel(projection channel.Projection) string {

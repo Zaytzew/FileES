@@ -484,6 +484,55 @@ func TestConversionNativeBuiltinIgnoreReceiptRecovery(t *testing.T) {
 	}
 }
 
+func TestConversionNativePointMetadataReceiptRecovery(t *testing.T) {
+	for _, lateData := range []bool{false, true} {
+		t.Run(fmt.Sprint("late-data-", lateData), func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			f.hook = func(label string) error {
+				if label == "point-metadata-pending" {
+					return errors.New("fixture before root metadata")
+				}
+				return nil
+			}
+			f.run(t, t.Context())
+			r, _ := f.p.local.Get(f.record.OperationID)
+			j, err := f.p.conversionJournal(r, false)
+			if err != nil || j.Get().Phase != localrepo.ConversionCreating || r.LastError == "" {
+				t.Fatal("metadata boundary not reached", r, err)
+			}
+			var receipt conversionPointReceipt
+			if err := conversionReadJSON(filepath.Join(f.p.conversionRoot, r.ConversionID, "point.json"), &receipt); err != nil || receipt.ID == "" || !receipt.MetadataPending {
+				t.Fatal("missing root custody before metadata", receipt, err)
+			}
+			late := filepath.Join(r.LocalPath, "late-data.txt")
+			if lateData {
+				if err := os.WriteFile(late, []byte("preserve new data"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.restart(t)
+			if _, err := f.p.WCConversion(t.Context(), contract.WCConversionPayload{ServerID: r.ServerID, RepoID: r.RepoID, Action: "retry", OperationID: r.ConversionID}); err != nil {
+				t.Fatal(err)
+			}
+			f.run(t, t.Context())
+			if !lateData {
+				f.assertComplete(t)
+				return
+			}
+			r, _ = f.p.local.Get(f.record.OperationID)
+			if r.LastError == "" {
+				t.Fatal("late data did not stop initialization")
+			}
+			if b, err := os.ReadFile(late); err != nil || string(b) != "preserve new data" {
+				t.Fatal("late data lost", err)
+			}
+			if _, err := os.Stat(r.PendingLocalPath); err != nil {
+				t.Fatal("retained source lost", err)
+			}
+		})
+	}
+}
+
 func TestConversionNativeResumesCopyAndPartialCleanup(t *testing.T) {
 	for _, boundary := range []string{"copy-ready:local.bak", "copy-moved:local.bak", "deleted:.svn/wc.db"} {
 		t.Run(boundary, func(t *testing.T) {
@@ -976,7 +1025,7 @@ func TestConversionNativeProcessChild(t *testing.T) {
 }
 
 func TestConversionNativeRecoversAfterRealProcessDeath(t *testing.T) {
-	for _, boundary := range []string{"copy-moved:local.bak", "deleted:.svn/wc.db", "stream-ready:folder/drawing00.dwg:Zone.Identifier:$DATA", "stream-moved:folder/drawing00.dwg:Zone.Identifier:$DATA"} {
+	for _, boundary := range []string{"point-metadata-pending", "point-metadata-ready", "copy-moved:local.bak", "deleted:.svn/wc.db", "stream-ready:folder/drawing00.dwg:Zone.Identifier:$DATA", "stream-moved:folder/drawing00.dwg:Zone.Identifier:$DATA"} {
 		t.Run(boundary, func(t *testing.T) {
 			f := newConversionNativeRunFixture(t)
 			streamPath := filepath.Join(f.record.LocalPath, "folder", "drawing00.dwg") + ":Zone.Identifier"

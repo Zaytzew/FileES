@@ -67,6 +67,59 @@ func TestConversionDACLComparisonDoesNotRelaxPermissions(t *testing.T) {
 	}
 }
 
+func TestConversionDACLComparisonExcludesUnrequestedDescriptorComponents(t *testing.T) {
+	want := "O:SYG:BAD:AI(A;;FA;;;SY)(A;;FR;;;BU)"
+	for _, row := range []struct {
+		actual string
+		same   bool
+	}{
+		{"D:(A;;FA;;;SY)(A;;FR;;;BU)", true},
+		{"O:BAG:SYD:(A;;FA;;;SY)(A;;FR;;;BU)", true},
+		{"O:BAG:SYD:(A;;FA;;;SY)(A;;FR;;;BU)S:(AU;SA;FA;;;WD)", true},
+		{"D:P(A;;FA;;;SY)(A;;FR;;;BU)", false},
+		{"O:SYG:BAD:(A;;FA;;;SY)(A;;FA;;;BU)", false},
+		{"D:(A;;FR;;;BU)(A;;FA;;;SY)", false},
+		{"", false}, {"O:SYG:BA", false}, {"not a descriptor", false},
+	} {
+		if conversionSameDACL(want, row.actual) != row.same {
+			t.Fatal("incorrect DACL-only comparison", row.actual)
+		}
+	}
+}
+
+func TestConversionMetadataDoesNotCopyDescriptorOwnerAndGroup(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "new-root")
+	if err := os.Mkdir(p, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, info, err := conversionOpen(p, windows.GENERIC_READ|windows.WRITE_DAC|windows.FILE_WRITE_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	before, err := windows.GetSecurityInfo(windows.Handle(file.Fd()), windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPlanDACL := "O:SYG:BAD:P(A;OICI;FA;;;" + user.User.Sid.String() + ")"
+	node := conversionObject{Directory: true, DACL: oldPlanDACL, Attributes: info.FileAttributes, Created: info.CreationTime, Modified: info.LastWriteTime}
+	if err := conversionSetMetadata(file, node); err != nil {
+		t.Fatal(err)
+	}
+	after, err := windows.GetSecurityInfo(windows.Handle(file.Fd()), windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION)
+	if err != nil || before.String() != after.String() {
+		t.Fatal("owner/group changed", err)
+	}
+	got, err := conversionDACL(file)
+	if err != nil || !conversionSameDACL(got, oldPlanDACL) || got != "D:P(A;OICI;FA;;;"+user.User.Sid.String()+")" {
+		t.Fatal("DACL-only proof changed permissions", got, err)
+	}
+}
+
 func TestConversionSnapshotRefusesHardlinks(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "wc")

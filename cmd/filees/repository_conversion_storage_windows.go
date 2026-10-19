@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unsafe"
@@ -205,7 +206,46 @@ func conversionSameDACL(a, b string) bool {
 		prefix := strings.ReplaceAll(strings.ReplaceAll(s[:at], "AI", ""), "AR", "")
 		return prefix + s[at:]
 	}
-	return clean(a) == clean(b)
+	left, leftErr := conversionDACLString(a)
+	right, rightErr := conversionDACLString(b)
+	return leftErr == nil && rightErr == nil && clean(left) == clean(right)
+}
+
+// GetSecurityInfo may include extra descriptor components even when only
+// DACL was requested. SECURITY_DESCRIPTOR.String serializes all components;
+// comparing that output would accidentally include owner/group/SACL, which
+// this conversion deliberately neither copies nor authorizes changing.
+// Rebuild only the DACL, keeping every ordered ACE and the protection bit.
+func conversionDACLString(raw string) (string, error) {
+	sd, err := windows.SecurityDescriptorFromString(raw)
+	if err != nil {
+		return "", err
+	}
+	dacl, defaulted, err := sd.DACL()
+	if err != nil || dacl == nil {
+		return "", errors.New("conversion requires a present non-null DACL")
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return "", err
+	}
+	only, err := windows.NewSecurityDescriptor()
+	if err != nil {
+		return "", err
+	}
+	if err = only.SetDACL(dacl, true, defaulted); err != nil {
+		return "", err
+	}
+	mask := windows.SECURITY_DESCRIPTOR_CONTROL(windows.SE_DACL_PROTECTED | windows.SE_DACL_AUTO_INHERITED | windows.SE_DACL_AUTO_INHERIT_REQ)
+	if err = only.SetControl(mask, control&mask); err != nil {
+		return "", err
+	}
+	result := only.String()
+	runtime.KeepAlive(sd)
+	if result == "" {
+		return "", errors.New("conversion could not serialize DACL")
+	}
+	return result, nil
 }
 
 func conversionDACL(file *os.File) (string, error) {
@@ -213,7 +253,7 @@ func conversionDACL(file *os.File) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return sd.String(), nil
+	return conversionDACLString(sd.String())
 }
 
 // DACL-only clone: no owner/SACL privilege escalation or best-effort fallback.

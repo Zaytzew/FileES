@@ -37,6 +37,7 @@ type conversionFSPlan struct {
 type conversionPointReceipt struct {
 	Operation, ID                                         string
 	Checkout, Registered, CleanupStarted, CleanupComplete bool
+	MetadataPending                                       bool // identity persisted before applying the original root metadata
 }
 type conversionCopyReceipt struct{ Operation, Path, Stage, ID, Phase string }
 type conversionDeleteReceipt struct {
@@ -480,11 +481,7 @@ func (f *nativeConversionEffects) Point(ctx context.Context, r localrepo.Convers
 			return localrepo.ConversionPoint{}, err
 		}
 		f.state.ID = conversionID(info)
-		err = conversionSetMetadata(root, f.plan.Objects[0])
-		if err != nil {
-			root.Close()
-			return localrepo.ConversionPoint{}, err
-		}
+		f.state.MetadataPending = true
 		err = f.saveState(r)
 		root.Close()
 		if err != nil {
@@ -496,6 +493,36 @@ func (f *nativeConversionEffects) Point(ctx context.Context, r localrepo.Convers
 		return localrepo.ConversionPoint{}, err
 	}
 	defer closeAnchorReleaseGuards(guards)
+	if f.state.MetadataPending {
+		root, info, err := conversionOpen(r.SourcePath, windows.GENERIC_READ|windows.WRITE_DAC|windows.FILE_WRITE_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+		if err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+		defer root.Close()
+		if conversionID(info) != f.state.ID {
+			return localrepo.ConversionPoint{}, errors.New("point identity changed before metadata")
+		}
+		entries, err := readPinnedMoveDirectory(windows.Handle(root.Fd()), r.SourcePath)
+		if err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+		if len(entries) != 0 {
+			return localrepo.ConversionPoint{}, errors.New("new data appeared before point metadata")
+		}
+		if err = f.cut("point-metadata-pending"); err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+		if err = conversionSetMetadata(root, f.plan.Objects[0]); err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+		f.state.MetadataPending = false
+		if err = f.saveState(r); err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+		if err = f.cut("point-metadata-ready"); err != nil {
+			return localrepo.ConversionPoint{}, err
+		}
+	}
 	if !f.state.Checkout {
 		if _, err := os.Lstat(filepath.Join(r.SourcePath, ".svn")); conversionMissing(err) {
 			if _, err = f.svn.CheckoutDepthEmptyAt(ctx, r.RepoURL, r.SourcePath, r.Revision); err != nil {

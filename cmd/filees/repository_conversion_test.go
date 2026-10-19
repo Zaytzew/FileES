@@ -206,6 +206,10 @@ func TestDaemonConversionQueueOwnsSingleJournalAndMetadataPreservingFence(t *tes
 	if !restored.Repo.Anchor || !restored.Repo.Sparse {
 		t.Fatal("old create journal revived full writer", restored)
 	}
+	configured, err := reconcileConfiguredRepositoryLifecycle(f.p.local, []config.Repo{{ID: r.RepoID, ServerID: r.ServerID, RepoURL: r.RepoURL, LocalPath: r.LocalPath}})
+	if err != nil || len(configured) != 1 || !configured[0].Anchor || !configured[0].Sparse {
+		t.Fatal("static config revived full writer after conversion", configured, err)
+	}
 }
 
 func TestDaemonConversionWaitingResumesOnlyOriginalWriter(t *testing.T) {
@@ -374,6 +378,23 @@ func TestDaemonConversionUnavailableDoesNotCreateJournalOrReservePaths(t *testin
 	}
 	if _, err := os.Stat(f.p.conversionRoot); !os.IsNotExist(err) {
 		t.Fatal("unavailable feature wrote journal", err)
+	}
+}
+
+func TestDaemonConversionWaitsForStartupProjectionWithoutBlockingJournal(t *testing.T) {
+	f := newDaemonConversionFixture(t)
+	r := f.queue(t)
+	f.p.conversionReady = func(localrepo.Record) bool { return false }
+	f.p.runOne(t.Context(), r.OperationID)
+	got, _ := f.p.local.Get(r.OperationID)
+	if got != r || len(f.events) != 0 || len(f.effects.calls) != 0 {
+		t.Fatal("startup absence became a refusal/effect", got)
+	}
+	f.p.conversionReady = func(localrepo.Record) bool { return true }
+	f.run(t, t.Context())
+	finished, _ := f.p.local.Get(r.OperationID)
+	if !finished.Anchor {
+		t.Fatal(finished)
 	}
 }
 

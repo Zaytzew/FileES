@@ -86,6 +86,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	provisioner.quiesceAnchor = anchors.quiesceRelocation
 	provisioner.traceAnchorRelocation = anchors.traceRelocation
 	provisioner.anchorChanged = anchors.notifyLifecycle
+	wireNativeConversion(provisioner, anchors)
 	return anchors.run
 }
 

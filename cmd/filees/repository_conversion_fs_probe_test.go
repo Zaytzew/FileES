@@ -1,0 +1,627 @@
+//go:build windows && native_cfapi_probe && !nocfapi
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"filees/internal/svnurl"
+	"filees/pkg/client"
+	"filees/pkg/clientprofile"
+	"filees/pkg/cloudfiles"
+	"filees/pkg/localrepo"
+	"filees/pkg/provisioning"
+	"fmt"
+	"golang.org/x/sys/windows"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestConversionInventoryUnderMetadataReadPin(t *testing.T) {
+	base := t.TempDir()
+	repo, wc := filepath.Join(base, "repo"), filepath.Join(base, "wc")
+	probeRun(t, base, probeTool(t, "FILEES_PROBE_SVNADMIN"), "create", repo)
+	probeRun(t, base, probeTool(t, "FILEES_PROBE_SVN"), "checkout", "-q", svnurl.File(repo), wc)
+	name, _ := windows.UTF16PtrFromString(filepath.Join(wc, ".svn", "wc.db"))
+	h, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+	cli := client.New(client.Options{NativeSVNPath: probeTool(t, "FILEES_SVN_PROBE"), Timeout: time.Minute})
+	_, err = cli.(client.ConversionInventoryReader).ConversionInventory(context.Background(), wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConversionRenamePinnedTree(t *testing.T) {
+	for _, withChild := range []bool{false, true} {
+		t.Run(fmt.Sprint(withChild), func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "old")
+			if err := os.MkdirAll(filepath.Join(root, "sub"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "sub", "file"), []byte("x"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var pin *conversionTreePin
+			if withChild {
+				var err error
+				pin, err = conversionPinTree(t.Context(), root)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				file, _, err := conversionOpen(root, windows.GENERIC_READ|windows.DELETE, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pin = &conversionTreePin{Files: map[string]*os.File{".": file}}
+			}
+			defer pin.close()
+			err := conversionRename(pin.Files["."], filepath.Join(base, "new"))
+			if withChild {
+				if err == nil {
+					t.Fatal("expected Windows descendant pin refusal")
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+type conversionProbeClient struct{ anchorBatchProbeReader }
+
+func (c conversionProbeClient) ConversionInventory(ctx context.Context, wc string) (client.ConversionInventory, error) {
+	return c.Client.(client.ConversionInventoryReader).ConversionInventory(ctx, wc)
+}
+func (c conversionProbeClient) InspectConversionRoot(ctx context.Context, target string) (client.ConversionRootInfo, error) {
+	actual := target
+	if target == c.authority {
+		actual = c.actual
+	}
+	info, err := c.Client.(client.ConversionBoundReader).InspectConversionRoot(ctx, actual)
+	if err == nil && info.URL == c.actual {
+		info.URL = c.authority
+	}
+	return info, err
+}
+func (c conversionProbeClient) CheckoutDepthEmptyAt(ctx context.Context, target, wc string, rev int64) (string, error) {
+	return c.Client.(client.ConversionBoundReader).CheckoutDepthEmptyAt(ctx, c.target(target), wc, rev)
+}
+func (c conversionProbeClient) HistoryFetchTree(ctx context.Context, target string, rev int64, dest string, pairs []client.HistoryTreePair) (client.HistoryTreeReceipt, error) {
+	return c.Client.(client.HistoryTreeReader).HistoryFetchTree(ctx, c.target(target), rev, dest, pairs)
+}
+
+type conversionNativeRunFixture struct {
+	p         *daemonProvisioner
+	record    localrepo.Record
+	manager   *anchorManager
+	events    chan provisionedAttachment
+	directory string
+	storePath string
+	hook      func(string) error
+}
+
+func newConversionNativeRunFixture(t *testing.T, counts ...int) *conversionNativeRunFixture {
+	t.Helper()
+	base := t.TempDir()
+	repo, wc := filepath.Join(base, "repo"), filepath.Join(base, "WC-Zażółć")
+	cli, admin := probeTool(t, "FILEES_PROBE_SVN"), probeTool(t, "FILEES_PROBE_SVNADMIN")
+	probeRun(t, base, admin, "create", repo)
+	uri := svnurl.File(repo)
+	probeRun(t, base, cli, "checkout", "-q", uri, wc)
+	if err := os.MkdirAll(filepath.Join(wc, "folder"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	count := 12
+	if len(counts) > 0 {
+		count = counts[0]
+	}
+	for i := range count {
+		if err := os.WriteFile(filepath.Join(wc, "folder", fmt.Sprintf("drawing%02d.dwg", i)), bytes.Repeat([]byte("published fixture\n"), i+1), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probeRun(t, base, cli, "add", "--force", wc)
+	probeRun(t, base, cli, "propset", "svn:ignore", "*.bak\ncache\nempty-cache", wc)
+	probeRun(t, base, cli, "commit", "-q", "-m", "conversion fixture", wc)
+	probeRun(t, base, cli, "update", "-q", wc)
+	if err := os.MkdirAll(filepath.Join(wc, "cache", "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(wc, "empty-cache"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"local.bak", "cache/nested/ignored.bin"} {
+		if err := os.WriteFile(filepath.Join(wc, filepath.FromSlash(rel)), []byte("preserved "+rel), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ensureWorkingCopyIdentity(wc, expectedWorkingCopyIdentity("lab", "repo", "svn+ssh://fixture/repo")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := localrepo.Open(filepath.Join(base, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := s.EnsureConfiguredAttached("lab", "repo", "svn+ssh://fixture/repo", "rw", wc, "Fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(base, "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newDaemonProvisioner(s, journal, []clientprofile.Profile{{ServerID: "lab", ClientID: "activation"}})
+	p.conversionRoot = filepath.Join(base, "conversions")
+	p.anchorEnabled = func(string) bool { return true }
+	p.relocationCheck = func(localrepo.Record) error { return nil }
+	events := make(chan provisionedAttachment, 16)
+	p.attachments = events
+	native := client.New(client.Options{NativeSVNPath: probeTool(t, "FILEES_SVN_PROBE"), Timeout: time.Minute})
+	mapper := conversionProbeClient{anchorBatchProbeReader{Client: native, actual: uri, authority: record.RepoURL}}
+	m := &anchorManager{helper: probeTool(t, "FILEES_CFAPI"), newSVN: func(string) (client.Client, error) { return mapper, nil }}
+	f := &conversionNativeRunFixture{p: p, record: record, manager: m, events: events, directory: base, storePath: filepath.Join(base, "lifecycle.json")}
+	wireNativeConversion(p, m)
+	factory := p.newConversionEffects
+	p.newConversionEffects = func(record localrepo.Record, intent localrepo.ConversionRecord) (conversionEffectsAdapter, error) {
+		adapter, err := factory(record, intent)
+		if err == nil {
+			adapter.(*nativeConversionEffects).checkpoint = func(label string) error {
+				if f.hook != nil {
+					return f.hook(label)
+				}
+				return nil
+			}
+		}
+		return adapter, err
+	}
+	t.Cleanup(func() {
+		for _, path := range []string{wc} {
+			answer, _ := m.call(context.Background(), "", "info", "--root", path)
+			if answer.OK && answer.Ours {
+				_, _ = m.call(context.Background(), "", "unregister", "--root", path)
+			}
+		}
+	})
+	if _, err = p.queueConversion(t.Context(), record.ServerID, record.RepoID); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+func (f *conversionNativeRunFixture) run(t *testing.T, ctx context.Context) {
+	t.Helper()
+	daemonConversionFixture{p: f.p, r: f.record, events: f.events}.run(t, ctx)
+}
+func (f *conversionNativeRunFixture) restart(t *testing.T) {
+	t.Helper()
+	s, err := localrepo.Open(f.storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.p.local = s
+	f.p.conversionJournals = nil
+	f.hook = nil
+}
+func (f *conversionNativeRunFixture) assertComplete(t *testing.T) {
+	t.Helper()
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if r.State != localrepo.StateAttached || !r.Anchor || !r.Sparse || r.ConversionID != "" || r.LastError != "" {
+		t.Fatalf("conversion not complete: %+v", r)
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(r.LocalPath), "."+filepath.Base(r.LocalPath)+"-converting")); !conversionMissing(err) {
+		t.Fatal("old copy not retired", err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(r.LocalPath, "empty-cache")); err != nil || len(entries) != 0 {
+		t.Fatal("empty ignored directory was not preserved", err)
+	}
+	for _, rel := range []string{"local.bak", "cache/nested/ignored.bin"} {
+		raw, err := os.ReadFile(filepath.Join(r.LocalPath, filepath.FromSlash(rel)))
+		if err != nil || string(raw) != "preserved "+rel {
+			t.Fatal("ignored bytes lost", rel, string(raw), err)
+		}
+	}
+	path := filepath.Join(r.LocalPath, "folder", "drawing00.dwg")
+	info, err := os.Stat(path)
+	if err != nil || !cloudfiles.IsPlaceholder(path) || !cloudfiles.RecallsOnRead(info) {
+		t.Fatal("remote file was hydrated", err)
+	}
+	if len(f.events) != 1 {
+		t.Fatal("no completed runtime publication", len(f.events))
+	}
+	event := <-f.events
+	if !event.Repo.Anchor || !event.Repo.Sparse {
+		t.Fatal(event)
+	}
+}
+
+func TestConversionNativeCompleteWithIgnoredFilesAndRetirement(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	f.run(t, t.Context())
+	f.assertComplete(t)
+}
+
+func TestConversionNativeResumesCopyAndPartialCleanup(t *testing.T) {
+	for _, boundary := range []string{"copy-ready:local.bak", "copy-moved:local.bak", "deleted:.svn/wc.db"} {
+		t.Run(boundary, func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			hit := false
+			f.hook = func(label string) error {
+				if label == boundary {
+					hit = true
+					cancel()
+					return context.Canceled
+				}
+				return nil
+			}
+			f.run(t, ctx)
+			if !hit {
+				r, _ := f.p.local.Get(f.record.OperationID)
+				t.Fatal("fault boundary not reached", r)
+			}
+			f.restart(t)
+			f.run(t, t.Context())
+			f.assertComplete(t)
+		})
+	}
+}
+
+func TestConversionNativeRejectsLateIgnoredEditWithoutLosingSource(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	hit := false
+	f.hook = func(label string) error {
+		if label == "copy-moved:local.bak" {
+			hit = true
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	f.run(t, ctx)
+	if !hit {
+		r, _ := f.p.local.Get(f.record.OperationID)
+		t.Fatal("copy not reached", r)
+	}
+	if err := os.WriteFile(filepath.Join(f.record.LocalPath, "local.bak"), []byte("new local bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.restart(t)
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if r.LastError == "" || r.State != localrepo.StateRelocating {
+		t.Fatal("late edit was not blocked", r)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.LocalPath, "local.bak"))
+	if err != nil || string(raw) != "new local bytes" {
+		t.Fatal("new bytes lost", err)
+	}
+	backup := filepath.Join(filepath.Dir(r.LocalPath), "."+filepath.Base(r.LocalPath)+"-converting")
+	raw, err = os.ReadFile(filepath.Join(backup, "local.bak"))
+	if err != nil || string(raw) != "preserved local.bak" {
+		t.Fatal("original ignored bytes lost", err)
+	}
+}
+
+func TestConversionNativeOpenWriterDefersBeforeEffects(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	name, _ := windows.UTF16PtrFromString(filepath.Join(f.record.LocalPath, "folder", "drawing00.dwg"))
+	h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.run(t, t.Context())
+	windows.CloseHandle(h)
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if r.State != localrepo.StateAttached || r.LastError != "" || r.ConversionID == "" {
+		t.Fatal("open writer was not deferred", r)
+	}
+	<-f.events
+	f.run(t, t.Context())
+	f.assertComplete(t)
+}
+
+var _ conversionNativeClient = conversionProbeClient{}
+
+func TestConversionNativeLargerBatchAndLongIgnoredPaths(t *testing.T) {
+	f := newConversionNativeRunFixture(t, 128)
+	rel := filepath.Join("cache", strings.Repeat("a", 100), strings.Repeat("b", 100), strings.Repeat("c", 100), "file.bak")
+	source := filepath.Join(f.record.LocalPath, rel)
+	if err := os.MkdirAll(filepath.Dir(source), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("long local bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.run(t, t.Context())
+	f.assertComplete(t)
+	raw, err := os.ReadFile(source)
+	if err != nil || string(raw) != "long local bytes" {
+		t.Fatal("long ignored file lost", err)
+	}
+}
+
+func TestConversionNativePreservesReadonlyAndProtectedDACL(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	path := filepath.Join(f.record.LocalPath, "local.bak")
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, _, err := conversionOpen(path, windows.GENERIC_READ|windows.WRITE_DAC, windows.FILE_SHARE_READ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = windows.SetKernelObjectSecurity(windows.Handle(file.Fd()), windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, sd)
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide, _ := windows.UTF16PtrFromString(path)
+	if err := windows.SetFileAttributes(wide, windows.FILE_ATTRIBUTE_READONLY|windows.FILE_ATTRIBUTE_ARCHIVE); err != nil {
+		t.Fatal(err)
+	}
+	f.run(t, t.Context())
+	f.assertComplete(t)
+	attrs, err := windows.GetFileAttributes(wide)
+	if err != nil || attrs&windows.FILE_ATTRIBUTE_READONLY == 0 {
+		t.Fatal("readonly attribute lost", err)
+	}
+	file, _, err = conversionOpen(path, windows.GENERIC_READ, windows.FILE_SHARE_READ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	acl, err := conversionDACL(file)
+	if err != nil || !conversionSameDACL(acl, sd.String()) {
+		t.Fatal("protected permissions changed", err)
+	}
+}
+
+func TestConversionNativeLateSourceObjectStopsPartialCleanup(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	hit := false
+	f.hook = func(label string) error {
+		if label == "deleted:.svn/wc.db" {
+			hit = true
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	f.run(t, ctx)
+	if !hit {
+		t.Fatal("cleanup not reached")
+	}
+	r, _ := f.p.local.Get(f.record.OperationID)
+	late := filepath.Join(r.PendingLocalPath, "late-new.bak")
+	if err := os.WriteFile(late, []byte("must survive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.restart(t)
+	f.run(t, t.Context())
+	r, _ = f.p.local.Get(f.record.OperationID)
+	if r.LastError == "" || r.State != localrepo.StateRelocating {
+		t.Fatal("unexpected late object silently retired", r)
+	}
+	raw, err := os.ReadFile(late)
+	if err != nil || string(raw) != "must survive" {
+		t.Fatal("late source object lost", err)
+	}
+}
+
+func TestConversionNativeLateWriteDuringRetainGapIsPreserved(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	hit := false
+	f.hook = func(label string) error {
+		if label == "retain-unpinned" {
+			hit = true
+			return os.WriteFile(filepath.Join(f.record.LocalPath, "folder", "drawing00.dwg"), []byte("late CAD edit"), 0600)
+		}
+		return nil
+	}
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if !hit || r.LastError == "" || r.State != localrepo.StateRelocating {
+		t.Fatal("late edit did not stop conversion", r)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.PendingLocalPath, "folder", "drawing00.dwg"))
+	if err != nil || string(raw) != "late CAD edit" {
+		t.Fatal("late CAD edit lost", err)
+	}
+	if _, err := os.Lstat(r.LocalPath); !conversionMissing(err) {
+		t.Fatal("new point created despite changed source", err)
+	}
+}
+
+func TestConversionNativeRefusesAlternateStreamsWithoutDeletingThem(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	path := filepath.Join(f.record.LocalPath, "local.bak") + ":notes"
+	if err := os.WriteFile(path, []byte("extra stream"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if !strings.Contains(r.LastError, "alternate data streams") {
+		t.Fatal("unsupported streams not refused", r.LastError)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != "extra stream" {
+		t.Fatal("alternate stream lost", err)
+	}
+	if _, err := os.Lstat(r.PendingLocalPath); !conversionMissing(err) {
+		t.Fatal("unsupported source was renamed", err)
+	}
+}
+
+func TestConversionNativeAuthorityWithdrawalStopsBeforeRetirement(t *testing.T){
+	f:=newConversionNativeRunFixture(t);var selected string
+	f.hook=func(label string)error{if selected=="" && strings.HasPrefix(label,"delete-intent:"){selected=strings.TrimPrefix(label,"delete-intent:");return f.p.local.ObserveRemoteDeletion(f.record.ServerID,f.record.RepoID)};return nil}
+	f.run(t,t.Context());r,_:=f.p.local.Get(f.record.OperationID)
+	if selected=="" || !r.RemoteDeletionObserved || r.ConversionID==""{t.Fatal("authority withdrawal not retained",r)}
+	if _,err:=os.Stat(filepath.Join(r.PreservedAlternatePath,filepath.FromSlash(selected)));err!=nil{t.Fatal("retired after authority withdrawal",err)}
+	if len(f.events)!=0{t.Fatal("runtime published after authority withdrawal")}
+}
+
+func TestConversionNativeRollbackPreservesNewPointBytes(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	hit := false
+	f.hook = func(label string) error {
+		if label == "point-ready" {
+			hit = true
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	f.run(t, ctx)
+	if !hit {
+		t.Fatal("point not reached")
+	}
+	f.restart(t)
+	if err := os.WriteFile(filepath.Join(f.record.LocalPath, "new-note.txt"), []byte("new point bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := f.p.local.Get(f.record.OperationID)
+	j, err := f.p.conversionJournal(r, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := f.p.Profile(r.ServerID)
+	adapter, err := f.p.newConversionEffects(r, j.Get())
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := &provisionerConversionEffects{adapter, f.p, profile}
+	adapter.(*nativeConversionEffects).bindConversionAdmission(func(ctx context.Context) error { _, err := effects.current(j.Get()); return err })
+	done := make(chan error, 1)
+	go func() {
+		_, err := (&localrepo.ConversionExecutor{Journal: j, Effects: effects}).Rollback(t.Context())
+		done <- err
+	}()
+	select {
+	case event := <-f.events:
+		if !event.Quiesce || event.Detach {
+			t.Fatal(event)
+		}
+		event.Result <- nil
+	case <-time.After(5 * time.Second):
+		t.Fatal("no rollback quiesce")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	f.p.runOne(t.Context(), r.OperationID)
+	restored, _ := f.p.local.Get(r.OperationID)
+	if restored.Anchor || restored.Sparse || restored.ConversionID != "" || restored.State != localrepo.StateAttached {
+		t.Fatal(restored)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.PendingLocalPath+"-new-"+r.ConversionID, "new-note.txt"))
+	if err != nil || string(raw) != "new point bytes" {
+		t.Fatal("new point bytes lost", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(r.LocalPath, "folder", "drawing00.dwg"))
+	if err != nil || len(raw) == 0 {
+		t.Fatal("original WC not restored", err)
+	}
+}
+
+type conversionChildDescription struct{ Store, Root, URI, Helper, Native, Operation, Cut string }
+
+func TestConversionNativeProcessChild(t *testing.T) {
+	path := os.Getenv("FILEES_CONVERSION_CHILD")
+	if path == "" {
+		t.Skip("child only")
+	}
+	var d conversionChildDescription
+	if err := conversionReadJSON(path, &d); err != nil {
+		t.Fatal(err)
+	}
+	store, err := localrepo.Open(d.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := store.Get(d.Operation)
+	if !ok {
+		t.Fatal("missing child lifecycle")
+	}
+	journal, err := provisioning.NewStore(filepath.Join(filepath.Dir(d.Store), "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newDaemonProvisioner(store, journal, []clientprofile.Profile{{ServerID: r.ServerID, ClientID: "activation"}})
+	p.conversionRoot = d.Root
+	p.anchorEnabled = func(string) bool { return true }
+	p.relocationCheck = func(localrepo.Record) error { return nil }
+	events := make(chan provisionedAttachment, 16)
+	p.attachments = events
+	cli := client.New(client.Options{NativeSVNPath: d.Native, Timeout: time.Minute})
+	mapper := conversionProbeClient{anchorBatchProbeReader{Client: cli, actual: d.URI, authority: r.RepoURL}}
+	m := &anchorManager{helper: d.Helper, newSVN: func(string) (client.Client, error) { return mapper, nil }}
+	wireNativeConversion(p, m)
+	factory := p.newConversionEffects
+	p.newConversionEffects = func(r localrepo.Record, intent localrepo.ConversionRecord) (conversionEffectsAdapter, error) {
+		adapter, err := factory(r, intent)
+		if err == nil {
+			adapter.(*nativeConversionEffects).checkpoint = func(label string) error {
+				if label == d.Cut {
+					os.Exit(73)
+				}
+				return nil
+			}
+		}
+		return adapter, err
+	}
+	daemonConversionFixture{p: p, r: r, events: events}.run(t, t.Context())
+	t.Fatal("child boundary not reached")
+}
+
+func TestConversionNativeRecoversAfterRealProcessDeath(t *testing.T) {
+	for _, boundary := range []string{"copy-moved:local.bak", "deleted:.svn/wc.db"} {
+		t.Run(boundary, func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			r, _ := f.p.local.Get(f.record.OperationID)
+			native := probeTool(t, "FILEES_SVN_PROBE")
+			uri := svnurl.File(filepath.Join(f.directory, "repo"))
+			d := conversionChildDescription{f.storePath, f.p.conversionRoot, uri, f.manager.helper, native, r.OperationID, boundary}
+			path := filepath.Join(f.directory, "child.json")
+			raw, _ := json.Marshal(d)
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(os.Args[0], "-test.run=^TestConversionNativeProcessChild$", "-test.v")
+			cmd.Env = append(os.Environ(), "FILEES_CONVERSION_CHILD="+path)
+			output, err := cmd.CombinedOutput()
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 73 {
+				t.Fatalf("child failed: %v %s", err, output)
+			}
+			until := time.Now().Add(5 * time.Second)
+			for time.Now().Before(until) {
+				answer, _ := f.manager.call(t.Context(), "", "info", "--root", r.LocalPath)
+				if !answer.OK || answer.Status != 1 {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			f.restart(t)
+			f.run(t, t.Context())
+			f.assertComplete(t)
+		})
+	}
+}

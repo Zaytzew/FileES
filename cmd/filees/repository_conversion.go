@@ -168,6 +168,9 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 	if !ok || r.ConversionID == "" || r.RemoteDeletionObserved {
 		return
 	}
+	if p.conversionReady != nil && !p.conversionReady(r) {
+		return
+	}
 	fail := func(err error) {
 		if ctx.Err() == nil {
 			_, _ = p.local.RecordConversionError(operationID, r.ConversionID, err)
@@ -205,6 +208,17 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 		return
 	}
 	effects := &provisionerConversionEffects{adapter, p, profile}
+	if bound, ok := adapter.(interface {
+		bindConversionAdmission(func(context.Context) error)
+	}); ok {
+		bound.bindConversionAdmission(func(checkCtx context.Context) error {
+			if err := checkCtx.Err(); err != nil {
+				return err
+			}
+			_, err := effects.current(j.Get())
+			return err
+		})
+	}
 	executor := &localrepo.ConversionExecutor{Journal: j, Effects: effects}
 	outcome, err := executor.Run(ctx)
 	if ctx.Err() != nil {

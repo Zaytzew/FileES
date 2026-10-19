@@ -44,6 +44,7 @@ type daemonProvisioner struct {
 	conversionMu          sync.Mutex
 	conversionJournals    map[string]*localrepo.ConversionJournal
 	newConversionEffects  func(localrepo.Record, localrepo.ConversionRecord) (conversionEffectsAdapter, error)
+	conversionReady       func(localrepo.Record) bool // startup projection is not yet an authority decision
 	detachAnchor          func(context.Context, localrepo.Record) error
 	quiesceAnchor         func(context.Context, localrepo.Record) error
 	traceAnchorRelocation func(context.Context, localrepo.Record, string) // diagnostics only; cannot authorize or fail a move

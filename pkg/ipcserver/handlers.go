@@ -1333,6 +1333,20 @@ func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
 	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result, Sessions: sessions})
 }
 
+// ConversionAuthorityReady distinguishes startup's absent projection from a
+// known refusal. It grants no access; ValidateRelocationAdmission still runs.
+func (s *Server) ConversionAuthorityReady(serverID, repoID string) bool {
+	repo := s.RepoState(serverID, repoID)
+	if repo == nil {
+		return false
+	}
+	s.mu.RLock()
+	_, activated := s.activations[serverID]
+	s.mu.RUnlock()
+	state := repo.ProjectedState()
+	return activated && state != "" && state != contract.StateInitializing
+}
+
 // ValidateRelocationAdmission rechecks current projection/activation after a
 // queued wait. Local source/target proof remains the provisioner's job. A
 // quiesced/post-rename copy may no longer have an attached runtime.

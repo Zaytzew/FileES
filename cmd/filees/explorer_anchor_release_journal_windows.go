@@ -126,6 +126,13 @@ func anchorReleaseID(info windows.ByHandleFileInformation) anchorReleaseFileID {
 	return anchorReleaseFileID{info.VolumeSerialNumber, uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)}
 }
 
+func anchorReleaseNativePath(path string) string {
+	if strings.HasPrefix(path, `\\?\`) {
+		return path
+	}
+	return `\\?\` + filepath.Clean(path)
+}
+
 // Guards every directory component through the final directory. Junctions,
 // symlinks and remote paths refuse. The one admitted reparse directory is the
 // registered WC root or a Cloud Files directory whose opened handle belongs
@@ -145,7 +152,7 @@ func guardAnchorReleaseDirectories(path, wcRoot string) ([]windows.Handle, error
 	var point windows.ByHandleFileInformation
 	pointFound := false
 	for i := len(paths) - 1; i >= 0; i-- {
-		wide, err := windows.UTF16PtrFromString(paths[i])
+		wide, err := windows.UTF16PtrFromString(anchorReleaseNativePath(paths[i]))
 		if err != nil {
 			closeAnchorReleaseGuards(guards)
 			return nil, err

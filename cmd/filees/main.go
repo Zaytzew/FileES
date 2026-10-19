@@ -265,7 +265,6 @@ func runDaemon() {
 	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	provisioner.recoveryRegistry = recoveryRegistry
 	provisioner.attachments = provisionedAttachments
-	runtime.Go(ctx, func() { provisioner.Run(ctx) })
 	forgetProfile := func(serverID string) {
 		if err := clientprofile.Remove(clientprofile.DefaultRoot(), serverID); err != nil {
 			lg.Warnf("forget revoked server %s: %v", serverID, err)
@@ -299,6 +298,9 @@ func runDaemon() {
 	provisioner.relocationCheck = func(record localrepo.Record) error {
 		return ipc.ValidateRelocationAdmission(record.ServerID, record.RepoID, record.RepoURL)
 	}
+	provisioner.conversionReady = func(record localrepo.Record) bool {
+		return ipc.ConversionAuthorityReady(record.ServerID, record.RepoID)
+	}
 	lifecycleService.anchorAdmissionCtx = ctx
 	lifecycleService.anchorAdmissionWaiters = &provisioner.creationWaiters
 	lifecycleService.anchorAdmissionCheck = ipc.ValidateAnchorAdmission
@@ -321,6 +323,8 @@ func runDaemon() {
 	if anchors := explorerAnchors(ipc, lifecycleStore, provisioner, activityJournal); anchors != nil {
 		runtime.Go(ctx, func() { anchors(ctx) })
 	}
+	// Install all immutable authority/CFAPI hooks before restoring durable work.
+	runtime.Go(ctx, func() { provisioner.Run(ctx) })
 	// An export must land outside every working copy, so it asks the lifecycle
 	// store for the current roots at the moment it begins.
 	historyExports := &historyexport.Runner{Journal: defaultHistoryExportPath(), Reader: history.exportReader, Roots: lifecycleService.allRoots, FoldCase: historyExportFoldsCase(), Admission: ipc.OperationAdmission()}

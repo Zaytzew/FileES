@@ -592,6 +592,7 @@ func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories
 			repository.LocalPath = record.LocalPath
 		}
 		repository.Purpose = record.Purpose
+		repository.Sparse, repository.Anchor = record.Sparse, record.Anchor
 		active = append(active, repository)
 	}
 	return active, nil

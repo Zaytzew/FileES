@@ -16,6 +16,10 @@ import (
 
 func fakeNativeRA() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		if os.Getenv("FILEES_TEST_CONVERSION_BOUND") == "1" {
+			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["conversion_inventory_v1","sparse_checkout_v1","update_changes"]}`)
+			return
+		}
 		if trace := os.Getenv("FILEES_TEST_VERSION_TRACE"); trace != "" {
 			f, err := os.OpenFile(trace, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 			if err != nil {
@@ -96,6 +100,10 @@ func fakeNativeRA() {
 		_, _ = io.Copy(io.Discard, os.Stdin)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "info" {
+		if reply := os.Getenv("FILEES_TEST_CONVERSION_INFO"); reply != "" {
+			fmt.Print(reply)
+			return
+		}
 		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"entries":[{"path":".","url":"file:///lab","repos_root_url":"file:///lab","repos_uuid":"test-uuid","kind":"dir","revision":1,"last_changed_rev":1}]}`)
 		return
 	}

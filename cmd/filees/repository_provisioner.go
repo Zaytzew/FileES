@@ -182,10 +182,11 @@ func checkoutSparseAttachment(ctx context.Context, svn attachmentSVN, record loc
 }
 
 type provisionedAttachment struct {
-	Repo    config.Repo
-	Quiesce bool
-	Detach  bool
-	Result  chan error
+	Repo       config.Repo
+	Quiesce    bool
+	Detach     bool
+	Result     chan error
+	Conversion *conversionQuiesceIntent // private, scoped proof for restart-safe quiescence
 }
 
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
@@ -931,8 +932,12 @@ func (p *daemonProvisioner) quiesceAttachment(ctx context.Context, record localr
 	}
 	result := make(chan error, 1)
 	repo := config.Repo{ID: record.RepoID, ServerID: record.ServerID}
+	request := provisionedAttachment{Repo: repo, Quiesce: true, Detach: record.State == localrepo.StateDetaching || record.State == localrepo.StateDeleting, Result: result}
+	if record.ConversionID != "" {
+		request.Conversion = &conversionQuiesceIntent{record.OperationID, record.ConversionID, record.LocalPath, record.RepoURL}
+	}
 	select {
-	case p.attachments <- provisionedAttachment{Repo: repo, Quiesce: true, Detach: record.State == localrepo.StateDetaching || record.State == localrepo.StateDeleting, Result: result}:
+	case p.attachments <- request:
 	case <-ctx.Done():
 		return ctx.Err()
 	}

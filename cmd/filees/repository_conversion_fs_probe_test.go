@@ -10,6 +10,7 @@ import (
 	"filees/internal/svnurl"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/clientview"
 	"filees/pkg/cloudfiles"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
@@ -17,6 +18,7 @@ import (
 	"filees/pkg/localrepo"
 	"filees/pkg/privatefile"
 	"filees/pkg/provisioning"
+	"filees/pkg/reposupervisor"
 	"fmt"
 	"golang.org/x/sys/windows"
 	"os"
@@ -119,6 +121,48 @@ func TestWCConversionNativePublicRollbackRestoresOriginal(t *testing.T) {
 	if status.Phase != "rolled_back" || !status.CanBegin {
 		t.Fatal(status)
 	}
+}
+
+func TestWCConversionNativeResumesWithSupervisorAfterRuntimeIsGone(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	f.hook = func(label string) error {
+		if label == "point-metadata-pending" {
+			return errors.New("fixture restart during point initialization")
+		}
+		return nil
+	}
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	if r.LastError == "" {
+		t.Fatal("restart boundary not reached")
+	}
+	f.restart(t)
+	if _, err := f.p.WCConversion(t.Context(), contract.WCConversionPayload{ServerID: r.ServerID, RepoID: r.RepoID, Action: "retry", OperationID: r.ConversionID}); err != nil {
+		t.Fatal(err)
+	}
+	view := clientview.View{Generation: 3, Repositories: []clientview.Repository{{RepoID: r.RepoID, URL: r.RepoURL, Access: r.Access, State: "active"}}}
+	starter := &conversionQuiesceStarter{stops: map[reposupervisor.Key]int{}}
+	supervisor, _ := reposupervisor.New(starter, nil)
+	if err := supervisor.Apply(t.Context(), r.ServerID, view.Generation, nil); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); f.p.runOne(t.Context(), r.OperationID) }()
+	select {
+	case event := <-f.events:
+		if !event.Quiesce || event.Detach || event.Conversion == nil {
+			t.Fatal("missing restart fence", event)
+		}
+		event.Result <- quiesceProjectedRuntime(t.Context(), supervisor, event, view, map[reposupervisor.Key]repoRuntime{}, f.p.local)
+	case <-time.After(30 * time.Second):
+		t.Fatal("missing supervisor stop request")
+	}
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("conversion did not complete after supervisor ack")
+	}
+	f.assertComplete(t)
 }
 
 func TestConversionInventoryUnderMetadataReadPin(t *testing.T) {

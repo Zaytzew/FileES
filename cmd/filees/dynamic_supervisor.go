@@ -826,17 +826,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 					attachment.Result <- fmt.Errorf("attached runtime or authoritative projection is unavailable")
 					continue
 				}
-				if !exists {
-					attachment.Result <- fmt.Errorf("attached runtime or authoritative projection is unavailable")
-					continue
-				}
-				delete(runtimes, key)
-				desired := attachedProjection(repo.ServerID, view, runtimes)
-				err := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, nil)
-				if err != nil {
-					runtimes[key] = old
-				}
-				attachment.Result <- err
+				attachment.Result <- quiesceProjectedRuntime(ctx, supervisor, attachment, view, runtimes, lifecycle)
 				continue
 			}
 			if reservationRefreshes.Paused(repo.ServerID) {

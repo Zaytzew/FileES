@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/filepolicy"
 	"filees/pkg/localrepo"
 	"filees/pkg/privatefile"
 	"filees/pkg/talk"
@@ -256,7 +257,11 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 		if entry.Versioned && (entry.Revision == nil || *entry.Revision != info.Revision) {
 			return refuse(localrepo.ErrConversionWaiting)
 		}
-		if !entry.Versioned && entry.Item == "ignored" {
+		// FileES's built-in exclusions need not be svn:ignore properties:
+		// our own desktop.ini is normally reported as unversioned. Retain
+		// those objects through the same verified local-copy receipts. Never
+		// demote an already-versioned path because its name matches a rule.
+		if !entry.Versioned && (entry.Item == "ignored" || filepolicy.IsBuiltinIgnored(entry.Path)) {
 			ignored = append(ignored, entry.Path)
 		}
 	}

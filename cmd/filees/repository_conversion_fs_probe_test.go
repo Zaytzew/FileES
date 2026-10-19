@@ -356,6 +356,134 @@ func TestConversionNativeCompleteWithIgnoredFilesAndRetirement(t *testing.T) {
 	f.assertComplete(t)
 }
 
+func TestConversionNativePreservesBuiltinIgnoredObjects(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	// Real FileES decoration is unversioned in SVN, not svn:ignore.
+	if err := markManagedFolder(f.record.LocalPath, filepath.Join(f.directory, "fixture.ico")); err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string][]byte{}
+	for _, rel := range []string{"desktop.ini", "folder/Thumbs.db", "folder/local.tmp", "node_modules/nested/local.bin"} {
+		p := filepath.Join(f.record.LocalPath, filepath.FromSlash(rel))
+		if rel != "desktop.ini" {
+			if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("local-only "+rel), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths[rel] = b
+	}
+	if err := os.WriteFile(filepath.Join(f.record.LocalPath, "desktop.ini")+":notes", []byte("local decoration ADS"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	attrs := attributesOf(t, filepath.Join(f.record.LocalPath, "desktop.ini"))
+	// Already versioned paths stay remote, even when their names match a built-in ignore.
+	cli := probeTool(t, "FILEES_PROBE_SVN")
+	tracked := filepath.Join(f.record.LocalPath, "tracked.bak")
+	if err := os.WriteFile(tracked, []byte("published fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	probeRun(t, f.directory, cli, "add", "--no-ignore", tracked)
+	probeRun(t, f.directory, cli, "commit", "-q", "-m", "versioned ignore name", f.record.LocalPath)
+	probeRun(t, f.directory, cli, "update", "-q", f.record.LocalPath)
+	f.run(t, t.Context())
+	f.assertComplete(t)
+	for rel, want := range paths {
+		b, err := os.ReadFile(filepath.Join(f.record.LocalPath, filepath.FromSlash(rel)))
+		if err != nil || !bytes.Equal(b, want) {
+			t.Fatal("builtin ignored bytes lost", rel, err)
+		}
+	}
+	if got := attributesOf(t, filepath.Join(f.record.LocalPath, "desktop.ini")); got != attrs {
+		t.Fatal("decoration attributes changed", got, attrs)
+	}
+	if b, err := os.ReadFile(filepath.Join(f.record.LocalPath, "desktop.ini") + ":notes"); err != nil || string(b) != "local decoration ADS" {
+		t.Fatal("decoration ADS lost", err)
+	}
+	if !cloudfiles.IsPlaceholder(tracked) {
+		t.Fatal("versioned ignore name became a local-only copy")
+	}
+}
+
+func TestConversionNativeBuiltinIgnoreStillWaitsForUnknownFile(t *testing.T) {
+	f := newConversionNativeRunFixture(t)
+	if err := markManagedFolder(f.record.LocalPath, filepath.Join(f.directory, "fixture.ico")); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(f.record.LocalPath, "not-published.txt")
+	if err := os.WriteFile(p, []byte("new authored file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.run(t, t.Context())
+	r, _ := f.p.local.Get(f.record.OperationID)
+	j, err := f.p.conversionJournal(r, false)
+	if err != nil || j.Get().Phase != localrepo.ConversionWaiting || j.Get().Prepared {
+		t.Fatal("unknown unversioned file was admitted", r, err)
+	}
+	if _, err := os.Stat(r.PendingLocalPath); !conversionMissing(err) {
+		t.Fatal("source retained despite unknown local data", err)
+	}
+	if b, err := os.ReadFile(p); err != nil || string(b) != "new authored file" {
+		t.Fatal("local data changed", err)
+	}
+}
+
+func TestConversionNativeBuiltinIgnoreReceiptRecovery(t *testing.T) {
+	for _, lateEdit := range []bool{false, true} {
+		t.Run(fmt.Sprint("late-edit-", lateEdit), func(t *testing.T) {
+			f := newConversionNativeRunFixture(t)
+			p := filepath.Join(f.record.LocalPath, "desktop.ini")
+			if err := os.WriteFile(p, []byte("original local decoration"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			f.hook = func(label string) error {
+				if label == "copy-moved:desktop.ini" {
+					return errors.New("builtin ignored fixture interruption")
+				}
+				return nil
+			}
+			f.run(t, t.Context())
+			r, _ := f.p.local.Get(f.record.OperationID)
+			if r.LastError == "" {
+				t.Fatal("interruption boundary not reached")
+			}
+			if lateEdit {
+				if err := os.WriteFile(p, []byte("late changed decoration"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.restart(t)
+			if _, err := f.p.WCConversion(t.Context(), contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "retry", OperationID: r.ConversionID}); err != nil {
+				t.Fatal(err)
+			}
+			f.run(t, t.Context())
+			if !lateEdit {
+				f.assertComplete(t)
+				if b, err := os.ReadFile(p); err != nil || string(b) != "original local decoration" {
+					t.Fatal("recovered decoration lost", err)
+				}
+				return
+			}
+			r, _ = f.p.local.Get(f.record.OperationID)
+			if r.LastError == "" {
+				t.Fatal("late local edit not protected")
+			}
+			if b, err := os.ReadFile(p); err != nil || string(b) != "late changed decoration" {
+				t.Fatal("late local edit lost", err)
+			}
+			if _, err := os.Stat(r.PendingLocalPath); err != nil {
+				t.Fatal("old source lost", err)
+			}
+		})
+	}
+}
+
 func TestConversionNativeResumesCopyAndPartialCleanup(t *testing.T) {
 	for _, boundary := range []string{"copy-ready:local.bak", "copy-moved:local.bak", "deleted:.svn/wc.db"} {
 		t.Run(boundary, func(t *testing.T) {

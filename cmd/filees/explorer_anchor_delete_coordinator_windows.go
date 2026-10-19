@@ -500,6 +500,11 @@ func (m *anchorManager) bindFileDelete(record localrepo.Record, bridge *anchorBr
 		if s != nil {
 			return errors.New("file deletion session already used")
 		}
+		// Never wait for the verifier's writer while Windows holds another
+		// delete callback: its resident-byte read can need that callback's ACK.
+		if checkingResident {
+			return errors.Join(anchorDeleteResidentWait{}, errAnchorDeleteNotPrepared)
+		}
 		s = newAnchorDeleteSession(record, streams.providerPID)
 		s.id = cb.Session
 		if resident != nil && resident.matches(cb) {

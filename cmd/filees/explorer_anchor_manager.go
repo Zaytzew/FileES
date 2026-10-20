@@ -136,6 +136,8 @@ type anchorManager struct {
 	guardChanged          func(repoID string)
 	options               *anchorOptions
 	shellState            string // localIntentMu; registry sweep only when lifecycle paths change
+	shellQueue            anchorShellQueue
+	shellWaiters          atomic.Int32 // bounded FIFO admission; observers yield, user moves win
 
 	mu      sync.Mutex
 	running map[string]anchorConnection
@@ -285,6 +287,7 @@ func (m *anchorManager) run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		m.reconcile(ctx)
+		m.reconcileShellQueue(ctx)
 		m.reconcileShell(ctx)
 		m.tickReleaseQueue(ctx)
 		select {
@@ -638,12 +641,11 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 		talk.With("anchor").Warnf("prepare folder icon: %v", err)
 	} else if err := markManagedFolder(record.LocalPath, icon); err != nil {
 		talk.With("anchor").Warnf("mark anchor folder: %v", err)
-	} else if m.virtualEnabled(record.ServerID) {
-		// Opt-in until visual/large-tree acceptance and the remaining sparse
-		// operations are complete. Metadata observations share the WC guard.
-		if err := m.registerShellPreference(ctx, record, icon); err != nil {
-			talk.With("anchor").Warnf("register Explorer provider: %v", err)
-		}
+	}
+	if m.virtualEnabled(record.ServerID) {
+		// Shell integration is retryable desired state, not a one-shot icon
+		// decoration. Native delivery may continue while FIFO admission waits.
+		m.queueShellRegistration(record)
 	}
 	if _, err := os.Stat(anchorSeedPath(record.LocalPath)); err == nil {
 		return nil

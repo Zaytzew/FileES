@@ -26,16 +26,16 @@ func (m *anchorManager) wireExplorerShortcut(ipc *ipcserver.Server) {
 
 // Serialize startup registration and changes; always reload the WC preference.
 func (m *anchorManager) registerShellPreference(ctx context.Context, record localrepo.Record, icon string) error {
-	if m.localIntentMu != nil {
-		if !m.localIntentMu.TryLock() {
-			return errors.New("another local folder operation is running")
-		}
-		defer m.localIntentMu.Unlock()
+	leave, err := m.enterShellIntent(ctx)
+	if err != nil {
+		return err
 	}
+	defer leave()
 	if m.lifecycle != nil {
 		current, ok := m.lifecycle.Get(record.OperationID)
-		if !ok || current.LocalPath != record.LocalPath || current.State != localrepo.StateAttached {
-			return errors.New("virtual folder location changed")
+		if !ok || !sameShellTask(current, record) || current.State != localrepo.StateAttached ||
+			(record.Anchor && (!current.Anchor || !m.virtualEnabled(current.ServerID))) {
+			return errAnchorShellStale
 		}
 		record = current
 	}
@@ -99,7 +99,8 @@ func (m *anchorManager) ExplorerShortcut(ctx context.Context, serverID, repoID s
 	}
 	answer, err := m.call(ctx, "", "shell-visibility", "--root", record.LocalPath, "--visible", value)
 	if err != nil || !answer.OK {
-		return state, errors.New("saved visibility could not be applied; reopen folder settings and try again")
+		m.queueShellRegistration(updated)
+		return state, errors.New("saved Explorer visibility is queued for retry")
 	}
 	if m.guardChanged != nil {
 		m.guardChanged(repoID)

@@ -65,5 +65,5 @@ func (m *anchorManager) enterObserverIntent() (func(), error) {
 }
 
 func (m *anchorManager) observerMustYield() bool {
-	return m.moveWaiters.Load() != 0 || (m.creationWaiters != nil && m.creationWaiters.Load() != 0)
+	return m.moveWaiters.Load() != 0 || m.shellWaiters.Load() != 0 || (m.creationWaiters != nil && m.creationWaiters.Load() != 0)
 }

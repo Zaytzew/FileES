@@ -155,10 +155,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		return service.WithLocalMetadataGuard(ctx, point, operation)
 	})
 	state.SetAdoptFunc(func(ctx context.Context, rel string, revision int64) error {
-		_, err := svn.(interface {
-			UpdateAdoptPath(context.Context, string, string, int64) (string, error)
-		}).UpdateAdoptPath(ctx, point, rel, revision)
-		return err
+		return service.AdoptPath(ctx, point, rel, revision)
 	})
 	state.SetFileReleaseFunc(func(ctx context.Context, rel string, recovery bool, op, finish func() error) error {
 		return service.WithFileRelease(ctx, point, rel, recovery, op, finish)
@@ -172,6 +169,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 		return anchorBatchProbeReader{Client: svn, actual: uri, authority: authority, proofCalls: &remoteProofCalls}, nil
 	}, log: talk.With("batch-native"), stateEvery: time.Hour, options: &anchorOptions{}}
 	m.options.servers.Store(map[string]bool{record.ServerID: true})
+	prehydrateAnchorWithoutAdoption(t, m, record, "folder/file-23.txt", filepath.Join(source, "folder", "file-23.txt"))
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	m.running = map[string]anchorConnection{anchorKey(record): {root: point, ctx: ctx, cancel: cancel, done: done}}
@@ -233,7 +231,7 @@ func TestAnchorBatchNativeDownloadsPastAutomaticGuard(t *testing.T) {
 			t.Fatal("native content availability", states, handled, err)
 		}
 	}
-	checkAvailability(contract.HeadRemote)
+	checkAvailability(contract.HeadHybrid) // one fully resident, still unadopted file
 	p := contract.RepoAnchorPlanPayload{ServerID: "server", RepoID: "repo", Path: "folder", Action: "download"}
 	plan, err := adapter.Plan(t.Context(), p)
 	if err != nil || !plan.Directory || plan.Files != 24 || plan.Bytes != 24*14 {

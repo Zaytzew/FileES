@@ -49,6 +49,45 @@ func TestAnchorBatchMissingPathIsNotBusyOrACompletePlan(t *testing.T) {
 	}
 }
 
+func TestAnchorBatchPlansCompleteRemoteFilesForAdoption(t *testing.T) {
+	manifest := batchManifest(t, "{\"path\":\"already.docx\",\"kind\":\"file\",\"size\":10}\n{\"path\":\"next.pdf\",\"kind\":\"file\",\"size\":10}\n")
+	selection, err := anchorBatchPlan(t.Context(), manifest, ".", "download", "binding", func(paths []string) ([]cfapiAnswer, error) {
+		already := batchState(paths[0], false)
+		already.Partial, already.OnDisk = false, 10
+		return []cfapiAnswer{already, batchState(paths[1], false)}, nil
+	})
+	if err != nil || selection.preview.Files != 2 || len(selection.files) != 2 || selection.files[0].rel != "already.docx" {
+		t.Fatalf("complete unadopted file blocks whole folder: %+v %v", selection.preview, err)
+	}
+}
+
+func TestAnchorBatchCompleteRemoteStillNeedsExactMetadata(t *testing.T) {
+	manifest := batchManifest(t, "{\"path\":\"already.docx\",\"kind\":\"file\",\"size\":10}\n")
+	for _, bad := range []string{"identity", "size", "on_disk", "directory"} {
+		t.Run(bad, func(t *testing.T) {
+			_, err := anchorBatchPlan(t.Context(), manifest, ".", "download", "binding", func([]string) ([]cfapiAnswer, error) {
+				state := batchState("already.docx", false)
+				state.Partial, state.OnDisk = false, 10
+				switch bad {
+				case "identity":
+					state.Identity = "other.docx"
+				case "size":
+					n := int64(11)
+					state.Size = &n
+				case "on_disk":
+					state.OnDisk = 9
+				case "directory":
+					state.Directory = true
+				}
+				return []cfapiAnswer{state}, nil
+			})
+			if err == nil {
+				t.Fatal("unproven complete file accepted")
+			}
+		})
+	}
+}
+
 func TestAnchorBatchPlanUsesOnlySelectedMetadataAndBindsChanges(t *testing.T) {
 	manifest := batchManifest(t, "{\"path\":\"dir\",\"kind\":\"dir\"}\n{\"path\":\"dir/a\",\"kind\":\"file\",\"size\":10}\n{\"path\":\"elsewhere\",\"kind\":\"file\",\"size\":10}\n{\"path\":\"dir/b\",\"kind\":\"file\",\"size\":10}\n")
 	usn := "42"

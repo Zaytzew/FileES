@@ -34,6 +34,10 @@ func (p *anchorRangeNativeReader) UpdateAdoptPath(context.Context, string, strin
 	return "", nil
 }
 
+func (p *anchorRangeNativeReader) Status(_ context.Context, _ string, paths []string) ([]client.StatusEntry, error) {
+	return []client.StatusEntry{{Path: paths[0], Item: "unversioned"}}, nil
+}
+
 // Real NTFS/Cloud Files callbacks and attribute-only residency checks; remote
 // fetch and SVN adoption are counted adapters, not a claim of network/SVN E2E.
 func TestAnchorNativeTailThenMiddleSharesDownloadAndWaitsForWholeFile(t *testing.T) {

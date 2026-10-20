@@ -815,12 +815,11 @@ func (m *anchorManager) materializeCached(ctx context.Context, record localrepo.
 		}
 		revision, expectedSize = pinned, pinnedSize
 	} else if revision == 0 {
-		raw, err := os.ReadFile(anchorSeedPath(record.LocalPath))
-		var seed anchorSeed
-		if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &seed) != nil || seed.Schema != anchorSeedSchema || seed.Revision <= 0 {
-			return "", 0, errors.New("legacy remote entry has no confirmed seed revision")
+		var err error
+		revision, err = readAnchorSeedRevision(record.LocalPath)
+		if err != nil {
+			return "", 0, err
 		}
-		revision = seed.Revision
 	}
 	svn, err := m.svn(record.ServerID)
 	if err != nil {
@@ -856,6 +855,15 @@ func (m *anchorManager) materializeCached(ctx context.Context, record localrepo.
 		err = commit.LocalMutationPendingError(record.LocalPath)
 	}
 	return file, revision, err
+}
+
+func readAnchorSeedRevision(root string) (int64, error) {
+	raw, err := os.ReadFile(anchorSeedPath(root))
+	var seed anchorSeed
+	if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &seed) != nil || seed.Schema != anchorSeedSchema || seed.Revision <= 0 {
+		return 0, errors.New("legacy remote entry has no confirmed seed revision")
+	}
+	return seed.Revision, nil
 }
 
 func (m *anchorManager) anchorFetchAuthority(record localrepo.Record) error {

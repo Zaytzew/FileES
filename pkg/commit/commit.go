@@ -462,6 +462,34 @@ func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64)
 		if !info.Mode().IsRegular() || cloudfiles.NotOnDisk(abs) || cloudfiles.RecallsOnRead(info) {
 			return errors.New("anchor adoption requires a fully resident regular file")
 		}
+		// Explicit download and the final FETCH_DATA can race to complete the
+		// same adoption. Under this SAME writer guard, never update an already
+		// tracked path back to the old receipt revision or touch local work.
+		rows, err := s.Cli.Status(ctx, wc, []string{rel})
+		if err != nil {
+			return err
+		}
+		unversioned := false
+		for _, row := range rows {
+			name := row.Path
+			if filepath.IsAbs(name) {
+				name, _ = filepath.Rel(wc, name)
+			}
+			if filepath.ToSlash(name) != rel {
+				continue
+			}
+			switch row.Item {
+			case "unversioned":
+				unversioned = true
+			case "normal", "modified", "replaced", "conflicted":
+				return nil // tracked, preserve its BASE, properties and edits
+			case "added", "deleted", "missing", "obstructed", "incomplete":
+				return errors.New("anchor adoption cannot replace scheduled or obstructed local work")
+			}
+		}
+		if !unversioned {
+			return errors.New("anchor adoption requires an unversioned file or a confirmed tracked path")
+		}
 		_, err = adopter.UpdateAdoptPath(ctx, wc, rel, revision)
 		return err
 	})

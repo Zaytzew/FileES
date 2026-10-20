@@ -56,6 +56,48 @@ func (m *anchorManager) downloadFile(ctx context.Context, record localrepo.Recor
 	if !answer.OK {
 		return fmt.Errorf("Explorer download refused: %s (%s)", answer.Error, answer.HResult)
 	}
+	// CfHydratePlaceholder on an already complete file emits no FETCH_DATA.
+	// Adoption must therefore also be completed by the explicit download,
+	// not solely by a callback that may have been lost before a restart.
+	return m.finishDownloaded(ctx, record, rel)
+}
+
+func (m *anchorManager) finishDownloaded(ctx context.Context, record localrepo.Record, rel string) error {
+	if err := m.anchorFetchAuthority(record); err != nil {
+		return err
+	}
+	batch, err := m.call(ctx, rel+"\n", "file-states", "--root", record.LocalPath)
+	if err != nil {
+		return err
+	}
+	if !batch.OK || len(batch.States) != 1 {
+		return errors.New("download completion metadata unavailable")
+	}
+	state := batch.States[0]
+	if !state.OK || state.Size == nil || state.Partial {
+		return errors.New("download did not produce a fully resident file")
+	}
+	if state.Placeholder && !state.Local {
+		identityPath, revision, size, ok := parseAnchorRemoteIdentity(state.Identity)
+		if !ok || identityPath != rel || (size >= 0 && size != *state.Size) ||
+			!anchorHydrationComplete(state, state.Identity, *state.Size) {
+			return errors.New("download completion identity or residency changed")
+		}
+		if revision == 0 {
+			revision, err = readAnchorSeedRevision(record.LocalPath)
+			if err != nil {
+				return err
+			}
+		}
+		if err := m.adopt(ctx, record, state.Identity, revision); err != nil {
+			return err
+		}
+		if err := m.waitDownloaded(ctx, record, rel); err != nil {
+			return err
+		}
+		m.recordHydration(record, state.Identity, revision, state.Size)
+		return nil
+	}
 	return m.waitDownloaded(ctx, record, rel)
 }
 

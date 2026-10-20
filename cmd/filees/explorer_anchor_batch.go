@@ -16,7 +16,6 @@ import (
 
 	"filees/pkg/anchorqueue"
 	"filees/pkg/client"
-	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/portablepath"
@@ -194,11 +193,18 @@ func anchorBatchPlanSnapshot(ctx context.Context, manifest, selection, action, b
 			} else {
 				if action == "download" {
 					if state.Placeholder && !state.Local {
-						return result, commit.ErrLocalStatusBusy
+						// A prior provider may have delivered all bytes but lost
+						// adoption. Include that explicit reconciliation work;
+						// waiting for another FETCH_DATA would never finish it.
+						rel, _, identitySize, valid := parseAnchorRemoteIdentity(state.Identity)
+						if !valid || rel != batch[i] || (identitySize >= 0 && identitySize != *state.Size) || *state.Size != sizes[batch[i]] ||
+							!anchorHydrationComplete(state, state.Identity, *state.Size) {
+							return result, errors.New("unrecognised fully resident remote placeholder")
+						}
+					} else {
+						continue
 					}
-					continue
-				}
-				if !state.Placeholder || !state.Local || !state.InSync {
+				} else if !state.Placeholder || !state.Local || !state.InSync {
 					return result, errAnchorReleaseLocalWork
 				}
 			}

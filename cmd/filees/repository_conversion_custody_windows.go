@@ -19,7 +19,7 @@ import (
 // After an executor release/restart or the rename custody gap, pinOld instead
 // acquires and hashes a fresh tree. Retirement still hashes each source file
 // after opening its DELETE handle, closing the final custody-transfer gap.
-func (p *conversionTreePin) refresh(ctx context.Context, root string) ([]conversionObject, error) {
+func (p *conversionTreePin) refresh(ctx context.Context, root string, completed func(int64)) ([]conversionObject, error) {
 	if p == nil || p.Root != filepath.Clean(root) || len(p.Files) != len(p.Objects) || len(p.Objects) == 0 {
 		return nil, errors.New("conversion source custody is incomplete")
 	}
@@ -72,6 +72,9 @@ func (p *conversionTreePin) refresh(ctx context.Context, root string) ([]convers
 		}
 		objects = append(objects, got)
 		if !prior.Directory {
+			if completed != nil {
+				completed(int64(len(objects)))
+			}
 			continue
 		}
 		entries, err := readPinnedMoveDirectory(windows.Handle(file.Fd()), path)
@@ -91,6 +94,9 @@ func (p *conversionTreePin) refresh(ctx context.Context, root string) ([]convers
 				return nil, errors.New("conversion source namespace changed during custody")
 			}
 			seen[child] = true
+		}
+		if completed != nil {
+			completed(int64(len(objects)))
 		}
 	}
 	if len(seen) != len(known) {

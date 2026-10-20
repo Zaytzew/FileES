@@ -84,3 +84,33 @@ func TestWCConversionPresentationDoesNotInventCountersOrAuthority(t *testing.T) 
 		t.Fatal("control bypassed authority")
 	}
 }
+
+func TestWCConversionControlCountersAreEphemeralAndPerPass(t *testing.T) {
+	f := newDaemonConversionFixture(t)
+	r, err := f.p.queueConversion(t.Context(), f.r.ServerID, f.r.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitted := 0
+	f.p.conversionChanged = func(string) { emitted++ }
+	f.p.observeConversion(r.OperationID, conversionObservation{Running: true, Phase: "inspecting", Check: "source", Done: 17})
+	s := f.p.WCConversionStatus(r.ServerID, r.RepoID)
+	if s.Phase != "inspecting" || s.Check != "source" || s.Done != 17 || s.CountersKnown || s.Total != 0 {
+		t.Fatal(s)
+	}
+	// A new pass resets its count and is emitted immediately even within the
+	// same second. Status presentation itself never reads the source tree.
+	f.p.observeConversion(r.OperationID, conversionObservation{Running: true, Phase: "inspecting", Check: "source", Done: 0})
+	if emitted != 2 {
+		t.Fatal("reset not emitted", emitted)
+	}
+	f.p.observeConversion(r.OperationID, conversionObservation{Running: true, Phase: "inspecting", Check: "custody", Known: true, Done: 1, Total: 2})
+	if emitted != 3 {
+		t.Fatal("new check not emitted", emitted)
+	}
+	f.p.conversionProgress = nil // equivalent to a newly started daemon
+	s = f.p.WCConversionStatus(r.ServerID, r.RepoID)
+	if s.Check != "" || s.Done != 0 || s.CountersKnown || s.Running {
+		t.Fatal("restart reused counters", s)
+	}
+}

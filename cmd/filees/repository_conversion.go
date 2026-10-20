@@ -260,10 +260,14 @@ func (p *daemonProvisioner) runConversion(ctx context.Context, operationID strin
 	executor := &localrepo.ConversionExecutor{Journal: j, Effects: effects}
 	executor.Progress = func(progress localrepo.ConversionProgress) { p.conversionPhase(operationID, string(progress.Phase)) }
 	if observed, ok := adapter.(interface {
-		bindConversionProgress(func(string, int64, int64))
+		bindConversionProgress(func(string, string, int64, int64))
 	}); ok {
-		observed.bindConversionProgress(func(phase string, done, total int64) {
-			p.observeConversion(operationID, conversionObservation{Running: true, Phase: phase, Known: phase == "preserving" || phase == "cleanup", Done: done, Total: total})
+		observed.bindConversionProgress(func(phase, check string, done, total int64) {
+			known := total >= 0 && (check != "" || phase == "preserving" || phase == "cleanup")
+			if total < 0 {
+				total = 0 // unknown total is explicit, not a guessed denominator
+			}
+			p.observeConversion(operationID, conversionObservation{Running: true, Phase: phase, Check: check, Known: known, Done: done, Total: total})
 		})
 	}
 	outcome, err := executor.Run(ctx)

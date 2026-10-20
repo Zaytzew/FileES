@@ -58,7 +58,7 @@ type nativeConversionEffects struct {
 	stopProvider func()
 	bridge       *anchorBridge
 	admission    func(context.Context) error
-	progress     func(string, int64, int64)
+	progress     func(string, string, int64, int64)
 	// Test-only fault injection at real per-object receipt boundaries; nil in production.
 	checkpoint func(string) error
 	// Test-only observation of successful whole-source/retirement hash bytes.
@@ -68,13 +68,25 @@ type nativeConversionEffects struct {
 func (f *nativeConversionEffects) bindConversionAdmission(check func(context.Context) error) {
 	f.admission = check
 }
-func (f *nativeConversionEffects) bindConversionProgress(observe func(string, int64, int64)) {
+func (f *nativeConversionEffects) bindConversionProgress(observe func(string, string, int64, int64)) {
 	f.progress = observe
 }
 func (f *nativeConversionEffects) reportProgress(phase string, done, total int64) {
 	if f.progress != nil {
-		f.progress(phase, done, total)
+		f.progress(phase, "", done, total)
 	}
+}
+
+// Each pass owns its own counter. A negative total means discovery is still
+// in progress; it must not become a percentage or a persistent custody proof.
+func (f *nativeConversionEffects) checkProgress(phase, check string, total int64) func(int64) {
+	observe := func(done int64) {
+		if f.progress != nil {
+			f.progress(phase, check, done, total)
+		}
+	}
+	observe(0)
+	return observe
 }
 func (f *nativeConversionEffects) check(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -216,7 +228,7 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 	refuse := func(err error) (localrepo.ConversionPreparation, error) {
 		return localrepo.ConversionPreparation{}, err
 	}
-	pin, err := conversionPinTreeObserved(ctx, r.SourcePath, f.observeSourceRead)
+	pin, err := conversionPinTreeProgress(ctx, r.SourcePath, f.observeSourceRead, f.checkProgress("inspecting", "source", -1))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
 			return refuse(localrepo.ErrConversionWaiting)
@@ -224,6 +236,7 @@ func (f *nativeConversionEffects) Prepare(ctx context.Context, r localrepo.Conve
 		return refuse(err)
 	}
 	f.old = pin
+	f.reportProgress("inspecting", 0, 0) // remaining SVN/authority work has no object counter
 	inv, err := f.svn.ConversionInventory(ctx, r.SourcePath)
 	if err != nil {
 		return refuse(err)
@@ -370,11 +383,12 @@ func (f *nativeConversionEffects) pinOld(ctx context.Context, r localrepo.Conver
 	var objects []conversionObject
 	var err error
 	if pin != nil && pin.Root == filepath.Clean(root) && len(pin.Files) == len(pin.Objects) && len(pin.Objects) != 0 {
-		objects, err = pin.refresh(ctx, root)
+		objects, err = pin.refresh(ctx, root, f.checkProgress(string(r.Phase), "custody", int64(len(pin.Objects))))
 	} else {
 		f.old.close()
 		f.old = nil
-		pin, err = conversionPinTreeObserved(ctx, root, f.observeSourceRead)
+		// Even with a plan, the current namespace is not counted until traversed.
+		pin, err = conversionPinTreeProgress(ctx, root, f.observeSourceRead, f.checkProgress(string(r.Phase), "source", -1))
 		if err == nil {
 			objects = pin.Objects
 		}
@@ -884,6 +898,7 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 	if err = f.acknowledgeStreamMetadata(ctx, r); err != nil {
 		return err
 	}
+	remoteProgress := f.checkProgress(string(r.Phase), "placeholders", int64(len(f.plan.Remote)))
 	for start := 0; start < len(f.plan.Remote); start += 64 {
 		end := start + 64
 		if end > len(f.plan.Remote) {
@@ -902,8 +917,16 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 			if !state.OK || !state.Placeholder || !state.InSync || state.Identity != node.Path || state.Directory != (node.Kind == "dir") || node.Kind == "file" && (state.Local || state.OnDisk != 0 || state.Modified != 0 || state.Size == nil || *state.Size != node.Size) {
 				return fmt.Errorf("conversion placeholder %q differs: %+v", node.Path, state)
 			}
+			remoteProgress(int64(start + i + 1))
 		}
 	}
+	var localTotal, localDone int64
+	for _, node := range f.plan.Objects {
+		if node.Local {
+			localTotal++
+		}
+	}
+	localProgress := f.checkProgress(string(r.Phase), "local", localTotal)
 	for _, node := range f.plan.Objects {
 		if !node.Local {
 			continue
@@ -944,6 +967,8 @@ func (f *nativeConversionEffects) Verify(ctx context.Context, r localrepo.Conver
 			}
 		}
 		file.Close()
+		localDone++
+		localProgress(localDone)
 	}
 	streamPins, err := f.pinPreservedStreams(ctx, r)
 	if err != nil {

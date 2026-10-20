@@ -27,6 +27,9 @@ type WCConversionStatus struct {
 	CanRetry      bool   `json:"can_retry"`
 	CanRollback   bool   `json:"can_rollback"`
 	CountersKnown bool   `json:"counters_known"`
-	Done          int64  `json:"done"`
-	Total         int64  `json:"total"`
+	// Check identifies an in-memory control pass, never a durable safety receipt.
+	// With Check set and CountersKnown false, Done is observed but Total is unknown.
+	Check string `json:"check,omitempty"` // source | custody | placeholders | local
+	Done  int64  `json:"done"`
+	Total int64  `json:"total"`
 }

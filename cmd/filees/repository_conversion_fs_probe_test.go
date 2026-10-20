@@ -55,9 +55,26 @@ func TestWCConversionNativeIPCProgressAndRetry(t *testing.T) {
 	if err != nil || accepted.OperationID == "" {
 		t.Fatal(accepted, err)
 	}
-	var sawPreserve, sawCleanup atomic.Bool
+	var sawPreserve, sawCleanup, sawSource, sawCustody, sawPlaceholders, sawLocal atomic.Bool
 	f.p.conversionChanged = func(string) {
 		p := f.p.WCConversionStatus(f.record.ServerID, f.record.RepoID)
+		if p != nil && p.Running && p.Check != "" {
+			// The same optional check/counter survives actual public IPC.
+			wire, err := cli.WCConversion(ctx, contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "status"})
+			if err != nil || wire.Check != p.Check || wire.Done != p.Done || wire.CountersKnown != p.CountersKnown {
+				t.Errorf("check IPC differs: %+v %+v %v", p, wire, err)
+			}
+			switch p.Check {
+			case "source":
+				sawSource.Store(true)
+			case "custody":
+				sawCustody.Store(true)
+			case "placeholders":
+				sawPlaceholders.Store(true)
+			case "local":
+				sawLocal.Store(true)
+			}
+		}
 		if p == nil || !p.CountersKnown || p.Done < 1 {
 			return
 		}
@@ -89,6 +106,9 @@ func TestWCConversionNativeIPCProgressAndRetry(t *testing.T) {
 	final, err := cli.WCConversion(ctx, contract.WCConversionPayload{ServerID: f.record.ServerID, RepoID: f.record.RepoID, Action: "status"})
 	if err != nil || final.Phase != "complete" || final.Running || final.CanRollback || final.CanRetry || final.Error != "" || !sawPreserve.Load() || !sawCleanup.Load() {
 		t.Fatal(final, err, sawPreserve.Load(), sawCleanup.Load())
+	}
+	if !sawSource.Load() || !sawCustody.Load() || !sawPlaceholders.Load() || !sawLocal.Load() {
+		t.Fatal("missing control progress", sawSource.Load(), sawCustody.Load(), sawPlaceholders.Load(), sawLocal.Load())
 	}
 }
 

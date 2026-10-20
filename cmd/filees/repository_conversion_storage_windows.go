@@ -116,6 +116,12 @@ func conversionPinTree(ctx context.Context, root string) (*conversionTreePin, er
 }
 
 func conversionPinTreeObserved(ctx context.Context, root string, observed func(int64)) (*conversionTreePin, error) {
+	return conversionPinTreeProgress(ctx, root, observed, nil)
+}
+
+// completed counts fully inspected objects in this traversal, without a second
+// listing or a guessed total. Failed objects are never counted as checked.
+func conversionPinTreeProgress(ctx context.Context, root string, observed, completed func(int64)) (*conversionTreePin, error) {
 	p := &conversionTreePin{Root: filepath.Clean(root), Files: map[string]*os.File{}, Streams: map[string][]*os.File{}}
 	var walk func(string) error
 	walk = func(rel string) error {
@@ -159,6 +165,9 @@ func conversionPinTreeObserved(ctx context.Context, root string, observed func(i
 			}
 		}
 		p.Objects = append(p.Objects, node)
+		if completed != nil {
+			completed(int64(len(p.Objects)))
+		}
 		if node.Directory {
 			entries, err := readPinnedMoveDirectory(windows.Handle(f.Fd()), path)
 			if err != nil {

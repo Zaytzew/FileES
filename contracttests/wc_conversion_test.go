@@ -13,8 +13,9 @@ import (
 )
 
 type conversionContractService struct {
-	calls atomic.Int64
-	id    string
+	calls   atomic.Int64
+	unknown atomic.Bool
+	id      string
 }
 
 func (f *conversionContractService) WCConversion(_ context.Context, p contract.WCConversionPayload) (contract.WCConversionStatus, error) {
@@ -28,7 +29,11 @@ func (f *conversionContractService) WCConversionStatus(server, repo string) *con
 	if server != "lab" || repo != "repo" {
 		return nil
 	}
-	return &contract.WCConversionStatus{OperationID: f.id, ServerID: server, RepoID: repo, SourcePath: "confirmed", Phase: "preserving", CountersKnown: true, Done: 3, Total: 9}
+	result := &contract.WCConversionStatus{OperationID: f.id, ServerID: server, RepoID: repo, SourcePath: "confirmed", Phase: "verifying", Check: "placeholders", CountersKnown: true, Done: 3, Total: 9}
+	if f.unknown.Load() {
+		result.Phase, result.Check, result.Total, result.CountersKnown = "inspecting", "source", 0, false
+	}
+	return result
 }
 func TestWCConversionContractCapabilityScopeAndProgress(t *testing.T) {
 	socket := testSocketPath(t)
@@ -56,7 +61,7 @@ func TestWCConversionContractCapabilityScopeAndProgress(t *testing.T) {
 		t.Fatal(hello, err)
 	}
 	result, err := c.WCConversion(ctx, base)
-	if err != nil || result.OperationID != f.id || result.Done != 3 || result.Total != 9 {
+	if err != nil || result.OperationID != f.id || result.Done != 3 || result.Total != 9 || result.Check != "placeholders" {
 		t.Fatal(result, err)
 	}
 	for _, p := range []contract.WCConversionPayload{
@@ -80,12 +85,17 @@ func TestWCConversionContractCapabilityScopeAndProgress(t *testing.T) {
 		}
 	}
 	status, err := c.RepoStatus(ctx, "repo")
-	if err != nil || status.Conversion == nil || status.Conversion.Done != 3 {
+	if err != nil || status.Conversion == nil || status.Conversion.Done != 3 || status.Conversion.Check != "placeholders" {
 		t.Fatal(status, err)
 	}
 	list, err := c.RepoList(ctx)
-	if err != nil || len(list.Repos) != 1 || list.Repos[0].Conversion == nil {
+	if err != nil || len(list.Repos) != 1 || list.Repos[0].Conversion == nil || list.Repos[0].Conversion.Check != "placeholders" {
 		t.Fatal(list, err)
+	}
+	f.unknown.Store(true)
+	result, err = c.WCConversion(ctx, contract.WCConversionPayload{ServerID: "lab", RepoID: "repo", Action: "status"})
+	if err != nil || result.Check != "source" || result.CountersKnown || result.Total != 0 || result.Done != 3 {
+		t.Fatal("unknown-total observation lost", result, err)
 	}
 	s.SetWCConversionService(nil)
 	hello, err = c.Hello(ctx)

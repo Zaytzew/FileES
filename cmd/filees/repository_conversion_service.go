@@ -11,6 +11,7 @@ import (
 type conversionObservation struct {
 	Running, Known bool
 	Phase          string
+	Check          string
 	Done, Total    int64
 	Emitted        time.Time
 }
@@ -24,7 +25,7 @@ func (p *daemonProvisioner) observeConversion(id string, value conversionObserva
 		p.conversionProgress = map[string]conversionObservation{}
 	}
 	old := p.conversionProgress[id]
-	emit := old.Phase != value.Phase || time.Since(old.Emitted) >= time.Second || value.Known && value.Done == value.Total
+	emit := old.Phase != value.Phase || old.Check != value.Check || value.Done < old.Done || time.Since(old.Emitted) >= time.Second || value.Known && value.Done == value.Total
 	value.Emitted = old.Emitted
 	if emit {
 		value.Emitted = time.Now()
@@ -41,6 +42,7 @@ func (p *daemonProvisioner) conversionPhase(id, phase string) {
 	p.conversionMu.Unlock()
 	if value.Phase != phase {
 		value.Phase, value.Known, value.Done, value.Total = phase, false, 0, 0
+		value.Check = ""
 	}
 	p.observeConversion(id, value)
 }
@@ -91,10 +93,12 @@ func (p *daemonProvisioner) WCConversionStatus(serverID, repoID string) *contrac
 	}
 	if progress.Phase == status.Phase {
 		status.CountersKnown, status.Done, status.Total = progress.Known, progress.Done, progress.Total
+		status.Check = progress.Check
 	}
 	active := conversionBound(r, intent)
 	if active && conversionEnded(intent.Phase) {
 		status.Phase, status.CountersKnown = "finalizing", false
+		status.Check, status.Done, status.Total = "", 0, 0
 	}
 	status.CanRetry = active && !status.Running && status.Error != ""
 	status.CanRollback = active && !status.Running && intent.Phase != localrepo.ConversionCleanup && !conversionEnded(intent.Phase) &&

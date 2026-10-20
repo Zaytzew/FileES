@@ -29,6 +29,26 @@ test("unknown or invalid counters never become invented progress",()=>{
     assert.equal(line,t("conversion.phase.cleanup"));
   }
 });
+
+test("control passes show measured discovery without a guessed total in all languages",()=>{
+  for (const {code} of languages) {
+    const t=(key,args)=>translate(catalogues,code,key,args);
+    for (const check of ["source","custody","placeholders","local"]) {
+      const p={operation_id:"id",phase:"verifying",check,done:17,total:0,counters_known:false};
+      const line=conversionProgressLine({conversion:p},t);
+      assert.match(line,/17/); assert.doesNotMatch(line, /\[conversion|%/);
+      assert.ok(line.includes(t(`conversion.check.${check}`)));
+      assert.ok(!line.includes(t("conversion.count",{done:17,total:0})));
+      p.total=23; p.counters_known=true;
+      assert.ok(conversionProgressLine({conversion:p},t).includes(t("conversion.count",{done:17,total:23})));
+    }
+    for (const check of [undefined,"future-check","<script>"]) {
+      assert.equal(conversionProgressLine({conversion:{operation_id:"id",phase:"inspecting",check,done:17,counters_known:false}},t),t("conversion.phase.inspecting"));
+    }
+    const p={operation_id:"id",phase:"retaining",check:"source",done:-1,total:0,counters_known:false};
+    assert.doesNotMatch(conversionProgressLine({conversion:p},t),/-1/);
+  }
+});
 test("conversion problem shows literal cause and recovery without injecting markup",()=>{
   const t=(key,args)=>translate(catalogues,"en",key,args);
   const escape=x=>String(x).replaceAll("&","&amp;").replaceAll("<","&lt;");

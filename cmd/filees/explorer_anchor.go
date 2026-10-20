@@ -75,6 +75,10 @@ type anchorBridge struct {
 	// adopt takes identity into the working copy at revision, adopting the
 	// bytes already on disk. Nil in tests that stop at the fetch.
 	adopt func(ctx context.Context, identity string, revision int64) error
+	// Independent metadata proof, including when an older helper calls an EOF
+	// fragment "hydrated". False means readable partial data, not an error.
+	readyToAdopt func(context.Context, string, *int64) (bool, error)
+	adopting     map[string]bool // fetchMu: active identity -> another range finished
 	// received is advisory activity, emitted only after hydration and adoption.
 	// It never authorizes a clean marker, release or publication.
 	received func(identity string, revision int64, size *int64)
@@ -236,9 +240,15 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 				continue
 			}
 			work(func() { bridge.handle(ctx, request) })
-		case strings.HasPrefix(line, "hydrated\t"):
+		case strings.HasPrefix(line, "fetched\t"), strings.HasPrefix(line, "hydrated\t"):
 			fields := strings.Split(line, "\t")
-			if len(fields) == 3 {
+			// New helpers report every completed range. Legacy EOF candidates
+			// also go through the independent residency gate. Never accept a
+			// mismatched identity or a new candidate without that gate.
+			bridge.fetchMu.Lock()
+			fetched, exists := bridge.revisions[fields[1]]
+			bridge.fetchMu.Unlock()
+			if len(fields) == 3 && exists && fields[2] == fetched.identity && (fields[0] == "hydrated" || bridge.readyToAdopt != nil) {
 				work(func() { bridge.hydrated(ctx, fields[1]) })
 			}
 		case strings.HasPrefix(line, "reverted\t"):
@@ -348,9 +358,50 @@ func (bridge *anchorBridge) handle(ctx context.Context, request anchorFetch) {
 func (bridge *anchorBridge) hydrated(ctx context.Context, id string) {
 	bridge.fetchMu.Lock()
 	fetched, ok := bridge.revisions[id]
-	bridge.fetchMu.Unlock()
 	if !ok || bridge.adopt == nil {
+		delete(bridge.revisions, id)
+		bridge.fetchMu.Unlock()
 		return
+	}
+	if _, active := bridge.adopting[fetched.identity]; active {
+		bridge.adopting[fetched.identity] = true
+		delete(bridge.revisions, id)
+		bridge.fetchMu.Unlock()
+		return
+	}
+	if bridge.adopting == nil {
+		bridge.adopting = make(map[string]bool)
+	}
+	bridge.adopting[fetched.identity] = false
+	bridge.fetchMu.Unlock()
+	owned := true
+	defer func() {
+		if !owned {
+			return
+		}
+		bridge.fetchMu.Lock()
+		delete(bridge.adopting, fetched.identity)
+		bridge.fetchMu.Unlock()
+	}()
+	for bridge.readyToAdopt != nil {
+		ready, err := bridge.readyToAdopt(ctx, fetched.identity, fetched.size)
+		if err != nil || !ready {
+			if err != nil {
+				bridge.log.Warnf("explorer anchor: checking hydration of %s: %v", fetched.identity, err)
+			}
+			bridge.fetchMu.Lock()
+			if err == nil && bridge.adopting[fetched.identity] {
+				bridge.adopting[fetched.identity] = false
+				bridge.fetchMu.Unlock()
+				continue // do not lose the final range while checking an earlier one
+			}
+			delete(bridge.revisions, id)
+			delete(bridge.adopting, fetched.identity)
+			owned = false
+			bridge.fetchMu.Unlock()
+			return
+		}
+		break
 	}
 	if err := bridge.adopt(ctx, fetched.identity, fetched.revision); err != nil {
 		// The file stays a hydrated placeholder: readable, not yet part of the

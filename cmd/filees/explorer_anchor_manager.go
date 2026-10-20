@@ -434,13 +434,17 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 			if err != nil {
 				log.Warnf("connect %s: %v", record.LocalPath, err)
 			} else {
+				materials := &anchorFetchCache{}
 				bridge := &anchorBridge{
 					root: record.LocalPath,
 					materialize: func(ctx context.Context, identity string) (string, int64, error) {
-						return m.materialize(ctx, record, identity)
+						return m.materializeCached(ctx, record, identity, 0, -1, materials)
 					},
 					materializePinned: func(ctx context.Context, identity string, revision, size int64) (string, int64, error) {
-						return m.materializeAt(ctx, record, identity, revision, size)
+						return m.materializeCached(ctx, record, identity, revision, size, materials)
+					},
+					readyToAdopt: func(ctx context.Context, identity string, size *int64) (bool, error) {
+						return m.hydrationComplete(ctx, record, identity, size)
 					},
 					adopt: func(ctx context.Context, identity string, revision int64) error {
 						return m.adopt(ctx, record, identity, revision)
@@ -503,6 +507,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					}
 				}
 				err := bridge.serve(ctx, streams)
+				materials.close()
 				closeDelete()
 				m.mu.Lock()
 				if connection := m.running[anchorKey(record)]; connection.bridge == bridge {
@@ -787,6 +792,16 @@ func (m *anchorManager) materialize(ctx context.Context, record localrepo.Record
 }
 
 func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Record, identity string, revision, expectedSize int64) (string, int64, error) {
+	return m.materializeCached(ctx, record, identity, revision, expectedSize, nil)
+}
+
+func (m *anchorManager) materializeCached(ctx context.Context, record localrepo.Record, identity string, revision, expectedSize int64, cache *anchorFetchCache) (string, int64, error) {
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
+	}
+	if err := m.anchorFetchAuthority(record); err != nil {
+		return "", 0, err
+	}
 	if commit.HasPendingLocalMutation(record.LocalPath) {
 		return "", 0, commit.LocalMutationPendingError(record.LocalPath)
 	}
@@ -821,25 +836,91 @@ func (m *anchorManager) materializeAt(ctx context.Context, record localrepo.Reco
 			return "", 0, err
 		}
 	}
+	if cache != nil {
+		file, err := cache.get(ctx, anchorFetchKey{identity: identity, revision: revision, size: expectedSize}, func() (string, error) {
+			return materializeAnchorFile(ctx, reader, record.RepoURL, rel, revision, expectedSize)
+		})
+		if err == nil && commit.HasPendingLocalMutation(record.LocalPath) {
+			err = commit.LocalMutationPendingError(record.LocalPath)
+		}
+		if err == nil {
+			err = m.anchorFetchAuthority(record)
+		}
+		if err == nil {
+			err = ctx.Err()
+		}
+		return file, revision, err
+	}
+	file, err := materializeAnchorFile(ctx, reader, record.RepoURL, rel, revision, expectedSize)
+	if err == nil && commit.HasPendingLocalMutation(record.LocalPath) {
+		err = commit.LocalMutationPendingError(record.LocalPath)
+	}
+	return file, revision, err
+}
+
+func (m *anchorManager) anchorFetchAuthority(record localrepo.Record) error {
+	if m.lifecycle == nil {
+		return nil
+	} // isolated clients; production always has lifecycle
+	current, ok := m.lifecycle.Get(record.OperationID)
+	if !ok || current.State != localrepo.StateAttached || !current.Anchor ||
+		current.ServerID != record.ServerID || current.RepoID != record.RepoID ||
+		current.RepoURL != record.RepoURL || current.LocalPath != record.LocalPath || m.repos == nil {
+		return ipcserver.ErrDepthUnavailable
+	}
+	repo := m.repos(record.ServerID, record.RepoID)
+	if repo == nil {
+		return ipcserver.ErrDepthUnavailable
+	}
+	summary := repo.Summary()
+	if !summary.Attached || summary.LocalPath != record.LocalPath || summary.URL != record.RepoURL ||
+		(summary.Access != "r" && summary.Access != "rw") {
+		return ipcserver.ErrDepthUnavailable
+	}
+	return nil
+}
+
+func materializeAnchorFile(ctx context.Context, reader anchorFileReader, repoURL, rel string, revision, expectedSize int64) (string, error) {
 	dir, err := os.MkdirTemp("", "filees-anchor-*")
 	if err != nil {
-		return "", 0, err
+		return "", err
 	}
 	dest := filepath.Join(dir, path.Base(rel))
-	size, err := reader.HistoryFetchFile(ctx, headJoin(record.RepoURL, rel), revision, dest)
+	size, err := reader.HistoryFetchFile(ctx, headJoin(repoURL, rel), revision, dest)
 	if err != nil {
 		_ = os.RemoveAll(dir)
-		return "", 0, err
+		return "", err
 	}
 	if expectedSize >= 0 && size != expectedSize {
 		_ = os.RemoveAll(dir)
-		return "", 0, errors.New("download size differs from confirmed metadata")
+		return "", errors.New("download size differs from confirmed metadata")
 	}
 	time.AfterFunc(30*time.Minute, func() { _ = os.RemoveAll(dir) })
-	if commit.HasPendingLocalMutation(record.LocalPath) {
-		return "", 0, commit.LocalMutationPendingError(record.LocalPath)
+	return dest, nil
+}
+
+// An EOF range (notably a PDF trailer) is not a residency receipt. Ask only
+// attribute/CFAPI metadata; do not let SVN read a partial placeholder to find out.
+func (m *anchorManager) hydrationComplete(ctx context.Context, record localrepo.Record, identity string, size *int64) (bool, error) {
+	rel, _, pinnedSize, ok := parseAnchorRemoteIdentity(identity)
+	if !ok || size == nil || *size < 0 || (pinnedSize >= 0 && pinnedSize != *size) {
+		return false, nil
 	}
-	return dest, revision, nil
+	// The existing bounded batch response includes on_disk and directory;
+	// legacy single file-state responses do not. One path, no tree scan.
+	batch, err := m.call(ctx, rel+"\n", "file-states", "--root", record.LocalPath)
+	if err != nil {
+		return false, err
+	}
+	if !batch.OK || len(batch.States) != 1 {
+		return false, nil
+	}
+	return anchorHydrationComplete(batch.States[0], identity, *size), nil
+}
+
+func anchorHydrationComplete(answer cfapiAnswer, identity string, size int64) bool {
+	return answer.OK && answer.Placeholder && !answer.Directory && !answer.Partial &&
+		answer.Identity == identity && answer.Size != nil && *answer.Size == size && answer.OnDisk >= size
 }
 
 // adopt takes the opened path into the working copy through its running

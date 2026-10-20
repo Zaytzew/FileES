@@ -1,5 +1,21 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Zakończenie zakresu a pełny plik — 2026-10-20
+
+`fetch_range_receipt_v1`: po udanym TRANSFER_DATA helper emituje
+`fetched<TAB>id<TAB>identity` dla KAŻDEGO zakresu, niezależnie od EOF.
+To kandydat do przyjęcia, nie deklaracja pełnej hydratacji. Demon sprawdza
+świeże metadane własnego punktu przez jednoelementowe file-states:
+dokładna identity/size, pełne OnDiskDataSize i brak Partial. Przed SVN
+ponawia kontrolę dostępności pod strażnikiem WC. Same bajty końcówki PDF
+nie wystarczają; ostatnia dziura może nie sięgać EOF. Stare hydrated jest
+obsługiwane przez tę samą niezależną kontrolę. Starszy demon ignoruje
+nowe fetched, więc nie wykona przedwczesnego adopt; pełny odbiór wymaga
+nowej pary daemon/helper. Most stale drenuje stdout podczas kontroli.
+Zakresy jednego identity/revision/size współdzielą prywatną materializację
+ograniczoną do połączenia (64 wpisy, 512 MiB z jednym większym plikiem,
+15 min, Windows deny-write/delete). Cache nie zastępuje guardów/uprawnień.
+
 ## Ograniczona diagnostyka rejestracji
 
 2026-10-16: `registration_evidence_v1` dodaje opcjonalny JSON stderr przed/po

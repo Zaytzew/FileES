@@ -84,6 +84,7 @@ void filees_remote_delete_end(void);
 int filees_bridge_request(const WCHAR *identity, const WCHAR *process, LONGLONG offset, LONGLONG length,
                           filees_bridge_waiting waiting, void *context, WCHAR *path, int *id_out);
 void filees_bridge_say_hydrated(int id, const WCHAR *identity);
+void filees_bridge_say_fetched(int id, const WCHAR *identity);
 
 #ifdef FILEES_CFAPI_DELETE_PROBE
 /* Probe-only serialized diagnostic line, not a product approval protocol. */

@@ -196,6 +196,18 @@ void filees_bridge_say_hydrated(int id, const WCHAR *identity)
     LeaveCriticalSection(&g_lock);
 }
 
+/* Candidate only: successful transfer of the requested range. Whole-file
+ * residency is verified independently by the daemon, never inferred from EOF. */
+void filees_bridge_say_fetched(int id, const WCHAR *identity)
+{
+    char utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
+    if (!WideCharToMultiByte(CP_UTF8, 0, identity, -1, utf8, (int)sizeof utf8, NULL, NULL)) return;
+    EnterCriticalSection(&g_lock);
+    printf("fetched\t%d\t%s\n", id, utf8);
+    fflush(stdout);
+    LeaveCriticalSection(&g_lock);
+}
+
 /* The answer to a revert shares stdout with fetch requests, so it goes out
  * under the same lock: one line, never interleaved with another. */
 void filees_bridge_say_reverted(const char *id, HRESULT hr)

@@ -442,6 +442,9 @@ func (s *Service) SetDepth(ctx context.Context, wc, rel, depth string) error {
 // the same working-copy lock as commits and updates, so an anchor never
 // changes the copy underneath a publication.
 func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64) error {
+	if !safeIntentPath(rel) || revision <= 0 {
+		return errors.New("invalid anchor adoption path or revision")
+	}
 	adopter, ok := s.Cli.(interface {
 		UpdateAdoptPath(context.Context, string, string, int64) (string, error)
 	})
@@ -449,7 +452,17 @@ func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64)
 		return errors.New("SVN client cannot adopt a path into the working copy")
 	}
 	return s.WithWorkingCopyWrite(ctx, wc, func() error {
-		_, err := adopter.UpdateAdoptPath(ctx, wc, rel, revision)
+		// Recheck under the WC writer admission, not merely when a helper
+		// reports a completed range. SVN must never trigger recursive recall.
+		abs := filepath.Join(wc, filepath.FromSlash(rel))
+		info, err := os.Lstat(abs)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || cloudfiles.NotOnDisk(abs) || cloudfiles.RecallsOnRead(info) {
+			return errors.New("anchor adoption requires a fully resident regular file")
+		}
+		_, err = adopter.UpdateAdoptPath(ctx, wc, rel, revision)
 		return err
 	})
 }

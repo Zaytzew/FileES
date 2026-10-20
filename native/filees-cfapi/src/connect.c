@@ -210,11 +210,12 @@ static void CALLBACK on_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBA
         fail_fetch(info, offset, length, STATUS_UNSUCCESSFUL);
         return;
     }
-    /* Only a range that reaches the end of the file completes it. A reader
-     * that asked for the first page alone leaves the rest for later, and the
-     * daemon must not let Subversion read a file that is not whole yet. */
-    if (offset.QuadPart + length.QuadPart >= info->FileSize.QuadPart)
-        filees_bridge_say_hydrated(id, (const WCHAR *)info->FileIdentity);
+    /* This is a range receipt, NOT proof that the placeholder is whole.
+     * A PDF trailer reaches EOF before its middle is resident; conversely
+     * the final missing range need not reach EOF. The daemon checks fresh
+     * metadata for the exact identity/size before allowing SVN to read it.
+     * An older daemon ignores this new candidate message (safe refusal). */
+    filees_bridge_say_fetched(id, (const WCHAR *)info->FileIdentity);
 }
 
 static void CALLBACK on_cancel_fetch_data(const CF_CALLBACK_INFO *info, const CF_CALLBACK_PARAMETERS *params)

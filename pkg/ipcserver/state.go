@@ -53,6 +53,8 @@ type RepoState struct {
 	canRetryLifecycle    bool
 	canAbandonLifecycle  bool
 
+	lifecycleRepairGeneration uint64
+
 	state              string // contract.State*
 	connectivity       string // contract.Conn*
 	headRev            int64  // last HEAD seen by poller; 0 = unknown
@@ -290,11 +292,44 @@ func (rs *RepoState) SetDeletionMetadata(serverDeleted, cleanupPending bool, ret
 
 func (rs *RepoState) SetLifecycleRepairMetadata(operationID, lifecycleError string, canRetry, canAbandon bool) {
 	rs.mu.Lock()
+	rs.lifecycleRepairGeneration++
 	rs.lifecycleOperationID = operationID
 	rs.lifecycleError = lifecycleError
 	rs.canRetryLifecycle = canRetry
 	rs.canAbandonLifecycle = canAbandon
 	rs.mu.Unlock()
+}
+
+// Claim exactly the offer checked by the handler. A concurrent request or
+// newer lifecycle projection must not turn the same confirmation into two jobs.
+func (rs *RepoState) beginLifecycleRepair(before contract.RepoSummary) (uint64, bool) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.lifecycleOperationID != before.LifecycleOperationID || rs.lifecycleError != before.LifecycleError ||
+		rs.canRetryLifecycle != before.CanRetryLifecycle || rs.canAbandonLifecycle != before.CanAbandonLifecycle {
+		return 0, false
+	}
+	rs.lifecycleRepairGeneration++
+	rs.lifecycleError, rs.canRetryLifecycle, rs.canAbandonLifecycle = "", false, false
+	return rs.lifecycleRepairGeneration, true
+}
+
+// Only this request's still-current in-progress projection may be restored or
+// cleared. Even an identical intervening projection invalidates the receipt.
+func (rs *RepoState) finishLifecycleRepair(generation uint64, previous *contract.RepoSummary) bool {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.lifecycleRepairGeneration != generation {
+		return false
+	}
+	rs.lifecycleRepairGeneration++
+	if previous == nil {
+		rs.lifecycleOperationID, rs.lifecycleError, rs.canRetryLifecycle, rs.canAbandonLifecycle = "", "", false, false
+	} else {
+		rs.lifecycleOperationID, rs.lifecycleError = previous.LifecycleOperationID, previous.LifecycleError
+		rs.canRetryLifecycle, rs.canAbandonLifecycle = previous.CanRetryLifecycle, previous.CanAbandonLifecycle
+	}
+	return true
 }
 
 func (rs *RepoState) markDetached() {

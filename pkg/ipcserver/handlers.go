@@ -1522,16 +1522,19 @@ func (s *Server) handleRepoLifecycleRepair(req contract.Request) contract.Respon
 	// retry keeps this operation ID visible until the durable workflow reaches
 	// its next terminal projection; a synchronous failure restores the prior
 	// repair offer.
-	rs.SetLifecycleRepairMetadata(payload.OperationID, "", false, false)
+	generation, claimed := rs.beginLifecycleRepair(summary)
+	if !claimed {
+		return contract.ErrResponse(req.RequestID, "REPO-2015", "ERROR", "NONE", "repo.lifecycle_repair_forbidden", nil)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	result, err := service.Repair(ctx, payload.OperationID, payload.ServerID, payload.RepoID, payload.Strategy)
 	if err != nil {
-		rs.SetLifecycleRepairMetadata(summary.LifecycleOperationID, summary.LifecycleError, summary.CanRetryLifecycle, summary.CanAbandonLifecycle)
+		rs.finishLifecycleRepair(generation, &summary)
 		return contract.ErrResponse(req.RequestID, "REPO-2016", "ERROR", "REQUIRE_ACTION", "repo.lifecycle_repair_failed", map[string]string{"detail": err.Error()})
 	}
 	if payload.Strategy == "abandon" {
-		rs.SetLifecycleRepairMetadata("", "", false, false)
+		rs.finishLifecycleRepair(generation, nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

@@ -142,7 +142,9 @@ func TestImportRetryAdmissionKeepsOtherGuards(t *testing.T) {
 	p, s, r := retryQueueFixture(t)
 	p.localIntentMu.Lock()
 	defer p.localIntentMu.Unlock()
-	if _, err := s.Repair(t.Context(), r.OperationID, r.ServerID, r.RepoID, "abandon"); !errors.Is(err, commit.ErrLocalStatusBusy) {
+	waitCtx, endWait := context.WithTimeout(t.Context(), 15*time.Millisecond)
+	defer endWait()
+	if _, err := s.Repair(waitCtx, r.OperationID, r.ServerID, r.RepoID, "abandon"); !errors.Is(err, commit.ErrLocalStatusBusy) {
 		t.Fatal(err)
 	}
 	if _, err := s.Repair(t.Context(), r.OperationID, "other", r.RepoID, "retry"); err == nil {

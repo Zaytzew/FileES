@@ -29,6 +29,67 @@ func TestObserverYieldsToQueuedRepositoryCreation(t *testing.T) {
 	leave()
 }
 
+func TestRepairAdmissionDrainsObserverAndPreventsReentry(t *testing.T) {
+	p, service, r, _ := repairAdmissionFixture(t)
+	m := &anchorManager{localIntentMu: &p.localIntentMu, creationWaiters: &p.creationWaiters}
+	leaveObserver, err := m.enterObserverIntent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if leaveObserver != nil {
+			leaveObserver()
+		}
+	}()
+	executing := make(chan struct{})
+	finish := make(chan struct{})
+	service.onRepair = func(ctx context.Context, id, strategy string) (localrepo.Record, error) {
+		close(executing)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return localrepo.Record{}, ctx.Err()
+		}
+		current, _ := p.local.Get(id)
+		return current, nil
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := service.Repair(ctx, r.OperationID, r.ServerID, r.RepoID, "abandon"); done <- err }()
+	waitRepairAdmission(t, p, done)
+	if _, err := m.enterObserverIntent(); !errors.Is(err, commit.ErrLocalStatusBusy) {
+		t.Fatal("observer ignored waiting user", err)
+	}
+	leaveObserver()
+	leaveObserver = nil
+	select {
+	case <-executing:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if _, err := m.enterObserverIntent(); !errors.Is(err, commit.ErrLocalStatusBusy) {
+		t.Fatal("observer entered repair", err)
+	}
+	close(finish)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if p.creationWaiters.Load() != 0 {
+		t.Fatal("priority leaked")
+	}
+	leave, err := m.enterObserverIntent()
+	if err != nil {
+		t.Fatal("observer did not resume", err)
+	}
+	leave()
+}
+
 func TestAnchorMoveWaitsForObserverAndThrottlesTicksThroughCompletion(t *testing.T) {
 	m := &anchorManager{localIntentMu: &sync.Mutex{}}
 	observer, err := m.enterObserverIntent()

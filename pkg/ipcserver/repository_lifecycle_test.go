@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"filees/pkg/errcat"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ type lifecycleStub struct {
 	detachErr                                                                                                                             error
 	repairResult                                                                                                                          contract.RepoLifecycleResult
 	repairErr                                                                                                                             error
+	onRepair                                                                                                                              func()
 	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                                       string
 	relocationMoveExisting                                                                                                                bool
 }
@@ -188,6 +190,9 @@ func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleRes
 }
 
 func (stub *lifecycleStub) Repair(_ context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {
+	if stub.onRepair != nil {
+		stub.onRepair()
+	}
 	stub.repairCalls++
 	stub.repairOperationID, stub.repairServerID, stub.repairRepoID, stub.repairStrategy = operationID, serverID, repoID, strategy
 	if stub.repairResult.OperationID != "" || stub.repairErr != nil {
@@ -364,6 +369,64 @@ func TestLifecycleRepairFailurePreservesDiagnosticDetail(t *testing.T) {
 	restored := state.Summary()
 	if restored.LifecycleOperationID != "op-current" || restored.LifecycleError != "initial import failed" || restored.CanRetryLifecycle || !restored.CanAbandonLifecycle {
 		t.Fatalf("synchronous failure lost the prior repair offer: %+v", restored)
+	}
+}
+
+func TestLifecycleRepairCompletionPreservesNewProjection(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		for _, replacement := range []string{"new-op", "op-current"} {
+			t.Run(fmt.Sprintf("failure=%t/%s", fail, replacement), func(t *testing.T) {
+				server := New("unused")
+				stub := &lifecycleStub{}
+				server.SetRepositoryLifecycleService(stub)
+				state := server.RegisterProjectedRepo("repo-1", "Docs", "svn+ssh://example/repo-1", "office", "rw", "interaction_required", false)
+				state.SetLifecycleRepairMetadata("op-current", "old error", true, true)
+				stub.onRepair = func() { state.SetLifecycleRepairMetadata(replacement, "new error", false, true) }
+				if fail {
+					stub.repairErr = errors.New("state changed during wait")
+				}
+				request := lifecycleRequest(contract.CmdRepoLifecycleRepair, contract.RepoLifecycleRepairPayload{OperationID: "op-current", ServerID: "office", RepoID: "repo-1", Strategy: "abandon"})
+				response := server.dispatch(request)
+				if (response.Status == contract.StatusError) != fail {
+					t.Fatal(response)
+				}
+				got := state.Summary()
+				if got.LifecycleOperationID != replacement || got.LifecycleError != "new error" || got.CanRetryLifecycle || !got.CanAbandonLifecycle {
+					t.Fatal("completion overwrote a newer projection", got)
+				}
+			})
+		}
+	}
+}
+
+func TestLifecycleRepairClaimAndCompletionGenerationFence(t *testing.T) {
+	state := New("unused").RegisterProjectedRepo("repo", "Docs", "svn://example/repo", "office", "rw", "interaction_required", false)
+	state.SetLifecycleRepairMetadata("op", "failure", true, true)
+	before := state.Summary()
+	generation, ok := state.beginLifecycleRepair(before)
+	if !ok {
+		t.Fatal("first claim refused")
+	}
+	if _, ok := state.beginLifecycleRepair(before); ok {
+		t.Fatal("same offer claimed twice")
+	}
+	// A newer projection may look identical to our pending state. Its write
+	// still supersedes this request's generation (the ABA case).
+	state.SetLifecycleRepairMetadata("op", "", false, false)
+	if state.finishLifecycleRepair(generation, &before) || state.finishLifecycleRepair(generation, nil) {
+		t.Fatal("stale completion accepted")
+	}
+	state.SetLifecycleRepairMetadata("op", "new failure", true, true)
+	if _, ok := state.beginLifecycleRepair(before); ok {
+		t.Fatal("stale offer claimed")
+	}
+	latest := state.Summary()
+	generation, ok = state.beginLifecycleRepair(latest)
+	if !ok || !state.finishLifecycleRepair(generation, &latest) {
+		t.Fatal("fresh offer not restored")
+	}
+	if got := state.Summary(); got.LifecycleError != "new failure" || !got.CanAbandonLifecycle {
+		t.Fatal(got)
 	}
 }
 

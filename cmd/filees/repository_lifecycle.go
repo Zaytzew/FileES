@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -384,8 +385,8 @@ func (service repositoryLifecycleService) Repair(ctx context.Context, operationI
 	}
 	// Initial-import retry only records a durable intent. Its executor already
 	// waits in prepareQueuedCreation; a busy unrelated CFAPI observer must not
-	// reject the user's request here. Abandon and other repairs still own the
-	// synchronous fence because they may change local metadata immediately.
+	// reject the user's request here. Other repairs wait for the synchronous
+	// fence because they may change local metadata immediately.
 	if strategy == "retry" && record.State == localrepo.StateRepositoryCreated && service.onRetryCreate != nil {
 		if service.fileReleasePending(serverID, repoID) {
 			return contract.RepoLifecycleResult{}, service.localMutationPendingError(serverID, repoID)
@@ -393,11 +394,39 @@ func (service repositoryLifecycleService) Repair(ctx context.Context, operationI
 		record, err := service.onRetryCreate(ctx, record)
 		return lifecycleResult(record), err
 	}
-	leave, err := service.enterLocalIntent()
+	// Wait for admission only, not for a replay of the repair. Background
+	// observers yield to the existing user-priority counter. The IPC deadline
+	// leaves time after this bounded wait for WC verification and its receipt.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if service.anchorAdmissionCtx != nil {
+		stop := context.AfterFunc(service.anchorAdmissionCtx, cancel)
+		defer stop()
+		if service.anchorAdmissionCtx.Err() != nil {
+			cancel()
+		}
+	}
+	waitCtx, endWait := context.WithTimeout(ctx, 30*time.Second)
+	leave, err := service.waitForAnchorTurn(waitCtx)
+	endWait()
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
 	defer leave()
+	if err := ctx.Err(); err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	// Consent is for this exact durable attempt, not a new retry, changed path
+	// or replacement attachment that appeared while waiting. Compare the full
+	// snapshot conservatively: even a new failure needs a fresh user decision.
+	current, ok := service.store.Get(operationID)
+	if !ok || !reflect.DeepEqual(current, record) {
+		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle changed while waiting for repair")
+	}
+	active, activeErr := service.store.CurrentLifecycle(serverID, repoID)
+	if (activeErr == nil && active.OperationID != operationID) || (activeErr != nil && !errors.Is(activeErr, os.ErrNotExist)) {
+		return contract.RepoLifecycleResult{}, errors.New("repository attachment changed while waiting for repair")
+	}
 	if service.fileReleasePending(serverID, repoID) {
 		return contract.RepoLifecycleResult{}, service.localMutationPendingError(serverID, repoID)
 	}

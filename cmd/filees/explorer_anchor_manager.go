@@ -442,12 +442,12 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 			log.Warnf("prepare %s: %v", record.LocalPath, err)
 			blocked = m.inspectDamage(record) > 0
 		} else {
-			m.setRuntime(record, "connecting", "")
-			streams, err := startAnchorHelper(ctx, m.helper, record.LocalPath)
+			streams, providerFinished, err := m.startRegisteredAnchorHelper(ctx, record)
 			if err != nil {
 				m.setRuntime(record, "failed", err.Error())
 				log.Warnf("connect %s: %v", record.LocalPath, err)
 			} else {
+				m.setRuntime(record, "connecting", "")
 				materials := &anchorFetchCache{}
 				bridge := &anchorBridge{
 					root: record.LocalPath,
@@ -531,7 +531,10 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 					m.running[anchorKey(record)] = connection
 				}
 				m.mu.Unlock()
-				if ctx.Err() == nil {
+				requestedRepair := providerFinished() // process, bridge jobs and materializations
+				if requestedRepair {
+					m.setRuntime(record, "preparing", "")
+				} else if ctx.Err() == nil {
 					detail := "Explorer provider stopped"
 					if err != nil {
 						detail = err.Error()

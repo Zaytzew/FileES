@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -38,6 +39,21 @@ func (m *anchorManager) registerShellPreference(ctx context.Context, record loca
 			return errAnchorShellStale
 		}
 		record = current
+	}
+	// WinRT Register on an active native root is unsafe on this Windows.
+	// Own leases drain first; never stop an untracked process to make it pass.
+	if m.shellQueue.providerActive(record) {
+		return commit.ErrLocalStatusBusy
+	}
+	info, err := m.call(ctx, "", "info", "--root", record.LocalPath)
+	if err != nil {
+		return err
+	}
+	if !info.OK || !info.Ours {
+		return fmt.Errorf("cannot verify disconnected FileES root: %s %s", info.Error, info.HResult)
+	}
+	if info.Status != 0 {
+		return commit.ErrLocalStatusBusy
 	}
 	args := []string{"shell-register", "--root", record.LocalPath, "--identity", record.ServerID + "\x1f" + record.RepoID, "--icon", icon}
 	version, err := m.call(ctx, "", "version")

@@ -12,6 +12,51 @@ import (
 	"filees/pkg/localrepo"
 )
 
+func TestShellQueueStaleTaskDoesNotStopOldProvider(t *testing.T) {
+	m, r := shellQueueUnitManager(t)
+	p, finish, err := m.shellQueue.beginProvider(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer finish()
+	m.queueShellRegistration(r)
+	if _, err = m.lifecycle.BeginRelocation("fixture", "repo", filepath.Join(t.TempDir(), "moved"), true); err != nil {
+		t.Fatal(err)
+	}
+	m.reconcileShellQueue(t.Context())
+	if p.stopRequested() || len(m.shellQueue.pending) != 0 {
+		t.Fatal("obsolete repair touched provider or blocked queue")
+	}
+}
+
+func TestShellQueueDrainLeavesIntentGuardAvailableToACK(t *testing.T) {
+	m, r := shellQueueUnitManager(t)
+	p, finish, err := m.shellQueue.beginProvider(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer finish()
+	m.queueShellRegistration(r)
+	ack := make(chan bool, 1)
+	p.setStop(func() {
+		go func() {
+			available := m.localIntentMu.TryLock()
+			if available {
+				m.localIntentMu.Unlock()
+			}
+			ack <- available
+			finish()
+		}()
+	})
+	m.reconcileShellQueue(t.Context()) // missing helper then retains retry, not a fake success
+	if !<-ack {
+		t.Fatal("drain retained lifecycle guard needed by ACK")
+	}
+	if len(m.shellQueue.pending) != 1 {
+		t.Fatal("helper failure discarded retry")
+	}
+}
+
 func shellQueueUnitManager(t *testing.T) (*anchorManager, localrepo.Record) {
 	t.Helper()
 	t.Setenv("XDG_DATA_HOME", t.TempDir())

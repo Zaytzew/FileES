@@ -625,6 +625,12 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 	if strategy != "abandon" {
 		return localrepo.Record{}, errors.New("repository lifecycle repair strategy is invalid")
 	}
+	if err := ctx.Err(); err != nil {
+		return localrepo.Record{}, err
+	}
+	if record.State == localrepo.StateAbandoned {
+		return record, nil
+	}
 
 	var creationOperation *provisioning.Operation
 	if record.State == localrepo.StateRepositoryCreated {
@@ -665,16 +671,23 @@ func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, st
 			}
 			svn := p.newAttachmentSVN(profile, operationID)
 			infoText, err := svn.GetInfo(ctx, record.LocalPath)
-			if err != nil {
-				return localrepo.Record{}, fmt.Errorf("verify existing working copy before repair: %w", err)
+			if ctx.Err() != nil {
+				return localrepo.Record{}, ctx.Err()
 			}
-			if infoHasURL(infoText, record.RepoURL) {
+			if err != nil && record.Anchor {
+				return localrepo.Record{}, fmt.Errorf("verify existing anchor before repair: %w", err)
+			}
+			// An interrupted checkout may have .svn but no complete revision
+			// receipt. That must forbid adoption, NOT trap a user ending the
+			// failed local attempt. Abandon never changes these files or SVN.
+			if err == nil && infoHasURL(infoText, record.RepoURL) {
 				adoptExisting, adoptProfile = true, profile
 			}
 		}
 	}
-	// Persist the provisioning tombstone only after every fallible external WC
-	// check. From this point a crash is repaired by repeating "abandon": both
+	// Persist the tombstone only after checking the known provisioning identity
+	// and deciding whether the WC is proven adoptable. Unverified files stay
+	// untouched. From here a crash is repaired by repeating "abandon": both
 	// store mutations are idempotent and retry is explicitly refused.
 	if creationOperation != nil && creationOperation.State != provisioning.StateAbandoned {
 		if _, err := p.provisioning.AbandonInitialImport(operationID, record.RepoID); err != nil {

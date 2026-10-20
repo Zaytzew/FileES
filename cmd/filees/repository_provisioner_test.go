@@ -22,10 +22,13 @@ import (
 )
 
 type attachmentSVNStub struct {
-	url      string
-	checkout int
-	sparse   int
-	status   []client.StatusEntry
+	url       string
+	checkout  int
+	sparse    int
+	status    []client.StatusEntry
+	infoErr   error
+	infoCalls int
+	onInfo    func()
 }
 
 func (stub *attachmentSVNStub) CheckoutDepthEmpty(_ context.Context, url, path string) (string, error) {
@@ -65,6 +68,13 @@ func (stub *attachmentSVNStub) Checkout(_ context.Context, url, path string) (st
 	return "", os.MkdirAll(filepath.Join(path, ".svn"), 0o700)
 }
 func (stub *attachmentSVNStub) GetInfo(context.Context, string) (string, error) {
+	stub.infoCalls++
+	if stub.onInfo != nil {
+		stub.onInfo()
+	}
+	if stub.infoErr != nil {
+		return "", stub.infoErr
+	}
 	return "Path: .\nURL: " + stub.url + "\n", nil
 }
 func (stub *attachmentSVNStub) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
@@ -540,6 +550,150 @@ func TestRepairLifecycleAdoptsMatchingWorkingCopy(t *testing.T) {
 		}
 	default:
 		t.Fatal("adopted working copy was not published")
+	}
+}
+
+func TestRepairLifecycleAbandonIncompleteInfoPreservesUnverifiedCopy(t *testing.T) {
+	for _, withDocument := range []bool{false, true} {
+		t.Run(fmt.Sprint(withDocument), func(t *testing.T) {
+			root := t.TempDir()
+			statePath := filepath.Join(root, "lifecycle.json")
+			local, err := localrepo.Open(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wc := filepath.Join(root, "WIZUALIA-DUPLIKAT")
+			if err = os.MkdirAll(filepath.Join(wc, ".svn"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			metadata := filepath.Join(wc, ".svn", "wc.db")
+			if err = os.WriteFile(metadata, []byte("incomplete metadata must not be removed"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if withDocument {
+				if err = os.WriteFile(filepath.Join(wc, "drawing.dwg"), []byte("local edits"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r, err := local.BeginAttach("spot", "repo", wc, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err = local.ApproveAttach(r.OperationID, "spot", "repo", "svn+ssh://example/repo", "rw")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err = local.MarkError(r.OperationID, errors.New("native SVN: invalid last_changed_rev receipt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			stub := &attachmentSVNStub{url: r.RepoURL, infoErr: errors.New("native SVN: invalid last_changed_rev receipt")}
+			p := newDaemonProvisioner(local, nil, []clientprofile.Profile{{ServerID: "spot"}})
+			p.attachments = make(chan provisionedAttachment, 1)
+			p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+			ended, err := p.RepairLifecycle(t.Context(), r.OperationID, "abandon")
+			if err != nil {
+				t.Fatal("incomplete WC prevents ending the local attempt", err)
+			}
+			if ended.State != localrepo.StateAbandoned || ended.OperationID != r.OperationID || ended.RepoID != r.RepoID {
+				t.Fatal(ended)
+			}
+			if stub.infoCalls != 1 || stub.checkout != 0 || len(p.attachments) != 0 || len(p.queue) != 0 {
+				t.Fatal("abandon resumed/adopted or mutated the copy")
+			}
+			if roots := p.otherRoots("another"); len(roots) != 0 {
+				t.Fatal("abandoned path still reserved", roots)
+			}
+			if b, err := os.ReadFile(metadata); err != nil || string(b) != "incomplete metadata must not be removed" {
+				t.Fatal("metadata changed", err)
+			}
+			if withDocument {
+				if b, err := os.ReadFile(filepath.Join(wc, "drawing.dwg")); err != nil || string(b) != "local edits" {
+					t.Fatal("local edit changed", err)
+				}
+			}
+			reopened, err := localrepo.Open(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterRestart := newDaemonProvisioner(reopened, nil, []clientprofile.Profile{{ServerID: "spot"}})
+			afterRestart.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN {
+				t.Fatal("idempotent abandon re-inspected old files")
+				return nil
+			}
+			ended, err = afterRestart.RepairLifecycle(t.Context(), r.OperationID, "abandon")
+			if err != nil || ended.State != localrepo.StateAbandoned {
+				t.Fatal("restart lost abandonment", ended, err)
+			}
+			if _, err = afterRestart.RepairLifecycle(t.Context(), r.OperationID, "retry"); err == nil {
+				t.Fatal("abandoned intent was retried")
+			}
+		})
+	}
+}
+
+func TestRepairLifecycleIncompleteInfoAbandonStillFencesAnchorAndCancellation(t *testing.T) {
+	for _, anchor := range []bool{false, true} {
+		t.Run(fmt.Sprint(anchor), func(t *testing.T) {
+			local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wc := t.TempDir()
+			if err = os.Mkdir(filepath.Join(wc, ".svn"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var r localrepo.Record
+			if anchor {
+				r, err = local.BeginAnchorAttach("spot", "repo", wc, false)
+			} else {
+				r, err = local.BeginAttach("spot", "repo", wc, false)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err = local.ApproveAttach(r.OperationID, "spot", "repo", "svn+ssh://example/repo", "rw")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err = local.MarkError(r.OperationID, errors.New("incomplete info"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			stub := &attachmentSVNStub{infoErr: errors.New("native SVN: invalid last_changed_rev receipt")}
+			if !anchor {
+				stub.onInfo = cancel
+			}
+			p := newDaemonProvisioner(local, nil, []clientprofile.Profile{{ServerID: "spot"}})
+			p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+			if _, err = p.RepairLifecycle(ctx, r.OperationID, "abandon"); err == nil {
+				t.Fatal("anchor/cancel guard bypassed")
+			}
+			after, _ := local.Get(r.OperationID)
+			if after.State != localrepo.StateError || after.LastError == "" {
+				t.Fatal("guard changed durable state", after)
+			}
+		})
+	}
+}
+
+func TestRepairLifecycleAbandonIncompleteCreationInfoClosesBothJournals(t *testing.T) {
+	local, journal, profile, r := failedCreationRepairFixture(t)
+	if err := os.MkdirAll(filepath.Join(r.LocalPath, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	stub := &attachmentSVNStub{infoErr: errors.New("native SVN: invalid last_changed_rev receipt")}
+	p := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	p.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	ended, err := p.RepairLifecycle(t.Context(), r.OperationID, "abandon")
+	if err != nil || ended.State != localrepo.StateAbandoned {
+		t.Fatal(ended, err)
+	}
+	op, err := journal.Get(r.OperationID)
+	if err != nil || op.State != provisioning.StateAbandoned || op.RepoID != r.RepoID {
+		t.Fatal(op, err)
 	}
 }
 

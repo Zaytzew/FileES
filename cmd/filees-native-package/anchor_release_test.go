@@ -81,3 +81,17 @@ func TestPreEffectRecoveryRequiresIdleBoundRuntimeReceipt(t *testing.T) {
 		}
 	}
 }
+
+func TestAnchorReleaseRequiresDownloadIntegrity(t *testing.T) {
+	for _, present := range []bool{false, true} {
+		features := []string{"prepare_release_bound_v1", "restore_release_v1", "release_observation_v1",
+			"remote_tree_v1", "directory_state_bound_v1", "file_delete_bound_v1"}
+		if present {
+			features = append(features, "download_integrity_v1")
+		}
+		raw, _ := json.Marshal(map[string]any{"ok": true, "schema": "filees.cfapi/v1", "version": "0.2.0", "features": features})
+		if err := verifyCFAPIReleaseReceipt(raw, "0.2.0"); (err == nil) != present {
+			t.Fatalf("integrity feature=%v: %v", present, err)
+		}
+	}
+}

@@ -27,7 +27,16 @@ const GUID provider_id = {0x6f1e4c3a, 0x9b2d, 0x4e58, {0xa3, 0xc7, 0x0d, 0x51, 0
 
 struct apartment {
     apartment() { init_apartment(apartment_type::multi_threaded); }
-    ~apartment() { uninit_apartment(); }
+    ~apartment() {
+        // This EXE, unlike a WinRT DLL, has no DllCanUnloadNow callback to
+        // empty C++/WinRT's activation cache. Release cached factories while
+        // COM is still alive; CoUninitialize may otherwise unload their DLLs
+        // and leave stale vtables for the next diagnostic/registration scope.
+        clear_factory_cache();
+        uninit_apartment();
+    }
+    apartment(const apartment &) = delete;
+    apartment &operator=(const apartment &) = delete;
 };
 
 std::wstring canonical_path(const WCHAR *root) {

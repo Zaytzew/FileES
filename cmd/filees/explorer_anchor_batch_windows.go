@@ -17,6 +17,7 @@ import (
 	"filees/pkg/anchorqueue"
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"golang.org/x/sys/windows"
@@ -257,6 +258,10 @@ func (a anchorBatchAdapter) executeSnapshot(ctx context.Context, p contract.Repo
 		result.State = "partial"
 		result.FailureCode, result.FailureKey, _ = ipcserver.AnchorBatchFailure(err, p.Action)
 		result.FailureDetail = anchorqueue.Diagnostic(err)
+		var fault errcat.Fault
+		if errors.As(err, &fault) {
+			result.FailurePath = fault.Details["path"]
+		}
 	}
 	return result, nil
 }

@@ -57,6 +57,7 @@ type RepoAnchorBatchResult struct {
 	FailureCode   string `json:"failure_code,omitempty"`
 	FailureKey    string `json:"failure_key,omitempty"`
 	FailureDetail string `json:"failure_detail,omitempty"` // diagnostics only, never ordinary UI wording or retry authority
+	FailurePath   string `json:"failure_path,omitempty"`   // affected path for errcat, never action authority
 }
 
 type RepoAnchorReleasePayload struct {

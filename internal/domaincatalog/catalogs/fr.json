@@ -206,6 +206,7 @@
     "shout.read_only": "Ce dépôt est en lecture seule",
     "sync.unknown": "Erreur inattendue",
     "sync.working_copy_busy": "La copie locale est occupée par un autre programme sur cet ordinateur",
+    "sync.download_integrity_held": "Publication suspendue : l’intégrité du fichier téléchargé n’est pas confirmée. Les modifications locales sont conservées",
     "system.lifecycle_unavailable": "Le redémarrage et l’arrêt sont indisponibles pour le moment",
     "update.apply_failed": "Impossible d’appliquer la mise à jour",
     "update.downloading": "La mise à jour est encore en cours de téléchargement",

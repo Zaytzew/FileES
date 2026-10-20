@@ -16,6 +16,7 @@ import { localAllocationMarkup } from "./local-allocation.js";
 import { importProgressLine, reconcileProgressLine } from "./import-progress.js";
 import { filterRepositories, searchText } from "./repository-search.js";
 import { queuePreparing, queuedChangesLine, queueSummary } from "./queue-state.js";
+import { anchorRuntimeMarkup } from "./anchor-runtime.js";
 
 initializeTheme();
 initializeLanguage();
@@ -492,6 +493,8 @@ const repoIcons = {
 // opens that window: "wymaga uwagi" alone left the owner guessing what to
 // click (2026-09-25). The window holds the explanation and the remedy.
 function repoProblemLine(repo) {
+	const runtime = anchorRuntimeMarkup(repo, t, escapeHTML, dateTime);
+	if (runtime) return runtime;
   if (repo.problem !== "borrow_pending") return "";
   return `<small class="repo-problem"><span aria-hidden="true">⚠</span> ${escapeHTML(t("repo.problem.borrowPending"))} · <button class="repo-problem-link" type="button" data-action="settings">${escapeHTML(t("repo.problem.whatToDo"))}</button></small>`;
 }

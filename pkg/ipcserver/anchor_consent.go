@@ -39,6 +39,13 @@ func (rs *RepoState) SetAnchorDamageSource(fn func() *contract.AnchorDamage) {
 	rs.mu.Unlock()
 }
 
+// Read after releasing the repository mutex, just like the damage source.
+func (rs *RepoState) SetAnchorRuntimeSource(fn func() *contract.AnchorRuntimeStatus) {
+	rs.mu.Lock()
+	rs.anchorRuntimeFn = fn
+	rs.mu.Unlock()
+}
+
 func (s *Server) handleAnchorConsent(req contract.Request) contract.Response {
 	var p contract.RepoAnchorConsentPayload
 	if err := contract.DecodePayload(req.Payload, &p); err != nil || p.ServerID == "" || p.RepoID == "" {

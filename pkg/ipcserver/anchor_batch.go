@@ -10,6 +10,7 @@ import (
 
 	"filees/pkg/commit"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 )
 
 var ErrAnchorSelectionChanged = errors.New("folder selection changed; preview and confirm again")
@@ -19,6 +20,10 @@ var ErrAnchorPathMissing = errors.New("repository path is absent from the local 
 // Typed reasons only. Never infer permission to retry from command text or
 // diagnostic Details. Partial results may expose this reason, not raw output.
 func AnchorBatchFailure(err error, action string) (code, key, hint string) {
+	var fault errcat.Fault
+	if errors.As(err, &fault) && fault.Key == "sync.download_integrity_held" {
+		return string(fault.Code), string(fault.Key), string(fault.Hint)
+	}
 	switch {
 	case errors.Is(err, commit.ErrRemoteTreePending), errors.Is(err, commit.ErrRemoteFileDeletePending):
 		return "HEAD-2019", "head.folder_recovery_required", "REQUIRE_ACTION"
@@ -125,5 +130,9 @@ func (s *Server) handleAnchorBatch(req contract.Request, execute bool) contract.
 		return contract.ErrResponse(req.RequestID, "HEAD-2016", "ERROR", "RETRY", "head.release_pending", nil)
 	}
 	code, key, hint := AnchorBatchFailure(actionErr, p.Action)
+	var fault errcat.Fault
+	if errors.As(actionErr, &fault) && fault.Key == "sync.download_integrity_held" {
+		return contract.ErrResponseFrom(req.RequestID, fault)
+	}
 	return contract.ErrResponse(req.RequestID, code, "ERROR", hint, key, nil)
 }

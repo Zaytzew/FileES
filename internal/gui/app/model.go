@@ -47,6 +47,7 @@ type RepoViewModel struct {
 	LocalCopy            *contract.LocalCopySummary
 	AnchorDownloadBlocks []contract.AnchorDownloadBlock
 	AnchorDamage         *contract.AnchorDamage
+	AnchorRuntime        *contract.AnchorRuntimeStatus
 	ID                   string
 	DisplayName          string
 	ServerID             string
@@ -637,6 +638,20 @@ func (r RepoViewModel) DisplayState() RepoDisplayState {
 	if r.Conflicts > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
 		return RepoDisplayAttention
 	}
+	if r.Attached && !r.ServerDeleted && r.AnchorRuntime != nil {
+		if r.CommitRecoveryRequired || r.Pending.RenameUncertain > 0 {
+			return RepoDisplayAttention
+		}
+		switch r.AnchorRuntime.Phase {
+		case "failed":
+			return RepoDisplayAttention
+		case "preparing", "connecting":
+			return RepoDisplayBusy
+		case "ready":
+		default:
+			return RepoDisplayAttention
+		}
+	}
 	if r.Connectivity == contract.ConnOffline || r.State == contract.StateOffline {
 		return RepoDisplayOffline
 	}
@@ -713,6 +728,17 @@ func repoIconState(r RepoViewModel) IconState {
 	}
 	if r.Conflicts > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
 		return IconError
+	}
+	if r.Attached && !r.ServerDeleted && r.AnchorRuntime != nil {
+		switch r.AnchorRuntime.Phase {
+		case "failed":
+			return IconError
+		case "preparing", "connecting":
+			return IconBusy
+		case "ready":
+		default:
+			return IconError
+		}
 	}
 	if r.Connectivity == contract.ConnOffline || r.State == contract.StateOffline {
 		return IconOffline

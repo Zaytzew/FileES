@@ -18,10 +18,11 @@
 #include "filees_cfapi.h"
 
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_verbs[] = {"version", "register", "shell-register", "shell-visibility", "shell-hide-obsolete", "unregister", "info", "registration-snapshot", "file-state", "file-states", "tree-states", "hydrate", "placeholders", "connect", "revert", NULL};
+static const char *const k_verbs[] = {"version", "register", "shell-register", "shell-visibility", "shell-hide-obsolete", "unregister", "info", "registration-snapshot", "file-state", "file-states", "tree-states", "hydrate", "verify-download", "placeholders", "connect", "revert", NULL};
 
 static void print_version(void)
 {
@@ -38,7 +39,7 @@ static void print_version(void)
 #ifdef FILEES_CFAPI_DELETE_PROBE
     printf(",\"delete_callback_probe_v1\",\"delete_bridge_probe_v1\"");
 #endif
-    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\",\"shell_visibility_v1\",\"shell_namespace_visibility_v1\",\"registration_evidence_v1\",\"remote_stream_state_usn_v1\",\"fetch_range_receipt_v1\"");
+    printf(",\"file_delete_bound_v1\",\"explorer_tree_move_v1\",\"shell_hide_obsolete_v1\",\"shell_visibility_v1\",\"shell_namespace_visibility_v1\",\"registration_evidence_v1\",\"remote_stream_state_usn_v1\",\"fetch_range_receipt_v1\",\"download_integrity_v1\"");
     puts("]}");
     fflush(stdout);
 }
@@ -137,6 +138,26 @@ static int run(int argc, char **argv)
     }
     if (!strcmp(verb, "info")) return filees_cfapi_info(root);
     if (!strcmp(verb, "revert")) return filees_cfapi_revert(root);
+    if (!strcmp(verb, "verify-download")) {
+        const char *id = option(argc, argv, "--file-id"), *hash = option(argc, argv, "--sha256");
+        const char *size_text = option(argc, argv, "--size"), *usn_text = option(argc, argv, "--usn"), *p;
+        char *end;
+        LONGLONG size, usn;
+        value = option(argc, argv, "--rel");
+        if (!value || !filees_cfapi_widen(value, relative, FILEES_CFAPI_MAX_PATH)) goto invalid_verify;
+        value = option(argc, argv, "--identity");
+        if (!value || !filees_cfapi_widen(value, identity, FILEES_CFAPI_MAX_IDENTITY) || !id || !hash ||
+            !size_text || !*size_text || !usn_text || !*usn_text) goto invalid_verify;
+        for (p = size_text; *p; ++p) if (*p < '0' || *p > '9') goto invalid_verify;
+        for (p = usn_text; *p; ++p) if (*p < '0' || *p > '9') goto invalid_verify;
+        errno = 0; size = _strtoi64(size_text, &end, 10);
+        if (errno || *end || size < 0) goto invalid_verify;
+        errno = 0; usn = _strtoi64(usn_text, &end, 10);
+        if (errno || *end || usn <= 0) goto invalid_verify;
+        return filees_cfapi_verify_download(root, relative, identity, id, size, usn, hash);
+invalid_verify:
+        filees_cfapi_fail("verify_download_invalid", E_INVALIDARG); return 2;
+    }
     if (!strcmp(verb, "file-states")) return filees_cfapi_file_states(root);
     if (!strcmp(verb, "tree-states")) return filees_cfapi_tree_states(root);
     if (!strcmp(verb, "file-state") || !strcmp(verb, "hydrate")) {

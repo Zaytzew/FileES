@@ -12,8 +12,10 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/cloudfiles"
+	"filees/pkg/commit"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
+	"filees/pkg/talk"
 )
 
 // A bounded metadata observer, not a second synchronizer. It reads
@@ -30,8 +32,8 @@ func (m *anchorManager) observeLocalStates(ctx context.Context, record localrepo
 	remote := &anchorTreeRefresh{}
 	directories := &anchorDirectoryCursor{}
 	for ctx.Err() == nil {
-		more := anchorLocalStateTurn(ctx, &cursor, func(ctx context.Context) error {
-			return m.refreshLocalStates(ctx, record, bridge, &cursor)
+		more := anchorLocalStateTurn(ctx, &cursor, func(batchCtx context.Context) error {
+			return m.refreshLocalStatesDuring(batchCtx, ctx, record, bridge, &cursor)
 		})
 		if !more {
 			m.refreshRemoteTree(ctx, record, bridge, remote)
@@ -82,25 +84,58 @@ func anchorLocalStateTurn(ctx context.Context, cursor *string, refresh func(cont
 }
 
 func (m *anchorManager) refreshLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) error {
+	return m.refreshLocalStatesDuring(ctx, ctx, record, bridge, cursor)
+}
+
+// Metadata has a short independent deadline. Initial delivery proof may need
+// a pinned network reference/full hash and must hold neither lifecycle nor WC
+// writer locks. After proof, reacquire admission for the bounded status/ACK batch:
+// a slow earlier phase must not leave a nearly expired native write context.
+func (m *anchorManager) refreshLocalStatesDuring(metadataCtx, lifetimeCtx context.Context, record localrepo.Record, bridge *anchorBridge, cursor *string) error {
 	leave, err := m.enterObserverIntent()
 	if err != nil {
 		return err // no walk/helper/ACK; retain the existing cursor
 	}
-	defer leave()
-	candidates, paths, err := anchorLocalStateBatch(ctx, record.LocalPath, cursor, func(paths []string) ([]cfapiAnswer, error) {
-		answer, err := m.call(ctx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
+	candidates, paths, err := anchorLocalStateBatch(metadataCtx, record.LocalPath, cursor, func(paths []string) ([]cfapiAnswer, error) {
+		answer, err := m.call(metadataCtx, strings.Join(paths, "\n")+"\n", "file-states", "--root", record.LocalPath)
 		if err != nil || !answer.OK {
 			return nil, errors.New("local metadata batch unavailable")
 		}
 		return answer.States, nil
 	})
+	leave()
 	if err != nil {
 		return err
 	}
-	if ctx.Err() != nil || len(paths) == 0 {
-		return ctx.Err()
+	if lifetimeCtx.Err() != nil || len(paths) == 0 {
+		return lifetimeCtx.Err()
 	}
-	return m.confirmLocalStates(ctx, record, bridge, candidates, paths)
+	verified, err := m.verifyLocalStateCandidates(lifetimeCtx, record, candidates)
+	if err != nil {
+		return err
+	}
+	// Keep one SVN status query per metadata batch (at most 64 paths).
+	// Splitting it into tiny groups repeats a native SVN process and WC scan
+	// for each group, starving large working points despite fast helper ACKs.
+	for first := 0; first < len(paths); first += 64 {
+		leave, err := m.enterObserverIntent()
+		if err != nil {
+			return err
+		}
+		if m.lifecycle != nil {
+			err = m.anchorFetchAuthority(record)
+		}
+		if err == nil {
+			statusCtx, cancel := context.WithTimeout(lifetimeCtx, 2*time.Second)
+			err = m.applyLocalStates(statusCtx, record, bridge, candidates, paths[first:min(first+64, len(paths))], verified)
+			cancel()
+		}
+		leave()
+		if err != nil {
+			return err
+		}
+	}
+	return lifetimeCtx.Err()
 }
 
 // The limit applies even when every inspection fails. The cursor is a visited
@@ -222,6 +257,53 @@ func anchorWalkBefore(a, b string) bool {
 }
 
 func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string) error {
+	verified, err := m.verifyLocalStateCandidates(ctx, record, candidates)
+	if err != nil {
+		return err
+	}
+	return m.applyLocalStates(ctx, record, bridge, candidates, paths, verified)
+}
+
+func (m *anchorManager) verifyLocalStateCandidates(ctx context.Context, record localrepo.Record, candidates map[string]cfapiAnswer) (map[string]bool, error) {
+	if m.repos == nil {
+		return nil, ipcserver.ErrDepthUnavailable
+	}
+	repo := m.repos(record.ServerID, record.RepoID)
+	if repo == nil {
+		return nil, ipcserver.ErrDepthUnavailable
+	}
+	// Legacy full remote files may still need a pinned reference/read-back.
+	// Never perform that I/O while holding the WC writer/status mutex.
+	verified := make(map[string]bool)
+	for rel, state := range candidates {
+		if !state.Placeholder || state.Local {
+			continue
+		}
+		_, revision, _, valid := parseAnchorRemoteIdentity(state.Identity)
+		if valid && revision == 0 {
+			revision, _ = readAnchorSeedRevision(record.LocalPath)
+		}
+		if !valid || revision <= 0 {
+			continue
+		}
+		proofCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err := m.verifyAnchorIntegrity(proofCtx, record, state.Identity, revision)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if !errors.Is(err, commit.ErrLocalStatusBusy) {
+				talk.With("anchor").Warnf("download integrity: %s: %v", rel, err)
+			}
+			continue
+		}
+		verified[rel] = true
+	}
+	return verified, nil
+}
+
+func (m *anchorManager) applyLocalStates(ctx context.Context, record localrepo.Record, bridge *anchorBridge, candidates map[string]cfapiAnswer, paths []string, verified map[string]bool) error {
 	if m.repos == nil {
 		return ipcserver.ErrDepthUnavailable
 	}
@@ -252,6 +334,11 @@ func (m *anchorManager) confirmLocalStates(ctx context.Context, record localrepo
 			if !local {
 				continue
 			} // An unadopted/new placeholder is not a local WC file.
+			if state.Placeholder && !state.Local {
+				if !verified[rel] {
+					continue
+				} // Preserve unexplained bytes, never mark them Local.
+			}
 			if state.Local && !clean && !state.InSync {
 				continue // Do not rewrite unchanged pending metadata every cycle.
 			}

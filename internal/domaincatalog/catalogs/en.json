@@ -206,6 +206,7 @@
     "shout.read_only": "This repository is read-only",
     "sync.unknown": "Unexpected error",
     "sync.working_copy_busy": "The local copy is busy in another program on this computer",
+    "sync.download_integrity_held": "Publication paused: downloaded file integrity is unverified. Local changes are preserved",
     "system.lifecycle_unavailable": "Restart and shutdown are not available right now",
     "update.apply_failed": "The update could not be applied",
     "update.downloading": "The update is still downloading",

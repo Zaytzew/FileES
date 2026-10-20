@@ -206,6 +206,7 @@
     "shout.read_only": "Este repositorio es de solo lectura",
     "sync.unknown": "Error inesperado",
     "sync.working_copy_busy": "Otro programa de este equipo está utilizando la copia local",
+    "sync.download_integrity_held": "Publicación pausada: no se ha confirmado la integridad del archivo descargado. Se conservan los cambios locales",
     "system.lifecycle_unavailable": "El reinicio y el cierre no están disponibles ahora",
     "update.apply_failed": "No se pudo aplicar la actualización",
     "update.downloading": "La actualización todavía se está descargando",

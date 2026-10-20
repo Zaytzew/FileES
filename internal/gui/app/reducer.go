@@ -281,6 +281,7 @@ func (s appState) viewModel() ViewModel {
 			LocalCopy:              sum.LocalCopy,
 			AnchorDownloadBlocks:   append([]contract.AnchorDownloadBlock(nil), snap.AnchorDownloadBlocks...),
 			AnchorDamage:           snap.AnchorDamage,
+			AnchorRuntime:          snap.AnchorRuntime,
 			ID:                     id,
 			DisplayName:            sum.DisplayName,
 			ServerID:               serverID,

@@ -152,7 +152,7 @@ func TestAnchorExplicitDownloadRecoversCompletePinnedFileWithoutFetch(t *testing
 	state.SetLocalStatusFunc(func(ctx context.Context, paths []string, confirm func([]client.StatusEntry) error) error {
 		return service.WithLocalStatus(ctx, point, paths, confirm)
 	})
-	m := &anchorManager{helper: p.helper, repos: server.RepoState}
+	m := &anchorManager{helper: p.helper, repos: server.RepoState, newSVN: func(string) (client.Client, error) { return svn, nil }}
 	record := localrepo.Record{ServerID: "server", RepoID: "fixture", RepoURL: uri, LocalPath: point}
 	if err := m.downloadFile(t.Context(), record, "doc.txt"); err != nil {
 		t.Fatal(err)

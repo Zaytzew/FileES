@@ -284,7 +284,11 @@ func (service *HeadBrowserService) folderAction(repo HeadBrowserRepository, path
 	if result.State != "attached" || result.Completed != result.Total || result.Total != currentPlan.Files {
 		partial := fmt.Sprintf(service.text("headBrowser.folderPartial", "Przerwano działanie: ukończono %d z %d plików. Gotowe pliki pozostają zachowane; odśwież widok przed ponowieniem."), result.Completed, result.Total)
 		if result.FailureKey != "" {
-			partial += "\n" + service.render(result.FailureCode, result.FailureKey, nil)
+			var params map[string]string
+			if result.FailurePath != "" {
+				params = map[string]string{"path": result.FailurePath}
+			}
+			partial += "\n" + service.render(result.FailureCode, result.FailureKey, params)
 		}
 		return zero, true, errors.New(partial)
 	}

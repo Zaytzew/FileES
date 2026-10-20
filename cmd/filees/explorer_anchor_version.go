@@ -22,6 +22,7 @@ var requiredAnchorFeatures = []string{
 	"explicit_hydrate_v1", "remote_tree_v1",
 	"directory_state_bound_v1",
 	"file_delete_bound_v1",
+	"download_integrity_v1",
 }
 
 type cfapiVersion struct {

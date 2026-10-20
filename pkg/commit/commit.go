@@ -462,6 +462,12 @@ func (s *Service) AdoptPath(ctx context.Context, wc, rel string, revision int64)
 		if !info.Mode().IsRegular() || cloudfiles.NotOnDisk(abs) || cloudfiles.RecallsOnRead(info) {
 			return errors.New("anchor adoption requires a fully resident regular file")
 		}
+		if s.Anchor {
+			proof, err := ReadAnchorIntegrity(wc, rel)
+			if err != nil || proof.Phase != "verified" || proof.URL != s.RepoURL || proof.Revision != revision {
+				return AnchorIntegrityError(rel, errors.New("initial delivery has no verified receipt"))
+			}
+		}
 		// Explicit download and the final FETCH_DATA can race to complete the
 		// same adoption. Under this SAME writer guard, never update an already
 		// tracked path back to the old receipt revision or touch local work.
@@ -875,6 +881,10 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	}
 
 	s.Logger.Infof("poll: HEAD r%d > local r%d — running svn update", headRev, localRev)
+	if err := CheckAnchorIntegrity(wc, []string{"."}); err != nil {
+		s.Logger.Warnf("poll update held: %v", err)
+		return // Preserve the initial-delivery evidence and every local edit.
+	}
 	done := s.setOperation("sync")
 	defer done()
 	out, err := s.Cli.Update(ctx, wc)
@@ -1364,6 +1374,9 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 		all = append(all, it.OldRel, it.Rel)
 	}
 	all = dedup(all)
+	if err := s.checkDownloadIntegrity(wc, all); err != nil {
+		return err // Keep staging, source bytes and uncertain effects untouched.
+	}
 	if err := s.prepareAnchorMerge(ctx, wc, append(append([]string{}, addPaths...), modifiedPaths...)); err != nil {
 		return err // No staging or remote publication on failed classification.
 	}
@@ -1726,6 +1739,9 @@ func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) er
 	}
 
 	// staging
+	if err := s.checkDownloadIntegrity(wc, commitPaths); err != nil {
+		return err
+	}
 	if len(toSvnAdd) > 0 {
 		if out, err := s.Cli.Add(ctx, wc, toSvnAdd); err != nil {
 			return fmt.Errorf("svn add failed: %w\n%s", err, out)

@@ -51,6 +51,7 @@ const (
 )
 
 type RepoStatus struct {
+	AnchorRuntime        *AnchorRuntimeStatus  `json:"anchor_runtime,omitempty"`
 	Conversion           *WCConversionStatus   `json:"conversion,omitempty"`
 	AnchorDownloadBlocks []AnchorDownloadBlock `json:"anchor_download_blocks,omitempty"`
 	AnchorDamage         *AnchorDamage         `json:"anchor_damage,omitempty"`
@@ -99,6 +100,15 @@ type RepoStatus struct {
 	// Sparse: attached, but holding only paths chosen in the unattached
 	// browser. The interface must not present it as the whole folder.
 	Sparse bool `json:"sparse,omitempty"`
+}
+
+// AnchorRuntimeStatus is Windows-provider readiness, independent of SVN
+// connectivity. Since dates the current phase, not a progress estimate.
+// Failed remains visible during automatic retries until a connection succeeds.
+type AnchorRuntimeStatus struct {
+	Phase  string `json:"phase"`            // preparing | connecting | ready | failed
+	Since  string `json:"since"`            // RFC3339Nano
+	Detail string `json:"detail,omitempty"` // diagnostic only, never an action token
 }
 
 // PublishProgress measures one running publication. FilesTotal and BytesTotal

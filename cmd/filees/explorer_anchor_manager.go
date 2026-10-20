@@ -47,6 +47,9 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 		lifecycle: lifecycle, repos: ipc.RepoState, log: talk.With("anchor"),
 		activity: journal,
 		wake:     make(chan struct{}, 1),
+		guardChanged: func(repoID string) {
+			ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvRepoStateChanged, nil))
+		},
 		activityChanged: func(repoID string) {
 			ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvActivityChanged, nil))
 		},
@@ -58,12 +61,12 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	cfapi := anchorHelperPath()
 	if cfapi == "" {
-		return nil
+		return anchors.unavailableRuntime("Cloud Files helper is not installed")
 	}
 	// FILEES_CFAPI selects a development path, never bypasses the protocol check.
 	if err := anchorHelperCompatible(context.Background(), cfapi, version); err != nil {
 		talk.With("anchor").Warnf("Explorer anchor helper unavailable: %v", err)
-		return nil
+		return anchors.unavailableRuntime(err.Error())
 	}
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
@@ -78,9 +81,6 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	anchors.wireExplorerShortcut(ipc)
 	anchors.wireRelease(ipc)
 	ipc.SetAnchorConsent(anchors.consent)
-	anchors.guardChanged = func(repoID string) {
-		ipc.Emit(ipc.NewRepoEvent(repoID, contract.EvRepoStateChanged, nil))
-	}
 	ipc.SetAnchorPrecheck(anchors.precheck)
 	provisioner.detachAnchor = anchors.detach
 	provisioner.quiesceAnchor = anchors.quiesceRelocation
@@ -146,6 +146,10 @@ type anchorManager struct {
 	// providerSuspect is closed and replaced when every connected anchor
 	// should check its Windows connection now.
 	providerSuspect chan struct{}
+	runtimeMu       sync.Mutex
+	runtimeStatus   map[string]contract.AnchorRuntimeStatus
+	integrityMu     sync.Mutex
+	integrityJobs   map[string]*anchorIntegrityJob
 }
 
 type anchorConnection struct {
@@ -197,6 +201,7 @@ type cfapiAnswer struct {
 	Local       bool          `json:"local"`
 	USN         string        `json:"usn"`
 	Identity    string        `json:"identity"`
+	FileID      string        `json:"file_id"`
 	Size        *int64        `json:"size"` // nil from older metadata helpers: never release proof
 	States      []cfapiAnswer `json:"states"`
 }
@@ -327,6 +332,7 @@ func (m *anchorManager) reconcile(ctx context.Context) {
 		}
 	}
 	for key, record := range wanted {
+		m.publishRuntime(record)
 		if _, ok := m.running[key]; ok {
 			continue
 		}
@@ -411,6 +417,7 @@ func (m *anchorManager) detach(ctx context.Context, record localrepo.Record) err
 // keep holds one anchor: prepare once, then connect, and connect again after a
 // pause if the helper ever stops while the anchor is still wanted.
 func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
+	defer m.clearRuntime(record)
 	log := talk.With("anchor:" + record.ServerID + "/" + record.RepoID)
 	m.publishDamage(record)
 	// Unreadable entries stop preparation every time, and each attempt lists
@@ -418,6 +425,7 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 	// instead of asking the server again.
 	blocked := false
 	for ctx.Err() == nil {
+		m.setRuntime(record, "preparing", "")
 		if blocked && m.inspectDamage(record) > 0 {
 			select {
 			case <-ctx.Done():
@@ -427,21 +435,24 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 		}
 		blocked = false
 		if err := m.prepare(ctx, record); err != nil {
+			m.setRuntime(record, "failed", err.Error())
 			log.Warnf("prepare %s: %v", record.LocalPath, err)
 			blocked = m.inspectDamage(record) > 0
 		} else {
+			m.setRuntime(record, "connecting", "")
 			streams, err := startAnchorHelper(ctx, m.helper, record.LocalPath)
 			if err != nil {
+				m.setRuntime(record, "failed", err.Error())
 				log.Warnf("connect %s: %v", record.LocalPath, err)
 			} else {
 				materials := &anchorFetchCache{}
 				bridge := &anchorBridge{
 					root: record.LocalPath,
 					materialize: func(ctx context.Context, identity string) (string, int64, error) {
-						return m.materializeCached(ctx, record, identity, 0, -1, materials)
+						return m.materializeTransfer(ctx, record, identity, 0, -1, materials)
 					},
 					materializePinned: func(ctx context.Context, identity string, revision, size int64) (string, int64, error) {
-						return m.materializeCached(ctx, record, identity, revision, size, materials)
+						return m.materializeTransfer(ctx, record, identity, revision, size, materials)
 					},
 					readyToAdopt: func(ctx context.Context, identity string, size *int64) (bool, error) {
 						return m.hydrationComplete(ctx, record, identity, size)
@@ -469,12 +480,14 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 				closeDelete := m.bindFileDelete(record, bridge, streams)
 				m.bindExplorerRename(record, bridge, streams)
 				bridge.onConnected = func(providerCtx context.Context) {
+					m.setRuntime(record, "ready", "")
 					log.Infof("anchor connected at %s", record.LocalPath)
 					m.publishDamage(record)
 					go watchAnchorDamage(providerCtx, anchorDamageRecheck, anchorDamageRoutine, func() int { return m.inspectDamage(record) })
 					go watchAnchorProvider(providerCtx, anchorProviderCheckEvery, m.providerSuspected, func(checkCtx context.Context) (cfapiAnswer, error) {
 						return m.call(checkCtx, "", "info", "--root", record.LocalPath)
 					}, func() {
+						m.setRuntime(record, "failed", "Windows provider connection lost")
 						log.Warnf("anchor at %s lost its Windows provider connection - reconnecting", record.LocalPath)
 						streams.abort()
 					})
@@ -516,6 +529,11 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 				}
 				m.mu.Unlock()
 				if ctx.Err() == nil {
+					detail := "Explorer provider stopped"
+					if err != nil {
+						detail = err.Error()
+					}
+					m.setRuntime(record, "failed", detail)
 					log.Warnf("anchor at %s went offline: %v", record.LocalPath, err)
 				}
 			}
@@ -593,6 +611,11 @@ func (m *anchorManager) prepare(ctx context.Context, record localrepo.Record) er
 	}
 	if info.OK && !info.Ours {
 		return fmt.Errorf("%s is registered by %s", record.LocalPath, info.Provider)
+	}
+	if !info.OK && info.Error == "sync_root_boundary" {
+		// An unreadable/corrupt or unrelated registration is not an absent
+		// registration. Preserve it for explicit repair; do not claim ownership.
+		return fmt.Errorf("cannot verify sync root: %s (%s)", info.Error, info.HResult)
 	}
 	if commit.HasPendingLocalMutation(record.LocalPath) {
 		if !info.OK {
@@ -940,11 +963,17 @@ func (m *anchorManager) adopt(ctx context.Context, record localrepo.Record, iden
 	}
 	var err error
 	for attempt := 0; attempt < 30; attempt++ {
-		repo := m.repos(record.ServerID, record.RepoID)
-		if repo == nil {
-			err = errors.New("repository is not registered")
-		} else if err = repo.Adopt(ctx, rel, revision); !errors.Is(err, ipcserver.ErrDepthUnavailable) {
-			return err
+		if err = m.verifyAnchorIntegrity(ctx, record, identity, revision); err != nil {
+			if !errors.Is(err, commit.ErrLocalStatusBusy) {
+				return err
+			}
+		} else {
+			repo := m.repos(record.ServerID, record.RepoID)
+			if repo == nil {
+				err = errors.New("repository is not registered")
+			} else if err = repo.Adopt(ctx, rel, revision); !errors.Is(err, ipcserver.ErrDepthUnavailable) {
+				return err
+			}
 		}
 		select {
 		case <-ctx.Done():

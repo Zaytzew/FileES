@@ -112,6 +112,16 @@ static HRESULT verified_provider(const WCHAR *path, CF_SYNC_ROOT_PROVIDER_INFO *
 done:
     if (SUCCEEDED(hr) && (returned < sizeof *provider ||
         !wmemchr(provider->ProviderName, L'\0', ARRAYSIZE(provider->ProviderName)))) hr = E_UNEXPECTED;
+    if (SUCCEEDED(hr)) {
+        const WCHAR *name = provider->ProviderName;
+        /* A damaged point has returned an NTSTATUS in place of its name.
+         * That is not proof of a foreign provider and must not authorize
+         * either re-registration or a misleading "owned by" message. */
+        if (!*name) hr = HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_SYNC_ROOT_METADATA_CORRUPT);
+        for (; SUCCEEDED(hr) && *name; ++name)
+            if (*name < 0x20 || *name == 0x7f)
+                hr = HRESULT_FROM_WIN32(ERROR_CLOUD_FILE_SYNC_ROOT_METADATA_CORRUPT);
+    }
     if (point != INVALID_HANDLE_VALUE) CloseHandle(point);
     CloseHandle(file);
     return hr;

@@ -198,7 +198,8 @@ type RepoProjection struct {
 	// AnchorDamageEntries: entries of this virtual folder whose cloud metadata
 	// Windows cannot read. Non-zero offers the repair that asks for
 	// administrator rights.
-	AnchorDamageEntries int `json:"anchor_damage_entries,omitempty"`
+	AnchorDamageEntries int                           `json:"anchor_damage_entries,omitempty"`
+	AnchorRuntime       *contract.AnchorRuntimeStatus `json:"anchor_runtime,omitempty"`
 	// CanBrowseHead offers "Browse on the server": a repository with no copy
 	// yet, or one holding only chosen paths (implementation notes (not distributed)).
 	CanBrowseHead  bool `json:"can_browse_head"`
@@ -1183,6 +1184,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 		}
 		result.Repositories = append(result.Repositories, RepoProjection{
 			Problem:            problem.Kind,
+			AnchorRuntime:      repo.AnchorRuntime,
 			CanBrowseShelf:     canBrowseShelf,
 			CanDetachLocalCopy: vm.CanDetachDeletedCopy(repo),
 			ID:                 repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,

@@ -206,6 +206,7 @@
     "shout.read_only": "To repozytorium jest tylko do odczytu",
     "sync.unknown": "Nieoczekiwany błąd",
     "sync.working_copy_busy": "Kopia robocza jest chwilowo zajęta przez inny lokalny proces",
+    "sync.download_integrity_held": "Publikacja wstrzymana: integralność pobranego pliku nie jest potwierdzona. Lokalne zmiany pozostają zachowane",
     "system.lifecycle_unavailable": "Restart i zamknięcie są teraz niedostępne",
     "update.apply_failed": "Zastosowanie aktualizacji nie powiodło się",
     "update.downloading": "Aktualizacja jeszcze się pobiera",

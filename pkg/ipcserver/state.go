@@ -67,6 +67,7 @@ type RepoState struct {
 	passportIssues     []contract.PassportIssue
 	anchorBlocksFn     func() []contract.AnchorDownloadBlock
 	anchorDamageFn     func() *contract.AnchorDamage
+	anchorRuntimeFn    func() *contract.AnchorRuntimeStatus
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
 	lockFn                   func(ctx context.Context, paths []string) (string, error)
@@ -738,6 +739,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	workingCopySizeFn := rs.workingCopySizeFn
 	anchorBlocksFn := rs.anchorBlocksFn
 	anchorDamageFn := rs.anchorDamageFn
+	anchorRuntimeFn := rs.anchorRuntimeFn
 	rs.mu.RUnlock()
 	var anchorBlocks []contract.AnchorDownloadBlock
 	if attached && anchorBlocksFn != nil {
@@ -746,6 +748,10 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	var anchorDamage *contract.AnchorDamage
 	if attached && anchorDamageFn != nil {
 		anchorDamage = anchorDamageFn()
+	}
+	var anchorRuntime *contract.AnchorRuntimeStatus
+	if attached && anchorRuntimeFn != nil {
+		anchorRuntime = anchorRuntimeFn()
 	}
 
 	var recovery contract.RecoveryStats
@@ -775,6 +781,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	state = fileReleaseState(state, attached, wc)
 
 	snap := contract.RepoStatus{
+		AnchorRuntime:          anchorRuntime,
 		AnchorDownloadBlocks:   anchorBlocks,
 		AnchorDamage:           anchorDamage,
 		PassportIssues:         passportIssues,

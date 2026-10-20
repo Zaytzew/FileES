@@ -90,6 +90,7 @@ struct state {
     USN usn;
     LONGLONG size;
     char identity[FILEES_CFAPI_MAX_IDENTITY * 4];
+    char file_id[64];
 };
 
 static HRESULT inspect_tree(HANDLE file, const WCHAR *root, struct state *out)
@@ -108,6 +109,12 @@ static HRESULT inspect_tree(HANDLE file, const WCHAR *root, struct state *out)
     /* A populated NTFS directory has a nonzero index EOF. It is a
      * metadata-only container, not revision-pinned file bytes. */
     out->size = out->directory ? 0 : standard.EndOfFile.QuadPart;
+    {
+        BY_HANDLE_FILE_INFORMATION object;
+        if (!GetFileInformationByHandle(file, &object)) return HRESULT_FROM_WIN32(GetLastError());
+        sprintf_s(out->file_id, sizeof out->file_id, "%lu:%llu", (unsigned long)object.dwVolumeSerialNumber,
+            ((unsigned long long)object.nFileIndexHigh << 32) | object.nFileIndexLow);
+    }
     hr = CfGetPlaceholderInfo(file, CF_PLACEHOLDER_INFO_STANDARD, info, sizeof data, &returned);
     if (SUCCEEDED(hr)) {
         out->placeholder = 1;
@@ -351,6 +358,8 @@ static void print_state(const struct state *state)
            state->placeholder ? "true" : "false", state->partial ? "true" : "false",
            state->clean ? "true" : "false", state->local ? "true" : "false", state->usn, state->size, state->on_disk, state->modified);
     filees_cfapi_json_string(state->identity);
+    printf(",\"file_id\":");
+    filees_cfapi_json_string(state->file_id);
     putchar('}');
 }
 
@@ -398,6 +407,43 @@ done:
     if (hash) BCryptDestroyHash(hash);
     if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
     return hr;
+}
+
+/* Independent read-back, no data/metadata mutation. The same exclusive handle
+ * binds point, physical object, identity, length and USN to the complete hash.
+ * A remote reference is supplied by the daemon, never read from this file. */
+int filees_cfapi_verify_download(const WCHAR *root, const WCHAR *relative, const WCHAR *identity,
+    const char *expected_id, LONGLONG size, LONGLONG usn, const char *digest)
+{
+    WCHAR path[FILEES_CFAPI_MAX_PATH];
+    char wanted[FILEES_CFAPI_MAX_IDENTITY * 4];
+    struct state before = {0};
+    HANDLE file = INVALID_HANDLE_VALUE;
+    HRESULT hr = local_path(root, relative, path);
+    if (FAILED(hr) || size < 0 || usn <= 0 || !expected_id || !*expected_id ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, wanted, sizeof wanted, NULL, NULL))
+        hr = E_INVALIDARG;
+    if (SUCCEEDED(hr)) hr = read_state(root, relative, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || before.local || before.partial ||
+        before.size != size || before.on_disk < size || before.usn != usn ||
+        strcmp(before.file_id, expected_id) || strcmp(before.identity, wanted))) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+    if (SUCCEEDED(hr)) {
+        file = filees_cfapi_open_path(path, GENERIC_READ | WRITE_DAC, 0, NULL, OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_OPEN_NO_RECALL, NULL);
+        if (file == INVALID_HANDLE_VALUE) hr = HRESULT_FROM_WIN32(GetLastError());
+    }
+    if (SUCCEEDED(hr)) hr = inspect(file, root, &before);
+    if (SUCCEEDED(hr) && (!before.placeholder || before.local || before.partial || before.size != size ||
+        before.on_disk < size || before.usn != usn || strcmp(before.file_id, expected_id) ||
+        strcmp(before.identity, wanted))) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+    if (SUCCEEDED(hr)) hr = verify_release_bytes(file, size, digest);
+    if (SUCCEEDED(hr)) hr = inspect(file, root, &before);
+    if (SUCCEEDED(hr) && (before.partial || before.size != size || before.on_disk < size ||
+        strcmp(before.file_id, expected_id) || strcmp(before.identity, wanted))) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
+    if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+    if (FAILED(hr)) {filees_cfapi_fail("download_integrity_unverified", hr);return 1;}
+    filees_cfapi_ok("download_integrity_verified");
+    return 0;
 }
 
 static HRESULT prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn,

@@ -130,6 +130,8 @@ HRESULT filees_set_directory_state(const WCHAR *root, const WCHAR *relative,
     const WCHAR *identity, LONGLONG expected_usn, int clean, char **lines, unsigned input_count);
 void filees_bridge_say_directory_set(const char *id, HRESULT hr);
 HRESULT filees_set_local_state(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, int clean);
+int filees_cfapi_verify_download(const WCHAR *root, const WCHAR *relative, const WCHAR *identity,
+    const char *expected_id, LONGLONG size, LONGLONG usn, const char *digest);
 HRESULT filees_ack_remote_streams(const WCHAR *root, const WCHAR *relative, const char *expected_id, const WCHAR *identity, LONGLONG size, LONGLONG expected_usn);
 HRESULT filees_prepare_release(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn);
 HRESULT filees_prepare_release_bound(const WCHAR *root, const WCHAR *relative, LONGLONG expected_usn, const char *expected_id);

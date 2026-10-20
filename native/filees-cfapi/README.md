@@ -373,6 +373,29 @@ odpowiedział. Bez tej zmiennej stderr milczy, bo czyta go demon.
 
 ## Budowanie i testy
 
+Od 2026-10-20: adapter Shell zwalnia C++/WinRT factory cache przed
+`uninit_apartment`, także przy zagnieżdżonych odczytach diagnostycznych.
+`info` odmawia uszkodzonej nazwy dostawcy jako `sync_root_boundary`
+(0x80070166); nie daje to zgody na automatyczne przejęcie/rejestrację.
+Opcja CMake `FILEES_CFAPI_BUILD_APARTMENT_PROBE=ON` dodaje wyłącznie
+laboratoryjny `filees-cfapi-apartment-probe.exe`. Do testów ustaw także
+`FILEES_CFAPI_APARTMENT_PROBE` na ten obraz. Wymusza zwalnianie DLL między
+odczytami Shell i tworzy syntetyczną błędną rejestrację we własnym fixture;
+cleanup sprawdza sentinel. Nie jest częścią MSI/bundla ani poleceniem
+produkcyjnego pomocnika.
+
+Od 2026-10-20: `download_integrity_v1`, wymagane przez nowy demon.
+`file-states` podaje fizyczny `file_id` (volume serial + file index).
+`verify-download --root … --rel … --identity … --file-id … --size …
+--usn … --sha256 …` odczytuje wyłącznie pełny remote placeholder pod
+wyłącznym uchwytem, bez recall i bez zmiany bajtów/metadanych. Sprawdza
+tożsamość korzenia, pliku, rewizji, rozmiaru i USN oraz SHA-256 przypiętej
+referencji. Nie jest to dowód poprawności każdej wcześniejszej odpowiedzi
+TRANSFER_DATA ani walidacja zakresów przed udostępnieniem edytorowi.
+Demon zapisuje pending przed podaniem materiału, verified po read-back,
+held przy odmowie; bez nadpisania lokalnych edycji. Ten początkowy dowód
+nie służy do porównywania późniejszych legalnych zapisów ze starą bazą.
+
 Od 2026-10-06, baza r1953: odpowiedź `file-states` zawiera również
 rozmiar i tożsamość każdego pliku. Cecha `batch_release_observation_v1`
 jest wymagana przez aktualny demon; starszy pomocnik odmawia przed użyciem.

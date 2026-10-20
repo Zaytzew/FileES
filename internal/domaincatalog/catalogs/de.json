@@ -206,6 +206,7 @@
     "shout.read_only": "Dieses Repository ist schreibgeschützt",
     "sync.unknown": "Unerwarteter Fehler",
     "sync.working_copy_busy": "Die lokale Kopie wird von einem anderen Programm auf diesem Computer verwendet",
+    "sync.download_integrity_held": "Veröffentlichung angehalten: Die Integrität der heruntergeladenen Datei ist nicht bestätigt. Lokale Änderungen bleiben erhalten",
     "system.lifecycle_unavailable": "Neustart und Beenden sind derzeit nicht verfügbar",
     "update.apply_failed": "Das Update konnte nicht angewendet werden",
     "update.downloading": "Das Update wird noch heruntergeladen",

@@ -209,6 +209,7 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	}
 	reader := bufio.NewScanner(streams.stdout)
 	connected := false
+	var providerFailure error
 	reader.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for reader.Scan() {
 		line := reader.Text()
@@ -258,7 +259,10 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 			}
 		default:
 			var receipt cfapiAnswer
-			if !connected && json.Unmarshal([]byte(line), &receipt) == nil && receipt.OK && receipt.Detail == "connected" {
+			if json.Unmarshal([]byte(line), &receipt) == nil && !receipt.OK && receipt.Error != "" && len(line) <= 4096 {
+				providerFailure = fmt.Errorf("Windows provider: %s (%s)", receipt.Error, receipt.HResult)
+			}
+			if !connected && receipt.OK && receipt.Detail == "connected" {
 				connected = true
 				if bridge.onConnected != nil {
 					work(func() { bridge.onConnected(ctx) })
@@ -279,8 +283,14 @@ func (bridge *anchorBridge) serve(ctx context.Context, streams *anchorHelperStre
 	_ = streams.stdin.Close()
 	if streams.wait != nil {
 		if err := streams.wait(); err != nil {
+			if providerFailure != nil {
+				return fmt.Errorf("%w: %v: %v", errAnchorHelperGone, err, providerFailure)
+			}
 			return fmt.Errorf("%w: %v", errAnchorHelperGone, err)
 		}
+	}
+	if providerFailure != nil {
+		return fmt.Errorf("%w: %v", errAnchorHelperGone, providerFailure)
 	}
 	if err := reader.Err(); err != nil {
 		return err

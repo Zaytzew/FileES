@@ -407,11 +407,14 @@ func (vm ViewModel) CanFoldInactive(repo RepoViewModel) bool {
 // leaking capability names into tray adapters. CanMutateLock and
 // CanMutateUnlock additionally apply the live-state gate shared by presenters
 // and action controllers.
-func (vm ViewModel) CanLock() bool                  { return vm.HasCap(contract.CapRepoLock) }
-func (vm ViewModel) CanUnlock() bool                { return vm.HasCap(contract.CapRepoUnlock) }
-func (vm ViewModel) CanListErrors() bool            { return vm.HasCap(contract.CapErrorList) }
-func (vm ViewModel) CanListActivity() bool          { return vm.HasCap(contract.CapRepoActivity) }
-func (vm ViewModel) CanPublish() bool               { return vm.HasCap(contract.CapRepoPublish) }
+func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLock) }
+func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
+func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
+func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanPublish() bool      { return vm.HasCap(contract.CapRepoPublish) }
+func (vm ViewModel) CanConvertWorkingCopy() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapWCConversion)
+}
 func (vm ViewModel) CanResolveIntents() bool        { return vm.HasCap(contract.CapRepoIntentResolution) }
 func (vm ViewModel) CanResolveCommitRecovery() bool { return vm.HasCap(contract.CapRepoCommitRecovery) }
 func (vm ViewModel) CanAckNotices() bool            { return vm.HasCap(contract.CapNoticeAck) }

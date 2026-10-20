@@ -4,16 +4,19 @@ import (
 	"context"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
-	contract "filees/pkg/contract/v1"
 	"time"
 )
 
+// GUI boundary values deliberately do not expose the daemon's wire contract.
+type WCConversionRequest struct{ ServerID, RepoID, Action, SourcePath, OperationID string }
+type WCConversionReceipt struct{ ServerID, RepoID, SourcePath, OperationID string }
+
 type RepositoryConverter interface {
-	WCConversion(context.Context, contract.WCConversionPayload) (*contract.WCConversionStatus, error)
+	WCConversion(context.Context, WCConversionRequest) (*WCConversionReceipt, error)
 }
 
 func conversionAllowed(vm app.ViewModel, repo app.RepoViewModel, action string) bool {
-	if !vm.Connected || vm.Stale || !vm.HasCap(contract.CapWCConversion) || repo.ServerDeleted || repo.Purpose != "" || repo.Conversion == nil {
+	if !vm.CanConvertWorkingCopy() || repo.ServerDeleted || repo.Purpose != "" || repo.Conversion == nil {
 		return false
 	}
 	p := repo.Conversion
@@ -62,7 +65,7 @@ func (c *Controller) startWCConversion(ctx context.Context, serverID, repoID, ac
 		if !ok || fresh.ServerID != serverID || fresh.LocalPath != repo.LocalPath || !conversionAllowed(c.cfg.ViewModel(), fresh, action) || fresh.Conversion.OperationID != repo.Conversion.OperationID {
 			return
 		}
-		request := contract.WCConversionPayload{ServerID: serverID, RepoID: repoID, Action: action}
+		request := WCConversionRequest{ServerID: serverID, RepoID: repoID, Action: action}
 		if action == "begin" {
 			request.SourcePath = repo.LocalPath
 		} else {

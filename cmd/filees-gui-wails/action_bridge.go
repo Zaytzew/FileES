@@ -984,12 +984,20 @@ type repositoryRelocateClient interface {
 
 type repositoryRelocateAdapter struct{ client repositoryRelocateClient }
 
-func (adapter repositoryRelocateAdapter) WCConversion(ctx context.Context, p contract.WCConversionPayload) (*contract.WCConversionStatus, error) {
-	client, ok := adapter.client.(actions.RepositoryConverter)
+func (adapter repositoryRelocateAdapter) WCConversion(ctx context.Context, p actions.WCConversionRequest) (*actions.WCConversionReceipt, error) {
+	client, ok := adapter.client.(interface {
+		WCConversion(context.Context, contract.WCConversionPayload) (*contract.WCConversionStatus, error)
+	})
 	if !ok {
 		return nil, errors.New("daemon does not support working-copy conversion")
 	}
-	return client.WCConversion(ctx, p)
+	result, err := client.WCConversion(ctx, contract.WCConversionPayload{
+		ServerID: p.ServerID, RepoID: p.RepoID, Action: p.Action, SourcePath: p.SourcePath, OperationID: p.OperationID,
+	})
+	if err != nil || result == nil {
+		return nil, err
+	}
+	return &actions.WCConversionReceipt{ServerID: result.ServerID, RepoID: result.RepoID, SourcePath: result.SourcePath, OperationID: result.OperationID}, nil
 }
 
 func (adapter repositoryRelocateAdapter) RelocateRepository(ctx context.Context, serverID, repoID, newLocalPath string) (string, error) {

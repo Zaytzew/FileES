@@ -11,13 +11,13 @@ import (
 )
 
 type conversionGUIProbe struct {
-	calls []contract.WCConversionPayload
+	calls []WCConversionRequest
 	err   error
 }
 
-func (f *conversionGUIProbe) WCConversion(_ context.Context, p contract.WCConversionPayload) (*contract.WCConversionStatus, error) {
+func (f *conversionGUIProbe) WCConversion(_ context.Context, p WCConversionRequest) (*WCConversionReceipt, error) {
 	f.calls = append(f.calls, p)
-	return &contract.WCConversionStatus{ServerID: p.ServerID, RepoID: p.RepoID, SourcePath: "fixture", OperationID: "operation"}, f.err
+	return &WCConversionReceipt{ServerID: p.ServerID, RepoID: p.RepoID, SourcePath: "fixture", OperationID: "operation"}, f.err
 }
 func conversionGUIView() app.ViewModel {
 	r := app.RepoViewModel{ID: "repo", ServerID: "lab", Attached: true, LocalPath: "fixture", State: contract.StateActive,

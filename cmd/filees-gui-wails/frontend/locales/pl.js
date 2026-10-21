@@ -1298,6 +1298,7 @@ export default {
   "anchorDamage.repair": "Napraw…",
   "anchorRuntime.preparing": "Przygotowywanie listy plików w Eksploratorze…",
   "anchorRuntime.connecting": "Łączenie folderu z Windows…",
+  "anchorRuntime.connectingHelp": "Oczekiwanie na rejestrację lub połączenie folderu z Windows. To nie jest pobieranie plików.",
   "anchorRuntime.failed": "Folder w Eksploratorze nie jest gotowy — wystąpił błąd.",
   "anchorRuntime.unknown": "Niepotwierdzona gotowość folderu w Eksploratorze.",
   "anchorRuntime.since": "Od: {time}.",

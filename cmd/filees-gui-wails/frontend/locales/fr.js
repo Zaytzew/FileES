@@ -1284,6 +1284,7 @@ export default {
   "anchorDamage.repair": "Réparer…",
   "anchorRuntime.preparing": "Préparation de la liste des fichiers dans l’Explorateur…",
   "anchorRuntime.connecting": "Connexion du dossier à Windows…",
+  "anchorRuntime.connectingHelp": "En attente de l’enregistrement ou de la connexion du dossier à Windows. Aucun fichier n’est téléchargé.",
   "anchorRuntime.failed": "Le dossier de l’Explorateur n’est pas prêt — une erreur est survenue.",
   "anchorRuntime.unknown": "La disponibilité du dossier de l’Explorateur n’est pas confirmée.",
   "anchorRuntime.since": "Depuis : {time}.",

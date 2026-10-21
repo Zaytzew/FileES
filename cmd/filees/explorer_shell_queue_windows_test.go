@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 )
 
@@ -79,6 +81,28 @@ func shellQueueUnitManager(t *testing.T) (*anchorManager, localrepo.Record) {
 	m := &anchorManager{helper: filepath.Join(root, "absent-helper.exe"), lifecycle: store, localIntentMu: new(sync.Mutex), options: &anchorOptions{}}
 	m.options.servers.Store(map[string]bool{"fixture": true})
 	return m, r
+}
+
+func TestShellQueueWaitingConnectCancellationKeepsIntent(t *testing.T) {
+	m, r := shellQueueUnitManager(t)
+	ipc := ipcserver.New("unused")
+	m.repos = ipc.RepoState
+	state := ipc.RegisterRepoAccess(r.RepoID, r.RepoURL, r.LocalPath, r.ServerID, "rw")
+	m.setRuntime(r, "preparing", "")
+	m.queueShellRegistration(r)
+	m.localIntentMu.Lock()
+	defer m.localIntentMu.Unlock()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	if _, _, err := m.startRegisteredAnchorHelper(ctx, r); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("cancelled admission did not stop", err)
+	}
+	if got := state.Snapshot().AnchorRuntime; got == nil || got.Phase != "connecting" {
+		t.Fatal("registration wait masquerades as file-list preparation", got)
+	}
+	if len(m.shellQueue.pending) != 1 || len(m.shellQueue.providers) != 0 {
+		t.Fatal("cancellation discarded intent or admitted a provider")
+	}
 }
 
 func TestShellQueueRechecksLocationAfterWaitingForAdmission(t *testing.T) {

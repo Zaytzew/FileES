@@ -1271,6 +1271,7 @@ export default {
   "anchorDamage.repair": "Reparieren…",
   "anchorRuntime.preparing": "Dateiliste im Explorer wird vorbereitet…",
   "anchorRuntime.connecting": "Ordner wird mit Windows verbunden…",
+  "anchorRuntime.connectingHelp": "Warten auf die Registrierung oder Verbindung des Ordners mit Windows. Es werden keine Dateien heruntergeladen.",
   "anchorRuntime.failed": "Der Explorer-Ordner ist nicht bereit — ein Fehler ist aufgetreten.",
   "anchorRuntime.unknown": "Die Bereitschaft des Explorer-Ordners ist nicht bestätigt.",
   "anchorRuntime.since": "Seit: {time}.",

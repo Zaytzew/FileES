@@ -1284,6 +1284,7 @@ export default {
   "anchorDamage.repair": "Reparar…",
   "anchorRuntime.preparing": "Preparando la lista de archivos en el Explorador…",
   "anchorRuntime.connecting": "Conectando la carpeta con Windows…",
+  "anchorRuntime.connectingHelp": "Esperando el registro o la conexión de la carpeta con Windows. No se están descargando archivos.",
   "anchorRuntime.failed": "La carpeta del Explorador no está lista: se ha producido un error.",
   "anchorRuntime.unknown": "No se ha confirmado la disponibilidad de la carpeta del Explorador.",
   "anchorRuntime.since": "Desde: {time}.",

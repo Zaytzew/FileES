@@ -13,6 +13,10 @@ test("provider preparation and failure remain visible, without invented percenta
     assert.match(html, /anchorRuntime.since/);
     assert.doesNotMatch(html, /<script>|\d+%/);
     if (phase === "failed") assert.match(html, /&lt;script&gt;error/);
+    if (phase === "connecting") {
+      assert.match(html, /anchorRuntime.connectingHelp/);
+      assert.doesNotMatch(html, /anchorRuntime.waitHelp/);
+    }
   }
   assert.equal(anchorRuntimeMarkup(repo("ready"),t,escape,String), "");
   assert.equal(anchorRuntimeMarkup({...repo("failed"),attached:false},t,escape,String), "");
@@ -20,7 +24,7 @@ test("provider preparation and failure remain visible, without invented percenta
 });
 test("provider preparation copy exists in all interface languages", () => {
   for (const language of languages) {
-    for (const key of ["preparing","connecting","failed","unknown","since","waitHelp","failureHelp","diagnostic"]) {
+    for (const key of ["preparing","connecting","connectingHelp","failed","unknown","since","waitHelp","failureHelp","diagnostic"]) {
       assert.ok(language.messages[`anchorRuntime.${key}`], `${language.code}: ${key}`);
     }
   }

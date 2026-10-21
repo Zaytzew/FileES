@@ -52,7 +52,7 @@ func (m *anchorManager) registerShellPreference(ctx context.Context, record loca
 	if !info.OK || !info.Ours {
 		return fmt.Errorf("cannot verify disconnected FileES root: %s %s", info.Error, info.HResult)
 	}
-	if info.Status != 0 {
+	if !anchorProviderDisconnected(info.Status) {
 		return commit.ErrLocalStatusBusy
 	}
 	args := []string{"shell-register", "--root", record.LocalPath, "--identity", record.ServerID + "\x1f" + record.RepoID, "--icon", icon}

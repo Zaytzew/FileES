@@ -553,18 +553,26 @@ func (m *anchorManager) keep(ctx context.Context, record localrepo.Record) {
 
 const anchorProviderCheckEvery = 30 * time.Second
 
+// CF_SYNC_PROVIDER_STATUS is not a boolean. TERMINATED is left behind when
+// the provider process dies; it does not represent a live connection. Only
+// these documented disconnected states permit reconnection. ERROR, flags and
+// unknown values remain fail-closed, alongside ownership and lifetime checks.
+func anchorProviderDisconnected(status int) bool {
+	return status == 0 || status == 0xc0000001
+}
+
 // watchAnchorProvider ends a helper whose connection Windows no longer has.
 // Detaching and re-attaching the cloud filter on the volume drops every
 // provider connection without telling the provider: the helper keeps running,
 // nothing is logged, and opening a placeholder fails until the pair restarts
 // (implementation notes (not distributed), section 7). A connected helper
-// reports a non-zero provider status; zero twice in a row means the
+// reports an active provider status; disconnected/terminated twice means the
 // connection is gone, and ending the helper lets keep connect again. An
 // answer that cannot be read is not evidence either way.
 //
 // suspect, when not nil, yields a channel that is closed when something else
 // has shown the filter was detached (a repair just removed unreadable
-// entries). The check then happens at once and one zero reading is enough, so
+// entries). The check then happens at once and one disconnected reading suffices,
 // the folders are back in seconds instead of a minute.
 func watchAnchorProvider(ctx context.Context, every time.Duration, suspect func() <-chan struct{}, status func(context.Context) (cfapiAnswer, error), lost func()) {
 	ticker := time.NewTicker(every)
@@ -584,7 +592,7 @@ func watchAnchorProvider(ctx context.Context, every time.Duration, suspect func(
 			needed = 1
 		}
 		answer, err := status(ctx)
-		if err != nil || !answer.OK || !answer.Ours || answer.Status != 0 {
+		if err != nil || !answer.OK || !answer.Ours || !anchorProviderDisconnected(answer.Status) {
 			disconnected = 0
 			continue
 		}

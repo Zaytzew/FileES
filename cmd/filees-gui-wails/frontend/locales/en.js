@@ -1272,6 +1272,7 @@ export default {
   "anchorDamage.repair": "Repair…",
   "anchorRuntime.preparing": "Preparing the file list in Explorer…",
   "anchorRuntime.connecting": "Connecting the folder to Windows…",
+  "anchorRuntime.connectingHelp": "Waiting for folder registration or connection to Windows. Files are not being downloaded.",
   "anchorRuntime.failed": "The Explorer folder is not ready — an error occurred.",
   "anchorRuntime.unknown": "Explorer folder readiness has not been confirmed.",
   "anchorRuntime.since": "Since: {time}.",

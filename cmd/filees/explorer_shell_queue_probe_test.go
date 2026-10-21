@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,68 @@ func shellProbeRootIdentity(t *testing.T, root string) (uint32, uint64) {
 		t.Fatal(err)
 	}
 	return info.VolumeSerialNumber, uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)
+}
+
+func TestShellQueueReconnectsTerminatedProvider(t *testing.T) {
+	for _, queued := range []bool{false, true} {
+		t.Run(fmt.Sprintf("queued=%v", queued), func(t *testing.T) {
+			m, r := shellQueueUnitManager(t)
+			m.helper = probeTool(t, "FILEES_CFAPI")
+			const contents = "local bytes survive a terminated provider"
+			if err := os.WriteFile(filepath.Join(r.LocalPath, "kept.txt"), []byte(contents), 0600); err != nil {
+				t.Fatal(err)
+			}
+			volume, fileID := shellProbeRootIdentity(t, r.LocalPath)
+			if a, err := m.call(t.Context(), "", "register", "--root", r.LocalPath, "--identity", r.ServerID+"\x1f"+r.RepoID); err != nil || !a.OK {
+				t.Fatal(a, err)
+			}
+			t.Cleanup(func() {
+				if out, err := exec.Command(m.helper, "unregister", "--root", r.LocalPath).CombinedOutput(); err != nil {
+					t.Errorf("private fixture cleanup: %s %v", out, err)
+				}
+			})
+			old, err := startAnchorHelper(t.Context(), m.helper, r.LocalPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer old.stdin.Close()
+			defer old.abort()
+			if line, err := bufio.NewReader(old.stdout).ReadString('\n'); err != nil || !strings.Contains(line, `"connected"`) {
+				t.Fatal(line, err)
+			}
+			old.abort() // A real abnormal exit leaves TERMINATED in Windows.
+			_ = old.wait()
+			if a, err := m.call(t.Context(), "", "info", "--root", r.LocalPath); err != nil || !a.OK || !a.Ours || a.Status != 0xc0000001 {
+				t.Fatalf("missing terminated fixture: %+v %v", a, err)
+			}
+			if queued {
+				m.queueShellRegistration(r)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			streams, finish, err := m.startRegisteredAnchorHelper(ctx, r)
+			if err != nil {
+				t.Fatal("terminated provider blocked reconnection", err)
+			}
+			defer finish()
+			defer func() { _ = streams.stdin.Close(); _ = streams.wait() }()
+			if line, err := bufio.NewReader(streams.stdout).ReadString('\n'); err != nil || !strings.Contains(line, `"connected"`) {
+				t.Fatal("no actual connection acknowledgement", line, err)
+			}
+			if a, err := m.call(ctx, "", "info", "--root", r.LocalPath); err != nil || !a.OK || !a.Ours || a.Status != 1 {
+				t.Fatalf("replacement is not an idle connected FileES provider: %+v %v", a, err)
+			}
+			if queued && len(shellRootsForPath(t, r.LocalPath)) != 1 {
+				t.Fatal("reconnection bypassed Shell FIFO")
+			}
+			if v, id := shellProbeRootIdentity(t, r.LocalPath); v != volume || id != fileID {
+				t.Fatal("root identity changed")
+			}
+			if body, err := os.ReadFile(filepath.Join(r.LocalPath, "kept.txt")); err != nil || string(body) != contents {
+				t.Fatal("local bytes changed", err)
+			}
+		})
+	}
 }
 
 func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
@@ -104,6 +167,9 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	time.Sleep(250 * time.Millisecond)
+	if runtime := m.runtimeOf(anchorKey(r)); runtime == nil || runtime.Phase != "connecting" {
+		t.Fatal("FIFO wait is not projected as connecting", runtime)
+	}
 	info, err := m.call(ctx, "", "info", "--root", root)
 	if err != nil || !info.OK || info.Status != 0 {
 		t.Fatalf("provider connected before FIFO registration: %+v %v", info, err)
@@ -114,7 +180,7 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 	deadline = time.Now().Add(5 * time.Second)
 	for {
 		info, err = m.call(ctx, "", "info", "--root", root)
-		if err == nil && info.OK && info.Status != 0 {
+		if err == nil && info.OK && info.Ours && info.Status == 1 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -155,7 +221,7 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 	deadline = time.Now().Add(12 * time.Second)
 	for {
 		info, err = m.call(ctx, "", "info", "--root", root)
-		if err == nil && info.OK && info.Ours && info.Status != 0 {
+		if err == nil && info.OK && info.Ours && info.Status == 1 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -187,7 +253,7 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 	deadline = time.Now().Add(8 * time.Second)
 	for {
 		info, err = restarted.call(restartCtx, "", "info", "--root", root)
-		if err == nil && info.OK && info.Ours && info.Status != 0 {
+		if err == nil && info.OK && info.Ours && info.Status == 1 {
 			break
 		}
 		if time.Now().After(deadline) {

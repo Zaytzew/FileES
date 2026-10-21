@@ -267,6 +267,9 @@ func (m *anchorManager) reconcileShellQueueFor(ctx context.Context, only *localr
 // Keep releases this lease only after bridge/process/cache cleanup, not when
 // a stop has merely been requested. The final lifecycle check is under guard.
 func (m *anchorManager) startRegisteredAnchorHelper(ctx context.Context, record localrepo.Record) (*anchorHelperStreams, func() bool, error) {
+	// Preparation has finished. The FIFO may still be waiting for registration
+	// or a provider lifetime to drain; that is not file-list preparation.
+	m.setRuntime(record, "connecting", "")
 	for {
 		// A keep lifetime can help its OWN head, never run another root's
 		// registration under a context which that other root does not own.
@@ -302,7 +305,7 @@ func (m *anchorManager) startRegisteredAnchorHelper(ctx context.Context, record 
 	// Conversion or another process may own an untracked native connection.
 	// Never start a competing provider or try to disconnect that process.
 	info, err := m.call(ctx, "", "info", "--root", record.LocalPath)
-	if err != nil || !info.OK || !info.Ours || info.Status != 0 {
+	if err != nil || !info.OK || !info.Ours || !anchorProviderDisconnected(info.Status) {
 		finished()
 		if err != nil {
 			return nil, nil, err

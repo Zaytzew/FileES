@@ -9,5 +9,6 @@ export function anchorRuntimeMarkup(repo, t, escape, dateTime) {
     ? ` ${escape(t("anchorRuntime.since", {time: dateTime(since)}))}` : "";
   const diagnostic = phase === "failed" && detail
     ? `<details><summary>${escape(t("anchorRuntime.diagnostic"))}</summary><pre>${escape(detail)}</pre></details>` : "";
-  return `<div class="repo-problem" role="status"><strong>${escape(t(`anchorRuntime.${label}`))}</strong>${timestamp}<small>${escape(t(phase === "failed" ? "anchorRuntime.failureHelp" : "anchorRuntime.waitHelp"))}</small>${diagnostic}</div>`;
+  const help = phase === "failed" ? "failureHelp" : phase === "connecting" ? "connectingHelp" : "waitHelp";
+  return `<div class="repo-problem" role="status"><strong>${escape(t(`anchorRuntime.${label}`))}</strong>${timestamp}<small>${escape(t(`anchorRuntime.${help}`))}</small>${diagnostic}</div>`;
 }

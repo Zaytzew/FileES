@@ -10,9 +10,19 @@ import (
 	"time"
 )
 
+func TestAnchorProviderDisconnectedOnlyKnownStates(t *testing.T) {
+	for _, status := range []int{0, 0xc0000001, 1, 2, 4, 8, 0x10, 0x20, 0x40, 3, 0x80000000, 0xc0000002, -1, 0xffffffff, 0xc0000000} {
+		want := status == 0 || status == 0xc0000001
+		if got := anchorProviderDisconnected(status); got != want {
+			t.Fatalf("status %#x: disconnected=%v, want %v", status, got, want)
+		}
+	}
+}
+
 func TestAnchorProviderWatchEndsOnlyAHelperWindowsNoLongerKnows(t *testing.T) {
-	connected := cfapiAnswer{OK: true, Ours: true, Status: 3221225473}
+	connected := cfapiAnswer{OK: true, Ours: true, Status: 1} // CF_PROVIDER_STATUS_IDLE
 	gone := cfapiAnswer{OK: true, Ours: true, Status: 0}
+	terminated := cfapiAnswer{OK: true, Ours: true, Status: 0xc0000001}
 	for _, test := range []struct {
 		name    string
 		answers []cfapiAnswer
@@ -20,6 +30,9 @@ func TestAnchorProviderWatchEndsOnlyAHelperWindowsNoLongerKnows(t *testing.T) {
 		lost    bool
 	}{
 		{name: "connected", answers: []cfapiAnswer{connected, connected, connected, connected}},
+		{name: "terminated is disconnected", answers: []cfapiAnswer{terminated, terminated}, lost: true},
+		{name: "mixed disconnected readings", answers: []cfapiAnswer{gone, terminated}, lost: true},
+		{name: "error does not prove disconnection", answers: []cfapiAnswer{{OK: true, Ours: true, Status: 0xc0000002}, {OK: true, Ours: true, Status: 0xc0000002}}},
 		{name: "filter detached and attached again", answers: []cfapiAnswer{connected, gone, gone}, lost: true},
 		{name: "one zero reading is not enough", answers: []cfapiAnswer{gone, connected, gone, connected}},
 		{name: "unreadable answers prove nothing", answers: []cfapiAnswer{gone, {}, gone, {}}, errs: []error{nil, errors.New("helper"), nil, nil}},

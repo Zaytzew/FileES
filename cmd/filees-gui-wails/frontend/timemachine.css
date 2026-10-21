@@ -2,6 +2,29 @@
    this file lays out the chart, the moment and the two tabs of R01. */
 
 .tm-shell { width: min(1280px, calc(100vw - 40px)); min-height: 100vh; margin: 0 auto; padding: 14px 0 28px; }
+/* Scope the stationary layout to this window: HEAD shares the legacy shell.
+   Header height follows its controls; only the remaining row scrolls. */
+body.tm-window { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.tm-window .tm-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; padding-bottom: 0; }
+.tm-header { min-width: 0; padding-bottom: 12px; }
+.tm-content { min-height: 0; overflow: auto; padding: 0 2px 28px; scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
+.tm-content:focus-visible { outline: 2px solid var(--theme-focus, #4ea7e0); outline-offset: -2px; }
+.tm-window .tm-hero { flex-direction: row; align-items: center; gap: 16px; margin: 10px 0 0; }
+.tm-window .tm-hero h1 { font-size: 28px; }
+.tm-window .tm-hero .eyebrow { margin-bottom: 3px; }
+.tm-window .tm-subtitle { margin-top: 3px; font-size: 12px; }
+.tm-window .tm-repo-card { padding: 8px 12px; }
+.tm-window .tm-chart-card { margin-top: 10px; padding: 12px 16px; }
+.tm-window .tm-chart-card > header { margin-bottom: 0; }
+.tm-window .tm-legend { margin: 8px 0 6px; gap: 10px; }
+.tm-window .tm-chart { height: 110px; }
+.tm-window .tm-slider { margin-top: 8px; }
+.tm-window .tm-slider-end { font-size: 10px; }
+.tm-window .tm-moment-row { margin-top: 8px; padding-top: 8px; gap: 10px; }
+.tm-window .tm-moment-value strong { font-size: 18px; }
+.tm-window .tm-list { max-height: none; overflow: visible; }
+.tm-window .tm-body { margin-top: 0; }
+.tm-window .tm-body > .content-card { margin-top: 0; }
 .tm-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 18px 0 4px; }
 .tm-hero h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); letter-spacing: -.02em; }
 .tm-accent { color: var(--orange); }
@@ -38,6 +61,17 @@ body.tm-is-empty .tm-chart-card, body.tm-is-empty .tm-body { display: none; }
 .tm-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .tm-axis span:first-child { transform: none; }
 .tm-axis span:last-child { transform: translateX(-100%); }
+.tm-axis span::before { content: ""; position: absolute; top: -4px; left: 50%; height: 5px; border-left: 1px solid var(--muted); }
+.tm-axis span:first-child::before { left: 0; }
+.tm-axis span:last-child::before { left: auto; right: 0; }
+.tm-time-scale { position: relative; height: 18px; margin: 0 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+.tm-time-scale:empty { visibility: hidden; }
+.tm-time-scale span { position: absolute; top: 5px; transform: translateX(-50%); white-space: nowrap; }
+.tm-time-scale span::before { content: ""; position: absolute; top: -6px; left: 50%; height: 5px; border-left: 1px solid var(--muted); }
+.tm-time-scale span:first-child { transform: none; }
+.tm-time-scale span:first-child::before { left: 0; }
+.tm-time-scale span:last-child { transform: translateX(-100%); }
+.tm-time-scale span:last-child::before { left: auto; right: 0; }
 .tm-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
 
 .tm-slider { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: 16px; margin-top: 18px; }
@@ -120,4 +154,16 @@ body.tm-is-empty .tm-chart-card, body.tm-is-empty .tm-body { display: none; }
   .tm-body { grid-template-columns: 1fr; }
   .tm-side { position: static; }
   .tm-hero { flex-direction: column; align-items: stretch; }
+}
+@media (max-height: 760px) {
+  .tm-window .tm-hero .eyebrow, .tm-window .tm-subtitle { display: none; }
+  .tm-window .tm-hero h1 { font-size: 24px; }
+  .tm-window .tm-repo-card { gap: 2px; padding: 4px 10px; }
+  .tm-window select, .tm-window input[type="datetime-local"] { min-height: 32px; }
+  .tm-window .tm-granularity { display: flex; align-items: center; gap: 8px; }
+  .tm-window .tm-chart { height: 76px; }
+  .tm-window .tm-chart-card { margin-top: 6px; padding: 10px 12px; }
+  .tm-window .tm-moment-row .eyebrow { font-size: 9px; }
+  .tm-window .tm-goto label { display: flex; align-items: center; gap: 8px; }
+  .tm-window #tm-zone { max-width: 140px; font-size: 10px; }
 }

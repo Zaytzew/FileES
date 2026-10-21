@@ -1833,7 +1833,7 @@ export default {
   "timeMachine.repository": "Repozytorium",
   "timeMachine.noRepositories": "Nie ma repozytoriów, których historię możesz przeglądać. Wehikuł czasu jest dostępny dla właściciela repozytorium.",
   "timeMachine.chart": "Historia zapisu",
-  "timeMachine.granularity": "Granulacja",
+  "timeMachine.granularity": "Dokładność",
   "timeMachine.hours": "{hours} h",
   "timeMachine.legendChanges": "Liczba zmian ścieżek",
   "timeMachine.legendMoment": "Wybrany moment",

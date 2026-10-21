@@ -3,7 +3,7 @@ import * as TimeMachine from "./bindings/filees/cmd/filees-gui-wails/timemachine
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, formatNumber, getLocale } from "./i18n.js";
 import {
-  GRANULARITIES, formatBytes, utcOffsetLabel, localInputValue, parseBars, chartGeometry, intervalBounds,
+  GRANULARITIES, formatBytes, utcOffsetLabel, localInputValue, parseBars, chartGeometry, intervalBounds, timelineTicks,
   skipReasonKey, actionKey, isActive, isFinal, hasRoom, breadcrumb, joinPath, parentPath,
 } from "./timemachine-view.js";
 
@@ -282,6 +282,15 @@ function renderGranularity() {
   }).join("");
 }
 
+function renderTimeScale(start, end) {
+  const span = end - start;
+  const tickFormatter = formatter(span < 2 * 86400000
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { day: "numeric", month: "short", ...(span >= 365 * 86400000 ? { year: "numeric" } : {}) });
+  return timelineTicks(start, end).map(({ ms, left }) =>
+    `<span style="left:${left}%" title="${escapeHTML(dateTime(ms))}">${escapeHTML(tickFormatter.format(new Date(ms)))}</span>`).join("");
+}
+
 function renderChart() {
   const root = $("#tm-chart");
   const geometry = chartGeometry(state.bars, state.momentMs);
@@ -295,10 +304,7 @@ function renderChart() {
       return `<button type="button" class="tm-bar${selected}" data-bar="${index}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;height:${height.toFixed(1)}%" aria-label="${escapeHTML(label)}" title="${escapeHTML(label)}"></button>`;
     }).join("");
     const marker = geometry.marker === null ? "" : `<span class="tm-marker" style="left:${geometry.marker.toFixed(3)}%" aria-hidden="true"></span>`;
-    const ticks = Array.from({ length: 6 }, (_, index) => {
-      const ms = geometry.start + (geometry.end - geometry.start) * index / 5;
-      return `<span style="left:${index * 20}%">${escapeHTML(shortDate(ms))}</span>`;
-    }).join("");
+    const ticks = renderTimeScale(geometry.start, geometry.end);
     root.innerHTML = `<div class="tm-bars">${bars}${marker}</div><div class="tm-axis">${ticks}</div>`;
   }
   const status = $("#tm-index-status");
@@ -315,6 +321,7 @@ function renderSlider() {
   const now = Date.now();
   const usable = Boolean(state.snapshot) && Number.isFinite(first) && first < now;
   input.disabled = !usable;
+  $("#tm-moment-scale").innerHTML = usable ? renderTimeScale(first, now) : "";
   if (usable) {
     input.min = String(first);
     input.max = String(now);

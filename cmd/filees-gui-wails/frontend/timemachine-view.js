@@ -71,6 +71,17 @@ export function intervalBounds(bar) {
   return { from: new Date(bar.startMs).toISOString(), to: new Date(bar.endMs - 1).toISOString() };
 }
 
+// Both axes use their own bounds: the bars cover loaded history, while the
+// slider covers the first known change through now. Never invent a date when
+// the range is unavailable. Epoch interpolation also handles DST boundaries.
+export function timelineTicks(start, end) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+  return Array.from({ length: 5 }, (_, index) => ({
+    ms: start + (end - start) * index / 4,
+    left: index * 25,
+  }));
+}
+
 export function skipReasonKey(reason) {
   return `timeMachine.reason.${SKIP_REASONS.has(reason) ? reason : "unknown"}`;
 }

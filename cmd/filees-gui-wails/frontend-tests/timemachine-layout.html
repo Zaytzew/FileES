@@ -1,0 +1,78 @@
+<!doctype html><meta charset="utf-8"><title>Time machine layout regression</title>
+<style>body{margin:0}iframe{border:0;display:block}</style>
+<!-- Actual product markup/CSS, without application scripts, IPC or profiles. -->
+<iframe sandbox="allow-same-origin" src="../frontend/timemachine.html"></iframe>
+<script>
+const frame=document.querySelector('iframe');
+const settle=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+let count=0;
+const check=(condition,label)=>{if(!condition)throw Error(label);count++;};
+frame.onload=async()=>{
+ try {
+  const doc=frame.contentDocument,win=frame.contentWindow;
+  const header=doc.querySelector('.tm-header'),content=doc.querySelector('#tm-content');
+  const chart=doc.querySelector('#tm-chart'),slider=doc.querySelector('#tm-moment');
+  const ticks=Array.from({length:5},(_,i)=>`<span style="left:${i*25}%">${i+1} paź 2026</span>`).join('');
+  chart.innerHTML='<div class="tm-bars">'+Array.from({length:32},(_,i)=>`<button class="tm-bar" style="left:${i*3}%;width:2%;height:${20+i*2}%" aria-label="Synthetic change"></button>`).join('')+'</div><div class="tm-axis">'+ticks+'</div>';
+  doc.querySelector('#tm-moment-scale').innerHTML=ticks;
+  doc.querySelector('#tm-repository').innerHTML='<option>Projekt testowy — długa nazwa repozytorium</option>';
+  doc.querySelector('#tm-granularity').innerHTML=[1,2,4,6,12,24].map(h=>`<button>${h} h</button>`).join('');
+  doc.querySelector('#tm-first-date').textContent='1 paź 2026, 12:00:00';
+  doc.querySelector('#tm-head-date').textContent='22 paź 2026, 12:00:00';
+  doc.querySelector('#tm-range').textContent='1 paź – 22 paź';
+  doc.querySelector('#tm-moment-label').textContent='22 paź 2026, 12:00:00';
+  doc.querySelector('#tm-snapshot-badge').textContent='r1234';
+  doc.querySelector('#tm-zone').textContent='Europe/Warsaw · UTC+02:00';
+  slider.disabled=false;slider.min='0';slider.max='100';slider.value='50';
+  for(const [width,height] of [[1320,880],[1000,760],[900,640]]) {
+   frame.style.width=width+'px';frame.style.height=height+'px';
+   for(const theme of ['light','dark']) {
+    doc.documentElement.dataset.systemTheme=theme;
+    for(const panel of ['changes','files']) {
+     doc.querySelector('#panel-changes').hidden=panel!=='changes';
+     doc.querySelector('#panel-files').hidden=panel!=='files';
+     const list=doc.querySelector(panel==='changes'?'#tm-commits':'#tm-entries');
+     list.innerHTML=Array.from({length:60},(_,i)=>`<button class="tm-entry" style="min-height:40px">Synthetic item ${i}</button>`).join('');
+     content.scrollTop=0;await settle();
+     const before=header.getBoundingClientRect(),chartTop=chart.getBoundingClientRect().top;
+     check(content.clientHeight>height*.28,`too little list space ${width}x${height}`);
+     check(chart.clientHeight<=110,'chart not compact');
+     check(header.contains(slider)&&header.contains(chart),'timeline outside header');
+     check(content.getBoundingClientRect().top>=before.bottom-1,'list overlaps header');
+     check(doc.documentElement.scrollWidth<=width,'horizontal overflow');
+     content.scrollTop=content.scrollHeight/2;await settle();
+     check(content.scrollTop>100,'list does not scroll');
+     check(header.getBoundingClientRect().top===before.top,'header moved');
+     check(chart.getBoundingClientRect().top===chartTop,'chart moved');
+     check(doc.scrollingElement.scrollTop===0,'document scrolls');
+     const close=doc.querySelector('#tm-close').getBoundingClientRect();
+     check(close.top>=0&&close.right<=width,'window controls clipped');
+     const last=list.lastElementChild;last.focus();await settle();
+     const box=last.getBoundingClientRect(),viewport=content.getBoundingClientRect();
+     check(doc.activeElement===last&&box.top>=viewport.top-1&&box.bottom<=viewport.bottom+1,'last action unreachable');
+     check(header.getBoundingClientRect().top===before.top,'focus moved header');
+     slider.focus();await settle();
+     check(slider.getBoundingClientRect().bottom<=content.getBoundingClientRect().top,'slider inaccessible');
+     const download=doc.querySelector('#tm-download-state');download.disabled=false;download.focus();await settle();
+     const action=download.getBoundingClientRect(),port=content.getBoundingClientRect();
+     check(action.top>=port.top-1&&action.bottom<=port.bottom+1,'export action unreachable');
+     check(header.getBoundingClientRect().top===before.top,'export focus moved header');
+     for(const scale of [doc.querySelector('.tm-axis'),doc.querySelector('#tm-moment-scale')]) {
+      const labels=[...scale.children].map(n=>n.getBoundingClientRect());
+      for(let i=1;i<labels.length;i++)check(labels[i].left>=labels[i-1].right,'axis labels overlap');
+     }
+    }
+    doc.body.classList.add('tm-is-empty');doc.querySelector('#tm-empty').hidden=false;
+    content.scrollTop=0;await settle();
+    check(win.getComputedStyle(doc.querySelector('.tm-chart-card')).display==='none','empty chart visible');
+    check(doc.querySelector('#tm-empty').getBoundingClientRect().bottom<=height,'empty state clipped');
+    doc.body.classList.remove('tm-is-empty');doc.querySelector('#tm-empty').hidden=true;
+   }
+  }
+  const message='PASS time machine layout '+count+' checks, three sizes, both themes, both tabs';
+  document.title=message;window.webkit?.messageHandlers?.result?.postMessage(message);
+ }catch(error){
+  const message='FAIL '+error.message;document.title=message;window.webkit?.messageHandlers?.result?.postMessage(message);
+ }
+};
+</script>

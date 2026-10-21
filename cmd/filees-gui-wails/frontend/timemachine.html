@@ -10,10 +10,11 @@
   <link rel="stylesheet" href="./repository.css">
   <link rel="stylesheet" href="./timemachine.css">
 </head>
-<body>
+<body class="tm-window">
   <div class="ambient ambient-a"></div>
   <div class="ambient ambient-b"></div>
   <main class="tm-shell">
+    <div class="tm-header">
     <header id="tm-titlebar" class="repository-titlebar">
       <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong>FileES</strong><small data-i18n="timeMachine.context">Pliki w czasie</small></div></div>
       <div class="window-controls">
@@ -34,13 +35,11 @@
       </label>
     </section>
 
-    <p id="tm-empty" class="tm-empty" hidden data-i18n="timeMachine.noRepositories">Nie ma repozytoriów, których historię możesz przeglądać.</p>
-
     <section id="tm-chart-card" class="content-card tm-chart-card">
       <header class="tm-card-head">
         <div><h2 data-i18n="timeMachine.chart">Historia zapisu</h2><p id="tm-range" class="tm-muted"></p></div>
         <div class="tm-granularity">
-          <span id="tm-granularity-label" class="tm-muted" data-i18n="timeMachine.granularity">Granulacja</span>
+          <span id="tm-granularity-label" class="tm-muted" data-i18n="timeMachine.granularity">Dokładność</span>
           <div id="tm-granularity" class="tm-segmented" role="radiogroup" aria-labelledby="tm-granularity-label"></div>
         </div>
       </header>
@@ -56,6 +55,7 @@
         <div class="tm-slider-track">
           <label for="tm-moment" class="eyebrow" data-i18n="timeMachine.moveMoment">Przesuń moment w całej historii</label>
           <input id="tm-moment" type="range" min="0" max="0" step="60000" value="0" disabled>
+          <div id="tm-moment-scale" class="tm-time-scale" aria-hidden="true"></div>
         </div>
         <div class="tm-slider-end tm-right"><strong id="tm-head-date">—</strong><small id="tm-head-rev"></small></div>
       </div>
@@ -70,7 +70,10 @@
         </form>
       </div>
     </section>
+    </div>
 
+    <div id="tm-content" class="tm-content" tabindex="0" role="region" aria-label="Pliki w czasie" data-i18n-aria-label="timeMachine.context">
+    <p id="tm-empty" class="tm-empty" hidden data-i18n="timeMachine.noRepositories">Nie ma repozytoriów, których historię możesz przeglądać.</p>
     <div class="tm-body">
       <section class="content-card tm-main">
         <div class="tm-tabs" role="tablist">
@@ -99,6 +102,7 @@
         </div>
         <p class="tm-note" data-i18n="timeMachine.copyNote">Pobranie tworzy osobną kopię. Nie cofa pliku i nie wykonuje commitu.</p>
       </aside>
+    </div>
     </div>
   </main>
 

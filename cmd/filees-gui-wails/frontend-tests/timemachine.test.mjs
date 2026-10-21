@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { languages } from "../frontend/i18n.js";
 import {
   GRANULARITIES, SPACE_MARGIN, formatBytes, utcOffsetLabel, localInputValue, parseBars, chartGeometry,
-  intervalBounds, skipReasonKey, actionKey, isActive, isFinal, hasRoom, breadcrumb, joinPath, parentPath,
+  intervalBounds, timelineTicks, skipReasonKey, actionKey, isActive, isFinal, hasRoom, breadcrumb, joinPath, parentPath,
 } from "../frontend/timemachine-view.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
@@ -28,9 +29,69 @@ test("time machine page and script keys resolve in every catalogue", () => {
   }
   // The owner's wording for the full export, and never the word "snapshot".
   assert.equal(catalogues.pl["timeMachine.downloadState"], "Pobierz zapis tego stanu…");
+  assert.equal(catalogues.pl["timeMachine.granularity"], "Dokładność");
   for (const { code } of languages) {
     for (const key of keys) assert.doesNotMatch(catalogues[code][key], /snapshot/i, `${code}:${key}`);
   }
+});
+
+test("time scales bind ticks to each axis, including empty ranges and DST", () => {
+  for (const [start, end] of [[NaN, 20], [0, Infinity], [10, 10], [20, 10]]) {
+    assert.deepEqual(timelineTicks(start, end), []);
+  }
+  const start = Date.parse("2026-10-24T22:00:00Z"), end = Date.parse("2026-10-26T00:00:00Z");
+  const ticks = timelineTicks(start, end);
+  assert.deepEqual(ticks.map(tick => tick.left), [0, 25, 50, 75, 100]);
+  assert.equal(ticks[0].ms, start);
+  assert.equal(ticks[4].ms, end);
+  assert.equal(ticks[2].ms, (start + end) / 2);
+  const source = read("timemachine.js"), nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {});
+    return nodes.get(selector);
+  };
+  const state = { bars: [{ startMs: start }], snapshot: { revision: 4 }, momentMs: start, density: {} };
+  const sandbox = {
+    state, timelineTicks, $: node, document: { activeElement: null },
+    Date: class extends Date { static now() { return end; } },
+    formatter: options => new Intl.DateTimeFormat("pl", { ...options, timeZone: "Europe/Warsaw" }),
+    dateTime: ms => new Date(ms).toISOString(), shortDate: String, escapeHTML: String,
+    t: key => key,
+  };
+  runInNewContext(source.slice(source.indexOf('function renderTimeScale('), source.indexOf('function renderChart('))
+    + source.slice(source.indexOf('function renderSlider('), source.indexOf('function renderMoment('))
+    + '\nrenderSlider();', sandbox);
+  assert.equal(node('#tm-moment').min, String(start));
+  assert.equal(node('#tm-moment').max, String(end));
+  assert.match(node('#tm-moment-scale').innerHTML, /2026-10-26T00:00:00.000Z/);
+  assert.equal((node('#tm-moment-scale').innerHTML.match(/<span /g) ?? []).length, 5);
+  // Refresh must not move the user's slider while dragging/focusing it.
+  sandbox.document.activeElement = node('#tm-moment');
+  node('#tm-moment').value = 'held';
+  runInNewContext('renderSlider();', sandbox);
+  assert.equal(node('#tm-moment').value, 'held');
+  state.snapshot = null;
+  runInNewContext('renderSlider();', sandbox);
+  assert.equal(node('#tm-moment').disabled, true);
+  assert.equal(node('#tm-moment-scale').innerHTML, '');
+  assert.match(source, /renderTimeScale\(geometry.start, geometry.end\)/);
+});
+
+test("time machine alone owns a stationary chart header and a separate content scroller", () => {
+  const html = read('timemachine.html'), css = read('timemachine.css');
+  const header = html.indexOf('class="tm-header"'), content = html.indexOf('id="tm-content"');
+  assert.ok(header > 0 && content > header);
+  for (const id of ['tm-titlebar', 'tm-repository', 'tm-chart', 'tm-moment', 'tm-moment-scale', 'tm-goto']) {
+    const position = html.indexOf(`id="${id}"`);
+    assert.ok(position > header && position < content, id);
+    assert.equal(html.split(`id="${id}"`).length, 2, id);
+  }
+  assert.ok(html.indexOf('id="tm-commits"') > content);
+  assert.ok(html.indexOf('id="tm-dialog"') > html.indexOf('</main>'));
+  assert.match(css, /\.tm-window \.tm-shell \{[^}]*grid-template-rows: auto minmax\(0, 1fr\)/);
+  assert.match(css, /\.tm-content \{[^}]*min-height: 0[^}]*overflow: auto/);
+  assert.match(css, /\.tm-time-scale span::before/);
+  assert.doesNotMatch(read('headbrowser.html'), /class="tm-window"|class="tm-header"|id="tm-content"/);
 });
 
 test("the page reaches the daemon only through the time machine binding", () => {

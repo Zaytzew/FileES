@@ -119,12 +119,12 @@
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li><a href="man-pages.html">Polecenia systemowe</a> — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
-<h2>Stan dokumentacji na 2026-10-17</h2>
+<h2>Stan dokumentacji na 2026-10-22</h2>
 <p>Opisy zaktualizowano względem bieżącego kodu i kontraktów. Oznaczenie <em>Zweryfikowane</em> dotyczy wskazanego zakresu testów lub odbioru, nie całego produktu ani każdego hosta. Foldery wirtualne CFAPI należą do desktopowej alfy Windows 0.2.0; Windows Store 0.1.19 ich nie zawiera, a Linux korzysta z kopii SVN, również częściowych. Wersje klienta, serwera i kanałów mogą się różnić. Datowane dowody opisują swój zakres; aktualną wersję instalacji sprawdź w aplikacji lub poleceniem wersji.</p>
 <div class="table-wrap"><table>
 <tr><th>Obszar</th><th>Stan</th></tr>
 <tr><td>Demon pulpitu i zasobnik systemowy</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
-<tr><td>Foldery wirtualne CFAPI</td><td><span class="status status-implemented">Alfa Windows</span> Związana baza SVN, uzgadnianie partiami, przenoszenie katalogów z historią i trwałe zwalnianie miejsca. Stabilizacja trwa; Linux i Store korzystają z innych wariantów. Zobacz <a href="architecture.html#ch1-cfapi">mechanikę i uzasadnienia</a>.</td></tr>
+<tr><td>Foldery wirtualne CFAPI</td><td><span class="status status-implemented">Alfa Windows</span> Związana baza SVN, uzgadnianie partiami, przenoszenie katalogów z historią, trwałe zwalnianie miejsca, usuwanie plików, kontrola integralności pobrań i <a href="user-guide.html#ch2-wc-conversion">konwersja pełnej kopii roboczej</a>. Stabilizacja trwa; Linux i Store korzystają z innych wariantów. Zobacz <a href="architecture.html#ch1-cfapi">mechanikę i uzasadnienia</a>.</td></tr>
 <tr><td>Cache stanu i potwierdzenia własnych zmian</td><td><span class="status status-implemented">Zaimplementowane</span> Zbiorcze emisje, różnice, ACK i bariery generacji ograniczają zapytania. Hybrydowy serwer nadal sprawdza lokalne źródła SVN; nie wydłuża ważności praw. <a href="architecture.html#ch1-state-cache">Granice cache</a>.</td></tr>
 <tr><td>Lokalność offline i alokacja</td><td><span class="status status-implemented">Zaimplementowane</span> Lokalna kopia pozostaje rozpoznana podczas startu i offline. GUI przywraca przybliżony pomiar alokacji z cache i uzupełnia go oszczędnie w tle.</td></tr>
 <tr><td>Języki GUI pulpitu</td><td><span class="status status-verified">Zweryfikowane</span> 2026-09-11 w prawdziwym oknie Wails: polski, angielski, francuski, niemiecki i hiszpański, wybierane w nagłówku okna albo automatycznie zgodnie z ustawieniami systemu; liczebniki i czas względny są dopasowane do wybranego języka bez ponownego uruchamiania GUI</td></tr>

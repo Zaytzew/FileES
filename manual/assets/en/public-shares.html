@@ -98,7 +98,7 @@
 <li>A recipient list makes a closed channel. An empty list makes an open channel, optionally with a password. The password is never stored in the clear.</li>
 <li>Empty revision follows the latest. A positive revision freezes that snapshot.</li>
 </ul>
-<p>After opening the share, the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a ZIP. That bundle has its own limit, separate from the share: 512 files by default, configurable up to 4096. A share may legally hold more objects than one bundle may carry, and a request over the limit is refused rather than truncated. This version has no thumbnails.</p>
+<p>After opening the share, the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a ZIP. That bundle has its own limit, separate from the share: 512 files by default, configurable up to 4096. A share may legally hold more objects than one bundle may carry, and a request over the limit is refused rather than truncated. Files in the ZIP carry the publication date shown on the page (the content revision date, otherwise the share date), so the same content yields the same archive; older server versions produced dates in 1979 or 1899. This version has no thumbnails.</p>
 
 <h2 id="ps-ops">5.6 Turning it on</h2>
 <p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>

@@ -3,7 +3,7 @@
 <head>
 <meta name="filees-source-revision" content="$Rev$">
 <meta name="filees-generator" content="tools/manual-man-pages">
-<meta name="filees-mandoc-source" content="cmd/filees-client/man/filees-client.1 sha256:33343220907ff2a5d6204f096c70937a37d9c25b2be70826ce46c7f39862b193">
+<meta name="filees-mandoc-source" content="cmd/filees-client/man/filees-client.1 sha256:4de9340f03e3ce34d783bcb08d2a2acf239bbaffbad49160f5269731cb8ebc3d">
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>filees-client(1) — FileES manual pages</title>
@@ -31,19 +31,22 @@
 <div class="manual-content man-content">
 <div class="man-page-head"><a href="index.html">All manual pages</a></div>
 <div class="mandoc">
-<div class="head" role="doc-pageheader" aria-label="Manual header
-  line"><span class="head-ltitle">FILEES-CLIENT(1)</span>
-  <span class="head-vol">General Commands Manual</span>
-  <span class="head-rtitle">FILEES-CLIENT(1)</span></div>
-<main class="manual-text">
+<table class="head">
+  <tr>
+    <td class="head-ltitle">FILEES-CLIENT(1)</td>
+    <td class="head-vol">General Commands Manual</td>
+    <td class="head-rtitle">FILEES-CLIENT(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
 <section class="Sh">
-<h2 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h2>
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
 <p class="Pp"><code class="Nm">filees-client</code> &#x2014;
-    <span class="Nd" role="doc-subtitle">run one FileES client operation without
-    a background daemon</span></p>
+    <span class="Nd">run one FileES client operation without a background
+    daemon</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h2>
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
 <table class="Nm">
   <tr>
     <td><code class="Nm">filees-client</code></td>
@@ -175,7 +178,7 @@
 </table>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h2>
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp"><code class="Nm">filees-client</code> is a one-shot FileES client
     for Linux and <span class="Ux">OpenBSD</span>. It exits after one operation
     and may be called by a user's cron job. It uses an activated FileES identity
@@ -286,7 +289,7 @@
     it again.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h2>
+<h1 class="Sh" id="CONFIGURATION"><a class="permalink" href="#CONFIGURATION">CONFIGURATION</a></h1>
 <p class="Pp">The INI file named by <code class="Fl">--config</code> contains
     &#x2018;tools&#x2019; (absolute paths for
     <a class="permalink" href="#svn"><b class="Sy" id="svn">svn</b></a>,
@@ -302,7 +305,7 @@
     from a <code class="Cm">sync</code> command line.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h2>
+<h1 class="Sh" id="FILES"><a class="permalink" href="#FILES">FILES</a></h1>
 <dl class="Bl-tag">
   <dt><span class="Pa">/etc/filees/filees-client.conf</span></dt>
   <dd>Example invocation profile; the actual path is supplied by
@@ -316,7 +319,7 @@
       same relative path is used. Do not remove this state to bypass rollback
       protection.</dd>
   <dt><span class="Pa">/usr/local/man/man1/filees-client.1</span></dt>
-  <dd>Installed manual on OpenBSD; Linux uses
+  <dd>Installed manual on <span class="Ux">OpenBSD</span>; Linux uses
       <span class="Pa">/usr/local/share/man/man1/filees-client.1</span>.</dd>
   <dt><span class="Pa">state/job.json</span></dt>
   <dd>Durable <code class="Cm">dump-load</code> identity, stored below the
@@ -324,15 +327,15 @@
 </dl>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
-  STATUS</a></h2>
+<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT
+  STATUS</a></h1>
 <p class="Pp">The <code class="Nm">filees-client</code> utility exits&#x00A0;0
     on success, and&#x00A0;&gt;0 if an error occurs. Usage errors return 2.
     Transport, repository, journal and interrupted-operation errors return
   1.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h2>
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
 <div class="Bd Bd-indent Li">
 <pre>doas ./bin/filees-client install
 doas /usr/local/bin/filees-client update --check
@@ -349,13 +352,15 @@ filees-client dump-load --profile /home/user/.filees/client-profile.json \
     publish a partial output.</p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
-  ALSO</a></h2>
-<p class="Pp"><span class="Xr">ssh(1)</span>, <span class="Xr">svn(1)</span>, <span class="Xr">svnmucc(1)</span>,
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE
+  ALSO</a></h1>
+<p class="Pp"><span class="Xr">ssh(1)</span>,
+    <span class="Xr">svn(1)</span>,
+    <span class="Xr">svnmucc(1)</span>,
     <span class="Xr">crontab(5)</span></p>
 </section>
 <section class="Sh">
-<h2 class="Sh" id="CAVEATS"><a class="permalink" href="#CAVEATS">CAVEATS</a></h2>
+<h1 class="Sh" id="CAVEATS"><a class="permalink" href="#CAVEATS">CAVEATS</a></h1>
 <p class="Pp">The repository path in a <code class="Fl">--nwc</code> profile
     must be its root. Symbolic links and non-regular source files are refused.
     Reverse reconciliation stages downloaded files before changing the local
@@ -363,11 +368,13 @@ filees-client dump-load --profile /home/user/.filees/client-profile.json \
     after an interruption. Keep activation keys, profiles and operation state
     outside published folders.</p>
 </section>
-</main>
-<div class="foot" role="doc-pagefooter" aria-label="Manual footer
-  line"><span class="foot-left">OpenBSD 7.9</span>
-  <span class="foot-date">October 11, 2026</span>
-  <span class="foot-right">FILEES-CLIENT(1)</span></div>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">October 11, 2026</td>
+    <td class="foot-os">Linux 7.2.11-200.fc44.x86_64</td>
+  </tr>
+</table>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Generated by mandoc from docs/man</span></footer>

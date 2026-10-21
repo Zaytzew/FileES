@@ -18,6 +18,22 @@ import (
 
 type brandingClientStub struct{}
 
+func TestProjectIncrementalQueueWithoutFreshMutationAuthority(t *testing.T) {
+	vm := guiapp.ViewModel{Connected: true, Stale: true,
+		QueueScan:    &guiapp.QueueScan{Observed: 1, Total: 60, Files: 2, Bytes: 30},
+		Capabilities: map[string]bool{contract.CapRepoPublish: true},
+		Repos:        []guiapp.RepoViewModel{{ID: "a", ServerID: "lab", Attached: true, Access: "rw", State: contract.StateActive}},
+	}
+	snapshot := projectViewModel(vm, journal.Texts{})
+	raw, err := json.Marshal(snapshot)
+	if err != nil || !strings.Contains(string(raw), `"queue_scan":{"observed":1,"total":60,"files":2,"bytes":30}`) {
+		t.Fatalf("incremental header missing: %s %v", raw, err)
+	}
+	if !snapshot.Stale || snapshot.Repositories[0].CanPublish {
+		t.Fatal("partial progress granted mutation authority")
+	}
+}
+
 func TestLocalCopyDuringStartupIsOpenableButCannotMutate(t *testing.T) {
 	vm := guiapp.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoPublish: true, contract.CapRepoLock: true, contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true},
 		Repos: []guiapp.RepoViewModel{{ID: "repo", ServerID: "office", LocalPath: "/local", Access: "rw", State: contract.StateInitializing,

@@ -327,9 +327,19 @@ func (update *UpdateViewModel) Available() bool {
 	return update != nil && update.State == "available" && update.AvailableVersion != ""
 }
 
+// QueueScan is a partial presentation of this session's initial inventory.
+// It is not a new daemon snapshot or permission to perform a mutation.
+type QueueScan struct {
+	Observed int   `json:"observed"`
+	Total    int   `json:"total"`
+	Files    int   `json:"files"`
+	Bytes    int64 `json:"bytes"`
+}
+
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
+	QueueScan           *QueueScan
 	VirtualFolders      *contract.VirtualFoldersStatus
 	SyncPause           contract.SyncPauseStatus
 	MemorySafety        *contract.MemorySafetyStatus

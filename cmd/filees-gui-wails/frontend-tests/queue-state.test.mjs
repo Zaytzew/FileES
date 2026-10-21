@@ -5,6 +5,16 @@ import {languages} from "../frontend/i18n.js";
 const t = key => key;
 const ready = {attached:true,display_state:"active",cycle:{phase:"waiting",cycle_id:0}};
 
+test("initial incremental count excludes cached repositories and stays explicitly partial",()=>{
+  const snapshot={connected:true,stale:true,repositories:[{...ready,pending_files:900}],
+    queue_scan:{observed:1,total:60,files:2,bytes:30}};
+  assert.deepEqual(queueSummary(snapshot,t,String),{value:"2+",note:"summary.pendingBytes · queue.loading · 1/60"});
+  assert.deepEqual(queueSummary({...snapshot,queue_scan:{observed:0,total:60,files:0,bytes:0}},t,String),
+    {value:"…",note:"queue.loading · 0/60"});
+  assert.equal(queueSummary({...snapshot,connected:false},t,String).value,900);
+  assert.equal(queueSummary({...snapshot,stale:false,queue_scan:null,repositories:[ready]},t,String).value,0);
+});
+
 test("startup does not declare an empty queue before local runtime is ready",()=>{
   for(const repo of [
     {attached:false,local_copy_presence:"present",display_state:"unattached"},

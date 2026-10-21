@@ -249,6 +249,15 @@ type msgPartialSnapshots struct {
 	gen      int
 	statuses []contract.RepoStatus
 }
+type msgRefreshInventory struct {
+	gen       int
+	system    contract.SystemStatusResult
+	summaries []contract.RepoSummary
+}
+type msgRefreshProgress struct {
+	gen      int
+	statuses []contract.RepoStatus
+}
 type msgEvent struct {
 	gen int
 	ev  contract.Event
@@ -267,6 +276,8 @@ func (msgActionAwait) sealed()      {}
 func (msgActionFinish) sealed()     {}
 func (msgFullSnapshot) sealed()     {}
 func (msgPartialSnapshots) sealed() {}
+func (msgRefreshInventory) sealed() {}
+func (msgRefreshProgress) sealed()  {}
 func (msgEvent) sealed()            {}
 func (msgFlushDirty) sealed()       {}
 
@@ -373,14 +384,23 @@ func (a *App) loop(ctx context.Context) {
 				return
 			}
 
+			send(msgRefreshInventory{gen: gen, system: *system, summaries: list.Repos})
 			statuses := make([]contract.RepoStatus, 0, len(list.Repos))
-			for _, repo := range list.Repos {
+			batchStart := 0
+			lastProgress := a.cfg.Clock.Now()
+			for index, repo := range list.Repos {
 				status, err := a.cfg.Client.RepoStatus(sesCtx, repo.ID)
 				if err != nil {
 					a.sendSessionFailure(sesCtx, gen, send)
 					return
 				}
 				statuses = append(statuses, a.withImportProgress(sesCtx, repo, *status, includeImportProgress))
+				// First result immediately, then bounded batches. Do not wait for
+				// all repositories, public links or lock inventories to render.
+				if index == 0 || index == len(list.Repos)-1 || a.cfg.Clock.Now().Sub(lastProgress) >= 50*time.Millisecond {
+					send(msgRefreshProgress{gen: gen, statuses: append([]contract.RepoStatus(nil), statuses[batchStart:]...)})
+					batchStart, lastProgress = len(statuses), a.cfg.Clock.Now()
+				}
 			}
 			var errors []contract.ErrorRecord
 			if includeErrors {
@@ -631,6 +651,20 @@ func (a *App) loop(ctx context.Context) {
 				scheduleReconnect(msg.gen)
 				state = state.applyDisconnected()
 				notify()
+
+			case msgRefreshInventory:
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
+				}
+				state = state.applyRefreshInventory(msg.system, msg.summaries)
+				notify()
+
+			case msgRefreshProgress:
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
+				}
+				state = state.applyRefreshProgress(msg.statuses)
+				notify() // Neither finishRefresh nor confirmPendingActions here.
 
 			case msgFullSnapshot:
 				if msg.gen != connectGen || currentSesCtx == nil {

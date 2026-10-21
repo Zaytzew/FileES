@@ -20,6 +20,16 @@ export function queuedChangesLine(repo, t, bytes) {
 }
 
 export function queueSummary(snapshot, t, bytes) {
+  // This is explicitly partial and never includes unverified old-session
+  // counts. Other controls remain stale until the full refresh completes.
+  if (snapshot.connected && snapshot.queue_scan) {
+    const scan = snapshot.queue_scan;
+    const amount = scan.files ? t("summary.pendingBytes", {size: bytes(scan.bytes)}) : "";
+    return {
+      value: scan.files ? `${scan.files}+` : "…",
+      note: [amount, t("queue.loading"), `${scan.observed}/${scan.total}`].filter(Boolean).join(" · "),
+    };
+  }
   const repos = snapshot.repositories || [];
   const pending = repos.reduce((sum, repo) => sum + Number(repo.pending_files || 0), 0);
   const size = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);

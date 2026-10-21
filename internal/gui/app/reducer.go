@@ -10,6 +10,8 @@ import (
 // All methods are pure — they return a new appState and have no side effects.
 // Only the event loop goroutine accesses appState; no locking needed.
 type appState struct {
+	queueScanning           bool
+	queueScanned            map[string]contract.RepoStatus
 	connected               bool
 	stale                   bool
 	caps                    map[string]bool
@@ -78,6 +80,7 @@ func (s appState) applyConnected(caps []string) appState {
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
 func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, serverReservationsKnown map[string]bool, reservationSources map[string][]contract.ReservationSource, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
+	s.queueScanning, s.queueScanned = false, nil
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -173,6 +176,7 @@ func (s appState) applySnapshots(statuses []contract.RepoStatus) appState {
 // applyDisconnected marks the state as disconnected and stale.
 // Snapshots and order are preserved so the tray can show the last-known state.
 func (s appState) applyDisconnected() appState {
+	s.queueScanning, s.queueScanned = false, nil
 	s.connected = false
 	s.stale = true
 	s.caps = make(map[string]bool)
@@ -419,6 +423,18 @@ func (s appState) viewModel() ViewModel {
 		PublicSharesLoading: s.connected && s.publicSharesLoading,
 		PublicSharesStale:   s.publicSharesStale || !s.connected,
 		PendingActions:      s.projectPendingActions(),
+	}
+	if s.queueScanning {
+		progress := &QueueScan{Total: len(repos)}
+		for _, repo := range repos {
+			if status, ok := s.queueScanned[repo.ID]; ok {
+				progress.Observed++
+				pending := status.Pending
+				progress.Files += pending.Added + pending.Modified + pending.Deleted + pending.Renamed + pending.RenameUncertain
+				progress.Bytes += pending.TotalBytes
+			}
+		}
+		vm.QueueScan = progress
 	}
 	// Current passport uncertainty uses the existing journal/detail surface.
 	// Rebuild from live snapshots: log retention and historical errors cannot

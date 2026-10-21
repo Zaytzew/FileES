@@ -1087,7 +1087,7 @@ func TestAppKeepsAnsweredReservationInventoryKnownWithUnknownSource(t *testing.T
 	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
 
 	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
-		return vm.Connected && len(vm.Servers) == 1
+		return vm.Connected && !vm.Stale && len(vm.Servers) == 1
 	})
 	if !vm.Servers[0].ReservationsKnown || vm.Servers[0].ReservationProjection != string(contract.ReservationSourceFresh) {
 		t.Fatalf("answered inventory was collapsed to unknown: %+v", vm.Servers[0])

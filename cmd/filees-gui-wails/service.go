@@ -64,6 +64,7 @@ type GUIService struct {
 }
 
 type Snapshot struct {
+	QueueScan           *guiapp.QueueScan                 `json:"queue_scan,omitempty"`
 	SyncPause           contract.SyncPauseStatus          `json:"sync_pause"`
 	MemorySafety        *contract.MemorySafetyStatus      `json:"memory_safety,omitempty"`
 	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
@@ -1077,6 +1078,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time, texts journal.Texts)
 	result := Snapshot{
 		trayCauses:              vm.IconCauses(),
 		Connected:               vm.Connected,
+		QueueScan:               vm.QueueScan,
 		Stale:                   vm.Stale,
 		DaemonState:             vm.DaemonState,
 		MemorySafety:            vm.MemorySafety,

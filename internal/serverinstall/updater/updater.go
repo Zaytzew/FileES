@@ -311,7 +311,7 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 	return plan, nil
 }
 
-func (r *Runner) Check(ctx context.Context, opts Options) error {
+func (r *Runner) check(ctx context.Context, opts Options) error {
 	lock, err := r.acquireRunLock()
 	if err != nil {
 		return err
@@ -369,7 +369,7 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 // already matches a signed release byte-for-byte and metadata-for-metadata,
 // then records that release as the managed baseline. It never downloads or
 // modifies payload files and never runs first-install system tasks.
-func (r *Runner) Adopt(ctx context.Context, opts Options) error {
+func (r *Runner) adopt(ctx context.Context, opts Options) error {
 	lock, err := r.acquireRunLock()
 	if err != nil {
 		return err
@@ -459,7 +459,7 @@ func (r *Runner) checkFreshness(m *manifest.Manifest, st *state.State, opts Opti
 	return err
 }
 
-func (r *Runner) Apply(ctx context.Context, opts Options) error {
+func (r *Runner) apply(ctx context.Context, opts Options) error {
 	lock, err := r.acquireRunLock()
 	if err != nil {
 		return err
@@ -729,14 +729,14 @@ func (r *Runner) sshdFragmentUpdated(plan *Plan) bool {
 	return false
 }
 
-func (r *Runner) Rollback() error {
+func (r *Runner) rollback() error {
 	lock, err := r.acquireRunLock()
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 
-	if err := r.recoverInterrupted(); err != nil {
+	if err := r.recoverInterruptedUnderArchiveLease(); err != nil {
 		return err
 	}
 	st, err := state.Load(r.Config.StateDir)
@@ -761,6 +761,9 @@ func (r *Runner) Rollback() error {
 		}
 	}
 	if err := validateEntryBackups(entry); err != nil {
+		return err
+	}
+	if err := r.checkArchiveRestoreConfiguration(entry); err != nil {
 		return err
 	}
 	for _, bf := range entry.Files {
@@ -803,14 +806,14 @@ func (r *Runner) Rollback() error {
 	return nil
 }
 
-func (r *Runner) Purge(opts PurgeOptions) error {
+func (r *Runner) purge(opts PurgeOptions) error {
 	lock, err := r.acquireRunLock()
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 
-	if err := r.recoverInterrupted(); err != nil {
+	if err := r.recoverInterruptedUnderArchiveLease(); err != nil {
 		return err
 	}
 	st, err := state.Load(r.Config.StateDir)
@@ -1070,7 +1073,7 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 	return staged, stageRoot, nil
 }
 
-func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID string, orphans []manifest.Orphan) (state.HistoryEntry, error) {
+func (r *Runner) installStagedUnderArchiveLease(staged []StagedFile, st *state.State, releaseID string, orphans []manifest.Orphan) (state.HistoryEntry, error) {
 	stamp := time.Now().UTC().Format(time.RFC3339)
 	if err := os.MkdirAll(r.Config.BackupDir, 0o700); err != nil {
 		return state.HistoryEntry{}, err
@@ -1205,7 +1208,7 @@ func (r *Runner) pruneBackupHistory(st *state.State) {
 // action. If state.json already contains the transaction's history entry, the
 // apply committed and only a stale journal remains. Otherwise every pre-image
 // is restored and every newly introduced target is removed.
-func (r *Runner) recoverInterrupted() error {
+func (r *Runner) recoverInterruptedUnderArchiveLease() error {
 	transaction, err := state.LoadTransaction(r.Config.StateDir)
 	if err != nil {
 		return fmt.Errorf("load transaction journal: %w", err)
@@ -1240,6 +1243,9 @@ func (r *Runner) recoverInterrupted() error {
 
 func (r *Runner) restoreEntry(entry state.HistoryEntry) error {
 	if err := validateEntryBackups(entry); err != nil {
+		return err
+	}
+	if err := r.checkArchiveRestoreConfiguration(entry); err != nil {
 		return err
 	}
 	for index := len(entry.Files) - 1; index >= 0; index-- {

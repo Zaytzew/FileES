@@ -42,6 +42,11 @@ func (r *Runner) baseUnveils() ([]unveilSpec, error) {
 		{Label: "null", Path: "/dev/null", Perms: "rw"},
 		{Label: "svn", Path: svn, Perms: "rx"},
 	}
+	archivePaths, err := r.archiveInstallUnveils()
+	if err != nil {
+		return nil, err
+	}
+	specs = append(specs, archivePaths...)
 	return specs, nil
 }
 

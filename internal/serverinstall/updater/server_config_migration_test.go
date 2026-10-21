@@ -108,7 +108,8 @@ func TestConfigMigrationParticipatesInInstallRollback(t *testing.T) {
 	r, _ := testRunner(t)
 	path := filepath.Join(r.Config.SysconfDir, "server.json")
 	stage := filepath.Join(r.Config.StageDir, "server.json")
-	for file, data := range map[string][]byte{path: []byte("v1\n"), stage: []byte("v2\n")} {
+	before, after := "{\"schema\":\"v1\"}\n", "{\"schema\":\"v2\"}\n"
+	for file, data := range map[string][]byte{path: []byte(before), stage: []byte(after)} {
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -125,13 +126,13 @@ func TestConfigMigrationParticipatesInInstallRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(path); string(got) != "v2\n" {
+	if got, _ := os.ReadFile(path); string(got) != after {
 		t.Fatalf("migration was not installed: %q", got)
 	}
 	if err := r.restoreEntry(entry); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(path); string(got) != "v1\n" {
+	if got, _ := os.ReadFile(path); string(got) != before {
 		t.Fatalf("rollback did not restore v1 config: %q", got)
 	}
 }

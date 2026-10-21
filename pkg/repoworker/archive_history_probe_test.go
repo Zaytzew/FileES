@@ -76,7 +76,11 @@ func (p archiveProbeTools) exec(name string, input []byte, args ...string) ([]by
 	defer cancel()
 	c := exec.CommandContext(ctx, p.tool(name), args...)
 	c.Dir = p.root
-	c.Env = append(os.Environ(), "LC_ALL=C", "LANG=C", "SVN_SSH=", "SVN_EDITOR=")
+	locale := "C"
+	if runtime.GOOS != "windows" {
+		locale = "C.UTF-8" // English diagnostics without rejecting Unicode paths.
+	}
+	c.Env = append(os.Environ(), "LC_ALL="+locale, "LANG="+locale, "SVN_SSH=", "SVN_EDITOR=")
 	c.Stdin = bytes.NewReader(input)
 	var stderr bytes.Buffer
 	c.Stderr = &stderr

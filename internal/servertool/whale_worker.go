@@ -54,7 +54,11 @@ func (a clientviewWhaleAuthority) ResolveWhale(_ context.Context, clientID, repo
 	}
 	for _, repository := range view.Repositories {
 		if repository.RepoID == repoID && repository.State == "active" {
-			return whaleworker.RepositoryAccess{RepositoryPath: filepath.Join(a.RepositoriesRoot, repoID), Access: repository.Access}, nil
+			access := repository.Access
+			if access == "rw" && repoworker.CheckCanonicalRepositoryWrite(a.ServiceWC, repoID) != nil {
+				access = "r"
+			}
+			return whaleworker.RepositoryAccess{RepositoryPath: filepath.Join(a.RepositoriesRoot, repoID), Access: access}, nil
 		}
 	}
 	return whaleworker.RepositoryAccess{}, whaleworker.ErrAccessDenied

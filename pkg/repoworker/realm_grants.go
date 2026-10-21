@@ -85,6 +85,9 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 	if repo.OwnerRealmID != ownerRealmID {
 		return RealmGrantRecord{}, errors.New("authenticated realm does not own repository")
 	}
+	if access == "rw" && repo.ArchivePolicy != nil {
+		return RealmGrantRecord{}, ErrArchiveReadOnly
+	}
 	recipient, err := readRealmRecord(filepath.Join(p.ServiceWC, "admin", "realms", recipientRealmID+".json"))
 	if err != nil || recipient.RealmID != recipientRealmID || recipient.State != "active" {
 		return RealmGrantRecord{}, errors.New("recipient realm is not active")
@@ -488,6 +491,9 @@ func (p ServicePublisher) loadActiveRepository(repoID string) (repositoryRecord,
 	if json.Unmarshal(raw, &record) != nil || record.Schema != RepositorySchema || record.RepoID != repoID || record.State != "active" {
 		return repositoryRecord{}, errors.New("canonical active repository is invalid")
 	}
+	if err := validateRepositoryArchive(record); err != nil {
+		return repositoryRecord{}, err
+	}
 	return record, nil
 }
 
@@ -508,6 +514,9 @@ func (p ServicePublisher) loadGrantModel() (map[string]repositoryRecord, map[str
 		var record repositoryRecord
 		if json.Unmarshal(raw, &record) != nil || record.Schema != RepositorySchema {
 			return nil, nil, nil, errors.New("canonical repository record is invalid")
+		}
+		if err := validateRepositoryArchive(record); err != nil {
+			return nil, nil, nil, err
 		}
 		if record.State != "deleted" {
 			repositories[record.RepoID] = record
@@ -657,7 +666,7 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 		}
 		// Upload shelves accept writes only through the server-side HTTP
 		// intake worker. Even their owner receives SVN read access.
-		if repo.Purpose == clientview.PurposeUploadShelf {
+		if repo.Purpose == clientview.PurposeUploadShelf || repo.archiveReadOnly() {
 			access = "r"
 		}
 		// EditingPolicy is read from the canonical record on every rebuild and
@@ -688,7 +697,7 @@ func renderCanonicalGrantAuthz(repositories map[string]repositoryRecord, clients
 			if access == "" {
 				continue
 			}
-			if access == "r" || repo.Purpose == clientview.PurposeUploadShelf {
+			if access == "r" || repo.Purpose == clientview.PurposeUploadShelf || repo.archiveReadOnly() {
 				readers = append(readers, clientID)
 			} else if clients[clientID].RealmID == repo.OwnerRealmID {
 				owners = append(owners, clientID)
@@ -774,6 +783,9 @@ func (p ServicePublisher) SetRepositoryEditingPolicy(ctx context.Context, realmI
 	record, err := p.loadActiveRepository(repoID)
 	if err != nil {
 		return "", err
+	}
+	if record.ArchivePolicy != nil {
+		return "", ErrArchiveReadOnly
 	}
 	// Borrowing is enforced by the repository's lock guards. Guards arrive
 	// with repositories created since r914; older ones had them only after an

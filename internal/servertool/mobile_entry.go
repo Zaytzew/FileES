@@ -83,10 +83,14 @@ func (a clientviewMobileAuthority) Resolve(_ context.Context, clientID, repoID s
 	}
 	for _, repo := range view.Repositories {
 		if repo.RepoID == repoID {
+			access := repo.Access
+			if access == "rw" && repoworker.CheckCanonicalRepositoryWrite(a.ServiceWorkingCopy, repoID) != nil {
+				access = "r"
+			}
 			return mobileworker.View{
 				RepoPath:    filepath.Join(a.RepositoriesRoot, repo.RepoID),
 				Generation:  view.Generation,
-				Access:      repo.Access,
+				Access:      access,
 				SharedWrite: a.sharedWrite(view.RealmID, repo),
 			}, nil
 		}
@@ -303,7 +307,12 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 
 	dispatcher := mobileworker.Dispatcher{
 		WithWrites: func(ctx context.Context, run func() error) error {
-			err := (storagewatch.Gate{Root: config.Activation.Root}).WithWriter(ctx, run)
+			err := (storagewatch.Gate{Root: config.Activation.Root}).WithWriter(ctx, func() error {
+				if err := archiveTransitionAdmission(config.Activation.Root); err != nil {
+					return err
+				}
+				return run()
+			})
 			if errors.Is(err, storagewatch.ErrWriteHeld) {
 				return mobileworker.ErrStorageFull
 			}

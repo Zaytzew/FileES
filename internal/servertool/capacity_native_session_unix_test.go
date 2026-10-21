@@ -18,7 +18,9 @@ import (
 
 	"filees/internal/storagewatch"
 	"filees/pkg/activation"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
+	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 )
 
@@ -163,6 +165,23 @@ func TestCapacityNativeSVNReadWriteAndSessionDrain(t *testing.T) {
 		if !held && err != nil {
 			t.Fatalf("open session did not allow native SVN write: %v %s", err, out)
 		}
+	}
+	// An interrupted archive transition has the same raw-read semantics but
+	// its own durable fence; it must not depend on a capacity monitor setting.
+	archiveFence := repoworker.ArchiveAdmissionFence{Root: config.Activation.Root}
+	archiveRepo := uuid.NewString()
+	archivePlan := repoworker.RepositoryArchivePolicy{Schema: repoworker.RepositoryArchivePolicySchema, OperationID: uuid.NewString(), RepositoryUUID: uuid.NewString(), Revision: 1, Epoch: 1, State: "preparing", StartedAt: time.Now().UTC()}
+	if err := archiveFence.Hold(ctx, archiveRepo, archivePlan); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := call("list", url); err != nil || !strings.Contains(string(out), "proof/") {
+		t.Fatalf("archive fence blocked reads: %v %s", err, out)
+	}
+	if out, err := call("mkdir", "-m", "forbidden", url+"archive-pending"); err == nil || !strings.Contains(string(out), "E170001") {
+		t.Fatalf("archive fence allowed write: %v %s", err, out)
+	}
+	if err := archiveFence.Open(ctx, archiveRepo, archivePlan); err != nil {
+		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCapacityNativeSessionProcess$")
 	cmd.Env = env

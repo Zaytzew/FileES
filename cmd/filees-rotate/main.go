@@ -12,6 +12,7 @@ import (
 
 	"filees/internal/storagewatch"
 	"filees/internal/svnrotate"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 )
 
@@ -78,6 +79,15 @@ func main() {
 }
 
 func runRotation(cfg svnrotate.Config, dryRun, force bool, gateRoot string) error {
+	// main holds the existing shared writer lease. Read the archive fence
+	// before locking unveil and before any recovery or maintenance hook.
+	if !dryRun {
+		if held, err := (repoworker.ArchiveAdmissionFence{Root: gateRoot}).Held(); err != nil {
+			return err
+		} else if held {
+			return repoworker.ErrArchiveReadOnly
+		}
+	}
 	if err := confineRotation(cfg.RepoPath, cfg.ArchiveDir, gateRoot); err != nil {
 		return fmt.Errorf("rotation sandbox: %w", err)
 	}

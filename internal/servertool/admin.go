@@ -511,6 +511,10 @@ func runAdminRoute(path string, args []string, stdout, stderr io.Writer, admitte
 			fmt.Fprintln(stderr, "filees-admin repo rotate: repositories.rotation_archive_root is not configured")
 			return ExitConfig
 		}
+		if err := repoworker.CheckCanonicalRepositoryWrite(config.Activation.ServiceWorkingCopy, strings.TrimSpace(*repoID)); err != nil {
+			report(stderr, "filees-admin repo rotate authority", err)
+			return ExitUnavailable
+		}
 		rotateCfg := svnrotate.Config{
 			RepoPath:      filepath.Join(config.Repositories.Root, strings.TrimSpace(*repoID)),
 			ArchiveDir:    config.Repositories.RotationArchiveRoot,

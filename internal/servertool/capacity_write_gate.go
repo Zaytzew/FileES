@@ -8,6 +8,7 @@ import (
 
 	"filees/internal/obsandbox"
 	"filees/internal/storagewatch"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 )
 
@@ -52,6 +53,9 @@ func runCapacityWriter(c serverconfig.Config, stderr io.Writer, run func() int) 
 	code := ExitTempFail
 	root := capacityWriterRoot(c.Root, c.Activation.Root)
 	err := (storagewatch.Gate{Root: root}).WithWriter(ctx, func() error {
+		if err := archiveTransitionAdmission(root); err != nil {
+			return err
+		}
 		code = run()
 		return nil
 	})
@@ -60,4 +64,15 @@ func runCapacityWriter(c serverconfig.Config, stderr io.Writer, run func() int) 
 		return ExitTempFail
 	}
 	return code
+}
+
+func archiveTransitionAdmission(root string) error {
+	held, err := (repoworker.ArchiveAdmissionFence{Root: root}).Held()
+	if err != nil {
+		return err
+	}
+	if held {
+		return repoworker.ErrArchiveReadOnly
+	}
+	return nil
 }

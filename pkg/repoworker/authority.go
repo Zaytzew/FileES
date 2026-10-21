@@ -60,7 +60,8 @@ type repositoryRecord struct {
 	Purpose       string `json:"purpose,omitempty"`
 	// A persisted projection of the manifest relation, refreshed by the upload
 	// worker. Readers without access to private channel records retain it.
-	ParentRepoID string `json:"parent_repo_id,omitempty"`
+	ParentRepoID  string                   `json:"parent_repo_id,omitempty"`
+	ArchivePolicy *RepositoryArchivePolicy `json:"archive_policy,omitempty"`
 }
 
 type PublishRunner interface {
@@ -173,6 +174,9 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		if json.Unmarshal(raw, &old) != nil || old.RepoID != repoID || old.OwnerRealmID != realmID || old.DisplayName != name || old.URL != url {
 			return errors.New("canonical repository record conflicts")
 		}
+		if err := validateRepositoryArchive(old); err != nil {
+			return err
+		}
 		if purpose != "" && old.Purpose != "" && old.Purpose != purpose {
 			return errors.New("canonical repository purpose conflicts")
 		}
@@ -204,7 +208,7 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 	changed := []string{repoPath}
 	grantees := []string{}
 	ownerAccess := "rw"
-	if record.Purpose == clientview.PurposeUploadShelf {
+	if record.Purpose == clientview.PurposeUploadShelf || record.archiveReadOnly() {
 		ownerAccess = "r"
 	}
 	for _, entry := range entries {
@@ -304,6 +308,9 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 	if record.OwnerRealmID != realmID {
 		return errors.New("authenticated realm does not own repository")
 	}
+	if err := validateRepositoryArchive(record); err != nil {
+		return err
+	}
 	if record.State != "initializing" && record.State != "active" {
 		return fmt.Errorf("repository state %q cannot be activated", record.State)
 	}
@@ -357,7 +364,7 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 				projected.ParentRepoID = record.ParentRepoID
 				updated = true
 			}
-			if record.Purpose == clientview.PurposeUploadShelf && projected.Access != "r" {
+			if (record.Purpose == clientview.PurposeUploadShelf || record.archiveReadOnly()) && projected.Access != "r" {
 				projected.Access = "r"
 				updated = true
 			}
@@ -547,6 +554,12 @@ func (p ServicePublisher) authorizeDelete(repoID, realmID string) (string, repos
 	if record.OwnerRealmID != realmID {
 		return "", repositoryRecord{}, errors.New("authenticated realm does not own repository")
 	}
+	if err := validateRepositoryArchive(record); err != nil {
+		return "", repositoryRecord{}, err
+	}
+	if record.ArchivePolicy != nil && record.ArchivePolicy.State != "archived" {
+		return "", repositoryRecord{}, ErrArchiveReadOnly
+	}
 	return repoPath, record, nil
 }
 
@@ -626,6 +639,12 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 		return errors.New("canonical repository record is invalid")
 	}
 	oldRealmID := record.OwnerRealmID
+	if err := validateRepositoryArchive(record); err != nil {
+		return err
+	}
+	if record.ArchivePolicy != nil {
+		return ErrArchiveReadOnly
+	}
 	if record.State == "deleted" {
 		return errors.New("deleted repository cannot be transferred")
 	}
@@ -732,6 +751,9 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 		if err = json.Unmarshal(raw, &r); err != nil || r.Schema != RepositorySchema {
 			return nil, errors.New("invalid canonical repository record")
 		}
+		if err := validateRepositoryArchive(r); err != nil {
+			return nil, err
+		}
 		if r.State == "deleted" {
 			continue
 		}
@@ -757,7 +779,7 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 				continue
 			}
 			for _, vr := range v.Repositories {
-				if vr.RepoID == r.RepoID && (vr.Access == "rw" || (r.Purpose == clientview.PurposeUploadShelf && vr.Access == "r")) {
+				if vr.RepoID == r.RepoID && (vr.Access == "rw" || ((r.Purpose == clientview.PurposeUploadShelf || r.archiveReadOnly()) && vr.Access == "r")) {
 					groups[r.RepoID] = append(groups[r.RepoID], v.ClientID)
 				}
 			}
@@ -767,7 +789,7 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 	}
 	for _, r := range records {
 		access := "rw"
-		if r.Purpose == clientview.PurposeUploadShelf {
+		if r.Purpose == clientview.PurposeUploadShelf || r.archiveReadOnly() {
 			access = "r"
 		}
 		fmt.Fprintf(&out, "\n[%s:/]\n@owner-%s = %s\n* =\n", r.RepoID, r.RepoID, access)

@@ -20,6 +20,7 @@ import (
 	"filees/internal/obsandbox"
 	"filees/internal/storagewatch"
 	"filees/pkg/activation"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 
 	"github.com/google/uuid"
@@ -240,6 +241,8 @@ func runSessionSupervisor(config serverconfig.Config, clientID, childRoot string
 var startSessionChild = func(config serverconfig.Config, clientID, root, nonce string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
 	args := []string{"--session-child", config.Activation.SVNServeBinary, root, clientID, nonce}
 	if held, err := (storagewatch.Gate{Root: config.Activation.Root}).Held(); held || err != nil {
+		args = append(args, "read-only")
+	} else if held, err := (repoworker.ArchiveAdmissionFence{Root: config.Activation.Root}).Held(); held || err != nil {
 		args = append(args, "read-only")
 	}
 	cmd := exec.Command(config.Activation.ClientEntryPath, args...)

@@ -18,6 +18,7 @@ import (
 
 	"filees/pkg/clientview"
 	v1 "filees/pkg/mobile/v1"
+	"filees/pkg/repoworker"
 
 	"github.com/google/uuid"
 )
@@ -90,6 +91,22 @@ func writeMobileClientView(t *testing.T, serviceWC, clientID, realmID string, ge
 	viewPath := filepath.Join(serviceWC, "clients", clientID, "view.json")
 	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 		t.Fatal(err)
+	}
+	for _, repo := range repos {
+		path := filepath.Join(serviceWC, "admin", "repositories", repo.RepoID+".json")
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(map[string]any{"schema": repoworker.RepositorySchema, "repo_id": repo.RepoID, "owner_realm_id": realmID, "state": "active", "purpose": repo.Purpose})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

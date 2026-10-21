@@ -37,6 +37,9 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	defer cancel()
 	code := ExitTempFail
 	err = (storagewatch.Gate{Root: config.Activation.Root}).WithWriter(ctx, func() error {
+		if err := archiveTransitionAdmission(config.Activation.Root); err != nil {
+			return err
+		}
 		code = runPreparedRepositoryWorker(config, args, in, out, stderr)
 		return nil
 	})

@@ -38,6 +38,9 @@ func Recover(repo, archive, reason string) (Meta, bool, error) {
 	if !filepath.IsAbs(repo) || !filepath.IsAbs(archive) || filepath.Clean(repo) == filepath.Clean(archive) {
 		return Meta{}, false, errors.New("invalid recovery paths")
 	}
+	if err := refuseArchiveGeneration(repo); err != nil {
+		return Meta{}, false, err
+	}
 	if _, err := os.Lstat(swapPath(repo, archive)); errors.Is(err, os.ErrNotExist) {
 		return Meta{}, false, nil
 	} else if err != nil {
@@ -152,6 +155,9 @@ func uuidIfPresent(path string) (string, error) {
 }
 
 func (r swapRecord) finish(archive string) error {
+	if err := refuseArchiveGeneration(r.Repo, r.Meta.ArchiveDir, filepath.Join(r.Work, "new.svn")); err != nil {
+		return err
+	}
 	// Refuse foreign generations before changing anything.
 	hot, err := uuidIfPresent(r.Repo)
 	if err != nil {

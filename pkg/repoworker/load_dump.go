@@ -315,6 +315,12 @@ func (s DumpLoadService) checkOwnership(repoID, realmID string) error {
 	if record.OwnerRealmID != realmID {
 		return errors.New("LOAD_REPOSITORY_DUMP: authenticated realm does not own this repository")
 	}
+	if err := validateRepositoryArchive(record); err != nil {
+		return err
+	}
+	if record.ArchivePolicy != nil {
+		return ErrArchiveReadOnly
+	}
 	return nil
 }
 

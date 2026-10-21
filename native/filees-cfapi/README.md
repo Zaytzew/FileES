@@ -49,12 +49,39 @@ Desktop/NameSpace/CLSID, ustawia SFGAO_NONENUMERATED w klasie skrótu
 samym ID i zdejmuje tę flagę. Klasa CLSID i SyncRootManager pozostają.
 Odwołanie musi mieć wyłącznie domyślną wartość dokładnego ID, bez dzieci;
 obce wartości/podklucze odmawiają przed zmianą. Powiadomienie dokładnego
-namespace i pulpitu odświeża otwarte drzewa, bez restartu powłoki.
+namespace odświeża otwarte drzewa, bez restartu powłoki (od 2026-10-21
+bez wcześniejszego globalnego odświeżania pulpitu i ikon).
 Przy ukrywaniu pomocnik wyszukuje także dodatkowe liście Desktop/NameSpace
 z dokładnym ID, które poprzednie Register pozostawiło poza bieżącym
 NamespaceCLSID. Odczyt ograniczony do 512 liści; każda klasa ponownie
 sprawdzana względem ścieżki i etykiety FileES. „Pokaż” odtwarza tylko
 bieżący skrót, nie martwe duplikaty.
+
+2026-10-21, próba ograniczenia migotania rozruchowego: widoczność zapisuje
+DWORD-y tylko przy różnicy; identyczne show/hide jest bez zapisu i bez
+powiadomień. PIDL konkretnego namespace zostaje odczytany przed usunięciem
+jego liścia; tylko rzeczywista zmiana wysyła MKDIR/RMDIR tego PIDL. Usunięto
+ASSOCCHANGED i UPDATEDIR pulpitu, także ze sprzątania obsolete. Unregister
+nadal powiadamia o własnej ścieżce. Bez zmian rejestracji CFAPI, policies,
+identyfikacji właściciela, FIFO i drain.
+
+Pełne SDK Register celowo pozostaje: w izolowanej próbie na tym Windows
+GetCurrentSyncRoots i GetSyncRootInformationForFolder pomijały ukryty punkt
+mimo poprawnego zapisu SyncRootManager. Wstępny wariant pomijania zgodnego
+Register nie przeszedł testu i został wycofany, nie zastąpiony zaufaniem do
+cache lub samej nazwy. Nie deklarujemy więc cichego SDK ani całkowitego
+braku migotania przed odbiorem wizualnym na żywej parze.
+
+Niepakowany `FILEES_CFAPI_BUILD_SHELL_NOTIFY_PROBE=ON` buduje dodatkowy
+`filees-cfapi-shell-notify-probe.exe`, który zamiast naszych wywołań
+SHChangeNotify emituje ograniczone rekordy event/flags/targeted na stderr.
+Nie przechwytuje efektów wewnętrznych Windows SDK. Test
+TestShellNotificationsQuietVisibilityAndTargetedRegistration wymaga tego
+obrazu w FILEES_CFAPI_SHELL_NOTIFY_PROBE, sprawdza brak globalnych/desktop
+powiadomień, cztery ponowienia show/hide bez zapisu (czasy kluczy i CLSID),
+osiem Register, zmianę ikony, odmowę zwykłego folderu i brak hydratacji.
+Domyślny build i paczka nadal zawierają wyłącznie rzeczywisty helper.
+Wyniki i granice: implementation notes (not distributed)
 
 Demon zapisuje lokalną preferencję w lifecycle konkretnej WC, domyślnie
 false także dla starych rekordów bez pola. Odtwarza ją przy rejestracji

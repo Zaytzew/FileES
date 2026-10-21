@@ -15,6 +15,10 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <memory>
+#ifdef FILEES_CFAPI_SHELL_NOTIFY_PROBE
+#include <cstdio>
+#endif
 
 using namespace winrt;
 using namespace Windows::Storage;
@@ -79,6 +83,29 @@ struct registry_key {
     HKEY value = nullptr;
     ~registry_key() { if (value) RegCloseKey(value); }
 };
+
+// The unshipped probe records our notifications without refreshing the real
+// desktop. SDK-internal notifications are not intercepted or claimed here.
+void shell_change_notify(LONG event, UINT flags, LPCVOID item) {
+#ifdef FILEES_CFAPI_SHELL_NOTIFY_PROBE
+    bool targeted=item && ((flags & SHCNF_TYPE)!=SHCNF_IDLIST || !ILIsEmpty(static_cast<PCIDLIST_ABSOLUTE>(item)));
+    std::fprintf(stderr,"{\"shell_event\":%ld,\"flags\":%u,\"targeted\":%s}\n",
+        event,flags,targeted?"true":"false");
+#else
+    SHChangeNotify(event,flags,item,nullptr);
+#endif
+}
+
+bool set_dword_changed(HKEY key, const WCHAR *name, DWORD value) {
+    DWORD current = 0, bytes = sizeof current;
+    LSTATUS status = RegGetValueW(key,nullptr,name,RRF_RT_REG_DWORD,nullptr,&current,&bytes);
+    if (status == ERROR_SUCCESS && current == value) return false;
+    if (status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND && status != ERROR_PATH_NOT_FOUND)
+        check_hresult(HRESULT_FROM_WIN32(status));
+    check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(key,name,0,REG_DWORD,
+        reinterpret_cast<const BYTE*>(&value),sizeof value)));
+    return true;
+}
 
 // Orphan records can be absent from GetCurrentSyncRoots. Read-only registry
 // metadata binds the deterministic ID to this user's exact former path.
@@ -171,7 +198,7 @@ void require_missing_online_root(const std::wstring &path) {
 // Pin=0 only hides an extension in the default navigation view. Remove the
 // Desktop enumeration link as well, without unregistering SDK/native CFAPI.
 // The link is a leaf containing this exact sync-root ID; unknown data refuses.
-void navigation_visibility(const std::wstring &clsid, const std::wstring &id, BOOL visible) {
+bool navigation_visibility(const std::wstring &clsid, const std::wstring &id, BOOL visible) {
     const WCHAR *base = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace";
     registry_key parent;
     check_hresult(HRESULT_FROM_WIN32(RegOpenKeyExW(HKEY_CURRENT_USER,base,0,
@@ -199,16 +226,13 @@ void navigation_visibility(const std::wstring &clsid, const std::wstring &id, BO
     if (!visible) {
         if (!missing) check_hresult(HRESULT_FROM_WIN32(RegDeleteKeyW(parent.value,clsid.c_str())));
         flags |= SFGAO_NONENUMERATED;
-        check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(attributes.value,L"Attributes",0,REG_DWORD,
-            reinterpret_cast<const BYTE*>(&flags),sizeof flags)));
-        return;
+        return set_dword_changed(attributes.value,L"Attributes",flags) || !missing;
     }
     auto show = [&]() {
         flags &= ~static_cast<DWORD>(SFGAO_NONENUMERATED);
-        check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(attributes.value,L"Attributes",0,REG_DWORD,
-            reinterpret_cast<const BYTE*>(&flags),sizeof flags)));
+        return set_dword_changed(attributes.value,L"Attributes",flags);
     };
-    if (!missing) { show(); return; }
+    if (!missing) return show();
     DWORD disposition = 0;
     check_hresult(HRESULT_FROM_WIN32(RegCreateKeyExW(parent.value,clsid.c_str(),0,nullptr,
         REG_OPTION_NON_VOLATILE,KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_ENUMERATE_SUB_KEYS,
@@ -220,28 +244,32 @@ void navigation_visibility(const std::wstring &clsid, const std::wstring &id, BO
             &children,nullptr,nullptr,&values,nullptr,nullptr,nullptr,nullptr)));
         if (children || values != 1 || registry_string(link.value,nullptr) != id)
             throw hresult_access_denied();
-        show();
-        return;
+        return show();
     }
     check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(link.value,nullptr,0,REG_SZ,
         reinterpret_cast<const BYTE*>(id.c_str()),static_cast<DWORD>((id.size()+1)*sizeof(WCHAR)))));
     show();
+    return true;
 }
 
-void notify_navigation(const std::wstring &clsid, BOOL visible) {
-    // Association changes invalidate icons, not the already-open tree. Notify
-    // the exact namespace item, never the underlying filesystem folder.
+struct free_namespace_item {
+    using pointer=PIDLIST_ABSOLUTE; // preserve the SDK's unaligned PIDL type
+    void operator()(pointer value) const { CoTaskMemFree(value); }
+};
+using namespace_item = std::unique_ptr<ITEMIDLIST_ABSOLUTE, free_namespace_item>;
+
+namespace_item navigation_item(const std::wstring &clsid) {
     PIDLIST_ABSOLUTE item = nullptr;
     auto name = L"::" + clsid;
-    if (SUCCEEDED(SHParseDisplayName(name.c_str(),nullptr,&item,0,nullptr))) {
-        SHChangeNotify(visible ? SHCNE_MKDIR : SHCNE_RMDIR,SHCNF_IDLIST | SHCNF_FLUSHNOWAIT,item,nullptr);
-        CoTaskMemFree(item);
-    }
-    PIDLIST_ABSOLUTE desktop = nullptr;
-    if (SUCCEEDED(SHGetSpecialFolderLocation(nullptr,CSIDL_DESKTOP,&desktop))) {
-        SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_IDLIST | SHCNF_FLUSHNOWAIT,desktop,nullptr);
-        CoTaskMemFree(desktop);
-    }
+    SHParseDisplayName(name.c_str(),nullptr,&item,0,nullptr);
+    return namespace_item(item);
+}
+
+void notify_navigation(const namespace_item &item, BOOL visible) {
+    // Capture the exact item BEFORE hiding its namespace link. No whole-desktop
+    // fallback and no icon/thumbnail association invalidation for a root.
+    if (item) shell_change_notify(visible ? SHCNE_MKDIR : SHCNE_RMDIR,
+        SHCNF_IDLIST | SHCNF_FLUSHNOWAIT,item.get());
 }
 
 }
@@ -310,12 +338,10 @@ int filees_cfapi_shell_hide_obsolete(const WCHAR *root, const WCHAR *registratio
                 throw hresult_access_denied();
             require_missing_online_root(path);
             stage = "obsolete_shell_visibility";
-            navigation_visibility(clsid,id,FALSE);
-            DWORD hidden = 0;
-            check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
-                REG_DWORD,reinterpret_cast<const BYTE*>(&hidden),sizeof hidden)));
-            notify_navigation(clsid,FALSE);
-            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+            auto item=navigation_item(clsid);
+            bool changed=navigation_visibility(clsid,id,FALSE);
+            changed=set_dword_changed(shell.value,L"System.IsPinnedToNameSpaceTree",0) || changed;
+            if (changed) notify_navigation(item,FALSE);
         }
         // Do not call WinRT Unregister or CfUnregisterSyncRoot: either may
         // disconnect a still-live moved folder tracked by its FileID.
@@ -365,13 +391,12 @@ int filees_cfapi_shell_visibility(const WCHAR *root, BOOL visible) {
             if (canonical_path(registry_string(properties.value,L"TargetFolderPath").c_str()) != path ||
                 registry_string(shell.value,nullptr).rfind(L"FileES — ",0)!=0) throw hresult_access_denied();
             check_hresult(filees_own_sync_root(root));
-            navigation_visibility(clsid,root_id(root),visible);
-            DWORD pinned = visible ? 1 : 0;
-            check_hresult(HRESULT_FROM_WIN32(RegSetValueExW(shell.value,L"System.IsPinnedToNameSpaceTree",0,
-                REG_DWORD,reinterpret_cast<const BYTE*>(&pinned),sizeof pinned)));
-            notify_navigation(clsid,visible);
+            auto item=navigation_item(clsid);
+            bool changed=navigation_visibility(clsid,root_id(root),visible);
+            changed=set_dword_changed(shell.value,L"System.IsPinnedToNameSpaceTree",visible?1:0) || changed;
+            if (!item && visible) item=navigation_item(clsid);
+            if (changed) notify_navigation(item,visible);
         }
-        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
         filees_cfapi_ok("shell_visibility");
         return 0;
     } catch (...) {
@@ -442,7 +467,7 @@ HRESULT filees_shell_unregister(const WCHAR *root) {
             throw;
         }
         filees_registration_trace(root,"shell_unregister","after",S_OK,nullptr);
-        SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW, root, nullptr);
+        shell_change_notify(SHCNE_UPDATEDIR, SHCNF_PATHW, root);
         return S_OK;
     } catch (...) {
         HRESULT hr = to_hresult();

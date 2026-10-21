@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/storagewatch"
 	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
 	"filees/pkg/realmbranding"
@@ -317,6 +318,9 @@ func (m *Manager) ClaimSession(operationID, clientID string) (*SessionLease, err
 	}
 	var lease *SessionLease
 	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		if err := (storagewatch.Gate{Root: m.config.Root}).CheckInstallationAdmission(); err != nil {
+			return err
+		}
 		record, err := m.recordProofLocked(operationID, clientID)
 		if err != nil {
 			return err

@@ -13,13 +13,17 @@ import (
 )
 
 func (g Gate) withLock(ctx context.Context, exclusive bool, run func() error) error {
+	return g.withNamedLock(ctx, ".capacity-writers.lock", exclusive, run)
+}
+
+func (g Gate) withNamedLock(ctx context.Context, name string, exclusive bool, run func() error) error {
 	if !filepath.IsAbs(g.Root) {
 		return errors.New("write gate root must be absolute")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path := filepath.Join(g.Root, ".capacity-writers.lock")
+	path := filepath.Join(g.Root, name)
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if errors.Is(err, unix.ENOENT) {
 		fd, err = unix.Open(path, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0600)

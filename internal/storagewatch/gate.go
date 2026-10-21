@@ -128,12 +128,18 @@ func (g Gate) WithWriter(ctx context.Context, run func() error) error {
 	if run == nil {
 		return errors.New("write gate requires an operation")
 	}
+	if err := g.CheckInstallationAdmission(); err != nil {
+		return err
+	}
 	if held, err := g.Held(); err != nil {
 		return err
 	} else if held {
 		return ErrWriteHeld
 	}
 	return g.withLock(ctx, false, func() error {
+		if err := g.CheckInstallationAdmission(); err != nil {
+			return err
+		}
 		held, err := g.Held()
 		if err != nil {
 			return err

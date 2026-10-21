@@ -176,6 +176,9 @@ func archiveInstallAbsent(path string) error {
 
 func (p archiveInstallPaths) check() error {
 	if p.Activation.Root != "" {
+		if err := (storagewatch.Gate{Root: p.Activation.Root}).CheckInstallationAdmission(); err != nil {
+			return err
+		}
 		if err := archiveInstallAbsent(filepath.Join(p.Activation.Root, "archive-admission")); err != nil {
 			return err
 		}

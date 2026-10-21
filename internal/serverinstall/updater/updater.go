@@ -498,6 +498,7 @@ func (r *Runner) apply(ctx context.Context, opts Options) error {
 		return err
 	}
 	var staged []StagedFile
+	var signedPayload []StagedFile
 	var stageRoot string
 	// Check before downloading payloads and before sandbox reduction. A dry
 	// run must expose insufficient capacity rather than promise a viable plan.
@@ -509,6 +510,7 @@ func (r *Runner) apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
+		signedPayload = staged[:len(staged):len(staged)]
 		// Staged files are copied to their real targets (or the attempt is
 		// abandoned) before Apply returns either way - nothing here is ever
 		// read again afterward, so the stage is disposable the moment this
@@ -595,6 +597,9 @@ func (r *Runner) apply(ctx context.Context, opts Options) error {
 
 	// Files first: system tasks read the installed sshd/login.conf
 	// fragments, so they must already be on disk.
+	if err := r.verifyArchiveStaged(ctx, m, signedPayload, stageRoot); err != nil {
+		return err
+	}
 	entry, err := r.installStaged(staged, st, m.ReleaseID, m.Orphans)
 	if err != nil {
 		return err
@@ -1007,6 +1012,9 @@ func (r *Runner) confirmInteractive(prompt string) bool {
 }
 
 func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]StagedFile, string, error) {
+	if err := m.ValidateArchiveFormats(); err != nil {
+		return nil, "", err
+	}
 	if err := os.MkdirAll(r.Config.StageDir, 0o755); err != nil {
 		return nil, "", err
 	}
@@ -1030,6 +1038,7 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 	}
 	dirs := r.dirs()
 	var staged []StagedFile
+	stagedSources := make(map[string]string)
 	for _, mf := range m.Files {
 		if r.Config.RequireHash && strings.TrimSpace(mf.SHA256) == "" {
 			return nil, "", fmt.Errorf("%s: sha256 required by policy", mf.Source)
@@ -1056,8 +1065,18 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 		if err != nil {
 			return nil, "", fmt.Errorf("%s ownership: %w", mf.Source, err)
 		}
-		if err := os.WriteFile(stagePath, data, mode); err != nil {
-			return nil, "", err
+		if previous, exists := stagedSources[stagePath]; exists {
+			if previous != got {
+				return nil, "", fmt.Errorf("%s: conflicting hashes for one staged source", mf.Source)
+			}
+		} else {
+			if err := os.WriteFile(stagePath, data, mode); err != nil {
+				return nil, "", err
+			}
+			// One payload may serve two installation targets with different
+			// modes (recovery entry/authorizer). Do not reopen its read-only
+			// stage just to write the same bytes; target modes remain separate.
+			stagedSources[stagePath] = got
 		}
 		target := manifest.ResolveTarget(dirs, mf.Target)
 		staged = append(staged, StagedFile{
@@ -1069,6 +1088,9 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 			Ownership:    ownership,
 		})
 		fmt.Fprintf(r.Out, "FETCH %s sha256=%s\n", mf.Source, shortSHA(got))
+	}
+	if err := r.verifyArchiveStaged(ctx, m, staged, stageRoot); err != nil {
+		return nil, "", err
 	}
 	return staged, stageRoot, nil
 }

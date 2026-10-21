@@ -39,16 +39,17 @@ type Channel struct {
 }
 
 type Manifest struct {
-	SchemaVersion int              `json:"schema_version"`
-	ReleaseID     string           `json:"release_id"`
-	Platform      string           `json:"platform"`
-	SVNRevision   string           `json:"svn_revision,omitempty"`
-	CreatedAt     string           `json:"created_at,omitempty"`
-	Sequence      uint64           `json:"sequence"`
-	SecurityEpoch uint64           `json:"security_epoch"`
-	Files         []File           `json:"files"`
-	Configs       []ConfigContract `json:"configs,omitempty"`
-	Orphans       []Orphan         `json:"orphans,omitempty"`
+	SchemaVersion  int              `json:"schema_version"`
+	ReleaseID      string           `json:"release_id"`
+	Platform       string           `json:"platform"`
+	SVNRevision    string           `json:"svn_revision,omitempty"`
+	CreatedAt      string           `json:"created_at,omitempty"`
+	Sequence       uint64           `json:"sequence"`
+	SecurityEpoch  uint64           `json:"security_epoch"`
+	Files          []File           `json:"files"`
+	Configs        []ConfigContract `json:"configs,omitempty"`
+	Orphans        []Orphan         `json:"orphans,omitempty"`
+	ArchiveFormats *ArchiveFormats  `json:"archive_formats,omitempty"`
 
 	BasePath string `json:"-"`
 }
@@ -167,6 +168,9 @@ func Parse(data []byte) (*Manifest, error) {
 		if strings.TrimSpace(orphan.Target) == "" {
 			return nil, fmt.Errorf("manifest orphan %d target is required", i)
 		}
+	}
+	if err := m.ValidateArchiveFormats(); err != nil {
+		return nil, err
 	}
 	return &m, nil
 }

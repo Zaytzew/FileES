@@ -26,12 +26,13 @@ import (
 // do not enable positive archive upgrades: they exercise ordinary transaction
 // recovery and its refusal after an archive sentinel appears.
 type archiveCrashSpec struct {
-	Config  config.Config
-	Files   []StagedFile
-	Orphans []manifest.Orphan
-	Point   string
-	Ready   string
-	Recover bool
+	Config       config.Config
+	Files        []StagedFile
+	Orphans      []manifest.Orphan
+	Point        string
+	Ready        string
+	Recover      bool
+	BeforeOwners map[string]platform.Ownership
 }
 
 type archiveCrashOwnership struct {
@@ -129,7 +130,15 @@ func archiveCrashFixture(t *testing.T) (*Runner, archiveInstallPaths, archiveCra
 	r, p := archiveInstallerFixture(t)
 	r.Config.OrphanFiles = "remove"
 	r.Ownership = platform.SystemOwnership{}
-	spec := archiveCrashSpec{Config: *r.Config, Ready: filepath.Join(r.Config.StateDir, "checkpoint")}
+	spec := archiveCrashSpec{Config: *r.Config, Ready: filepath.Join(r.Config.StateDir, "checkpoint"), BeforeOwners: make(map[string]platform.Ownership)}
+	rememberOwner := func(path string) {
+		t.Helper()
+		owner, err := r.Ownership.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec.BeforeOwners[path] = owner
+	}
 	identity := platform.Ownership{UID: os.Geteuid(), GID: os.Getegid()}
 	for _, name := range []string{"worker", "authority-added", "entry"} {
 		target, stage := filepath.Join(r.Config.SbinDir, name), filepath.Join(r.Config.StageDir, name)
@@ -145,6 +154,13 @@ func archiveCrashFixture(t *testing.T) (*Runner, archiveInstallPaths, archiveCra
 			if err := os.WriteFile(target, []byte("old-"+name), 0540); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.Chmod(target, 0540); err != nil {
+				t.Fatal(err)
+			}
+			// BSD may inherit the parent directory's group independently of
+			// the process egid. Expected restore ownership is the observed
+			// pre-image, NOT the desired owner of the new installation.
+			rememberOwner(target)
 		}
 		spec.Files = append(spec.Files, StagedFile{Target: target, StagePath: stage, Mode: 0500, Ownership: identity})
 	}
@@ -152,6 +168,10 @@ func archiveCrashFixture(t *testing.T) (*Runner, archiveInstallPaths, archiveCra
 	if err := os.WriteFile(orphan, []byte("old-orphan"), 0440); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(orphan, 0440); err != nil {
+		t.Fatal(err)
+	}
+	rememberOwner(orphan)
 	spec.Orphans = []manifest.Orphan{{Target: orphan}}
 	if err := state.Save(r.Config.StateDir, &state.State{InstalledRelease: "crash-old", HighestSequence: 10, SecurityEpoch: 1}); err != nil {
 		t.Fatal(err)
@@ -232,7 +252,8 @@ func archiveCrashAssertRestored(t *testing.T, r *Runner, spec archiveCrashSpec) 
 			t.Fatal(err)
 		}
 		owner, err := r.Ownership.Stat(file.Target)
-		if err != nil || owner != file.Ownership {
+		want, recorded := spec.BeforeOwners[file.Target]
+		if err != nil || !recorded || owner != want {
 			t.Fatal("original ownership not restored", owner, err)
 		}
 	}
@@ -244,7 +265,8 @@ func archiveCrashAssertRestored(t *testing.T, r *Runner, spec archiveCrashSpec) 
 		t.Fatal(err)
 	}
 	owner, err := r.Ownership.Stat(spec.Orphans[0].Target)
-	if err != nil || owner != spec.Files[0].Ownership {
+	want, recorded := spec.BeforeOwners[spec.Orphans[0].Target]
+	if err != nil || !recorded || owner != want {
 		t.Fatal("orphan ownership not restored", owner, err)
 	}
 	if txn, err := state.LoadTransaction(r.Config.StateDir); err != nil || txn != nil {
@@ -268,6 +290,18 @@ func TestArchiveInstallKilledProcessRecovery(t *testing.T) {
 			}
 			if err := validateEntryBackups(txn.Entry); err != nil {
 				t.Fatal(err)
+			}
+			for _, file := range txn.Entry.Files {
+				if !file.Existed {
+					continue
+				}
+				want, ok := spec.BeforeOwners[file.Target]
+				if !ok || file.UIDBefore == nil || file.GIDBefore == nil || *file.UIDBefore != want.UID || *file.GIDBefore != want.GID {
+					t.Fatal("journal differs from independently observed pre-image ownership", file.Target)
+				}
+				if point == "before-publish" {
+					t.Logf("%s: pre-image owner=%d:%d; new install owner=%d:%d", filepath.Base(file.Target), want.UID, want.GID, os.Geteuid(), os.Getegid())
+				}
 			}
 			if point == "install-1" {
 				raw, err := os.ReadFile(spec.Files[0].Target)

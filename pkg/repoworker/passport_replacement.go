@@ -163,7 +163,7 @@ func (a PassportReplacementAuthority) authorizeAccess(session Session, repoID st
 	if err != nil {
 		return ErrPassportReplacementDenied
 	}
-	if write && repo.ArchivePolicy != nil {
+	if write && repo.archiveProtected() {
 		return ErrArchiveReadOnly
 	}
 	// A stale view cannot retain rights after a grant has been revoked.

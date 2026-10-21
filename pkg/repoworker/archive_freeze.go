@@ -41,9 +41,16 @@ func (s ArchiveFreezeService) Freeze(ctx context.Context, realm, repo, operation
 	}
 	want := RepositoryArchivePolicy{Schema: RepositoryArchivePolicySchema, OperationID: operation, RepositoryUUID: repositoryUUID, Revision: revision, Epoch: 1, State: "preparing", StartedAt: p.now()}
 	if record.ArchivePolicy != nil {
-		want = *record.ArchivePolicy
-		if want.OperationID != operation || want.RepositoryUUID != repositoryUUID || want.Revision != revision {
-			return result, errors.New("archive operation conflicts with canonical intent")
+		if record.ArchivePolicy.State == "released" {
+			if record.ArchivePolicy.Epoch == ^uint64(0) || record.ArchivePolicy.OperationID == operation {
+				return result, errors.New("refreeze requires a new policy operation and epoch")
+			}
+			want.Epoch = record.ArchivePolicy.Epoch + 1
+		} else {
+			want = *record.ArchivePolicy
+			if want.State == "releasing" || want.OperationID != operation || want.RepositoryUUID != repositoryUUID || want.Revision != revision {
+				return result, errors.New("archive operation conflicts with canonical intent")
+			}
 		}
 	}
 	if err := want.validate(); err != nil {
@@ -55,7 +62,7 @@ func (s ArchiveFreezeService) Freeze(ctx context.Context, realm, repo, operation
 	if err := checkArchiveGuardExecutable(s.Protection.Executable); err != nil {
 		return result, err
 	}
-	hooks, _, err := s.Protection.paths()
+	hooks, guardRoot, err := s.Protection.paths()
 	if err != nil {
 		return result, err
 	}
@@ -72,11 +79,16 @@ func (s ArchiveFreezeService) Freeze(ctx context.Context, realm, repo, operation
 		if head.UUID != want.RepositoryUUID || head.Number != want.Revision {
 			return errors.New("archive plan changed before the acknowledged drain")
 		}
+		if record.ArchivePolicy != nil && record.ArchivePolicy.State == "released" {
+			if err := checkArchiveOperationReuse(guardRoot, operation, want.Epoch); err != nil {
+				return err
+			}
+		}
 		if err := s.Fence.Hold(ctx, repo, want); err != nil {
 			return err
 		}
 		archiveFreezeCheckpoint("fenced")
-		if record.ArchivePolicy == nil {
+		if record.ArchivePolicy == nil || record.ArchivePolicy.State == "released" {
 			if err := p.publishArchivePolicy(ctx, record, want); err != nil {
 				return err
 			}

@@ -4,9 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 )
+
+// CheckServiceWorkingCopyOwner is the read-only administrative preflight.
+// Root must use the service account rather than creating root-owned authority
+// or pristine files. It grants no client/realm operation by itself.
+func CheckServiceWorkingCopyOwner(workingCopy string) error {
+	if !filepath.IsAbs(workingCopy) {
+		return errors.New("service working copy must be absolute")
+	}
+	info, err := os.Lstat(workingCopy)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("service working copy must be a real directory")
+	}
+	return verifyServiceWorkingCopyOwner(workingCopy)
+}
 
 // ReconcileServiceWorkingCopy restores the service authority WC to the
 // repository state. Callers must hold the installation-wide service-WC lock.

@@ -174,7 +174,7 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		if json.Unmarshal(raw, &old) != nil || old.RepoID != repoID || old.OwnerRealmID != realmID || old.DisplayName != name || old.URL != url {
 			return errors.New("canonical repository record conflicts")
 		}
-		if err := validateRepositoryArchive(old); err != nil {
+		if err := validateRepositoryArchive(old, p.ServiceWC); err != nil {
 			return err
 		}
 		if purpose != "" && old.Purpose != "" && old.Purpose != purpose {
@@ -308,7 +308,7 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 	if record.OwnerRealmID != realmID {
 		return errors.New("authenticated realm does not own repository")
 	}
-	if err := validateRepositoryArchive(record); err != nil {
+	if err := validateRepositoryArchive(record, p.ServiceWC); err != nil {
 		return err
 	}
 	if record.State != "initializing" && record.State != "active" {
@@ -554,10 +554,10 @@ func (p ServicePublisher) authorizeDelete(repoID, realmID string) (string, repos
 	if record.OwnerRealmID != realmID {
 		return "", repositoryRecord{}, errors.New("authenticated realm does not own repository")
 	}
-	if err := validateRepositoryArchive(record); err != nil {
+	if err := validateRepositoryArchive(record, p.ServiceWC); err != nil {
 		return "", repositoryRecord{}, err
 	}
-	if record.ArchivePolicy != nil && record.ArchivePolicy.State != "archived" {
+	if record.archiveProtected() && record.ArchivePolicy.State != "archived" {
 		return "", repositoryRecord{}, ErrArchiveReadOnly
 	}
 	return repoPath, record, nil
@@ -639,10 +639,10 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 		return errors.New("canonical repository record is invalid")
 	}
 	oldRealmID := record.OwnerRealmID
-	if err := validateRepositoryArchive(record); err != nil {
+	if err := validateRepositoryArchive(record, p.ServiceWC); err != nil {
 		return err
 	}
-	if record.ArchivePolicy != nil {
+	if record.archiveProtected() {
 		return ErrArchiveReadOnly
 	}
 	if record.State == "deleted" {
@@ -751,7 +751,7 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 		if err = json.Unmarshal(raw, &r); err != nil || r.Schema != RepositorySchema {
 			return nil, errors.New("invalid canonical repository record")
 		}
-		if err := validateRepositoryArchive(r); err != nil {
+		if err := validateRepositoryArchive(r, p.ServiceWC); err != nil {
 			return nil, err
 		}
 		if r.State == "deleted" {

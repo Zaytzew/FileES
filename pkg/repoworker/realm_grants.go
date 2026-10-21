@@ -85,7 +85,7 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 	if repo.OwnerRealmID != ownerRealmID {
 		return RealmGrantRecord{}, errors.New("authenticated realm does not own repository")
 	}
-	if access == "rw" && repo.ArchivePolicy != nil {
+	if access == "rw" && repo.archiveProtected() {
 		return RealmGrantRecord{}, ErrArchiveReadOnly
 	}
 	recipient, err := readRealmRecord(filepath.Join(p.ServiceWC, "admin", "realms", recipientRealmID+".json"))
@@ -491,7 +491,7 @@ func (p ServicePublisher) loadActiveRepository(repoID string) (repositoryRecord,
 	if json.Unmarshal(raw, &record) != nil || record.Schema != RepositorySchema || record.RepoID != repoID || record.State != "active" {
 		return repositoryRecord{}, errors.New("canonical active repository is invalid")
 	}
-	if err := validateRepositoryArchive(record); err != nil {
+	if err := validateRepositoryArchive(record, p.ServiceWC); err != nil {
 		return repositoryRecord{}, err
 	}
 	return record, nil
@@ -515,7 +515,7 @@ func (p ServicePublisher) loadGrantModel() (map[string]repositoryRecord, map[str
 		if json.Unmarshal(raw, &record) != nil || record.Schema != RepositorySchema {
 			return nil, nil, nil, errors.New("canonical repository record is invalid")
 		}
-		if err := validateRepositoryArchive(record); err != nil {
+		if err := validateRepositoryArchive(record, p.ServiceWC); err != nil {
 			return nil, nil, nil, err
 		}
 		if record.State != "deleted" {
@@ -784,7 +784,7 @@ func (p ServicePublisher) SetRepositoryEditingPolicy(ctx context.Context, realmI
 	if err != nil {
 		return "", err
 	}
-	if record.ArchivePolicy != nil {
+	if record.archiveProtected() {
 		return "", ErrArchiveReadOnly
 	}
 	// Borrowing is enforced by the repository's lock guards. Guards arrive

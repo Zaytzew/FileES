@@ -362,6 +362,9 @@ func (p ArchiveProtection) Freeze(ctx context.Context, want ArchiveProtectionRec
 				if existing.Epoch == ^uint64(0) || want.Epoch != existing.Epoch+1 || want.OperationID == existing.OperationID {
 					return errors.New("archive refreeze requires a new operation and policy epoch")
 				}
+				if err := checkArchiveOperationReuse(root, want.OperationID, want.Epoch); err != nil {
+					return err
+				}
 				raw, err := os.ReadFile(filepath.Join(root, archiveGuardRecord))
 				if err != nil {
 					return err
@@ -428,8 +431,8 @@ func (p ArchiveProtection) Freeze(ctx context.Context, want ArchiveProtectionRec
 	})
 }
 
-// Release is intentionally not exposed through user control/GUI. A future
-// administrative adapter must authorize it separately and publish a new policy
+// Release is intentionally not exposed through user control/GUI. The canonical
+// administrative coordinator authorizes it separately and publishes a policy
 // epoch under the same barrier. Failure before local release remains read-only;
 // failure after it is an auditable interrupted administrative transition, not
 // an assertion that canonical publication succeeded.
@@ -482,6 +485,9 @@ func (p ArchiveProtection) Release(ctx context.Context, expected ArchiveProtecti
 				next.At = time.Now().UTC()
 			}
 			if err := next.validate(); err != nil {
+				return err
+			}
+			if err := checkArchiveOperationReuse(root, operationID, next.Epoch); err != nil {
 				return err
 			}
 			if err := ctx.Err(); err != nil {
@@ -601,4 +607,32 @@ func readArchiveAudit(path string) (ArchiveProtectionRecord, error) {
 		return record, errors.New("trailing archive audit data")
 	}
 	return record, record.validate()
+}
+
+// A delayed duplicate freeze must not become a new policy after an admin
+// release. Permit only a same-epoch event left ahead of its pointer by a crash.
+func checkArchiveOperationReuse(root, operation string, epoch uint64) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == archiveGuardRecord || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		r, err := readArchiveAudit(filepath.Join(root, entry.Name()))
+		if err != nil {
+			return err
+		}
+		if entry.Name() != fmt.Sprintf("%020d-%s.json", r.Epoch, r.State) {
+			return errors.New("invalid archive audit event name")
+		}
+		if r.Epoch > epoch {
+			return errors.New("archive audit is ahead of the requested epoch")
+		}
+		if r.Epoch < epoch && r.OperationID == operation {
+			return errors.New("archive policy operation was already used")
+		}
+	}
+	return nil
 }

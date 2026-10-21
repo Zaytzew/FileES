@@ -261,12 +261,25 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		return false
 	}
 	defer leave()
-	if commit.HasUnresolvedCommit(wc) || commit.HasPendingLocalMutation(wc) {
+	if commit.HasUnresolvedCommit(wc) || commit.HasPendingLocalTransaction(wc) {
 		logger.Infof("startup update deferred: durable local operation recovery pending")
 		return false
 	}
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
 		return false
+	}
+	if service.Anchor {
+		out, err := service.RecoverWorkingCopy(ctx, wc)
+		if err != nil {
+			if ctx.Err() == nil && !commit.IsWorkingCopyRecoveryWaiting(err) {
+				recordSyncFailure(sink, logger, "unfinished local SVN recovery", err)
+			}
+			return false
+		}
+		for _, record := range received {
+			record(out)
+		}
+		return true
 	}
 	if out, err := svn.Cleanup(ctx, wc); err != nil {
 		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {

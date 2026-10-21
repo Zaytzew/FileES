@@ -468,6 +468,23 @@ int filees_cfapi_connect(const WCHAR *root)
             if (retarget) filees_bridge_say_tree_identity(line + 14, hr);
             else filees_bridge_say_tree_move(line + 10, hr);
         }
+        else if (!strncmp(line, "recovery-remove\t", 16)) {
+            char *parts[6], *next = line + 16;
+            WCHAR rel[FILEES_CFAPI_MAX_PATH], identity[FILEES_CFAPI_MAX_IDENTITY];
+            LONGLONG size = 0, usn = 0;
+            int i;
+            hr = E_INVALIDARG;
+            for (i = 0; i < 6 && next; ++i) {
+                parts[i] = next; next = strchr(next, '\t');
+                if (next) *next++ = 0;
+            }
+            if (i == 6 && !next && *parts[0] &&
+                release_number(parts[3], &size, 1) && release_number(parts[5], &usn, 0) &&
+                filees_cfapi_widen(parts[1], rel, FILEES_CFAPI_MAX_PATH) &&
+                filees_cfapi_widen(parts[2], identity, FILEES_CFAPI_MAX_IDENTITY))
+                hr = filees_recovery_remove(g_root, rel, identity, size, parts[4], usn);
+            filees_bridge_say_tree_set(line + 16, hr);
+        }
         else if (!strncmp(line, "tree-set\t", 9)) {
             char *parts[7], *next = line + 9;
             WCHAR rel[FILEES_CFAPI_MAX_PATH], old[FILEES_CFAPI_MAX_IDENTITY], identity[FILEES_CFAPI_MAX_IDENTITY];

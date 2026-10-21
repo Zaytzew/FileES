@@ -76,6 +76,8 @@ if (Test-Path -LiteralPath $svnModification -PathType Leaf) {
     $notices['FileES-SVN-modification.inc'] = $svnModification
     $notices['FileES-SVN-transformation.cjs'] = Join-Path $SvnPrefix 'FileES-SVN-transformation.cjs'
     $notices['FileES-SVN-tree-modification.inc'] = Join-Path $SvnPrefix 'FileES-SVN-tree-modification.inc'
+    $projectionNotice = Join-Path $SvnPrefix 'FileES-SVN-projection-modification.inc'
+    if (Test-Path -LiteralPath $projectionNotice) { $notices['FileES-SVN-projection-modification.inc'] = $projectionNotice }
 }
 # serf is linked into SVN RA even when it has no separate imported DLL.
 foreach ($port in @('apr','apr-util','expat','openssl','serf','sqlite3','zlib')) {
@@ -122,6 +124,9 @@ try {
         if ($receipt.ok -ne $true -or $receipt.svn_runtime -ne $receipt.svn_headers) { throw "Invalid helper version receipt: $version" }
         if ($receipt.features -contains 'sparse_exclude_conditional_v1' -and -not $notices.Contains('FileES-SVN-modification.inc')) {
             throw 'Conditional Subversion runtime has no modification notice/source'
+        }
+        if ($receipt.features -contains 'workqueue_projection_v1' -and -not $notices.Contains('FileES-SVN-projection-modification.inc')) {
+            throw 'Projection Subversion runtime has no modification notice/source'
         }
         foreach ($feature in @('update_changes','commit_targets_stdin_v1','info_inspect_remote_v1','status_remote_locks_v1')) {
             if ($receipt.features -notcontains $feature) { throw "Helper missing required feature: $feature" }

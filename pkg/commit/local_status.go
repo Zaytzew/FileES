@@ -34,6 +34,9 @@ func (s *Service) WithWorkingCopyWrite(ctx context.Context, wc string, operation
 	if s.wc != wc || s.commitWriterBlocked || operation == nil {
 		return ErrLocalStatusBusy
 	}
+	if s.workingRecoveryRequired.Load() {
+		return ErrWorkingCopyRecoveryPending
+	}
 	if HasPendingLocalMutation(wc) {
 		return LocalMutationPendingError(wc)
 	}
@@ -80,6 +83,9 @@ func (s *Service) withLocalStatus(ctx context.Context, wc string, read func() ([
 	defer s.wcOpMu.Unlock()
 	if s.wc != wc || s.commitWriterBlocked || s.Cli == nil {
 		return ErrLocalStatusBusy
+	}
+	if s.workingRecoveryRequired.Load() {
+		return ErrWorkingCopyRecoveryPending
 	}
 	if HasPendingLocalMutation(wc) {
 		return LocalMutationPendingError(wc)

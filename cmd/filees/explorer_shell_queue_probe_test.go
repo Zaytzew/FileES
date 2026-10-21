@@ -166,6 +166,16 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	// Startup SVN can persist recovery AFTER prepare queued registration,
+	// but BEFORE the provider can connect. Recovery needs that provider:
+	// its conservative fence must not deadlock this metadata-only FIFO.
+	if err := os.MkdirAll(filepath.Join(root, ".filees", "state"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, ".filees", "state", "working-copy-recovery.json")
+	if err := os.WriteFile(marker, []byte(`{"schema":"filees.working-copy-recovery/v1","phase":"waiting"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(250 * time.Millisecond)
 	if runtime := m.runtimeOf(anchorKey(r)); runtime == nil || runtime.Phase != "connecting" {
 		t.Fatal("FIFO wait is not projected as connecting", runtime)
@@ -190,6 +200,9 @@ func TestShellQueueKeepWaitsForRegistrationBeforeConnect(t *testing.T) {
 	}
 	if len(shellRootsForPath(t, root)) != 1 {
 		t.Fatal("connected without Shell registration")
+	}
+	if !commit.HasPendingWorkingCopyRecovery(root) {
+		t.Fatal("provider startup retired the recovery fence")
 	}
 	icon, err := anchorFolderIconPath()
 	if err != nil {

@@ -1,5 +1,33 @@
 # FileES native SVN client — explicit platform integration
 
+## Private CFAPI work-queue replay — 2026-10-21
+
+Windows `workqueue_projection_v1` requires the reviewed private runtime's
+process-local callback. Only explicitly opted-in `cleanup`/`update` install
+it, under the native WC writer. An actual `file-remove` item emits a bounded
+`filees.svn-projection/v1` request (operation, sequence, root, relative path,
+volume/FileID); the private parent pipe must acknowledge that exact request.
+The connected provider, not this process, performs the physical projection.
+After acknowledgement SVN retires its own work item; there is no second
+pathname unlink, SQL mutation, remote delete, or permission shared by PID.
+
+Metadata comes from `CfGetPlaceholderInfo`, not the Win32 reparse attribute
+that Cloud Filter can virtualize. Ordinary/replaced public files, unknown
+objects and recursive directory removals refuse. Missing files are already
+handled. Nonrecursive public directory removals retain the CFAPI skeleton;
+administrative `.svn/` operations keep ordinary SVN semantics. A later bound
+remote-tree pass owns actual empty-directory projection, not Explorer's
+remote deletion coordinator. No document content is read by this callback.
+
+This is not an operator cleanup bypass: do not manually acknowledge requests.
+The daemon requires current lifecycle/root/manifest, exact FileID, USN,
+identity, size and zero resident/modified bytes. Its durable local-recovery
+fence survives refusal/restart and is retried before the HEAD shortcut.
+The virtual view is restored under the same service writer before clearing
+that fence or allowing watcher checkpoints. Bound reprojection hints remain
+until the regular HEAD observer confirms its generation. No alpha rollout or
+native acceptance follows merely from the presence of this feature.
+
 Single-file deletion preflight, 2026-10-19, base r2203 plus delta:
 `local-file-delete --wc WC --phase preflight --url ROOT --uuid UUID
 --base MANIFEST_REV --revision 0 SOURCE` requires the advertised

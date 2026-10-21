@@ -50,11 +50,19 @@ const (
 	EditingLockRequired = "lock_required"
 )
 
+// WorkingCopyRecoveryStatus describes a local unfinished SVN operation,
+// independently of pending uploads and repository HEAD. No guessed counters.
+type WorkingCopyRecoveryStatus struct {
+	Phase  string `json:"phase"` // running | waiting | blocked
+	Detail string `json:"detail,omitempty"`
+}
+
 type RepoStatus struct {
-	AnchorRuntime        *AnchorRuntimeStatus  `json:"anchor_runtime,omitempty"`
-	Conversion           *WCConversionStatus   `json:"conversion,omitempty"`
-	AnchorDownloadBlocks []AnchorDownloadBlock `json:"anchor_download_blocks,omitempty"`
-	AnchorDamage         *AnchorDamage         `json:"anchor_damage,omitempty"`
+	WorkingCopyRecovery  *WorkingCopyRecoveryStatus `json:"working_copy_recovery,omitempty"`
+	AnchorRuntime        *AnchorRuntimeStatus       `json:"anchor_runtime,omitempty"`
+	Conversion           *WCConversionStatus        `json:"conversion,omitempty"`
+	AnchorDownloadBlocks []AnchorDownloadBlock      `json:"anchor_download_blocks,omitempty"`
+	AnchorDamage         *AnchorDamage              `json:"anchor_damage,omitempty"`
 	// Current local uncertainty, not historical log errors. Empty after recovery.
 	PassportIssues   []PassportIssue `json:"passport_issues,omitempty"`
 	RepoID           string          `json:"repo_id"`

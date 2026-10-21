@@ -70,6 +70,7 @@ func explorerAnchors(ipc *ipcserver.Server, lifecycle *localrepo.Store, provisio
 	}
 	anchors.helper = cfapi
 	anchors.localIntentMu = &provisioner.localIntentMu
+	wireAnchorProjection(provisioner, anchors)
 	anchors.creationWaiters = &provisioner.creationWaiters
 	var records []localrepo.Record
 	if lifecycle != nil {

@@ -14,3 +14,15 @@ test('metadata progress is explicit, translated and not a publication receipt',(
   assert.equal(reconcileProgressLine({reconcile_progress:{phase:'adopting',done:41,total:40}},t),'');
  }
 });
+
+test('local recovery remains separate from an empty upload queue and never invents a percentage',()=>{
+ const catalogues=Object.fromEntries(languages.map(l=>[l.code,l.messages]));
+ for(const l of languages){
+  const t=(k,a)=>translate(catalogues,l.code,k,a);
+  for(const phase of ['running','waiting','blocked']){
+   const line=reconcileProgressLine({pending_files:0,working_copy_recovery:{phase,detail:'literal <failure>'}},t);
+   assert.ok(line.includes('literal <failure>'));
+   assert.doesNotMatch(line,/progress\.localRecovery|\d+%|\{done\}/);
+  }
+ }
+});

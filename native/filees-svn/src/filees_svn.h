@@ -28,6 +28,9 @@ svn_error_t *filees_writer_open(apr_file_t **file, const char **pending,
                                  const char *wc, apr_pool_t *pool);
 svn_error_t *filees_writer_set(apr_file_t *file, const char *marker, apr_pool_t *pool);
 svn_error_t *filees_writer_guard(const char *wc, apr_pool_t *pool);
+int filees_projection_available(void);
+svn_error_t *filees_projection_configure(const char *token);
+svn_error_t *filees_projection_begin(const char *root, apr_pool_t *pool);
 
 /* Exact WC root. live requires .filees; disposable requires the probe marker. */
 /* Read-only pre-adoption inspection must not create/require a FileES marker. */

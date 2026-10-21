@@ -46,6 +46,7 @@ static void print_ok_version(void)
     printf(",\"unlock_token_receipt_v1\"");
     printf(",\"local_file_delete_preflight_v1\"");
     printf(",\"conversion_inventory_v1\"");
+    if (filees_projection_available()) printf(",\"workqueue_projection_v1\"");
     if (filees_conditional_exclusion_available()) printf(",\"sparse_exclude_conditional_v1\"");
     if (filees_bound_exclusion_available()) printf(",\"sparse_exclude_bound_v1\"");
     if (filees_idle_bound_exclusion_available()) printf(",\"sparse_exclude_idle_bound_v1\"");
@@ -359,6 +360,9 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
     int n = 0, i;
 
     for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--projection-replay") && i + 1 < argc) {
+            SVN_ERR(filees_projection_configure(argv[++i])); continue;
+        }
         if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
             SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
             continue;
@@ -750,6 +754,9 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     }
 
     for (i = 2; i < argc; ++i) {
+        if (!strcmp(verb, "cleanup") && !strcmp(argv[i], "--projection-replay") && i + 1 < argc) {
+            SVN_ERR(filees_projection_configure(argv[++i])); continue;
+        }
         if (!strcmp(verb, "status") && !strcmp(argv[i], "--show-updates")) { remote = TRUE; continue; }
         if (!strcmp(verb, "status") && !strcmp(argv[i], "--conversion-inventory")) { inventory = TRUE; continue; }
         if (!strcmp(verb, "status") && !strcmp(argv[i], "--inspect-wc") && !wc && i + 1 < argc) {

@@ -230,6 +230,37 @@ svn_error_t *svn_wc__db_filees_resume(svn_wc__db_t *, const char *,
 #endif /* __cplusplus */`);
 files.set('subversion/libsvn_wc/wc_db.h', h);
 let wq = load('subversion/libsvn_wc/workqueue.c');
+wq = replace(wq, 'static svn_error_t *\nrun_file_remove(',
+  '#include "filees_projection.inc"\n\nstatic svn_error_t *\nrun_file_remove(');
+wq = replace(wq,
+  '  /* Remove the path, no worrying if it isn\'t there.  */\n  return svn_error_trace(svn_io_remove_file2(local_abspath, TRUE,',
+  `#ifdef WIN32
+  if (filees_projection_callback)
+    {
+      svn_boolean_t handled = FALSE;
+      SVN_ERR(filees_projection_callback(filees_projection_baton,
+                                         local_abspath, 0, &handled, scratch_pool));
+      if (handled)
+        return SVN_NO_ERROR;
+    }
+#endif
+  /* Remove the path, no worrying if it isn't there. */
+  return svn_error_trace(svn_io_remove_file2(local_abspath, TRUE,`);
+wq = replace(wq,
+  '  /* Remove the path, no worrying if it isn\'t there.  */\n  if (recursive)',
+  `#ifdef WIN32
+  if (filees_projection_callback)
+    {
+      svn_boolean_t handled = FALSE;
+      SVN_ERR(filees_projection_callback(filees_projection_baton,
+                                         local_abspath, recursive ? 2 : 1,
+                                         &handled, scratch_pool));
+      if (handled)
+        return SVN_NO_ERROR;
+    }
+#endif
+  /* Remove the path, no worrying if it isn't there.  */
+  if (recursive)`);
 wq = replace(wq, 'static const struct work_item_dispatch dispatch_table[] = {',
   '#include "filees_release.inc"\n\nstatic const struct work_item_dispatch dispatch_table[] = {\n#ifdef WIN32\n  { "filees-remove-verified-v1", run_filees_remove },\n#endif');
 files.set('subversion/libsvn_wc/workqueue.c', wq);
@@ -237,6 +268,11 @@ let pub = load('subversion/include/private/svn_wc_private.h');
 pub = replace(pub, '#ifdef __cplusplus\n}\n#endif /* __cplusplus */', `
 /* FileES private ABI v1. Expected source handle is borrowed, never closed.
    Windows only. No ordinary file-remove fallback. */
+typedef svn_error_t *(*svn_wc__filees_projection_fn)(void *, const char *, int,
+    svn_boolean_t *, apr_pool_t *);
+void svn_wc__filees_projection_v1(svn_wc__filees_projection_fn callback,
+                                  void *baton);
+
 svn_error_t *
 svn_wc__filees_exclude_retained_v1(svn_wc_context_t *wc_ctx,
                                   const char *local_abspath,
@@ -300,4 +336,5 @@ for (const [p, s] of files) {
 }
 fs.copyFileSync(path.join(__dirname, 'filees_release.inc'), path.join(root, 'subversion/libsvn_wc/filees_release.inc'));
 fs.copyFileSync(path.join(__dirname, 'filees_tree.inc'), path.join(root, 'subversion/libsvn_wc/filees_tree.inc'));
+fs.copyFileSync(path.join(__dirname, 'filees_projection.inc'), path.join(root, 'subversion/libsvn_wc/filees_projection.inc'));
 console.log(`Applied FileES conditional exclusion v1 to ${root}`);

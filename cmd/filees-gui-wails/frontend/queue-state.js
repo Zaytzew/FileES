@@ -37,8 +37,12 @@ export function queueSummary(snapshot, t, bytes) {
   const preparing = !cached && (repos.some(queuePreparing)
     || (!repos.length && (snapshot.servers || []).some(server => server.repositories_ready === false)));
   const attention = repos.some(repo => repo.pending_files > 0 && repo.display_state === "attention");
+  const recoveries = repos.map(repo => repo.working_copy_recovery).filter(Boolean);
+  const recovery = recoveries.some(p => p.phase === "blocked") ? "blocked"
+    : recoveries.some(p => p.phase === "running") ? "running" : "waiting";
   const amount = pending ? t("summary.pendingBytes", {size: bytes(size)}) : "";
-  const note = cached ? "summary.lastKnown" : preparing ? "queue.loading" : attention ? "queue.attention" : "";
+  const note = cached ? "summary.lastKnown" : preparing ? "queue.loading" : attention ? "queue.attention"
+    : recoveries.length ? `progress.localRecovery.${recovery}` : "";
   return {
     value: preparing ? (pending ? `${pending}+` : "…") : pending,
     note: note ? [amount, t(note)].filter(Boolean).join(" · ") : amount || t("summary.emptyQueue"),

@@ -240,7 +240,11 @@ func (m *anchorManager) reconcileShellQueueFor(ctx context.Context, only *localr
 			current.State != localrepo.StateAttached || !m.virtualEnabled(current.ServerID) {
 			return errAnchorShellStale
 		}
-		if m.moveWaiters.Load() != 0 || (m.creationWaiters != nil && m.creationWaiters.Load() != 0) || commit.HasPendingLocalMutation(record.LocalPath) {
+		// A recovery fence needs a connected provider. It cannot block this
+		// metadata-only registration FIFO and thereby prevent that connection.
+		// Receipted release/delete/tree transactions retain their older gate;
+		// provider drain, ownership, lifecycle and intent checks still apply.
+		if m.moveWaiters.Load() != 0 || (m.creationWaiters != nil && m.creationWaiters.Load() != 0) || commit.HasPendingLocalTransaction(record.LocalPath) {
 			return commit.ErrLocalStatusBusy
 		}
 		// Never retain localIntentMu while fetch/metadata ACK jobs drain.

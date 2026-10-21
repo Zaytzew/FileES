@@ -386,6 +386,7 @@ svn_error_t *filees_wc_cleanup(const char *wc_arg, svn_boolean_t live,
     svn_client_ctx_t *ctx;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_writer_guard(wc, pool));
+    SVN_ERR(filees_projection_begin(wc, pool));
     return svn_client_cleanup2(wc, TRUE, TRUE, TRUE, FALSE, FALSE, ctx, pool);
 }
 

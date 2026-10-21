@@ -1,5 +1,25 @@
 # filees-cfapi — punkt zaczepienia w Eksploratorze
 
+## Wewnętrzne usuwanie z kolejki SVN — 2026-10-21
+
+`workqueue_projection_bound_v1` dotyczy wyłącznie prywatnego kanału
+połączonego dostawcy. `recovery-remove` wiąże ścieżkę z FileID/USN,
+tożsamością, rozmiarem i aktualnym punktem. Przyjmuje tylko czysty plik
+zdalny bez bajtów lokalnych/zmienionych. Uchwyt wyklucza zapisy przez
+FILE_APPEND_DATA, nie czyta ani nie dopisuje danych; pozostaje otwarty
+do usunięcia dokładnego obiektu. Własne dopuszczenie delete zachowuje
+dotychczasowe związanie z PID dostawcy i konkretnym obiektem.
+
+To nie nowa intencja usunięcia w repozytorium ani komenda menu/CLI.
+Wywołanie pochodzi z rzeczywistego zadania SVN pod writerem. Go utrwala
+wskazówkę ponownej projekcji przed efektem, a SVN sam potwierdza swoją
+kolejkę. Lokalne bajty, zamiana obiektu, USN lub utrata połączenia dają
+odmowę; nie ma rekursywnego kasowania, hydratacji ani fallbacku unlink.
+Szkielet katalogów pozostaje w gestii dostawcy. Przed zdjęciem trwałej
+blokady naprawy przywracany jest przypięty widok wirtualny; późniejszy
+obserwator HEAD nie może zgubić nowszej wskazówki ani ukryć usunięcia
+ścieżki na serwerze. Publiczne akcje delete nadal używają osobnej transakcji.
+
 ## Zakończenie zakresu a pełny plik — 2026-10-20
 
 `fetch_range_receipt_v1`: po udanym TRANSFER_DATA helper emituje

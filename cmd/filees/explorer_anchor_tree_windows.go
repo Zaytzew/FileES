@@ -21,12 +21,13 @@ import (
 )
 
 type anchorRemoteTree struct {
-	Schema    string              `json:"schema"`
-	Operation string              `json:"operation"`
-	URL       string              `json:"url"`
-	Root      anchorReleaseFileID `json:"root"`
-	Revision  int64               `json:"revision"`
-	Nodes     []anchorRemoteNode  `json:"nodes"`
+	Projection string              `json:"projection,omitempty"` // only the separate reprojection hint file
+	Schema     string              `json:"schema"`
+	Operation  string              `json:"operation"`
+	URL        string              `json:"url"`
+	Root       anchorReleaseFileID `json:"root"`
+	Revision   int64               `json:"revision"`
+	Nodes      []anchorRemoteNode  `json:"nodes"`
 }
 
 type anchorTreeChange struct {
@@ -35,10 +36,11 @@ type anchorTreeChange struct {
 	remove   bool
 }
 type anchorTreeRefresh struct {
-	next    time.Time
-	target  *anchorRemoteTree
-	changes []anchorTreeChange
-	cursor  int
+	reprojection string
+	next         time.Time
+	target       *anchorRemoteTree
+	changes      []anchorTreeChange
+	cursor       int
 }
 
 func anchorTreePath(root string) string { return filepath.Join(root, ".filees", "anchor-tree.json") }
@@ -146,13 +148,20 @@ func (m *anchorManager) readRemoteTree(ctx context.Context, record localrepo.Rec
 }
 
 func loadAnchorRemoteTree(record localrepo.Record, root anchorReleaseFileID) (anchorRemoteTree, error) {
+	return loadAnchorRemoteTreeAt(record, root, anchorTreePath(record.LocalPath))
+}
+
+func loadAnchorRemoteTreeAt(record localrepo.Record, root anchorReleaseFileID, path string) (anchorRemoteTree, error) {
 	// Missing/null revision is unknown, not SVN's legitimate empty revision 0.
 	tree := anchorRemoteTree{Revision: -1}
-	file, _, err := openAnchorReleaseFile(anchorTreePath(record.LocalPath), false)
+	file, info, err := openAnchorReleaseFile(path, false)
 	if err != nil {
 		return tree, err
 	}
 	defer file.Close()
+	if info.FileSizeHigh != 0 || info.FileSizeLow > 20<<20 {
+		return tree, errors.New("remote tree metadata exceeds limit")
+	}
 	decoder := json.NewDecoder(io.LimitReader(file, 20<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&tree); err != nil {
@@ -169,6 +178,10 @@ func loadAnchorRemoteTree(record localrepo.Record, root anchorReleaseFileID) (an
 }
 
 func saveAnchorRemoteTree(record localrepo.Record, tree anchorRemoteTree) error {
+	return saveAnchorRemoteTreeAt(record, tree, anchorTreePath(record.LocalPath))
+}
+
+func saveAnchorRemoteTreeAt(record localrepo.Record, tree anchorRemoteTree, path string) error {
 	guards, err := guardAnchorReleaseDirectories(filepath.Join(record.LocalPath, ".filees"), record.LocalPath)
 	if err != nil {
 		return err
@@ -198,7 +211,7 @@ func saveAnchorRemoteTree(record localrepo.Record, tree anchorRemoteTree) error 
 	if err != nil {
 		return err
 	}
-	to, err := windows.UTF16PtrFromString(anchorTreePath(record.LocalPath))
+	to, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
 	}
@@ -305,7 +318,16 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 		if readErr != nil {
 			return
 		}
-		refresh.target, refresh.changes, refresh.cursor = &target, anchorTreeChanges(old.Nodes, target.Nodes), 0
+		hints, hintErr := loadAnchorRemoteTreeAt(record, root, anchorReprojectionPath(record.LocalPath))
+		if hintErr != nil && !os.IsNotExist(hintErr) {
+			m.log.Warnf("remote reprojection evidence unavailable: %v", hintErr)
+			return
+		}
+		refresh.reprojection = hints.Projection
+		// Hints only force a safe add/identity check through the existing
+		// provider. They never authorize deletion or replacement of local data.
+		baseline := anchorReprojectionBaseline(old.Nodes, target.Nodes, hints.Nodes)
+		refresh.target, refresh.changes, refresh.cursor = &target, anchorTreeChanges(baseline, target.Nodes), 0
 	}
 	if refresh.target.Root != root {
 		refresh.target = nil
@@ -366,7 +388,37 @@ func (m *anchorManager) refreshRemoteTree(ctx context.Context, record localrepo.
 	if refresh.cursor == len(refresh.changes) {
 		if err = saveAnchorRemoteTree(record, *refresh.target); err != nil {
 			m.log.Warnf("remote tree receipt unavailable: %v", err)
+		} else if refresh.reprojection != "" {
+			// Intent admission still held: a new native callback cannot add a
+			// hint between this confirmed projection and its retirement.
+			hints, readErr := loadAnchorRemoteTreeAt(record, root, anchorReprojectionPath(record.LocalPath))
+			if readErr == nil && hints.Projection == refresh.reprojection {
+				hints.Nodes, hints.Projection = nil, ""
+				if err = saveAnchorRemoteTreeAt(record, hints, anchorReprojectionPath(record.LocalPath)); err != nil {
+					m.log.Warnf("remote reprojection receipt unavailable: %v", err)
+				}
+			}
 		}
 		refresh.target = nil
 	}
+}
+
+// Force an add only for paths still present in the bound target. Keep old
+// entries absent from it so the normal provider pass can remove empty remote
+// directories retained by SVN replay. Hints must not hide a remote deletion.
+func anchorReprojectionBaseline(old, target, hints []anchorRemoteNode) []anchorRemoteNode {
+	forced, wanted := make(map[string]bool, len(hints)), make(map[string]bool, len(target))
+	for _, node := range hints {
+		forced[node.Path] = true
+	}
+	for _, node := range target {
+		wanted[node.Path] = true
+	}
+	baseline := make([]anchorRemoteNode, 0, len(old))
+	for _, node := range old {
+		if !forced[node.Path] || !wanted[node.Path] {
+			baseline = append(baseline, node)
+		}
+	}
+	return baseline
 }

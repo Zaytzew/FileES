@@ -23,6 +23,7 @@ var requiredAnchorFeatures = []string{
 	"directory_state_bound_v1",
 	"file_delete_bound_v1",
 	"download_integrity_v1",
+	"workqueue_projection_bound_v1",
 }
 
 type cfapiVersion struct {

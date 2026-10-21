@@ -290,7 +290,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, removedEvents <-chan string, attachmentEvents chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, removedEvents <-chan string, attachmentEvents chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error, projectWorkItem func(context.Context, config.Repo, client.ProjectionRemoval) error, completeWorkItems func(context.Context, config.Repo) error) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	alerts := &serverAlertSources{}
@@ -440,7 +440,26 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
 		}
-		return client.New(client.Options{BeginMutation: func() func() {
+		var projectionRemove func(context.Context, client.ProjectionRemoval) error
+		var projectionComplete func(context.Context, string) error
+		if repo.Anchor {
+			projectionRemove = func(ctx context.Context, request client.ProjectionRemoval) error {
+				if projectWorkItem == nil {
+					return errors.New("CFAPI projection coordinator is unavailable")
+				}
+				return projectWorkItem(ctx, repo, request)
+			}
+			projectionComplete = func(ctx context.Context, wc string) error {
+				if completeWorkItems == nil {
+					return errors.New("CFAPI projection coordinator is unavailable")
+				}
+				if !strings.EqualFold(filepath.Clean(wc), filepath.Clean(repo.LocalPath)) {
+					return errors.New("projection completion root differs")
+				}
+				return completeWorkItems(ctx, repo)
+			}
+		}
+		return client.New(client.Options{ProjectionRemove: projectionRemove, ProjectionComplete: projectionComplete, BeginMutation: func() func() {
 			return reservationRefreshes.BeginMutation(reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID})
 		}, SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: timeout, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
 	}, reservations: reservationRefreshes, activity: activityJournal, ipc: ipc}

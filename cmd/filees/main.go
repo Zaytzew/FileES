@@ -374,7 +374,7 @@ func runDaemon() {
 	supervisorDone := make(chan error, 1)
 	memorySupervisorDone := make(chan error, 1)
 	runtime.Go(ctx, func() {
-		err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, removedEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository)
+		err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, removedEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository, provisioner.projectAnchorWorkItem, provisioner.completeAnchorWorkItems)
 		supervisorDone <- err
 		memorySupervisorDone <- err
 	})
@@ -622,6 +622,7 @@ func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.OnCycle = rs.SetCycle
 	svc.OnPublishProgress = rs.SetPublishProgress
 	svc.OnReconcileProgress = rs.SetReconcileProgress
+	svc.OnWorkingCopyRecovery = rs.SetWorkingCopyRecovery
 	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats {
 		stats := svc.RecoveryStats()
 		return contract.RecoveryStats{CacheResumed: stats.CacheResumed, AlreadyAccepted: stats.AlreadyAccepted, CommitBatches: stats.CommitBatches}

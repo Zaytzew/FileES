@@ -14,6 +14,8 @@ import (
 	"slices"
 	"time"
 	"unicode/utf16"
+
+	"github.com/google/uuid"
 )
 
 func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (map[string]any, error) {
@@ -33,6 +35,18 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	defer c.mutationBarrier(args)()
 	if !filepath.IsAbs(c.nativeSVNPath) || (dir != "" && !filepath.IsAbs(dir)) || len(args) == 0 {
 		return nil, errors.New("native SVN: invalid executable, directory or command")
+	}
+	projectionToken := ""
+	if runtime.GOOS == "windows" && c.projectionRemove != nil && (args[0] == "cleanup" || args[0] == "update") {
+		if input != nil {
+			return nil, errors.New("projection cannot share stdin with targets")
+		}
+		if err := c.nativeRequireFeature(ctx, "workqueue_projection_v1"); err != nil {
+			return nil, err
+		}
+		projectionToken = uuid.NewString()
+		// Flags must precede an optional -- path delimiter.
+		args = append([]string{args[0], "--projection-replay", projectionToken}, args[1:]...)
 	}
 	if runtime.GOOS == "windows" {
 		units := nativeArgumentUnits(c.nativeSVNPath)
@@ -74,12 +88,25 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	stdout := nativeOutput{max: nativeListingLimit}
 	stderr := nativeOutput{max: nativeReceiptLimit}
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var projection *projectionSplitter
+	if projectionToken != "" {
+		ack, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, err
+		}
+		defer ack.Close()
+		projection = &projectionSplitter{ctx: ctx, root: dir, token: projectionToken, inner: &stdout, ack: ack, remove: c.projectionRemove, abort: cancel}
+		cmd.Stdout = projection
+	}
 	var splitter *progressSplitter
 	if report := commitProgressFrom(ctx); report != nil && slices.Contains(args, "--progress") {
 		splitter = &progressSplitter{report: report, inner: &stderr}
 		cmd.Stderr = splitter
 	}
 	err := cmd.Run()
+	if projection != nil {
+		err = errors.Join(err, projection.flush())
+	}
 	if splitter != nil {
 		splitter.flush()
 	}

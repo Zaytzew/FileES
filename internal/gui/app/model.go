@@ -72,6 +72,7 @@ type RepoViewModel struct {
 	Pending                contract.PendingStats
 	PublishProgress        *contract.PublishProgress
 	ReconcileProgress      *contract.ReconcileProgress
+	WorkingCopyRecovery    *contract.WorkingCopyRecoveryStatus
 	Conflicts              int
 	UnportableNames        []contract.UnportableName
 	LastSyncAt             string
@@ -633,6 +634,15 @@ func (r RepoViewModel) NeedsLocate() bool {
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.
 func (r RepoViewModel) DisplayState() RepoDisplayState {
+	if r.Attached && !r.ServerDeleted && r.WorkingCopyRecovery != nil {
+		if r.State == contract.StateOffline || r.Connectivity == contract.ConnOffline {
+			return RepoDisplayOffline
+		}
+		if r.WorkingCopyRecovery.Phase == "blocked" || r.Conflicts > 0 || r.CommitRecoveryRequired || r.Pending.RenameUncertain > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
+			return RepoDisplayAttention
+		}
+		return RepoDisplayBusy
+	}
 	if p := r.Conversion; !r.ServerDeleted && !r.LocalCopyPreserved && p != nil && p.OperationID != "" && p.Phase != "complete" && p.Phase != "canceled" && p.Phase != "rolled_back" {
 		if p.Error != "" {
 			return RepoDisplayAttention
@@ -716,6 +726,15 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 }
 
 func repoIconState(r RepoViewModel) IconState {
+	if r.Attached && !r.ServerDeleted && r.WorkingCopyRecovery != nil {
+		if r.State == contract.StateOffline || r.Connectivity == contract.ConnOffline {
+			return IconOffline
+		}
+		if r.WorkingCopyRecovery.Phase == "blocked" || r.Conflicts > 0 || r.CommitRecoveryRequired || r.Pending.RenameUncertain > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
+			return IconError
+		}
+		return IconBusy
+	}
 	if r.Attached && !r.ServerDeleted && r.CommitRecoveryRequired {
 		return IconError
 	}

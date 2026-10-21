@@ -23,7 +23,8 @@ import (
 // RepoState holds the live runtime state of one repo, updated by the daemon.
 // All fields are protected by mu; use the Set* methods from any goroutine.
 type RepoState struct {
-	mu sync.RWMutex
+	workingCopyRecovery *contract.WorkingCopyRecoveryStatus
+	mu                  sync.RWMutex
 
 	server               *Server // for auto-emitting state-change events
 	id                   string
@@ -755,6 +756,11 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	cycle := rs.cycle
 	var publishProgress *contract.PublishProgress
 	var reconcileProgress *contract.ReconcileProgress
+	var workingCopyRecovery *contract.WorkingCopyRecoveryStatus
+	if rs.workingCopyRecovery != nil {
+		copy := *rs.workingCopyRecovery
+		workingCopyRecovery = &copy
+	}
 	if rs.reconcileProgress != nil {
 		copy := *rs.reconcileProgress
 		reconcileProgress = &copy
@@ -816,6 +822,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	state = fileReleaseState(state, attached, wc)
 
 	snap := contract.RepoStatus{
+		WorkingCopyRecovery:    workingCopyRecovery,
 		AnchorRuntime:          anchorRuntime,
 		AnchorDownloadBlocks:   anchorBlocks,
 		AnchorDamage:           anchorDamage,

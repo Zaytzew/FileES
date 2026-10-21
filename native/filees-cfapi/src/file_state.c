@@ -158,8 +158,9 @@ static HRESULT inspect(HANDLE file, const WCHAR *root, struct state *out)
  * DEHYDRATE, convert/revert or recursive delete is used. A share-none handle
  * excludes readers, writes and replacement from the final proof to effect.
  * S_FALSE means a protected local obstruction, not successful mutation. */
-HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
-                           const WCHAR *identity, LONGLONG size, int directory, int remove)
+static HRESULT remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
+                           const WCHAR *identity, LONGLONG size, int directory, int remove,
+                           const char *expected_id, LONGLONG expected_usn)
 {
     WCHAR path[FILEES_CFAPI_MAX_PATH], *name;
     char old_utf8[FILEES_CFAPI_MAX_IDENTITY * 4], new_utf8[FILEES_CFAPI_MAX_IDENTITY * 4];
@@ -172,8 +173,8 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, previous, -1, old_utf8, sizeof old_utf8, NULL, NULL) ||
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, identity, -1, new_utf8, sizeof new_utf8, NULL, NULL))
         return FAILED(hr) ? hr : E_INVALIDARG;
-    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC | (remove ? DELETE : 0), 0,
-                       NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    file = filees_cfapi_open_path(path, FILE_READ_ATTRIBUTES | WRITE_DAC | (remove ? DELETE : 0) | (expected_id ? FILE_APPEND_DATA : 0), 0,
+                       NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS | (expected_id ? FILE_FLAG_OPEN_NO_RECALL : 0), NULL);
     if (file == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
         if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return HRESULT_FROM_WIN32(error);
@@ -207,6 +208,8 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
         return hr;
     }
     hr = inspect_tree(file, root, &before);
+    if (hr == S_OK && expected_id && (strcmp(before.file_id, expected_id) ||
+        before.usn != expected_usn || before.size != size)) hr = HRESULT_FROM_WIN32(ERROR_RETRY);
     if (SUCCEEDED(hr) && (!before.placeholder || before.local || !before.clean ||
         before.on_disk != 0 || before.modified != 0 || before.directory != directory ||
         (strcmp(before.identity, old_utf8) && strcmp(before.identity, new_utf8)))) hr = S_FALSE;
@@ -238,6 +241,23 @@ HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR
     }
     CloseHandle(file);
     return hr;
+}
+
+HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
+                           const WCHAR *identity, LONGLONG size, int directory, int remove)
+{
+    return remote_tree(root, relative, previous, identity, size, directory, remove, NULL, 0);
+}
+
+/* Only the connected provider may physically remove this pinned, byte-free
+ * remote object on behalf of a real SVN work item. No directory recursion,
+ * local bytes, pathname fallback, or permission shared with another PID. */
+HRESULT filees_recovery_remove(const WCHAR *root, const WCHAR *relative,
+    const WCHAR *identity, LONGLONG size, const char *expected_id, LONGLONG expected_usn)
+{
+    if (!expected_id || !*expected_id || strlen(expected_id) > 32 || expected_usn <= 0)
+        return E_INVALIDARG;
+    return remote_tree(root, relative, identity, identity, size, 0, 1, expected_id, expected_usn);
 }
 
 static HRESULT move_object(HANDLE file, const WCHAR *root, const char *expected_id,

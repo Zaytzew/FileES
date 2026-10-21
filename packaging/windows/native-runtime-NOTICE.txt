@@ -20,5 +20,6 @@ separately so an older daemon cannot load newly replaced libraries.
 The private Subversion modifications are supplied in
 FileES-SVN-modification.inc (conditional file release),
 FileES-SVN-tree-modification.inc (metadata-only mixed-copy normalization)
+FileES-SVN-projection-modification.inc (opt-in work-queue projection)
 and FileES-SVN-transformation.cjs (reviewed upstream transformation).
 They do not change the third-party components' licenses.

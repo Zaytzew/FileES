@@ -128,8 +128,9 @@ type Service struct {
 	OnCycle            func(contract.CycleStatus)
 	// OnPublishProgress reports the publication running now (nil when it
 	// ends); see publish_progress.go.
-	OnPublishProgress   func(*contract.PublishProgress)
-	OnReconcileProgress func(*contract.ReconcileProgress)
+	OnPublishProgress     func(*contract.PublishProgress)
+	OnReconcileProgress   func(*contract.ReconcileProgress)
+	OnWorkingCopyRecovery func(*contract.WorkingCopyRecoveryStatus)
 	// OnPublicationHeld reports that publication has stopped on a local fault
 	// (true) and that it has resumed (false). Without it a batch held forever
 	// left the tray, the radar and the server indicator green while nothing
@@ -175,27 +176,29 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID               string // set from Run(); used by emit()
-	wc                   string // set from Run(); local shout inbox / last_seen
-	mu                   sync.Mutex
-	unportableWake       chan struct{}
-	wcOpMu               sync.Mutex               // serialize publication, poll/update and event merging
-	commitWriterBlocked  bool                     // guarded by wcOpMu; an orphan native owner also requires recovery
-	commitRecoveryCached atomic.Bool              // last CommitRecoveryRequired answer, for callers that must not wait on wcOpMu
-	cacheSaveMu          sync.Mutex               // serialize cache snapshots and their durable replacement
-	staging              map[string]*stageItem    // rel path -> info
-	cachePath            string                   // .filees/commit_cache/cache.json
-	Anchor               bool                     // Explicit daemon lifecycle identity; never infer from a name/provider.
-	AnchorMergeRevision  func() (int64, error)    // Bound remote tree, not a guessed current HEAD.
-	intentPlan           *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
-	commitRecoveryPlan   *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
-	intentReceipts       []intentReceipt          // guarded by mu; atomically stored with staging
-	intentDiagnosticKey  string                   // guarded by wcOpMu; diagnostics only
-	intentDiagnosticAt   time.Time
-	receivedDeletes      map[string]bool // successful update removals, guarded by wcOpMu
-	lastShout            time.Time
-	ownershipUnknownAt   time.Time // first failed owned-access reconcile in a row; guarded by mu
-	lastCommit           time.Time // last successful commit (for size-adaptive interval)
+	repoID                   string // set from Run(); used by emit()
+	wc                       string // set from Run(); local shout inbox / last_seen
+	mu                       sync.Mutex
+	unportableWake           chan struct{}
+	wcOpMu                   sync.Mutex               // serialize publication, poll/update and event merging
+	commitWriterBlocked      bool                     // guarded by wcOpMu; an orphan native owner also requires recovery
+	workingRecoveryLastError string                   // guarded by wcOpMu; journal only a changed cause
+	workingRecoveryRequired  atomic.Bool              // also fences failed marker persistence
+	commitRecoveryCached     atomic.Bool              // last CommitRecoveryRequired answer, for callers that must not wait on wcOpMu
+	cacheSaveMu              sync.Mutex               // serialize cache snapshots and their durable replacement
+	staging                  map[string]*stageItem    // rel path -> info
+	cachePath                string                   // .filees/commit_cache/cache.json
+	Anchor                   bool                     // Explicit daemon lifecycle identity; never infer from a name/provider.
+	AnchorMergeRevision      func() (int64, error)    // Bound remote tree, not a guessed current HEAD.
+	intentPlan               *intentPlanState         // guarded by wcOpMu; unaccepted plans die on restart
+	commitRecoveryPlan       *commitRecoveryPlanState // guarded by wcOpMu; explicit retirement of a proven no-effect attempt
+	intentReceipts           []intentReceipt          // guarded by mu; atomically stored with staging
+	intentDiagnosticKey      string                   // guarded by wcOpMu; diagnostics only
+	intentDiagnosticAt       time.Time
+	receivedDeletes          map[string]bool // successful update removals, guarded by wcOpMu
+	lastShout                time.Time
+	ownershipUnknownAt       time.Time // first failed owned-access reconcile in a row; guarded by mu
+	lastCommit               time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
@@ -832,6 +835,19 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	defer release()
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	if s.workingRecoveryRequired.Load() || HasPendingWorkingCopyRecovery(wc) {
+		out, recoveryErr := s.recoverWorkingCopy(ctx, wc)
+		if recoveryErr != nil {
+			if ctx.Err() == nil && !IsWorkingCopyRecoveryWaiting(recoveryErr) && s.workingRecoveryLastError != recoveryErr.Error() {
+				s.workingRecoveryLastError = recoveryErr.Error()
+				s.Logger.Warnf("local SVN recovery remains pending: %v", recoveryErr)
+				s.ErrSink.Emit(errmap.Classify(recoveryErr))
+			}
+			return
+		}
+		s.workingRecoveryLastError = ""
+		s.RecordUpdate(ctx, s.repoID, wc, out)
+	}
 	if _, err := s.recoverCommit(ctx, wc); err != nil {
 		// recoverCommit journals HOLD once per cause, with periodic reminders.
 		return
@@ -887,7 +903,12 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	}
 	done := s.setOperation("sync")
 	defer done()
-	out, err := s.Cli.Update(ctx, wc)
+	var out string
+	if s.Anchor {
+		out, err = s.recoverWorkingCopy(ctx, wc)
+	} else {
+		out, err = s.Cli.Update(ctx, wc)
+	}
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 			return // Our shutdown is deferred work, not a synchronization fault.
@@ -905,7 +926,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 		// hit the identical failure live, 2026-09-26: once locked, every
 		// following poll re-failed identically with no recovery short of a
 		// manual `svn cleanup` nobody using this product would think to run.
-		if errmap.Classify(err).Key == errcat.KeyWorkingCopyBusy {
+		if !s.Anchor && errmap.Classify(err).Key == errcat.KeyWorkingCopyBusy {
 			if _, cleanErr := s.Cli.Cleanup(ctx, wc); cleanErr == nil {
 				out, err = s.Cli.Update(ctx, wc)
 			}
@@ -1201,6 +1222,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 // Caller holds publication admission and wcOpMu. The shout comment cannot be
 // consumed by an automatic commit or replaced by a second publish request.
 func (s *Service) tryCommitLocked(ctx context.Context, wc string, force bool) error {
+	if s.workingRecoveryRequired.Load() {
+		return ErrWorkingCopyRecoveryPending
+	}
 	if HasPendingLocalMutation(wc) {
 		return LocalMutationPendingError(wc)
 	}

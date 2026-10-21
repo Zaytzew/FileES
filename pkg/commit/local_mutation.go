@@ -28,6 +28,11 @@ func HasPendingRemoteTree(wc string) bool {
 }
 
 func HasPendingLocalMutation(wc string) bool {
+	return HasPendingLocalTransaction(wc) || HasPendingWorkingCopyRecovery(wc)
+}
+
+// Existing receipted local transactions precede replay of SVN's work queue.
+func HasPendingLocalTransaction(wc string) bool {
 	return HasPendingFileRelease(wc) || HasPendingRemoteTree(wc) || HasPendingRemoteFileDelete(wc)
 }
 
@@ -38,11 +43,14 @@ func LocalMutationPendingError(wc string) error {
 	if HasPendingRemoteTree(wc) {
 		return ErrRemoteTreePending
 	}
+	if !HasPendingFileRelease(wc) && HasPendingWorkingCopyRecovery(wc) {
+		return ErrWorkingCopyRecoveryPending
+	}
 	return ErrFileReleasePending
 }
 
 func IsLocalMutationPending(err error) bool {
-	return errors.Is(err, ErrFileReleasePending) || errors.Is(err, ErrRemoteTreePending) || errors.Is(err, ErrRemoteFileDeletePending)
+	return errors.Is(err, ErrWorkingCopyRecoveryPending) || errors.Is(err, ErrFileReleasePending) || errors.Is(err, ErrRemoteTreePending) || errors.Is(err, ErrRemoteFileDeletePending)
 }
 
 // Internal only. The callback must hold the scanner/local-object guards, prove

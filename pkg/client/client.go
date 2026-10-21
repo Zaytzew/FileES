@@ -23,6 +23,11 @@ import (
 
 // Options configures the SVN exec wrapper.
 type Options struct {
+	// ProjectionRemove is private local projection, never remote deletion.
+	// Called while this client's mutex and the native WC writer are held;
+	// it must not call SVN again or acquire the same writer.
+	ProjectionRemove   func(context.Context, ProjectionRemoval) error
+	ProjectionComplete func(context.Context, string) error
 	// BeginMutation invalidates the caller's observation cache before a remote
 	// write. Its returned closure runs on every outcome, including lost replies.
 	// Neither callback may call back into this client or perform network IO.
@@ -67,14 +72,16 @@ type Client interface {
 
 // execClient implements Client by calling the external 'svn' executable.
 type execClient struct {
-	beginMutation func() func()
-	featureCache  *nativeFeatureCache // nil selects the shared image-bound cache
-	svnPath       string
-	nativeSVNPath string
-	timeout       time.Duration
-	lg            talk.Logger
-	sshCommand    string
-	mu            sync.Mutex // serialize SVN calls within process
+	projectionRemove   func(context.Context, ProjectionRemoval) error
+	projectionComplete func(context.Context, string) error
+	beginMutation      func() func()
+	featureCache       *nativeFeatureCache // nil selects the shared image-bound cache
+	svnPath            string
+	nativeSVNPath      string
+	timeout            time.Duration
+	lg                 talk.Logger
+	sshCommand         string
+	mu                 sync.Mutex // serialize SVN calls within process
 }
 
 // New creates a new SVN CLI client.
@@ -91,7 +98,7 @@ func New(opts Options) Client {
 	if opts.SSHIdentityFile != "" || opts.SSHKnownHosts != "" {
 		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort, opts.SSHHostName)
 	}
-	return &execClient{beginMutation: opts.BeginMutation, svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
+	return &execClient{projectionRemove: opts.ProjectionRemove, projectionComplete: opts.ProjectionComplete, beginMutation: opts.BeginMutation, svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
 }
 
 // sshTunnelProgram is this process's own executable when it carries the
@@ -915,6 +922,9 @@ func parseLogXML(output string) ([]LogMessage, error) {
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {
+	if c.projectionRemove != nil {
+		return "", errors.New("CFAPI projection requires the native SVN runtime; plain SVN fallback is disabled")
+	}
 	defer c.mutationBarrier(args)()
 	// A missed routing branch must be visible, never launch a foreign client.
 	if nativeWCOps(c) {

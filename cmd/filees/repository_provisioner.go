@@ -33,34 +33,36 @@ import (
 )
 
 type daemonProvisioner struct {
-	admission             *hostruntime.Admission
-	local                 *localrepo.Store
-	provisioning          *provisioning.Store
-	mu                    sync.RWMutex
-	detachMu              sync.Mutex
-	localIntentMu         sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
-	creationWaiters       atomic.Int32 // metadata observers yield to queued creation preparation
-	conversionRoot        string
-	conversionMu          sync.Mutex
-	conversionJournals    map[string]*localrepo.ConversionJournal
-	conversionControlMu   sync.Mutex
-	conversionProgress    map[string]conversionObservation
-	conversionChanged     func(string)
-	newConversionEffects  func(localrepo.Record, localrepo.ConversionRecord) (conversionEffectsAdapter, error)
-	conversionReady       func(localrepo.Record) bool // startup projection is not yet an authority decision
-	detachAnchor          func(context.Context, localrepo.Record) error
-	quiesceAnchor         func(context.Context, localrepo.Record) error
-	traceAnchorRelocation func(context.Context, localrepo.Record, string) // diagnostics only; cannot authorize or fail a move
-	anchorChanged         func()                                          // wake provider reconciliation after move or rollback
-	anchorEnabled         func(string) bool                               // immutable wiring; reads per-server durable preference
-	relocationCheck       func(localrepo.Record) error                    // fresh projected authority before queued execution
-	profiles              map[string]clientprofile.Profile
-	queue                 chan string
-	queued                map[string]bool // deduplicate wakeups; durable journals remain authoritative
-	attachments           chan<- provisionedAttachment
-	newAttachmentSVN      func(clientprofile.Profile, string) attachmentSVN
-	recoveryRegistry      recoverykit.Registry
-	running               map[string]provisionerOperation
+	admission               *hostruntime.Admission
+	local                   *localrepo.Store
+	provisioning            *provisioning.Store
+	mu                      sync.RWMutex
+	detachMu                sync.Mutex
+	localIntentMu           sync.Mutex   // lifecycle intent admission versus explicit CFAPI actions
+	creationWaiters         atomic.Int32 // metadata observers yield to queued creation preparation
+	conversionRoot          string
+	conversionMu            sync.Mutex
+	conversionJournals      map[string]*localrepo.ConversionJournal
+	conversionControlMu     sync.Mutex
+	conversionProgress      map[string]conversionObservation
+	conversionChanged       func(string)
+	newConversionEffects    func(localrepo.Record, localrepo.ConversionRecord) (conversionEffectsAdapter, error)
+	conversionReady         func(localrepo.Record) bool // startup projection is not yet an authority decision
+	detachAnchor            func(context.Context, localrepo.Record) error
+	quiesceAnchor           func(context.Context, localrepo.Record) error
+	traceAnchorRelocation   func(context.Context, localrepo.Record, string) // diagnostics only; cannot authorize or fail a move
+	anchorChanged           func()                                          // wake provider reconciliation after move or rollback
+	anchorEnabled           func(string) bool                               // immutable wiring; reads per-server durable preference
+	projectAnchorWorkItem   func(context.Context, config.Repo, client.ProjectionRemoval) error
+	completeAnchorWorkItems func(context.Context, config.Repo) error
+	relocationCheck         func(localrepo.Record) error // fresh projected authority before queued execution
+	profiles                map[string]clientprofile.Profile
+	queue                   chan string
+	queued                  map[string]bool // deduplicate wakeups; durable journals remain authoritative
+	attachments             chan<- provisionedAttachment
+	newAttachmentSVN        func(clientprofile.Profile, string) attachmentSVN
+	recoveryRegistry        recoverykit.Registry
+	running                 map[string]provisionerOperation
 	// importProgress is the last report of each initial publication in
 	// flight, answered with repo.lifecycle_status; memory only, like the
 	// progress of ordinary publications.

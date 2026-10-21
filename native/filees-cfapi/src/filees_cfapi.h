@@ -141,6 +141,8 @@ HRESULT filees_restore_release(const WCHAR *root, const WCHAR *relative, LONGLON
 int filees_local_identity(const void *identity, DWORD length);
 HRESULT filees_remote_tree(const WCHAR *root, const WCHAR *relative, const WCHAR *previous,
                            const WCHAR *identity, LONGLONG size, int directory, int remove);
+HRESULT filees_recovery_remove(const WCHAR *root, const WCHAR *relative,
+    const WCHAR *identity, LONGLONG size, const char *expected_id, LONGLONG expected_usn);
 /* Connected-provider-only, exact FileID. Physical directory move and identity
  * retarget never read file data; coordinator owns all descendants and receipt. */
 HRESULT filees_move_tree(const WCHAR *root, const WCHAR *source, const WCHAR *destination, const char *expected_id);

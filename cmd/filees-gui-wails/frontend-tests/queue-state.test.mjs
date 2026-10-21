@@ -5,6 +5,11 @@ import {languages} from "../frontend/i18n.js";
 const t = key => key;
 const ready = {attached:true,display_state:"active",cycle:{phase:"waiting",cycle_id:0}};
 
+test("zero uploads never claims that an unfinished local SVN operation is complete",()=>{
+  const result=queueSummary({connected:true,repositories:[{...ready,working_copy_recovery:{phase:"blocked"}}]},t,String);
+  assert.deepEqual(result,{value:0,note:"progress.localRecovery.blocked"});
+});
+
 test("initial incremental count excludes cached repositories and stays explicitly partial",()=>{
   const snapshot={connected:true,stale:true,repositories:[{...ready,pending_files:900}],
     queue_scan:{observed:1,total:60,files:2,bytes:30}};

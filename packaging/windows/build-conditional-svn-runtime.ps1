@@ -42,5 +42,6 @@ Get-ChildItem -LiteralPath "$tree/Release" -Recurse -File | Where-Object { $_.Na
 if (-not (Test-Path -LiteralPath "$prefix/bin/libsvn_wc-1.dll")) { throw 'Missing conditional WC library' }
 Copy-Item -LiteralPath (Join-Path $repo 'native/subversion-filees/filees_release.inc') -Destination "$prefix/FileES-SVN-modification.inc"
 Copy-Item -LiteralPath (Join-Path $repo 'native/subversion-filees/filees_tree.inc') -Destination "$prefix/FileES-SVN-tree-modification.inc"
+Copy-Item -LiteralPath (Join-Path $repo 'native/subversion-filees/filees_projection.inc') -Destination "$prefix/FileES-SVN-projection-modification.inc"
 Copy-Item -LiteralPath (Join-Path $repo 'native/subversion-filees/apply-runtime.cjs') -Destination "$prefix/FileES-SVN-transformation.cjs"
 Write-Output $prefix

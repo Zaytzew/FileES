@@ -309,6 +309,7 @@ func (s appState) viewModel() ViewModel {
 			Pending:                snap.Pending,
 			PublishProgress:        snap.PublishProgress,
 			ReconcileProgress:      snap.ReconcileProgress,
+			WorkingCopyRecovery:    snap.WorkingCopyRecovery,
 			CommitRecoveryRequired: snap.CommitRecoveryRequired,
 			Conflicts:              snap.Conflicts,
 			UnportableNames:        snap.UnportableNames,

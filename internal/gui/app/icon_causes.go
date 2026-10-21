@@ -30,6 +30,14 @@ func (vm ViewModel) IconCauses() []IconCause {
 		}
 		reason := "state_unknown"
 		switch {
+		case r.WorkingCopyRecovery != nil:
+			if repoIconState(r) == IconOffline {
+				reason = "repository_offline"
+			} else if repoIconState(r) == IconError {
+				reason = "degraded"
+			} else {
+				reason = "working"
+			}
 		case r.LocalCopyPreserved && r.LocalCleanupPending:
 			reason = "metadata_cleanup_pending"
 		case r.LocalCopyPreserved && r.LocalCopyStatus == "changed":

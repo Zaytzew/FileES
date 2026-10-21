@@ -12,6 +12,11 @@ export function importProgressLine(repo, t, bytes) {
 }
 
 export function reconcileProgressLine(repo, t) {
+  if (repo.working_copy_recovery) {
+    const p = repo.working_copy_recovery;
+    const key = ["running", "waiting", "blocked"].includes(p.phase) ? p.phase : "waiting";
+    return [t(`progress.localRecovery.${key}`), p.detail].filter(Boolean).join(" · ");
+  }
   const conversion = conversionProgressLine(repo, t);
   if (conversion) return conversion;
   const p = repo.reconcile_progress;

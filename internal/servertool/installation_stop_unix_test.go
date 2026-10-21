@@ -116,10 +116,12 @@ func TestInstallationStopNoSessionAckLeavesIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := storagewatch.InstallationBinding{OperationID: uuid.NewString(), PreviousManifest: strings.Repeat("a", 64), CandidateManifest: strings.Repeat("b", 64)}
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	// Let the real SVN preparation finish on either OS. The production
+	// session barrier has its own 15 s deadline; that is the timeout under test.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	err := withInstallationWritersAndSessionsStopped(ctx, c, b, func() error { t.Error("unacknowledged session accepted"); return nil })
 	cancel()
-	if !errors.Is(err, context.DeadlineExceeded) {
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "session shutdown not acknowledged") {
 		t.Fatal(err)
 	}
 	if err := (storagewatch.Gate{Root: c.Activation.Root}).CheckInstallationAdmission(); !errors.Is(err, storagewatch.ErrInstallationStopped) {

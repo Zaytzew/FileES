@@ -30,7 +30,20 @@ func init() {
 		fmt.Println(LockGuardVersion)
 		os.Exit(0)
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--archive-guard-version" {
+		fmt.Println(ArchiveGuardVersion)
+		os.Exit(0)
+	}
+	if filepath.Base(os.Args[0]) == "pre-revprop-change" {
+		os.Exit(RunArchiveRevpropGuard(os.Args[1:], os.Stderr))
+	}
 	if name := filepath.Base(os.Args[0]); name == "pre-lock" || name == "pre-unlock" {
+		if name == "pre-lock" && len(os.Args) == 6 && os.Args[5] == "0" {
+			if err := CheckArchiveWrite(os.Args[1]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
 		if name == "pre-lock" && len(os.Args) == 6 && os.Args[5] == "0" {
 			if err := AdmitPassportExecution(os.Args[1:], os.Getppid(), time.Now().UTC()); err != nil {
 				fmt.Fprintln(os.Stderr, err)

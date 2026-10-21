@@ -19,7 +19,7 @@ import (
 
 func RunLockGuardMode(program string, args []string, out, stderr io.Writer) (bool, int) {
 	name := filepath.Base(program)
-	version := len(args) == 1 && args[0] == "--lock-guard-version"
+	version := len(args) == 1 && (args[0] == "--lock-guard-version" || args[0] == "--archive-guard-version")
 	if name != "pre-lock" && name != "pre-unlock" && !version {
 		return false, 0
 	}
@@ -29,6 +29,9 @@ func RunLockGuardMode(program string, args []string, out, stderr io.Writer) (boo
 		journal = ok && meta.AcquisitionID != ""
 	}
 	promises := "stdio"
+	if name == "pre-lock" && len(args) == 5 && args[4] == "0" {
+		promises = "stdio rpath"
+	}
 	if journal {
 		promises = "stdio rpath wpath cpath fattr flock"
 	}
@@ -37,8 +40,18 @@ func RunLockGuardMode(program string, args []string, out, stderr io.Writer) (boo
 		return true, ExitSoftware
 	}
 	if version {
-		fmt.Fprintln(out, repoworker.LockGuardVersion)
+		value := repoworker.LockGuardVersion
+		if args[0] == "--archive-guard-version" {
+			value = repoworker.ArchiveGuardVersion
+		}
+		fmt.Fprintln(out, value)
 		return true, ExitOK
+	}
+	if name == "pre-lock" && len(args) == 5 && args[4] == "0" {
+		if err := repoworker.CheckArchiveWrite(args[0]); err != nil {
+			report(stderr, "archive lock admission", err)
+			return true, ExitUnavailable
+		}
 	}
 	if journal {
 		parent := os.Getppid()

@@ -117,7 +117,7 @@ func TestPassportHookLeastPromises(t *testing.T) {
 		args    []string
 		want    string
 	}{
-		{"pre-lock", []string{"repo", "/doc", "client", "ordinary", "0"}, "stdio"},
+		{"pre-lock", []string{"repo", "/doc", "client", "ordinary", "0"}, "stdio rpath"},
 		{"pre-unlock", []string{"repo", "/doc", "client", "token", "0"}, "stdio"},
 		{"pre-lock", []string{"repo", "/doc", "client", passport.FormatComment(meta), "1"}, "stdio"},
 		{"pre-lock", []string{"repo", "/doc", "client", passport.FormatComment(meta), "0"}, "stdio rpath wpath cpath fattr flock"},

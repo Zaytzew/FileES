@@ -181,6 +181,10 @@ func RunRealmQuotaGuard(args []string, stderr io.Writer) int {
 		return 1
 	}
 	repository := filepath.Clean(args[0])
+	if err := CheckArchiveWrite(repository); err != nil {
+		fmt.Fprintln(stderr, "FileES:", err)
+		return 1
+	}
 	marker, err := readRealmQuotaMarker(filepath.Join(repository, "hooks", realmQuotaMarkerName))
 	if errors.Is(err, os.ErrNotExist) {
 		return 0

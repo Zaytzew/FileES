@@ -4,6 +4,31 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const read=name=>readFileSync(new URL('../frontend/'+name,import.meta.url),'utf8');
 
+test('tray and panel open the same journal without a snapshot or network request',()=>{
+ const source=read('app.js');
+ const start=source.indexOf('function openJournal()');
+ const end=source.indexOf('document.addEventListener("keydown"',start);
+ assert.ok(start>=0&&end>start);
+ const nodes=new Map(),listeners=new Map(),events=new Map();
+ let focused=0;
+ const node=id=>{
+  if(!nodes.has(id)) nodes.set(id,{hidden:true,focus(){focused++},
+   addEventListener(type,fn){listeners.set(`${id}:${type}`,fn)},
+  });
+  return nodes.get(id);
+ };
+ runInNewContext(source.slice(start,end),{$:node,Events:{On:(name,fn)=>events.set(name,fn)}});
+ const overlay=node('#journal-overlay');
+ events.get('filees:open-journal')();
+ assert.equal(overlay.hidden,false); assert.equal(focused,1);
+ listeners.get('#close-journal:click')(); assert.equal(overlay.hidden,true);
+ listeners.get('#open-journal:click')(); assert.equal(overlay.hidden,false);
+ events.get('filees:open-journal')(); assert.equal(focused,3);
+ listeners.get('#journal-overlay:click')({target:overlay,currentTarget:overlay});
+ assert.equal(overlay.hidden,true);
+ assert.equal(events.get('filees:open-journal'),listeners.get('#open-journal:click'));
+});
+
 test('collapse actions reach the fixed update dock and sidebar exactly once and survive refresh',()=>{
  const source=read('app.js');
  const toggle=source.indexOf('const toggle = event.target.closest("[data-toggle-card]")');

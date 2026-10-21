@@ -1,12 +1,23 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	guiapp "filees/internal/gui/app"
 	contract "filees/pkg/contract/v1"
 )
+
+func TestTrayJournalShowsWindowBeforeOpeningExistingJournal(t *testing.T) {
+	var calls []string
+	click := trayJournalAction(func() { calls = append(calls, "show") }, func(event string) { calls = append(calls, event) })
+	click(nil)
+	click(nil) // no snapshot, daemon capability or one-shot restriction
+	if want := []string{"show", "filees:open-journal", "show", "filees:open-journal"}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("journal clicks: %v", calls)
+	}
+}
 
 func TestIntentNativeNotificationEpisodes(t *testing.T) {
 	var policy intentAlertPolicy

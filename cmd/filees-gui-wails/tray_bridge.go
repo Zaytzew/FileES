@@ -14,7 +14,17 @@ import (
 )
 
 const openAnnouncementEvent = "filees:open-announcement"
+const openJournalEvent = "filees:open-journal"
 const nativeLanguageEvent = "filees:native-language"
+
+// Presentation only: use the existing journal snapshot even while offline.
+// Restore/focus the window before asking its WebView to focus the journal.
+func trayJournalAction(show func(), emit func(string)) func(*application.Context) {
+	return func(_ *application.Context) {
+		show()
+		emit(openJournalEvent)
+	}
+}
 
 type wailsTrayProjection struct {
 	Icon        guiapp.IconState
@@ -307,6 +317,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	statusItem := menu.Add(language.text("tray.starting")).SetEnabled(false)
 	menu.AddSeparator()
 	showItem := menu.Add(language.text("tray.show")).OnClick(func(_ *application.Context) { showWindow() })
+	journalItem := menu.Add(language.text("journal.title")).OnClick(trayJournalAction(showWindow, func(event string) { host.Event.Emit(event) }))
 	announcementItem := menu.Add(language.text("tray.announcements")).OnClick(func(_ *application.Context) {
 		showWindow()
 		host.Event.Emit(openAnnouncementEvent)
@@ -343,6 +354,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	unread := 0
 	refreshMenuLabels := func() {
 		showItem.SetLabel(language.text("tray.show"))
+		journalItem.SetLabel(language.text("journal.title"))
 		refreshItem.SetLabel(language.text("tray.refresh"))
 		activateItem.SetLabel(language.text("tray.activate"))
 		timeMachineItem.SetLabel(language.text("tray.timeMachine"))

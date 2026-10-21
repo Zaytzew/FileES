@@ -54,7 +54,7 @@ func TestNativeLanguageUsesEmbeddedGUICatalogues(t *testing.T) {
 	}
 	for locale := range language.catalogues {
 		language.selectLocale(locale)
-		for _, key := range []string{"tray.starting", "tray.show", "tray.announcements", "tray.refresh", "tray.activate", "tray.restart", "tray.quit"} {
+		for _, key := range []string{"tray.starting", "tray.show", "journal.title", "tray.announcements", "tray.refresh", "tray.activate", "tray.restart", "tray.quit"} {
 			if got := language.text(key); got == "" || strings.HasPrefix(got, "[") {
 				t.Fatalf("%s %s: %q", locale, key, got)
 			}

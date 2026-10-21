@@ -1654,10 +1654,12 @@ function updateCardToggleLabel(toggle) {
   toggle.setAttribute("aria-label", t(key));
 }
 document.querySelectorAll("[data-toggle-card]").forEach(updateCardToggleLabel);
-$("#open-journal").addEventListener("click", () => {
+function openJournal() {
   $("#journal-overlay").hidden = false;
   $("#close-journal").focus();
-});
+}
+Events.On("filees:open-journal", openJournal);
+$("#open-journal").addEventListener("click", openJournal);
 $("#close-journal").addEventListener("click", () => { $("#journal-overlay").hidden = true; });
 $("#journal-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.hidden = true;
